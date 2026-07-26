@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#15221f" />
+    <meta name="description" content="明日之后营地公共信息、科技投票与成员贡献" />
+    <title>明日之后营地助手</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script src="/js/preferences.js" defer></script>
+    <script src="/js/i18n.js" defer></script>
+    <script src="/js/public.js" defer></script>
+  </head>
+  <body class="public-page">
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <header class="site-header shell">
+      <a class="brand" href="/" aria-label="返回营地助手首页">
+        <span class="brand-mark">愿</span>
+        <span>
+          <strong id="site-name">明日之后营地助手</strong>
+          <small>LifeAfter Camp Assistant</small>
+        </span>
+      </a>
+      <a class="button button-quiet" href="/admin">管理后台</a>
+    </header>
+
+    <main class="shell">
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">CAMP OVERVIEW</p>
+          <h1 id="camp-name">正在连接营地…</h1>
+          <p id="announcement" class="hero-copy">正在读取最新公共信息。</p>
+          <div class="chips">
+            <span class="chip" id="server-name">中国大陆服务器</span>
+            <span class="chip" id="camp-type">科技类型待配置</span>
+            <span class="chip" id="sync-state">数据同步中</span>
+          </div>
+        </div>
+        <div class="hero-orbit" aria-hidden="true">
+          <span>03</span>
+          <small>DAILY RESET</small>
+        </div>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel vote-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">NEXT TECHNOLOGY</p>
+              <h2>次日科技投票</h2>
+            </div>
+            <div class="date-badge" id="poll-date">--</div>
+          </div>
+          <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
+          <label class="field">
+            <span>游戏昵称（可选）</span>
+            <input id="voter-name" maxlength="30" placeholder="便于营地成员识别" />
+          </label>
+          <div id="vote-options" class="vote-options" aria-live="polite"></div>
+          <div class="action-row">
+            <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
+            <span id="vote-feedback" class="feedback" role="status"></span>
+          </div>
+        </article>
+
+        <aside class="panel highlights-panel">
+          <p class="eyebrow">CAMP NOTES</p>
+          <h2>营地公告</h2>
+          <div id="highlights" class="highlight-list"></div>
+        </aside>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">INACTIVITY WATCH</p>
+            <h2>斩杀预警</h2>
+          </div>
+          <span class="date-badge" id="warning-count">0</span>
+        </div>
+        <p id="warning-description" class="muted"></p>
+        <div id="warning-list" class="warning-list"></div>
+        <p id="warning-empty" class="empty-state" hidden>当前没有达到预警线的成员。</p>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">OFFICERS</p>
+            <h2>营地公职</h2>
+          </div>
+          <span class="muted" id="staff-updated"></span>
+        </div>
+        <div id="staff-list" class="staff-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading member-heading">
+          <div>
+            <p class="eyebrow">MEMBER CONTRIBUTION</p>
+            <h2>成员信息与贡献</h2>
+          </div>
+          <label class="search-field">
+            <span class="sr-only">搜索成员</span>
+            <input id="member-search" type="search" placeholder="搜索姓名、职业或同居" />
+          </label>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>成员</th>
+                <th>职业</th>
+                <th>庄园</th>
+                <th>同居</th>
+                <th>本周贡献</th>
+                <th>使用科技点</th>
+                <th>贡献物资</th>
+              </tr>
+            </thead>
+            <tbody id="member-table"></tbody>
+          </table>
+        </div>
+        <p id="member-empty" class="empty-state" hidden>暂时没有成员同步数据。</p>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">AUTOMATION</p>
+            <h2>最近自动任务</h2>
+          </div>
+        </div>
+        <div id="run-list" class="run-list"></div>
+      </section>
+    </main>
+
+    <footer class="shell site-footer">
+      <span>明日之后营地助手</span>
+      <span id="timezone-label">Asia/Shanghai</span>
+    </footer>
+  </body>
+</html>

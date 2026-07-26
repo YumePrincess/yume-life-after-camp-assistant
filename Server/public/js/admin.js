@@ -1,0 +1,781 @@
+(() => {
+  "use strict";
+
+  const TASKS = [
+    ["tech_switch", "科技切换", "按固定科技与投票结果开启次日科技"],
+    ["member_sync", "成员同步", "读取贡献、职业、庄园、同居与公职"],
+    ["contribution_sync", "更新贡献", "仅从市政厅沙盘更新三项贡献数据"],
+    ["inactivity_sync", "更新斩杀预警", "仅从市政厅沙盘活跃页更新离线时间"],
+    ["member_profile_sync", "更新成员资料", "仅更新职业、庄园、同居与公职"],
+    ["patrol", "营地巡逻", "组队、困难路线、古籍分享与聊天指令"],
+    ["brick_transport", "搬砖", "按时间窗执行营地搬砖路线"],
+    ["weekly_schedule_update", "周日程更新", "更新感染者活动时间与等级"],
+    ["automation_routine", "任务例程", "按后台配置的先后与同组关系执行"],
+    ["kick_member", "踢出成员", "从最新名单精确选择成员后执行"],
+    ["kick_inactive_members", "自动斩杀", "处理最新识别仍达到斩杀线的成员"]
+  ];
+  const ACTIVE_STATES = new Set(["queued", "claimed", "running", "cancelling"]);
+  const state = {
+    bootstrap: null,
+    csrfToken: "",
+    dirty: false,
+    refreshing: false,
+    memberQuery: "",
+    selectedMember: null
+  };
+
+  function byId(id) {
+    return document.getElementById(id);
+  }
+
+  function create(tag, className, text) {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    if (text !== undefined) element.textContent = text;
+    return element;
+  }
+
+  function input(name) {
+    return document.querySelector(`[name="${name}"]`);
+  }
+
+  async function request(path, options = {}) {
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    };
+    if (options.method && !["GET", "HEAD"].includes(options.method)) {
+      headers["X-CSRF-Token"] = state.csrfToken;
+    }
+    const response = await fetch(path, { ...options, headers });
+    if (response.status === 401) {
+      location.href = `/login?returnTo=${encodeURIComponent("/admin")}`;
+      throw new Error("登录已失效");
+    }
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    return payload;
+  }
+
+  function taskName(value) {
+    return Object.fromEntries(TASKS.map(([key, name]) => [key, name]))[value] || value;
+  }
+
+  function hasPermission(permission) {
+    const permissions = state.bootstrap?.session?.permissions || [];
+    return permissions.includes("*") || permissions.includes(permission);
+  }
+
+  function stateName(value) {
+    return {
+      queued: "排队",
+      claimed: "已领取",
+      running: "执行中",
+      cancelling: "中断中",
+      interrupted: "已中断",
+      succeeded: "成功",
+      failed: "失败",
+      skipped: "已跳过"
+    }[value] || value;
+  }
+
+  function formatDate(value) {
+    if (!value) return "—";
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }).format(new Date(value));
+  }
+
+  function setField(name, value) {
+    const field = input(name);
+    if (!field) return;
+    if (field.type === "checkbox") field.checked = Boolean(value);
+    else field.value = value ?? "";
+  }
+
+  function getField(name) {
+    const field = input(name);
+    return field?.type === "checkbox" ? field.checked : field?.value;
+  }
+
+  function renderTaskActions() {
+    const root = byId("task-actions");
+    root.replaceChildren();
+    for (const [key, name, copy] of TASKS) {
+      if (["automation_routine", "kick_member", "kick_inactive_members"].includes(key)) {
+        continue;
+      }
+      const card = create("article", "task-card");
+      const button = create("button", "button button-primary", "立即执行");
+      button.type = "button";
+      button.disabled = !hasPermission("task:run");
+      button.addEventListener("click", () => runTask(key, button));
+      card.append(create("h3", "", name), create("p", "", copy), button);
+      root.append(card);
+    }
+    for (const routine of state.bootstrap?.configBundle?.automationConfig?.routines || []) {
+      const card = create("article", "task-card");
+      const button = create("button", "button button-primary", "立即执行例程");
+      button.type = "button";
+      button.disabled = !hasPermission("task:run");
+      button.addEventListener("click", () =>
+        runTask("automation_routine", button, routine.id)
+      );
+      card.append(
+        create("h3", "", routine.name),
+        create("p", "", `${routine.time} · ${routine.groups.map((g) => g.join(" + ")).join(" → ")}`),
+        button
+      );
+      root.append(card);
+    }
+  }
+
+  function renderAgents(heartbeats) {
+    const root = byId("agent-status");
+    root.replaceChildren();
+    if (!heartbeats?.length) {
+      root.append(create("p", "empty-state", "尚未收到本地 Agent 心跳。"));
+      return;
+    }
+    for (const item of heartbeats) {
+      const age = Date.now() - Date.parse(item.updated_at);
+      const online =
+        age < (state.bootstrap?.agentOnlineThresholdSeconds || 45) * 1000;
+      const card = create("article", "agent-card");
+      card.append(
+        create("strong", "", `${item.agent_id} · ${online ? "在线" : "离线"}`),
+        create(
+          "span",
+          "",
+          item.active_task_key
+            ? `${taskName(item.active_task_key)} / ${item.status}`
+            : `空闲 / ${formatDate(item.updated_at)}`
+        )
+      );
+      root.append(card);
+    }
+  }
+
+  function fillConfig(bundle) {
+    const camp = bundle.campConfig;
+    const overview = bundle.publicOverview;
+    const automation = bundle.automationConfig;
+    const tasks = automation.tasks;
+    for (const [name, value] of Object.entries({
+      campName: camp.campName,
+      serverName: camp.serverName,
+      publicSiteName: camp.publicSiteName,
+      timezone: automation.timezone,
+      gameResetTime: camp.gameResetTime,
+      currentCampType: camp.currentCampType,
+      publicMembersEnabled: camp.publicMembersEnabled,
+      inactivityWarningDays: camp.inactivityWarningDays,
+      automaticKickEnabled: camp.automaticKickEnabled,
+      automaticKickGraceDays: camp.automaticKickGraceDays,
+      temporaryKeyLoginEnabled: bundle.authConfig.temporaryKeyLoginEnabled,
+      announcement: overview.announcement,
+      highlights: (overview.highlights || []).join("\n"),
+      techEnabled: tasks.tech_switch.enabled,
+      techTime: tasks.tech_switch.time,
+      memberEnabled: tasks.member_sync.enabled,
+      memberTime: tasks.member_sync.time,
+      contributionEnabled: tasks.contribution_sync.enabled,
+      contributionTime: tasks.contribution_sync.time,
+      inactivityEnabled: tasks.inactivity_sync.enabled,
+      inactivityTime: tasks.inactivity_sync.time,
+      profileEnabled: tasks.member_profile_sync.enabled,
+      profileTime: tasks.member_profile_sync.time,
+      patrolEnabled: tasks.patrol.enabled,
+      patrolTime: tasks.patrol.time,
+      patrolReadyTime: tasks.patrol.teamReadyTime,
+      patrolDeadline: tasks.patrol.deadline,
+      shareInterval: tasks.patrol.shareIntervalMinutes,
+      chatPollSeconds: tasks.patrol.chatPollSeconds,
+      brickEnabled: tasks.brick_transport.enabled,
+      brickTime: tasks.brick_transport.time,
+      brickLatestStart: tasks.brick_transport.latestStart,
+      brickStop: tasks.brick_transport.stop,
+      brickInline: tasks.brick_transport.inlineWithPatrol,
+      weeklyEnabled: tasks.weekly_schedule_update.enabled,
+      weeklyTime: tasks.weekly_schedule_update.time,
+      weeklyCutoff: tasks.weekly_schedule_update.cutoff,
+      weeklyDirtyOnly: tasks.weekly_schedule_update.onlyWhenDirty,
+      pollActiveSeconds: automation.agentPolling.activeSeconds,
+      pollIdleSeconds: automation.agentPolling.idleSeconds,
+      watchdogEnabled: automation.gameWatchdog.enabled,
+      watchdogHealthSeconds: automation.gameWatchdog.healthCheckSeconds,
+      watchdogActionSeconds: automation.gameWatchdog.actionTimeoutSeconds,
+      watchdogFrozenSeconds: automation.gameWatchdog.frozenScreenSeconds,
+      watchdogMaxRestarts: automation.gameWatchdog.maxRestarts,
+      watchdogCooldownSeconds: automation.gameWatchdog.restartCooldownSeconds
+    })) {
+      setField(name, value);
+    }
+    byId("technology-json").value = JSON.stringify(bundle.technologyConfig, null, 2);
+    byId("polling-windows-json").value = JSON.stringify(
+      automation.agentPolling.windows,
+      null,
+      2
+    );
+    byId("routines-json").value = JSON.stringify(automation.routines, null, 2);
+    byId("weekly-dirty").textContent = bundle.weeklySchedule.dirty
+      ? `待应用 ${bundle.weeklySchedule.pendingApplyWeek || ""}`
+      : "已应用";
+    renderWeeklyEvents(bundle.weeklySchedule.events || []);
+  }
+
+  function renderWeeklyEvents(events) {
+    const root = byId("weekly-events");
+    root.replaceChildren();
+    for (const event of events) {
+      const row = create("div", "weekly-row");
+      row.dataset.key = event.key;
+      row.dataset.name = event.name;
+      row.append(
+        weeklyField("活动", "text", "eventName", event.name, true),
+        weeklyField("星期（1-7）", "number", "weekday", event.weekday),
+        weeklyField("时间", "time", "time", event.time),
+        weeklyField("等级", "text", "level", event.level)
+      );
+      root.append(row);
+    }
+  }
+
+  function weeklyField(labelText, type, name, value, readonly = false) {
+    const label = create("label", "field");
+    const title = create("span", "", labelText);
+    const field = document.createElement("input");
+    field.type = type;
+    field.name = name;
+    field.value = value;
+    field.readOnly = readonly;
+    if (type === "number") {
+      field.min = "1";
+      field.max = "7";
+    }
+    label.append(title, field);
+    return label;
+  }
+
+  function renderVote(summary) {
+    byId("next-tech-date").textContent = summary.pollDate || "--";
+    const root = byId("admin-vote-summary");
+    root.replaceChildren();
+    root.append(create("span", "vote-summary-item", `${summary.ballotCount || 0} 人投票`));
+    for (const option of summary.options || []) {
+      root.append(
+        create("span", "vote-summary-item", `${option.name} · ${option.votes} 票`)
+      );
+    }
+  }
+
+  function renderRuns(runs) {
+    const root = byId("run-table");
+    root.replaceChildren();
+    for (const run of runs || []) {
+      const row = document.createElement("tr");
+      row.append(
+        create("td", "", taskName(run.task_key)),
+        create("td", `status-${run.state}`, stateName(run.state)),
+        create("td", "numeric", `${Math.round((run.progress || 0) * 100)}%`),
+        create("td", "", run.message || "—"),
+        create("td", "", formatDate(run.finished_at || run.created_at))
+      );
+      const actions = create("td");
+      const detail = create("button", "button button-quiet", "事件");
+      detail.type = "button";
+      detail.addEventListener("click", () => showEvents(run.id));
+      actions.append(detail);
+      if (ACTIVE_STATES.has(run.state)) {
+        const cancel = create("button", "button button-danger", "中断");
+        cancel.type = "button";
+        cancel.disabled = !hasPermission("task:interrupt");
+        cancel.addEventListener("click", () => interruptRun(run.id, cancel));
+        actions.append(cancel);
+      }
+      row.append(actions);
+      root.append(row);
+    }
+  }
+
+  function render(data, fillForm = true) {
+    state.bootstrap = data;
+    state.csrfToken = data.session.csrfToken;
+    renderTaskActions();
+    byId("session-email").textContent =
+      data.session.displayName || data.session.email;
+    document.body.dataset.readonly = String(
+      !hasPermission("config:write") &&
+        !hasPermission("task:run") &&
+        !hasPermission("task:interrupt") &&
+        !hasPermission("member:kick") &&
+        !hasPermission("keys:manage")
+    );
+    byId("next-tech-date").textContent = data.nextTechnologyTargetDate || "--";
+    renderAgents(data.heartbeats);
+    renderVote(data.voteSummary);
+    renderRuns(data.recentRuns);
+    renderAdminMembers(data.members || []);
+    renderAutoKick(data.autoKickCandidates || [], data.configBundle.campConfig);
+    renderTemporaryKeys(data.temporaryKeys || []);
+    byId("temporary-key-panel").hidden = !hasPermission("keys:manage");
+    if (fillForm) {
+      fillConfig(data.configBundle);
+      state.dirty = false;
+      setConfigReadOnly(!hasPermission("config:write"));
+      if (!hasPermission("member:kick")) {
+        input("automaticKickEnabled").disabled = true;
+        input("automaticKickGraceDays").disabled = true;
+      }
+    }
+  }
+
+  function setConfigReadOnly(readonly) {
+    for (const field of document.querySelectorAll(
+      "#config-form input, #config-form select, #config-form textarea, #config-form button"
+    )) {
+      field.disabled = readonly;
+    }
+  }
+
+  function renderTemporaryKeys(items) {
+    const root = byId("temporary-key-list");
+    if (!root) return;
+    root.replaceChildren();
+    if (!items.length) {
+      root.append(create("p", "empty-state", "尚未生成临时 Key。"));
+      return;
+    }
+    for (const item of items) {
+      let permissions = [];
+      try {
+        permissions = JSON.parse(item.permissions_json || "[]");
+      } catch {
+        permissions = [];
+      }
+      const row = create("article", "key-item");
+      const identity = create("div");
+      identity.append(
+        create("strong", "", item.name),
+        create("div", "key-item-meta", `编号 ${item.id}`)
+      );
+      const suffix = [
+        permissions.length ? permissions.join(" · ") : "仅预览",
+        `有效期 ${formatDate(item.expires_at)}`,
+        item.last_used_at ? `最近使用 ${formatDate(item.last_used_at)}` : "",
+        item.revoked_at ? "已撤销" : ""
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const revoke = create("button", "button button-danger", "撤销");
+      revoke.type = "button";
+      revoke.disabled = Boolean(item.revoked_at);
+      revoke.addEventListener("click", () => revokeTemporaryKey(item.id, revoke));
+      row.append(identity, create("div", "key-item-meta", suffix), revoke);
+      root.append(row);
+    }
+  }
+
+  function renderAdminMembers(items) {
+    const query = state.memberQuery.toLowerCase();
+    const filtered = items.filter((item) =>
+      [
+        item.name,
+        item.profession,
+        item.roommate_name,
+        item.camp_title,
+        item.last_active_text
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    );
+    const root = byId("admin-member-table");
+    root.replaceChildren();
+    for (const item of filtered) {
+      const row = document.createElement("tr");
+      row.className = "member-admin-row";
+      for (const value of [
+        item.name,
+        item.profession || "—",
+        item.manor_level ?? "—",
+        item.roommate_name || "—",
+        item.weekly_contribution ?? 0,
+        item.technology_points_used ?? 0,
+        item.material_contribution ?? 0,
+        item.last_active_text || "—"
+      ]) {
+        row.append(create("td", "", String(value)));
+      }
+      row.addEventListener("click", () => showMember(item));
+      root.append(row);
+    }
+  }
+
+  function showMember(member) {
+    state.selectedMember = member;
+    byId("member-dialog-title").textContent = member.name;
+    const detail = byId("member-detail");
+    detail.replaceChildren();
+    for (const [label, value] of [
+      ["营地称号", member.camp_title],
+      ["职业", member.profession],
+      ["庄园等级", member.manor_level],
+      ["同居", member.roommate_name],
+      ["本周贡献", member.weekly_contribution],
+      ["使用科技点", member.technology_points_used],
+      ["贡献物资", member.material_contribution],
+      ["在线情况", member.last_active_text],
+      ["离线折算天数", member.inactive_days],
+      ["活跃采集时间", formatDate(member.activity_captured_at)],
+      ["资料采集时间", formatDate(member.last_seen_at)]
+    ]) {
+      detail.append(create("dt", "", label), create("dd", "", String(value ?? "—")));
+    }
+    byId("kick-member").disabled = !hasPermission("member:kick");
+    byId("member-dialog").showModal();
+  }
+
+  function renderAutoKick(candidates, camp) {
+    const threshold =
+      Number(camp.inactivityWarningDays || 0) +
+      Number(camp.automaticKickGraceDays || 0);
+    byId("auto-kick-summary").textContent = camp.automaticKickEnabled
+      ? `已开启：离线达到 ${threshold} 天时按最新识别名单处理；当前候选 ${candidates.length} 人。`
+      : `默认关闭。若开启，判定线为预警 ${camp.inactivityWarningDays} 天＋宽限 ${camp.automaticKickGraceDays} 天。`;
+    byId("auto-kick-evaluate").disabled =
+      !camp.automaticKickEnabled || !candidates.length || !hasPermission("member:kick");
+  }
+
+  async function kickSelectedMember() {
+    const member = state.selectedMember;
+    if (!member) return;
+    const confirmation = window.prompt(
+      `高风险操作：将从市政厅沙盘踢出“${member.name}”。请输入完整成员姓名确认：`
+    );
+    if (confirmation !== member.name) {
+      byId("save-state").textContent = "姓名不一致，已取消踢出";
+      return;
+    }
+    try {
+      await request("/api/admin/kick-member", {
+        method: "POST",
+        body: JSON.stringify({
+          memberName: member.name,
+          confirmMemberName: confirmation
+        })
+      });
+      byId("member-dialog").close();
+      byId("save-state").textContent = `踢出 ${member.name} 的任务已入队`;
+      await refresh(false);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  async function evaluateAutoKick() {
+    if (
+      !window.confirm(
+        "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？"
+      )
+    ) {
+      return;
+    }
+    try {
+      const result = await request("/api/admin/auto-kick-evaluate", {
+        method: "POST",
+        body: "{}"
+      });
+      byId("save-state").textContent = result.run
+        ? `自动斩杀任务已入队，共 ${result.candidates.length} 人`
+        : "当前没有达到斩杀线的成员";
+      await refresh(false);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  async function refresh(forceForm = false) {
+    if (state.refreshing) return;
+    state.refreshing = true;
+    try {
+      const data = await request(`/api/admin/bootstrap?t=${Date.now()}`);
+      render(data, forceForm || !state.dirty);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    } finally {
+      state.refreshing = false;
+    }
+  }
+
+  async function runTask(taskKey, button, routineId) {
+    button.disabled = true;
+    try {
+      await request("/api/admin/run", {
+        method: "POST",
+        body: JSON.stringify({ taskKey, ...(routineId ? { routineId } : {}) })
+      });
+      byId("save-state").textContent = `${taskName(taskKey)}已入队`;
+      await refresh(false);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function interruptRun(runId, button) {
+    button.disabled = true;
+    try {
+      await request("/api/admin/interrupt", {
+        method: "POST",
+        body: JSON.stringify({ runId })
+      });
+      byId("save-state").textContent = "中断指令已发送";
+      await refresh(false);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function showEvents(runId) {
+    const root = byId("run-events");
+    root.replaceChildren(create("p", "empty-state", "正在加载…"));
+    byId("run-dialog").showModal();
+    try {
+      const payload = await request(`/api/admin/runs/${encodeURIComponent(runId)}/events`);
+      root.replaceChildren();
+      if (!payload.events.length) {
+        root.append(create("p", "empty-state", "暂无步骤事件。"));
+      }
+      for (const event of payload.events) {
+        const row = create("article", "event-item");
+        row.append(
+          create("span", `status-${event.level}`, event.level),
+          create("time", "muted", formatDate(event.created_at)),
+          create("span", "", `${event.step ? `[${event.step}] ` : ""}${event.message}`)
+        );
+        root.append(row);
+      }
+    } catch (error) {
+      root.replaceChildren(create("p", "error-text", error.message));
+    }
+  }
+
+  function collectWeeklyEvents() {
+    return [...document.querySelectorAll(".weekly-row")].map((row) => ({
+      key: row.dataset.key,
+      name: row.dataset.name,
+      weekday: Number(row.querySelector('[name="weekday"]').value),
+      time: row.querySelector('[name="time"]').value,
+      level: row.querySelector('[name="level"]').value.trim()
+    }));
+  }
+
+  function collectConfig() {
+    const current = state.bootstrap.configBundle;
+    let technologyConfig;
+    let pollingWindows;
+    let routines;
+    try {
+      technologyConfig = JSON.parse(byId("technology-json").value);
+    } catch {
+      throw new Error("科技配置 JSON 格式错误");
+    }
+    try {
+      pollingWindows = JSON.parse(byId("polling-windows-json").value);
+      routines = JSON.parse(byId("routines-json").value);
+    } catch {
+      throw new Error("轮询窗口或任务例程 JSON 格式错误");
+    }
+    const timezone = String(getField("timezone")).trim();
+    return {
+      campConfig: {
+        ...current.campConfig,
+        campName: String(getField("campName")).trim(),
+        serverName: String(getField("serverName")).trim(),
+        publicSiteName: String(getField("publicSiteName")).trim(),
+        timezone,
+        gameResetTime: getField("gameResetTime"),
+        currentCampType: getField("currentCampType"),
+        publicMembersEnabled: getField("publicMembersEnabled"),
+        inactivityWarningDays: Number(getField("inactivityWarningDays")),
+        automaticKickEnabled: getField("automaticKickEnabled"),
+        automaticKickGraceDays: Number(getField("automaticKickGraceDays"))
+      },
+      authConfig: {
+        temporaryKeyLoginEnabled: getField("temporaryKeyLoginEnabled")
+      },
+      publicOverview: {
+        announcement: String(getField("announcement")).trim(),
+        highlights: String(getField("highlights"))
+          .split("\n")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      },
+      technologyConfig,
+      automationConfig: {
+        timezone,
+        schedulerGraceMinutes: current.automationConfig.schedulerGraceMinutes,
+        agentPolling: {
+          activeSeconds: Number(getField("pollActiveSeconds")),
+          idleSeconds: Number(getField("pollIdleSeconds")),
+          windows: pollingWindows
+        },
+        gameWatchdog: {
+          enabled: getField("watchdogEnabled"),
+          healthCheckSeconds: Number(getField("watchdogHealthSeconds")),
+          actionTimeoutSeconds: Number(getField("watchdogActionSeconds")),
+          frozenScreenSeconds: Number(getField("watchdogFrozenSeconds")),
+          maxRestarts: Number(getField("watchdogMaxRestarts")),
+          restartCooldownSeconds: Number(getField("watchdogCooldownSeconds"))
+        },
+        tasks: {
+          tech_switch: {
+            enabled: getField("techEnabled"),
+            time: getField("techTime")
+          },
+          member_sync: {
+            enabled: getField("memberEnabled"),
+            time: getField("memberTime")
+          },
+          contribution_sync: {
+            enabled: getField("contributionEnabled"),
+            time: getField("contributionTime")
+          },
+          inactivity_sync: {
+            enabled: getField("inactivityEnabled"),
+            time: getField("inactivityTime")
+          },
+          member_profile_sync: {
+            enabled: getField("profileEnabled"),
+            time: getField("profileTime")
+          },
+          patrol: {
+            enabled: getField("patrolEnabled"),
+            time: getField("patrolTime"),
+            teamReadyTime: getField("patrolReadyTime"),
+            shareIntervalMinutes: Number(getField("shareInterval")),
+            chatPollSeconds: Number(getField("chatPollSeconds")),
+            deadline: getField("patrolDeadline")
+          },
+          brick_transport: {
+            enabled: getField("brickEnabled"),
+            time: getField("brickTime"),
+            latestStart: getField("brickLatestStart"),
+            stop: getField("brickStop"),
+            inlineWithPatrol: getField("brickInline")
+          },
+          weekly_schedule_update: {
+            enabled: getField("weeklyEnabled"),
+            time: getField("weeklyTime"),
+            weekday: 7,
+            cutoff: getField("weeklyCutoff"),
+            onlyWhenDirty: getField("weeklyDirtyOnly")
+          }
+        },
+        routines
+      },
+      weeklySchedule: {
+        ...current.weeklySchedule,
+        events: collectWeeklyEvents()
+      }
+    };
+  }
+
+  async function saveConfig(event) {
+    event.preventDefault();
+    byId("save-state").textContent = "正在保存…";
+    try {
+      const data = await request("/api/admin/config", {
+        method: "PUT",
+        body: JSON.stringify(collectConfig())
+      });
+      render(data, true);
+      byId("save-state").textContent = "配置已保存";
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  async function logout() {
+    sessionStorage.setItem("yumePublicOidcAutoLoginSuppressed", "1");
+    location.href = "/auth/logout";
+  }
+
+  async function generateTemporaryKey(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const permissions = [
+      ...form.querySelectorAll('[name="keyPermission"]:checked')
+    ].map((field) => field.value);
+    try {
+      const payload = await request("/api/admin/temp-keys", {
+        method: "POST",
+        body: JSON.stringify({
+          name: form.elements.keyName.value.trim(),
+          expiresAt: new Date(form.elements.keyExpiresAt.value).toISOString(),
+          permissions
+        })
+      });
+      byId("temporary-key-value").textContent = payload.key;
+      byId("temporary-key-reveal").hidden = false;
+      form.reset();
+      setDefaultKeyExpiry();
+      await refresh(false);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  async function revokeTemporaryKey(id, button) {
+    button.disabled = true;
+    try {
+      await request("/api/admin/temp-keys/revoke", {
+        method: "POST",
+        body: JSON.stringify({ id })
+      });
+      await refresh(false);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+      button.disabled = false;
+    }
+  }
+
+  function setDefaultKeyExpiry() {
+    const field = input("keyExpiresAt");
+    if (!field || field.value) return;
+    const date = new Date(Date.now() + 24 * 60 * 60_000);
+    field.value = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+      .toISOString()
+      .slice(0, 16);
+  }
+
+  renderTaskActions();
+  byId("config-form").addEventListener("input", () => {
+    state.dirty = true;
+    byId("save-state").textContent = "有未保存修改";
+  });
+  byId("config-form").addEventListener("submit", saveConfig);
+  byId("admin-member-search").addEventListener("input", (event) => {
+    state.memberQuery = event.target.value || "";
+    renderAdminMembers(state.bootstrap?.members || []);
+  });
+  byId("kick-member").addEventListener("click", kickSelectedMember);
+  byId("auto-kick-evaluate").addEventListener("click", evaluateAutoKick);
+  byId("refresh-admin").addEventListener("click", () => refresh(!state.dirty));
+  byId("logout").addEventListener("click", logout);
+  byId("temporary-key-form").addEventListener("submit", generateTemporaryKey);
+  byId("copy-temporary-key").addEventListener("click", async () => {
+    await navigator.clipboard.writeText(byId("temporary-key-value").textContent);
+    byId("save-state").textContent = "临时 Key 已复制";
+  });
+  setDefaultKeyExpiry();
+  refresh(true);
+  setInterval(() => refresh(false), 10_000);
+})();

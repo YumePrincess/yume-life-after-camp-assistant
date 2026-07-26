@@ -1,0 +1,3 @@
+SESSION_SECRET="replace-with-at-least-32-random-characters"
+OIDC_CLIENT_SECRET="replace-with-yume-account-client-secret"
+AGENT_SHARED_TOKEN="replace-with-at-least-32-random-characters"

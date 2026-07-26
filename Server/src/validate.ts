@@ -1,0 +1,598 @@
+import type {
+  AutomationConfig,
+  AuthConfig,
+  CampConfig,
+  ConfigBundle,
+  PublicOverview,
+  TaskKey,
+  TechnologyCategory,
+  TechnologyConfig,
+  TechnologyDefinition,
+  TechnologyLane,
+  WeeklyEvent,
+  WeeklySchedule
+} from "./domain";
+import { assertClock, assertTimezone } from "./time";
+
+const CATEGORY_VALUES = new Set<TechnologyCategory>([
+  "military",
+  "agriculture",
+  "industry"
+]);
+const LANE_VALUES = new Set<TechnologyLane>(["core", "general"]);
+const TECH_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{1,63}$/;
+
+function object(value: unknown, field: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function text(
+  value: unknown,
+  field: string,
+  options: { max?: number; allowEmpty?: boolean } = {}
+): string {
+  if (typeof value !== "string") throw new Error(`${field} must be a string`);
+  const result = value.trim();
+  if (!options.allowEmpty && !result) throw new Error(`${field} is required`);
+  if (result.length > (options.max ?? 200)) throw new Error(`${field} is too long`);
+  return result;
+}
+
+function boolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`${field} must be a boolean`);
+  return value;
+}
+
+function integer(value: unknown, field: string, min: number, max: number): number {
+  if (!Number.isInteger(value) || Number(value) < min || Number(value) > max) {
+    throw new Error(`${field} must be an integer between ${min} and ${max}`);
+  }
+  return Number(value);
+}
+
+function category(value: unknown, field: string): TechnologyCategory {
+  if (typeof value !== "string" || !CATEGORY_VALUES.has(value as TechnologyCategory)) {
+    throw new Error(`${field} is invalid`);
+  }
+  return value as TechnologyCategory;
+}
+
+function lane(value: unknown, field: string): TechnologyLane {
+  if (typeof value !== "string" || !LANE_VALUES.has(value as TechnologyLane)) {
+    throw new Error(`${field} is invalid`);
+  }
+  return value as TechnologyLane;
+}
+
+function assetUrl(value: unknown, field: string): string {
+  if (value === undefined || value === null || value === "") return "";
+  const result = text(value, field, { max: 500 });
+  if (result.startsWith("/")) return result;
+  try {
+    const url = new URL(result);
+    if (url.protocol !== "https:") throw new Error();
+    return url.toString();
+  } catch {
+    throw new Error(`${field} must be a root-relative or HTTPS URL`);
+  }
+}
+
+function taskSchedule(
+  value: unknown,
+  field: string
+): { source: Record<string, unknown>; enabled: boolean; time: string } {
+  const source = object(value, field);
+  const time = text(source.time, `${field}.time`, { max: 5 });
+  assertClock(time, `${field}.time`);
+  return {
+    source,
+    enabled: boolean(source.enabled, `${field}.enabled`),
+    time
+  };
+}
+
+export function validateCampConfig(value: unknown): CampConfig {
+  const source = object(value, "campConfig");
+  const timezone = text(source.timezone, "campConfig.timezone", { max: 80 });
+  assertTimezone(timezone);
+  const gameResetTime = text(source.gameResetTime, "campConfig.gameResetTime", { max: 5 });
+  assertClock(gameResetTime, "campConfig.gameResetTime");
+  return {
+    timezone,
+    gameResetTime,
+    currentCampType: category(source.currentCampType, "campConfig.currentCampType"),
+    agentId: text(source.agentId, "campConfig.agentId", { max: 80 }),
+    publicSiteName: text(source.publicSiteName, "campConfig.publicSiteName", { max: 80 }),
+    campName: text(source.campName, "campConfig.campName", { max: 80 }),
+    serverName: text(source.serverName, "campConfig.serverName", { max: 80 }),
+    publicMembersEnabled: boolean(
+      source.publicMembersEnabled,
+      "campConfig.publicMembersEnabled"
+    ),
+    inactivityWarningDays:
+      source.inactivityWarningDays === undefined
+        ? 1
+        : integer(
+            source.inactivityWarningDays,
+            "campConfig.inactivityWarningDays",
+            1,
+            3650
+          ),
+    automaticKickEnabled:
+      source.automaticKickEnabled === undefined
+        ? false
+        : boolean(source.automaticKickEnabled, "campConfig.automaticKickEnabled"),
+    automaticKickGraceDays:
+      source.automaticKickGraceDays === undefined
+        ? 0
+        : integer(
+            source.automaticKickGraceDays,
+            "campConfig.automaticKickGraceDays",
+            0,
+            3650
+          )
+  };
+}
+
+export function validatePublicOverview(value: unknown): PublicOverview {
+  const source = object(value, "publicOverview");
+  if (!Array.isArray(source.highlights)) {
+    throw new Error("publicOverview.highlights must be an array");
+  }
+  return {
+    announcement: text(source.announcement, "publicOverview.announcement", {
+      max: 1000,
+      allowEmpty: true
+    }),
+    highlights: source.highlights
+      .slice(0, 12)
+      .map((item, index) =>
+        text(item, `publicOverview.highlights[${index}]`, { max: 240 })
+      )
+  };
+}
+
+export function validateAuthConfig(value: unknown): AuthConfig {
+  const source = object(value, "authConfig");
+  return {
+    temporaryKeyLoginEnabled: boolean(
+      source.temporaryKeyLoginEnabled,
+      "authConfig.temporaryKeyLoginEnabled"
+    )
+  };
+}
+
+export function validateTechnologyConfig(value: unknown): TechnologyConfig {
+  const source = object(value, "technologyConfig");
+  if (!Array.isArray(source.catalog)) throw new Error("technologyConfig.catalog must be an array");
+  if (source.catalog.length > 200) throw new Error("technologyConfig.catalog is too large");
+
+  const seen = new Set<string>();
+  const catalog: TechnologyDefinition[] = source.catalog.map((raw, index) => {
+    const item = object(raw, `technologyConfig.catalog[${index}]`);
+    const key = text(item.key, `technologyConfig.catalog[${index}].key`, { max: 64 });
+    if (!TECH_KEY_PATTERN.test(key)) throw new Error(`Invalid technology key: ${key}`);
+    if (seen.has(key)) throw new Error(`Duplicate technology key: ${key}`);
+    seen.add(key);
+    return {
+      key,
+      name: text(item.name, `technologyConfig.catalog[${index}].name`, { max: 80 }),
+      iconUrl: assetUrl(
+        item.iconUrl,
+        `technologyConfig.catalog[${index}].iconUrl`
+      ),
+      description:
+        typeof item.description === "string"
+          ? text(item.description, `technologyConfig.catalog[${index}].description`, {
+              max: 500,
+              allowEmpty: true
+            })
+          : "",
+      category: category(item.category, `technologyConfig.catalog[${index}].category`),
+      lane: lane(item.lane, `technologyConfig.catalog[${index}].lane`),
+      enabledForVoting: boolean(
+        item.enabledForVoting,
+        `technologyConfig.catalog[${index}].enabledForVoting`
+      ),
+      sortOrder: integer(
+        item.sortOrder,
+        `technologyConfig.catalog[${index}].sortOrder`,
+        0,
+        100_000
+      ),
+      uiLabel: text(item.uiLabel, `technologyConfig.catalog[${index}].uiLabel`, {
+        max: 80
+      })
+    };
+  });
+
+  const fixedSource = object(source.fixedByWeekday, "technologyConfig.fixedByWeekday");
+  const fixedByWeekday: Record<string, string[]> = {};
+  for (let weekday = 1; weekday <= 7; weekday += 1) {
+    const raw = fixedSource[String(weekday)];
+    if (!Array.isArray(raw)) {
+      throw new Error(`technologyConfig.fixedByWeekday.${weekday} must be an array`);
+    }
+    const values = [...new Set(raw.map((item) => text(item, "fixed technology key", { max: 64 })))];
+    const unknown = values.find((key) => !seen.has(key));
+    if (unknown) throw new Error(`Unknown fixed technology: ${unknown}`);
+    fixedByWeekday[String(weekday)] = values;
+  }
+
+  const limits = object(source.limits, "technologyConfig.limits");
+  return {
+    catalog,
+    fixedByWeekday,
+    limits: {
+      core: integer(limits.core, "technologyConfig.limits.core", 0, 6),
+      general: integer(limits.general, "technologyConfig.limits.general", 0, 6)
+    }
+  };
+}
+
+export function validateAutomationConfig(value: unknown): AutomationConfig {
+  const source = object(value, "automationConfig");
+  const timezone = text(source.timezone, "automationConfig.timezone", { max: 80 });
+  assertTimezone(timezone);
+  const tasks = object(source.tasks, "automationConfig.tasks");
+  const tech = taskSchedule(tasks.tech_switch, "automationConfig.tasks.tech_switch");
+  const member = taskSchedule(tasks.member_sync, "automationConfig.tasks.member_sync");
+  const contribution = taskSchedule(
+    tasks.contribution_sync ?? { enabled: false, time: member.time },
+    "automationConfig.tasks.contribution_sync"
+  );
+  const inactivity = taskSchedule(
+    tasks.inactivity_sync ?? { enabled: false, time: member.time },
+    "automationConfig.tasks.inactivity_sync"
+  );
+  const profile = taskSchedule(
+    tasks.member_profile_sync ?? { enabled: false, time: member.time },
+    "automationConfig.tasks.member_profile_sync"
+  );
+  const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol");
+  const brick = taskSchedule(tasks.brick_transport, "automationConfig.tasks.brick_transport");
+  const weekly = taskSchedule(
+    tasks.weekly_schedule_update,
+    "automationConfig.tasks.weekly_schedule_update"
+  );
+
+  const patrolTeamReadyTime = text(
+    patrol.source.teamReadyTime,
+    "automationConfig.tasks.patrol.teamReadyTime",
+    { max: 5 }
+  );
+  const patrolDeadline = text(
+    patrol.source.deadline,
+    "automationConfig.tasks.patrol.deadline",
+    { max: 5 }
+  );
+  const brickLatestStart = text(
+    brick.source.latestStart,
+    "automationConfig.tasks.brick_transport.latestStart",
+    { max: 5 }
+  );
+  const brickStop = text(
+    brick.source.stop,
+    "automationConfig.tasks.brick_transport.stop",
+    { max: 5 }
+  );
+  const weeklyCutoff = text(
+    weekly.source.cutoff,
+    "automationConfig.tasks.weekly_schedule_update.cutoff",
+    { max: 5 }
+  );
+  const clocks: Array<[string, string]> = [
+    ["patrol.teamReadyTime", patrolTeamReadyTime],
+    ["patrol.deadline", patrolDeadline],
+    ["brick.latestStart", brickLatestStart],
+    ["brick.stop", brickStop],
+    ["weekly.cutoff", weeklyCutoff]
+  ];
+  for (const [field, clock] of clocks) {
+    assertClock(clock, field);
+  }
+
+  const pollingSource =
+    source.agentPolling && typeof source.agentPolling === "object"
+      ? object(source.agentPolling, "automationConfig.agentPolling")
+      : {};
+  const pollingWindows = Array.isArray(pollingSource.windows)
+    ? pollingSource.windows.map((raw, index) => {
+        const window = object(raw, `automationConfig.agentPolling.windows[${index}]`);
+        const start = text(
+          window.start,
+          `automationConfig.agentPolling.windows[${index}].start`,
+          { max: 5 }
+        );
+        const end = text(
+          window.end,
+          `automationConfig.agentPolling.windows[${index}].end`,
+          { max: 5 }
+        );
+        assertClock(start, `automationConfig.agentPolling.windows[${index}].start`);
+        assertClock(end, `automationConfig.agentPolling.windows[${index}].end`);
+        return {
+          id: text(window.id, `automationConfig.agentPolling.windows[${index}].id`, {
+            max: 64
+          }),
+          name: text(
+            window.name,
+            `automationConfig.agentPolling.windows[${index}].name`,
+            { max: 80 }
+          ),
+          start,
+          end,
+          seconds: integer(
+            window.seconds,
+            `automationConfig.agentPolling.windows[${index}].seconds`,
+            1,
+            3600
+          ),
+          weekdays: weekdays(
+            window.weekdays,
+            `automationConfig.agentPolling.windows[${index}].weekdays`
+          )
+        };
+      })
+    : [];
+  if (pollingWindows.length > 24) {
+    throw new Error("automationConfig.agentPolling.windows is too large");
+  }
+
+  const watchdogSource =
+    source.gameWatchdog && typeof source.gameWatchdog === "object"
+      ? object(source.gameWatchdog, "automationConfig.gameWatchdog")
+      : {};
+  const routines = Array.isArray(source.routines)
+    ? source.routines.map((raw, index) => {
+        const routine = object(raw, `automationConfig.routines[${index}]`);
+        const time = text(routine.time, `automationConfig.routines[${index}].time`, {
+          max: 5
+        });
+        assertClock(time, `automationConfig.routines[${index}].time`);
+        if (!Array.isArray(routine.groups) || !routine.groups.length) {
+          throw new Error(`automationConfig.routines[${index}].groups must not be empty`);
+        }
+        const groups = routine.groups.map((rawGroup, groupIndex) => {
+          if (!Array.isArray(rawGroup) || !rawGroup.length || rawGroup.length > 8) {
+            throw new Error(
+              `automationConfig.routines[${index}].groups[${groupIndex}] is invalid`
+            );
+          }
+          return rawGroup.map((rawTask) => {
+            const task = text(
+              rawTask,
+              `automationConfig.routines[${index}].groups[${groupIndex}]`,
+              { max: 80 }
+            );
+            if (task === "automation_routine" || !isTaskKeyForRoutine(task)) {
+              throw new Error(`Unknown routine task: ${task}`);
+            }
+            return task;
+          });
+        });
+        return {
+          id: text(routine.id, `automationConfig.routines[${index}].id`, { max: 64 }),
+          name: text(routine.name, `automationConfig.routines[${index}].name`, {
+            max: 80
+          }),
+          enabled: boolean(
+            routine.enabled,
+            `automationConfig.routines[${index}].enabled`
+          ),
+          time,
+          weekdays: weekdays(
+            routine.weekdays,
+            `automationConfig.routines[${index}].weekdays`
+          ),
+          groups
+        };
+      })
+    : [];
+  if (routines.length > 40) throw new Error("automationConfig.routines is too large");
+
+  return {
+    timezone,
+    schedulerGraceMinutes: integer(
+      source.schedulerGraceMinutes,
+      "automationConfig.schedulerGraceMinutes",
+      1,
+      15
+    ),
+    agentPolling: {
+      activeSeconds:
+        pollingSource.activeSeconds === undefined
+          ? 2
+          : integer(
+              pollingSource.activeSeconds,
+              "automationConfig.agentPolling.activeSeconds",
+              1,
+              60
+            ),
+      idleSeconds:
+        pollingSource.idleSeconds === undefined
+          ? 300
+          : integer(
+              pollingSource.idleSeconds,
+              "automationConfig.agentPolling.idleSeconds",
+              2,
+              3600
+            ),
+      windows: pollingWindows
+    },
+    gameWatchdog: {
+      enabled:
+        watchdogSource.enabled === undefined
+          ? true
+          : boolean(watchdogSource.enabled, "automationConfig.gameWatchdog.enabled"),
+      healthCheckSeconds:
+        watchdogSource.healthCheckSeconds === undefined
+          ? 10
+          : integer(
+              watchdogSource.healthCheckSeconds,
+              "automationConfig.gameWatchdog.healthCheckSeconds",
+              2,
+              120
+            ),
+      actionTimeoutSeconds:
+        watchdogSource.actionTimeoutSeconds === undefined
+          ? 45
+          : integer(
+              watchdogSource.actionTimeoutSeconds,
+              "automationConfig.gameWatchdog.actionTimeoutSeconds",
+              10,
+              600
+            ),
+      frozenScreenSeconds:
+        watchdogSource.frozenScreenSeconds === undefined
+          ? 90
+          : integer(
+              watchdogSource.frozenScreenSeconds,
+              "automationConfig.gameWatchdog.frozenScreenSeconds",
+              30,
+              900
+            ),
+      maxRestarts:
+        watchdogSource.maxRestarts === undefined
+          ? 2
+          : integer(
+              watchdogSource.maxRestarts,
+              "automationConfig.gameWatchdog.maxRestarts",
+              0,
+              10
+            ),
+      restartCooldownSeconds:
+        watchdogSource.restartCooldownSeconds === undefined
+          ? 8
+          : integer(
+              watchdogSource.restartCooldownSeconds,
+              "automationConfig.gameWatchdog.restartCooldownSeconds",
+              1,
+              120
+            )
+    },
+    tasks: {
+      tech_switch: { enabled: tech.enabled, time: tech.time },
+      member_sync: { enabled: member.enabled, time: member.time },
+      contribution_sync: {
+        enabled: contribution.enabled,
+        time: contribution.time
+      },
+      inactivity_sync: { enabled: inactivity.enabled, time: inactivity.time },
+      member_profile_sync: { enabled: profile.enabled, time: profile.time },
+      patrol: {
+        enabled: patrol.enabled,
+        time: patrol.time,
+        teamReadyTime: patrolTeamReadyTime,
+        shareIntervalMinutes: integer(
+          patrol.source.shareIntervalMinutes,
+          "automationConfig.tasks.patrol.shareIntervalMinutes",
+          1,
+          60
+        ),
+        chatPollSeconds: integer(
+          patrol.source.chatPollSeconds,
+          "automationConfig.tasks.patrol.chatPollSeconds",
+          2,
+          60
+        ),
+        deadline: patrolDeadline
+      },
+      brick_transport: {
+        enabled: brick.enabled,
+        time: brick.time,
+        latestStart: brickLatestStart,
+        stop: brickStop,
+        inlineWithPatrol: boolean(
+          brick.source.inlineWithPatrol,
+          "automationConfig.tasks.brick_transport.inlineWithPatrol"
+        )
+      },
+      weekly_schedule_update: {
+        enabled: weekly.enabled,
+        time: weekly.time,
+        weekday: integer(
+          weekly.source.weekday,
+          "automationConfig.tasks.weekly_schedule_update.weekday",
+          1,
+          7
+        ),
+        cutoff: weeklyCutoff,
+        onlyWhenDirty: boolean(
+          weekly.source.onlyWhenDirty,
+          "automationConfig.tasks.weekly_schedule_update.onlyWhenDirty"
+        )
+      }
+    },
+    routines
+  };
+}
+
+function weekdays(value: unknown, field: string): number[] {
+  if (!Array.isArray(value) || !value.length || value.length > 7) {
+    throw new Error(`${field} must contain weekdays`);
+  }
+  return [...new Set(value.map((item, index) => integer(item, `${field}[${index}]`, 1, 7)))];
+}
+
+function isTaskKeyForRoutine(
+  value: string
+): value is Exclude<
+  TaskKey,
+  "automation_routine" | "kick_member" | "kick_inactive_members"
+> {
+  return [
+    "tech_switch",
+    "member_sync",
+    "contribution_sync",
+    "inactivity_sync",
+    "member_profile_sync",
+    "patrol",
+    "brick_transport",
+    "weekly_schedule_update"
+  ].includes(value);
+}
+
+export function validateWeeklySchedule(value: unknown): WeeklySchedule {
+  const source = object(value, "weeklySchedule");
+  if (!Array.isArray(source.events)) throw new Error("weeklySchedule.events must be an array");
+  const events: WeeklyEvent[] = source.events.map((raw, index) => {
+    const event = object(raw, `weeklySchedule.events[${index}]`);
+    const key = text(event.key, `weeklySchedule.events[${index}].key`, { max: 40 });
+    if (key !== "infected_invasion" && key !== "special_infected") {
+      throw new Error(`weeklySchedule.events[${index}].key is invalid`);
+    }
+    const time = text(event.time, `weeklySchedule.events[${index}].time`, { max: 5 });
+    assertClock(time, `weeklySchedule.events[${index}].time`);
+    return {
+      key,
+      name: text(event.name, `weeklySchedule.events[${index}].name`, { max: 80 }),
+      weekday: integer(event.weekday, `weeklySchedule.events[${index}].weekday`, 1, 7),
+      time,
+      level: text(event.level, `weeklySchedule.events[${index}].level`, { max: 40 })
+    };
+  });
+  return {
+    events,
+    dirty: typeof source.dirty === "boolean" ? source.dirty : false,
+    updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : null,
+    pendingApplyWeek:
+      typeof source.pendingApplyWeek === "string" ? source.pendingApplyWeek : null,
+    lastAppliedAt: typeof source.lastAppliedAt === "string" ? source.lastAppliedAt : null
+  };
+}
+
+export function validateConfigBundle(value: unknown): ConfigBundle {
+  const source = object(value, "config");
+  return {
+    campConfig: validateCampConfig(source.campConfig),
+    authConfig: validateAuthConfig(source.authConfig),
+    publicOverview: validatePublicOverview(source.publicOverview),
+    technologyConfig: validateTechnologyConfig(source.technologyConfig),
+    automationConfig: validateAutomationConfig(source.automationConfig),
+    weeklySchedule: validateWeeklySchedule(source.weeklySchedule)
+  };
+}

@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#15221f" />
+    <title>管理后台 · 明日之后营地助手</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script src="/js/preferences.js" defer></script>
+    <script src="/js/i18n.js" defer></script>
+    <script src="/js/admin.js" defer></script>
+  </head>
+  <body class="admin-page">
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <header class="site-header shell">
+      <a class="brand" href="/">
+        <span class="brand-mark">愿</span>
+        <span>
+          <strong>营地管理后台</strong>
+          <small id="session-email">正在验证身份</small>
+        </span>
+      </a>
+      <div class="header-actions">
+        <span id="save-state" class="feedback"></span>
+        <button id="logout" class="button button-quiet" type="button">退出登录</button>
+      </div>
+    </header>
+
+    <main class="shell admin-shell">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LOCAL AGENT</p>
+            <h1>执行器与任务控制</h1>
+          </div>
+          <button id="refresh-admin" class="button button-quiet" type="button">刷新</button>
+        </div>
+        <div id="agent-status" class="agent-status"></div>
+        <div id="task-actions" class="task-grid"></div>
+      </section>
+
+      <form id="config-form">
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">GENERAL</p>
+              <h2>营地与公共展示</h2>
+            </div>
+          </div>
+          <div class="form-grid">
+            <label class="field"><span>营地名称</span><input name="campName" required /></label>
+            <label class="field"><span>服务器名称</span><input name="serverName" required /></label>
+            <label class="field"><span>站点名称</span><input name="publicSiteName" required /></label>
+            <label class="field"><span>时区</span><input name="timezone" required /></label>
+            <label class="field"><span>每日刷新</span><input name="gameResetTime" type="time" required /></label>
+            <label class="field">
+              <span>营地科技类型</span>
+              <select name="currentCampType">
+                <option value="military">军事</option>
+                <option value="agriculture">农业</option>
+                <option value="industry">工业</option>
+              </select>
+            </label>
+            <label class="field field-checkbox">
+              <input name="publicMembersEnabled" type="checkbox" />
+              <span>公开展示成员信息</span>
+            </label>
+            <label class="field"><span>斩杀预警天数</span><input name="inactivityWarningDays" type="number" min="1" max="3650" /></label>
+            <label class="field field-checkbox">
+              <input name="automaticKickEnabled" type="checkbox" />
+              <span>自动踢出达到斩杀线的成员（默认关闭）</span>
+            </label>
+            <label class="field"><span>自动踢出宽限 N 天</span><input name="automaticKickGraceDays" type="number" min="0" max="3650" /></label>
+            <label class="field field-checkbox">
+              <input name="temporaryKeyLoginEnabled" type="checkbox" />
+              <span>开放临时 Key 登录</span>
+            </label>
+          </div>
+          <label class="field">
+            <span>公共公告</span>
+            <textarea name="announcement" rows="3"></textarea>
+          </label>
+          <label class="field">
+            <span>营地亮点（每行一项）</span>
+            <textarea name="highlights" rows="4"></textarea>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">SCHEDULE</p>
+              <h2>自动任务时间</h2>
+            </div>
+            <span class="muted">全部时间使用上方时区</span>
+          </div>
+          <div class="schedule-grid">
+            <fieldset class="schedule-card">
+              <legend>科技切换</legend>
+              <label class="field field-checkbox"><input name="techEnabled" type="checkbox" /><span>启用</span></label>
+              <label class="field"><span>执行时间</span><input name="techTime" type="time" /></label>
+            </fieldset>
+            <fieldset class="schedule-card">
+              <legend>成员同步</legend>
+              <label class="field field-checkbox"><input name="memberEnabled" type="checkbox" /><span>启用</span></label>
+              <label class="field"><span>执行时间</span><input name="memberTime" type="time" /></label>
+            </fieldset>
+            <fieldset class="schedule-card">
+              <legend>仅贡献</legend>
+              <label class="field field-checkbox"><input name="contributionEnabled" type="checkbox" /><span>启用</span></label>
+              <label class="field"><span>执行时间</span><input name="contributionTime" type="time" /></label>
+            </fieldset>
+            <fieldset class="schedule-card">
+              <legend>仅斩杀预警</legend>
+              <label class="field field-checkbox"><input name="inactivityEnabled" type="checkbox" /><span>启用</span></label>
+              <label class="field"><span>执行时间</span><input name="inactivityTime" type="time" /></label>
+            </fieldset>
+            <fieldset class="schedule-card">
+              <legend>仅成员资料与公职</legend>
+              <label class="field field-checkbox"><input name="profileEnabled" type="checkbox" /><span>启用</span></label>
+              <label class="field"><span>执行时间</span><input name="profileTime" type="time" /></label>
+            </fieldset>
+            <fieldset class="schedule-card">
+              <legend>营地巡逻</legend>
+              <label class="field field-checkbox"><input name="patrolEnabled" type="checkbox" /><span>启用</span></label>
+              <label class="field"><span>启动</span><input name="patrolTime" type="time" /></label>
+              <label class="field"><span>最早开巡逻</span><input name="patrolReadyTime" type="time" /></label>
+              <label class="field"><span>结束</span><input name="patrolDeadline" type="time" /></label>
+              <label class="field"><span>分享间隔（分钟）</span><input name="shareInterval" type="number" min="1" max="60" /></label>
+              <label class="field"><span>聊天轮询（秒）</span><input name="chatPollSeconds" type="number" min="2" max="60" /></label>
+            </fieldset>
+            <fieldset class="schedule-card">
+              <legend>搬砖</legend>
+              <label class="field field-checkbox"><input name="brickEnabled" type="checkbox" /><span>启用</span></label>
+              <label class="field"><span>开始</span><input name="brickTime" type="time" /></label>
+              <label class="field"><span>最晚启动</span><input name="brickLatestStart" type="time" /></label>
+              <label class="field"><span>停止</span><input name="brickStop" type="time" /></label>
+              <label class="field field-checkbox"><input name="brickInline" type="checkbox" /><span>巡逻中内联执行</span></label>
+            </fieldset>
+            <fieldset class="schedule-card">
+              <legend>周日程更新</legend>
+              <label class="field field-checkbox"><input name="weeklyEnabled" type="checkbox" /><span>启用</span></label>
+              <label class="field"><span>执行</span><input name="weeklyTime" type="time" /></label>
+              <label class="field"><span>本周截止</span><input name="weeklyCutoff" type="time" /></label>
+              <label class="field field-checkbox"><input name="weeklyDirtyOnly" type="checkbox" /><span>仅配置变更后执行</span></label>
+            </fieldset>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">AGENT POLICY</p>
+              <h2>轮询、无响应恢复与任务例程</h2>
+            </div>
+          </div>
+          <div class="form-grid">
+            <label class="field"><span>任务执行中轮询（秒）</span><input name="pollActiveSeconds" type="number" min="1" max="60" /></label>
+            <label class="field"><span>默认空闲轮询（秒）</span><input name="pollIdleSeconds" type="number" min="2" max="3600" /></label>
+            <label class="field field-checkbox"><input name="watchdogEnabled" type="checkbox" /><span>游戏无响应自动重启</span></label>
+            <label class="field"><span>健康检查（秒）</span><input name="watchdogHealthSeconds" type="number" min="2" max="120" /></label>
+            <label class="field"><span>动作超时（秒）</span><input name="watchdogActionSeconds" type="number" min="10" max="600" /></label>
+            <label class="field"><span>画面冻结判定（秒）</span><input name="watchdogFrozenSeconds" type="number" min="30" max="900" /></label>
+            <label class="field"><span>最多重启次数</span><input name="watchdogMaxRestarts" type="number" min="0" max="10" /></label>
+            <label class="field"><span>重启冷却（秒）</span><input name="watchdogCooldownSeconds" type="number" min="1" max="120" /></label>
+          </div>
+          <label class="field">
+            <span>分时轮询窗口 JSON（支持跨午夜，weekdays 为周一 1 至周日 7）</span>
+            <textarea id="polling-windows-json" class="code-editor" rows="10" spellcheck="false"></textarea>
+          </label>
+          <label class="field">
+            <span>任务例程 JSON（groups 外层依次执行，内层同一时间触发）</span>
+            <textarea id="routines-json" class="code-editor" rows="12" spellcheck="false"></textarea>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">WEEKLY EVENTS</p>
+              <h2>感染者日程</h2>
+            </div>
+            <span id="weekly-dirty" class="chip"></span>
+          </div>
+          <div id="weekly-events" class="weekly-events"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">TECHNOLOGY</p>
+              <h2>科技目录、投票与固定科技</h2>
+            </div>
+            <span id="next-tech-date" class="date-badge"></span>
+          </div>
+          <p class="muted">
+            uiLabel 必须与游戏科技页面 OCR 文本一致；执行时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建。第一行仅允许当前营地类型，两个分区上限均不得超过 6。
+          </p>
+          <label class="field">
+            <span>科技配置 JSON</span>
+            <textarea id="technology-json" class="code-editor" rows="22" spellcheck="false"></textarea>
+          </label>
+          <div id="admin-vote-summary" class="vote-summary"></div>
+        </section>
+
+        <div class="sticky-save">
+          <button class="button button-primary" type="submit">保存全部配置</button>
+          <span class="muted">周日 22:30 后修改的日程自动顺延到下一周。</span>
+        </div>
+      </form>
+
+      <section id="temporary-key-panel" class="panel" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">TEMPORARY ACCESS</p>
+            <h2>临时 Key</h2>
+          </div>
+          <span class="muted">Key 明文只在创建时显示一次</span>
+        </div>
+        <form id="temporary-key-form" class="key-form">
+          <label class="field">
+            <span>名称或用途</span>
+            <input name="keyName" maxlength="80" placeholder="例如：巡逻代班 01" required />
+          </label>
+          <label class="field">
+            <span>有效期至</span>
+            <input name="keyExpiresAt" type="datetime-local" required />
+          </label>
+          <fieldset class="permission-fieldset">
+            <legend>权限（全部不选即为仅预览）</legend>
+            <label><input type="checkbox" name="keyPermission" value="config:write" /> 修改配置</label>
+            <label><input type="checkbox" name="keyPermission" value="task:run" /> 执行任务</label>
+            <label><input type="checkbox" name="keyPermission" value="task:interrupt" /> 中断任务</label>
+            <label><input type="checkbox" name="keyPermission" value="member:kick" /> 踢出成员</label>
+            <label><input type="checkbox" name="keyPermission" value="keys:manage" /> 管理 Key</label>
+          </fieldset>
+          <button class="button button-primary" type="submit">生成 Key</button>
+        </form>
+        <div id="temporary-key-reveal" class="key-reveal" hidden>
+          <strong>请立即复制，此后无法再次查看</strong>
+          <code id="temporary-key-value"></code>
+          <button id="copy-temporary-key" class="button button-quiet" type="button">复制</button>
+        </div>
+        <div id="temporary-key-list" class="key-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">CURRENT ROSTER</p>
+            <h2>营地成员完整信息</h2>
+          </div>
+          <button id="auto-kick-evaluate" class="button button-danger" type="button">按最新斩杀线执行</button>
+        </div>
+        <p id="auto-kick-summary" class="muted"></p>
+        <label class="search-field">
+          <span class="sr-only">搜索成员</span>
+          <input id="admin-member-search" type="search" placeholder="搜索姓名、职业、同居、离线时间" />
+        </label>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr><th>成员</th><th>职业</th><th>庄园</th><th>同居</th><th>本周贡献</th><th>科技点</th><th>物资</th><th>离线</th></tr>
+            </thead>
+            <tbody id="admin-member-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">RUN HISTORY</p>
+            <h2>任务运行记录</h2>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>任务</th>
+                <th>状态</th>
+                <th>进度</th>
+                <th>消息</th>
+                <th>时间</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="run-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="run-dialog">
+      <form method="dialog" class="dialog-card">
+        <div class="section-heading">
+          <h2>任务事件</h2>
+          <button class="button button-quiet" value="close">关闭</button>
+        </div>
+        <div id="run-events" class="event-list"></div>
+      </form>
+    </dialog>
+    <dialog id="member-dialog">
+      <form method="dialog" class="dialog-card">
+        <div class="section-heading">
+          <h2 id="member-dialog-title">成员信息</h2>
+          <button class="button button-quiet" value="close">关闭</button>
+        </div>
+        <dl id="member-detail" class="member-detail"></dl>
+        <button id="kick-member" class="button button-danger" type="button">踢出营地</button>
+      </form>
+    </dialog>
+  </body>
+</html>

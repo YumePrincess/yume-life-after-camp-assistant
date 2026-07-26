@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#15221f" />
+    <title>登录 · 明日之后营地助手</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script src="/js/preferences.js" defer></script>
+    <script src="/js/i18n.js" defer></script>
+    <script src="/js/login.js" defer></script>
+  </head>
+  <body class="login-page">
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <main class="login-shell">
+      <section class="panel login-card">
+        <a class="brand login-brand" href="/">
+          <span class="brand-mark">愿</span>
+          <span>
+            <strong>明日之后营地助手</strong>
+            <small>Camp Operations Console</small>
+          </span>
+        </a>
+        <p class="eyebrow">AUTHORIZED PERSONNEL ONLY</p>
+        <h1>进入管理后台</h1>
+        <p class="muted">
+          营地配置、任务执行与中断操作仅向授权的 Yume Account 开放。
+        </p>
+        <a id="oidc-login" class="button button-primary button-wide" href="/auth/oidc/start">
+          使用 Yume Account 登录
+        </a>
+        <div id="key-login-section" class="key-login-section" hidden>
+          <div class="login-divider"><span>或使用临时 Key</span></div>
+          <form id="key-login-form">
+            <label class="field">
+              <span>临时 Key</span>
+              <input id="temporary-key" type="password" autocomplete="off" required />
+            </label>
+            <button class="button button-quiet button-wide" type="submit">使用 Key 登录</button>
+          </form>
+        </div>
+        <p id="login-error" class="feedback error-text" role="alert"></p>
+        <a class="back-link" href="/">← 返回公共首页</a>
+      </section>
+    </main>
+    <iframe id="oidc-silent-frame" title="" hidden></iframe>
+  </body>
+</html>

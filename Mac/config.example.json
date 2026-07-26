@@ -1,0 +1,271 @@
+{
+  "server": {
+    "baseUrl": "https://mrzh.yume.zone",
+    "agentToken": "REPLACE_WITH_AGENT_SHARED_TOKEN",
+    "agentId": "mumu-main",
+    "pollSeconds": 5
+  },
+  "debug": {
+    "host": "127.0.0.1",
+    "port": 8091,
+    "token": "REPLACE_WITH_LONG_LOCAL_DEBUG_TOKEN"
+  },
+  "mumu": {
+    "appName": "MuMuPlayer Pro",
+    "toolPath": "/Applications/MuMuPlayer Pro.app/Contents/MacOS/mumutool",
+    "instanceIndex": 1,
+    "startManagerInBackground": true,
+    "stopEmulatorAfterTask": true,
+    "adbReadyTimeoutSeconds": 180
+  },
+  "adb": {
+    "binary": "adb",
+    "serial": "127.0.0.1:26688",
+    "packageName": "com.netease.mrzh.mumumnqmacos_cps",
+    "launchActivity": "com.netease.ntunisdk.external.protocol.ProtocolLauncher",
+    "screenWidth": 1920,
+    "screenHeight": 1200,
+    "loginButton": { "x": 960, "y": 945 },
+    "unicodeIme": "com.android.adbkeyboard/.AdbIME"
+  },
+  "vision": {
+    "binary": "./bin/mrzh-vision-ocr",
+    "pixelProbeBinary": "./bin/mrzh-pixel-probe",
+    "mode": "accurate",
+    "minimumConfidence": 0.35
+  },
+  "timeouts": {
+    "gameLaunchSeconds": 180,
+    "screenTransitionSeconds": 20,
+    "actionDelayMs": 650
+  },
+  "technology": {
+    "tabs": {
+      "technology": { "x": 959, "y": 208 },
+      "pending": { "x": 1688, "y": 320 },
+      "configure": { "x": 1645, "y": 672 },
+      "finish": { "x": 1644, "y": 672 }
+    },
+    "slots": {
+      "core": [
+        { "x": 770, "y": 428 },
+        { "x": 900, "y": 428 },
+        { "x": 1030, "y": 428 },
+        { "x": 1160, "y": 428 },
+        { "x": 1290, "y": 428 },
+        { "x": 1425, "y": 428 }
+      ],
+      "general": [
+        { "x": 700, "y": 550 },
+        { "x": 835, "y": 550 },
+        { "x": 965, "y": 550 },
+        { "x": 1095, "y": 550 },
+        { "x": 1225, "y": 550 },
+        { "x": 1360, "y": 550 }
+      ]
+    },
+    "selectorSwipe": {
+      "from": { "x": 430, "y": 850 },
+      "to": { "x": 430, "y": 380 },
+      "durationMs": 600,
+      "maxPages": 10
+    },
+    "filledSlotDetection": {
+      "sampleRadius": 24,
+      "maximumEmptyFeatureDistance": 0.08,
+      "emptyReference": {
+        "core": {
+          "meanRed": 0.246,
+          "meanGreen": 0.338,
+          "meanBlue": 0.423,
+          "meanSaturation": 0.424,
+          "luminanceDeviation": 0.097
+        },
+        "general": {
+          "meanRed": 0.328,
+          "meanGreen": 0.329,
+          "meanBlue": 0.333,
+          "meanSaturation": 0.018,
+          "luminanceDeviation": 0.154
+        }
+      }
+    }
+  },
+  "tables": {
+    "contribution": {
+      "region": { "left": 1220, "top": 270, "right": 1900, "bottom": 1000 },
+      "columns": [
+        { "key": "name", "left": 0, "right": 0.32 },
+        { "key": "weeklyContribution", "left": 0.32, "right": 0.54 },
+        { "key": "technologyPointsUsed", "left": 0.54, "right": 0.76 },
+        { "key": "materialContribution", "left": 0.76, "right": 1 }
+      ],
+      "headerPattern": ["全部成员", "一周贡献", "使用科技点", "贡献物资"],
+      "pagination": {
+        "from": { "x": 1550, "y": 900 },
+        "to": { "x": 1550, "y": 350 },
+        "durationMs": 800,
+        "maxPages": 40,
+        "stopAfterStagnantPages": 2
+      }
+    },
+    "members": {
+      "region": { "left": 235, "top": 290, "right": 1800, "bottom": 910 },
+      "columns": [
+        {
+          "key": "identity",
+          "stackedKeys": ["name", "campTitle"],
+          "left": 0,
+          "right": 0.265
+        },
+        { "key": "profession", "left": 0.265, "right": 0.425 },
+        { "key": "weeklyContribution", "left": 0.425, "right": 0.53 },
+        { "key": "manorLevel", "left": 0.53, "right": 0.63 },
+        { "key": "onlineState", "left": 0.63, "right": 0.735 },
+        { "key": "scene", "left": 0.735, "right": 0.88 },
+        { "key": "roommateName", "left": 0.88, "right": 1 }
+      ],
+      "headerPattern": ["全部成员", "输入玩家昵称", "营地招募"],
+      "pagination": {
+        "from": { "x": 1200, "y": 850 },
+        "to": { "x": 1200, "y": 350 },
+        "durationMs": 800,
+        "maxPages": 40,
+        "stopAfterStagnantPages": 2
+      }
+    },
+    "activity": {
+      "region": { "left": 1220, "top": 245, "right": 1645, "bottom": 975 },
+      "columns": [
+        { "key": "name", "left": 0, "right": 0.58 },
+        { "key": "onlineState", "left": 0.58, "right": 1 }
+      ],
+      "headerPattern": ["全部成员", "在线情况", "营地资料"],
+      "pagination": {
+        "from": { "x": 1550, "y": 900 },
+        "to": { "x": 1550, "y": 350 },
+        "durationMs": 800,
+        "maxPages": 40,
+        "stopAfterStagnantPages": 2
+      }
+    },
+    "staffGrid": {
+      "slots": [
+        {
+          "roleKey": "staff-1",
+          "roleName": "公职席位 1",
+          "region": { "left": 560, "top": 470, "right": 850, "bottom": 590 }
+        },
+        {
+          "roleKey": "staff-2",
+          "roleName": "公职席位 2",
+          "region": { "left": 850, "top": 470, "right": 1150, "bottom": 590 }
+        },
+        {
+          "roleKey": "staff-3",
+          "roleName": "公职席位 3",
+          "region": { "left": 1150, "top": 470, "right": 1450, "bottom": 590 }
+        },
+        {
+          "roleKey": "staff-4",
+          "roleName": "公职席位 4",
+          "region": { "left": 1450, "top": 470, "right": 1750, "bottom": 590 }
+        },
+        {
+          "roleKey": "mayor",
+          "roleName": "市长",
+          "region": { "left": 230, "top": 780, "right": 500, "bottom": 900 }
+        },
+        {
+          "roleKey": "staff-6",
+          "roleName": "公职席位 6",
+          "region": { "left": 520, "top": 780, "right": 820, "bottom": 900 }
+        },
+        {
+          "roleKey": "staff-7",
+          "roleName": "公职席位 7",
+          "region": { "left": 830, "top": 780, "right": 1130, "bottom": 900 }
+        }
+      ]
+    }
+  },
+  "flows": {
+    "openCampPanel": [
+      { "op": "key", "code": 34 },
+      { "op": "waitAnyText", "texts": ["科技", "成员", "玩法"], "timeoutSeconds": 12 }
+    ],
+    "teleportNoticeBoard": [
+      { "op": "tap", "x": 1780, "y": 120 },
+      { "op": "sleep", "ms": 1500 },
+      { "op": "tap", "x": 270, "y": 577 },
+      { "op": "sleep", "ms": 600 },
+      { "op": "tap", "x": 1600, "y": 905 },
+      { "op": "waitAnyText", "texts": ["查看玩法", "营地巡逻"], "timeoutSeconds": 30 }
+    ],
+    "openPatrol": [],
+    "createPatrolTeam": [],
+    "shareTeam": [],
+    "startHardPatrol": [],
+    "switchToBookDefense": [],
+    "openCampChat": [],
+    "openTeamPanel": [],
+    "kickCompletedMembers": [],
+    "teleportCityHall": [
+      { "op": "tap", "x": 1780, "y": 120 },
+      { "op": "sleep", "ms": 1500 },
+      { "op": "tap", "x": 280, "y": 420 },
+      { "op": "sleep", "ms": 600 },
+      { "op": "tap", "x": 1600, "y": 905 },
+      { "op": "waitAnyText", "texts": ["营地数据中心", "营地管理"], "timeoutSeconds": 30 }
+    ],
+    "navigateToSandTable": [
+      { "op": "waitAnyText", "texts": ["营地管理", "营地数据中心"], "timeoutSeconds": 12 },
+      { "op": "tap", "x": 1370, "y": 715 },
+      { "op": "waitAnyText", "texts": ["成员信息", "活动时间管理"], "timeoutSeconds": 12 }
+    ],
+    "openContribution": [
+      { "op": "tap", "x": 1050, "y": 450 },
+      { "op": "waitAnyText", "texts": ["营地资料", "全部成员"], "timeoutSeconds": 12 },
+      { "op": "tap", "x": 1785, "y": 1042 },
+      { "op": "waitAnyText", "texts": ["一周贡献", "贡献物资"], "timeoutSeconds": 12 }
+    ],
+    "openActivity": [
+      { "op": "tap", "x": 1050, "y": 450 },
+      { "op": "sleep", "ms": 800 },
+      { "op": "tap", "x": 1560, "y": 1042 },
+      { "op": "waitAnyText", "texts": ["在线情况", "所在场景"], "timeoutSeconds": 12 }
+    ],
+    "openActivityFromMember": [
+      { "op": "tap", "x": 1560, "y": 1042 },
+      { "op": "waitAnyText", "texts": ["在线情况", "所在场景"], "timeoutSeconds": 12 }
+    ],
+    "resetActivityList": [
+      { "op": "tap", "x": 1785, "y": 1042 },
+      { "op": "sleep", "ms": 700 },
+      { "op": "tap", "x": 1560, "y": 1042 },
+      { "op": "waitAnyText", "texts": ["在线情况", "所在场景"], "timeoutSeconds": 12 }
+    ],
+    "closeContribution": [
+      { "op": "tap", "x": 80, "y": 1080 },
+      { "op": "sleep", "ms": 800 },
+      { "op": "tap", "x": 80, "y": 1080 },
+      { "op": "sleep", "ms": 1000 }
+    ],
+    "openMemberPanel": [
+      { "op": "tap", "x": 1190, "y": 208 },
+      { "op": "waitAnyText", "texts": ["职业", "庄园等级", "同居"], "timeoutSeconds": 12 }
+    ],
+    "openStaffPanel": [
+      { "op": "tap", "x": 1640, "y": 950 },
+      { "op": "waitAnyText", "texts": ["营地公职人员", "公职人员"], "timeoutSeconds": 12 }
+    ],
+    "teleportSpecialInfected": [],
+    "openWeeklySchedule": [],
+    "brickTransportCycle": []
+  },
+  "memberKick": {
+    "enabled": false,
+    "finalFingerprint": { "x": 1810, "y": 1080 },
+    "requireExactName": true
+  }
+}
