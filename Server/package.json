@@ -10,11 +10,12 @@
   "scripts": {
     "dev": "wrangler dev --config wrangler.jsonc --test-scheduled",
     "deploy": "wrangler deploy --config wrangler.jsonc",
-    "deploy:dry": "wrangler deploy --config wrangler.example.jsonc --dry-run",
-    "types": "wrangler types --config wrangler.jsonc --strict-vars false",
-    "types:check": "wrangler types --config wrangler.example.jsonc --strict-vars false --check",
+    "deploy:dry": "wrangler deploy --config wrangler.jsonc --dry-run",
+    "types": "wrangler types worker-configuration.d.ts --config wrangler.jsonc --include-runtime false --strict-vars false",
+    "types:check": "npm run types && wrangler types worker-configuration.d.ts --config wrangler.jsonc --include-runtime false --strict-vars false --check",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "build": "npm run check",
     "check": "npm run types:check && npm run typecheck && npm test && npm run deploy:dry"
   },
   "devDependencies": {
