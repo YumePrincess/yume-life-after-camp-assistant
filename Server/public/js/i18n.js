@@ -1147,27 +1147,27 @@
     const year = String(new Date().getFullYear());
     const localized = {
       "zh-cn": {
-        prefix: `版权所有 © 2012–${year} `,
+        prefix: `版权所有 © ${year} `,
         company: "美国雨梦互联网有限公司",
         suffix: " 保留所有权利。本页面为在中国大陆使用而设计。"
       },
       "zh-tw": {
-        prefix: `版權所有 © 2012–${year} `,
+        prefix: `版權所有 © ${year} `,
         company: "美國雨夢網際網路有限公司",
         suffix: "。保留所有權利。"
       },
       en: {
-        prefix: `Copyright © 2012–${year} `,
+        prefix: `Copyright © ${year} `,
         company: "Yume Internet LLC",
         suffix: ". All Rights Reserved."
       },
       fr: {
-        prefix: `Copyright © 2012–${year} `,
+        prefix: `Copyright © ${year} `,
         company: "Yume Internet LLC",
         suffix: ". Tous droits réservés."
       },
       ja: {
-        prefix: `Copyright © 2012–${year} `,
+        prefix: `Copyright © ${year} `,
         company: "Yume Internet LLC",
         suffix: "。無断転載を禁じます。"
       }
@@ -1243,7 +1243,7 @@
           type: "language",
           label: "选择语言",
           icon:
-            '<svg class="preference-icon" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 5.8h6M8 5.8V5m1.5.8C9 8 7.5 10 5.8 11.2M7.8 9c.8 1 1.7 1.8 2.8 2.6M13.5 19l.8-2m4.2 2-.8-2m-3.4 0 1.7-4 1.7 4"/><path d="M14 10V8c0-4.8-1.2-6-6-6S2 3.2 2 8s1.2 6 6 6h2m0 2c0 4.8 1.2 6 6 6s6-1.2 6-6-1.2-6-6-6-6 1.2-6 6Z"/></g></svg>',
+            '<svg class="preference-icon" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 5.828h2.7m3.3 0H9.5m-1.8 0h1.8m-1.8 0V5m1.8.828c-.316 1.131-.98 2.201-1.736 3.141M5.836 11a19 19 0 0 0 1.928-2.03m0 0c-.385-.453-.925-1.184-1.08-1.515m1.08 1.514l1.157 1.203M13.5 19l.833-2m4.167 2l-.833-2m-3.334 0L16 13l1.667 4m-3.334 0h3.334"/><path stroke-linecap="round" d="M14 10V8c0-2.828 0-4.243-.879-5.121C12.243 2 10.828 2 8 2s-4.243 0-5.121.879C2 3.757 2 5.172 2 8s0 4.243.879 5.121C3.757 14 5.172 14 8 14h2"/><path d="M10 16c0-2.828 0-4.243.879-5.121C11.757 10 13.172 10 16 10s4.243 0 5.121.879C22 11.757 22 13.172 22 16s0 4.243-.879 5.121C20.243 22 18.828 22 16 22s-4.243 0-5.121-.879C10 20.243 10 18.828 10 16Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 16.5c0 1.404 0 2.107.337 2.611a2 2 0 0 0 .552.552C5.393 20 6.096 20 7.5 20M20 7.5c0-1.404 0-2.107-.337-2.611a2 2 0 0 0-.552-.552C18.607 4 17.904 4 16.5 4"/></g></svg>',
           options: ["auto", "zh-cn", "zh-tw", "en", "fr", "ja"].map(value => ({
             value,
             label: languageNames[value]
@@ -1253,7 +1253,7 @@
           type: "theme",
           label: "选择主题",
           icon:
-            '<svg class="preference-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20zm0 2v4a4 4 0 1 0 0 8v4a8 8 0 1 1 0-16Z"/></svg>',
+            '<svg class="preference-icon" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><path d="M12 16a4 4 0 0 0 0-8z"/><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10s10-4.477 10-10S17.523 2 12 2m0 2v4a4 4 0 1 0 0 8v4a8 8 0 1 0 0-16" clip-rule="evenodd"/></g></svg>',
           options: [
             { value: "auto", label: "自动" },
             { value: "dark", label: "深色" },
