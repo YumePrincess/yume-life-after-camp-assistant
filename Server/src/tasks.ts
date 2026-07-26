@@ -13,6 +13,7 @@ import type {
 } from "./domain";
 import { buildTechnologyPlan } from "./tech";
 import {
+  isWithinDailyClockWindow,
   nextTechnologyTargetDate,
   targetDateForTechnologyRun,
   zonedDateKey
@@ -25,6 +26,12 @@ export async function buildVoteSummary(
   pollDateOverride?: string
 ): Promise<VoteSummary> {
   const timezone = bundle.automationConfig.timezone;
+  const isOpen = isWithinDailyClockWindow(
+    now,
+    timezone,
+    bundle.campConfig.voteWindowStart,
+    bundle.campConfig.voteWindowEnd
+  );
   const pollDate =
     pollDateOverride ??
     nextTechnologyTargetDate(
@@ -46,7 +53,10 @@ export async function buildVoteSummary(
     .sort((a, b) => b.votes - a.votes || a.sortOrder - b.sortOrder);
   return {
     pollDate,
-    closesAt: `${pollDate} ${bundle.automationConfig.tasks.tech_switch.time} ${timezone}`,
+    opensAt: bundle.campConfig.voteWindowStart,
+    closesAt: bundle.campConfig.voteWindowEnd,
+    isOpen,
+    timezone,
     options,
     ballotCount: ballots.length
   };

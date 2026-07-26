@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#15221f" />
-    <title>管理后台 · 明日之后营地助手</title>
+    <title>管理后台 · 明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css" />
     <script src="/js/preferences.js" defer></script>
     <script src="/js/i18n.js" defer></script>
@@ -54,6 +54,14 @@
             <label class="field"><span>站点名称</span><input name="publicSiteName" required /></label>
             <label class="field"><span>时区</span><input name="timezone" required /></label>
             <label class="field"><span>每日刷新</span><input name="gameResetTime" type="time" required /></label>
+            <label class="field">
+              <span>科技投票开放时间</span>
+              <input name="voteWindowStart" inputmode="numeric" pattern="(?:[01]\d|2[0-3]):[0-5]\d" placeholder="06:30" required />
+            </label>
+            <label class="field">
+              <span>科技投票截止时间</span>
+              <input name="voteWindowEnd" inputmode="numeric" pattern="(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)" placeholder="24:00" required />
+            </label>
             <label class="field">
               <span>营地科技类型</span>
               <select name="currentCampType">
@@ -292,6 +300,13 @@
         </div>
       </section>
     </main>
+
+    <footer class="site-footer">
+      <div class="power" data-footer-copy>
+        Copyright © 2012–2026 <a href="https://www.yume.zone/">Yume Internet LLC</a>. All Rights Reserved.
+      </div>
+      <div class="lrc" hidden></div>
+    </footer>
 
     <dialog id="run-dialog">
       <form method="dialog" class="dialog-card">

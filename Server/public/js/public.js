@@ -86,13 +86,17 @@
     setText("poll-date", summary.pollDate || "--");
     setText(
       "vote-deadline",
-      window.MrzhI18n.format("共 {count} 人投票 · 截止 {closesAt}", {
+      window.MrzhI18n.format("开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票", {
         count: summary.ballotCount || 0,
-        closesAt: summary.closesAt || "--"
+        opensAt: summary.opensAt || "--",
+        closesAt: summary.closesAt || "--",
+        timezone: summary.timezone || ""
       })
     );
     const root = byId("vote-options");
     root.replaceChildren();
+    byId("submit-vote").disabled =
+      summary.isOpen === false || !summary.options?.length;
     if (!summary.options?.length) {
       root.append(create("p", "empty-state", "管理员尚未开放科技投票。"));
       return;
@@ -100,6 +104,7 @@
     for (const option of summary.options) {
       const button = create("button", "vote-option");
       button.type = "button";
+      button.disabled = summary.isOpen === false;
       button.dataset.key = option.key;
       button.dataset.selected = String(state.selections.has(option.key));
       if (option.iconUrl) {
@@ -224,7 +229,12 @@
       const card = create("article", "warning-card");
       card.append(
         create("strong", "", item.name),
-        create("span", "", item.last_active_text || `${item.inactive_days} 天前`)
+        create(
+          "span",
+          "",
+          item.last_active_text ||
+            window.MrzhI18n.format("{days} 天前", { days: item.inactive_days })
+        )
       );
       root.append(card);
     }
@@ -272,8 +282,9 @@
 
   function render(data) {
     state.data = data;
-    document.title = data.siteName || "明日之后营地助手";
-    setText("site-name", data.siteName || "明日之后营地助手");
+    const siteName = data.siteName || "明日之后“愿”营地助手";
+    document.title = window.MrzhI18n.t(siteName);
+    setText("site-name", window.MrzhI18n.t(siteName));
     setText("camp-name", data.campConfig?.campName || "未命名营地");
     setText("server-name", data.campConfig?.serverName || "中国大陆服务器");
     setText(
@@ -308,13 +319,22 @@
     try {
       render(await request(`/api/public/bootstrap?t=${Date.now()}`));
     } catch (error) {
-      setText("announcement", `公共数据加载失败：${error.message}`);
+      setText(
+        "announcement",
+        window.MrzhI18n.format("公共数据加载失败：{message}", {
+          message: error.message
+        })
+      );
     }
   }
 
   async function submitVote() {
     const button = byId("submit-vote");
     const feedback = byId("vote-feedback");
+    if (state.data?.voteSummary?.isOpen === false) {
+      feedback.textContent = window.MrzhI18n.t("当前不在科技投票开放时间内。");
+      return;
+    }
     if (!state.selections.size) {
       feedback.textContent = "请至少选择一项科技。";
       return;
@@ -331,6 +351,7 @@
         })
       });
       state.selections.clear();
+      if (state.data) state.data.voteSummary = summary;
       renderVote(summary);
       feedback.textContent = "投票已保存，可在截止前再次修改。";
     } catch (error) {
@@ -344,6 +365,9 @@
   byId("member-search").addEventListener("input", (event) => {
     state.memberQuery = event.target.value || "";
     renderMembers(state.data?.members || []);
+  });
+  document.addEventListener("mrzh:languagechange", () => {
+    if (state.data) render(state.data);
   });
   load();
 })();

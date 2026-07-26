@@ -1,4 +1,5 @@
 const CLOCK_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const WINDOW_END_CLOCK_PATTERN = /^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/;
 
 export interface ZonedParts {
   year: number;
@@ -24,10 +25,21 @@ export function assertClock(value: string, field = "time"): void {
   }
 }
 
+export function assertWindowEndClock(value: string, field = "time"): void {
+  if (!WINDOW_END_CLOCK_PATTERN.test(value)) {
+    throw new Error(`${field} must use HH:mm or 24:00`);
+  }
+}
+
 export function clockToMinutes(value: string): number {
   assertClock(value);
   const [hour = "0", minute = "0"] = value.split(":");
   return Number(hour) * 60 + Number(minute);
+}
+
+export function windowEndClockToMinutes(value: string): number {
+  assertWindowEndClock(value);
+  return value === "24:00" ? 24 * 60 : clockToMinutes(value);
 }
 
 export function zonedParts(date: Date, timezone: string): ZonedParts {
@@ -167,6 +179,26 @@ export function clockIsInsideWindow(clock: string, start: string, end: string): 
     return value >= startValue && value <= endValue;
   }
   return value >= startValue || value <= endValue;
+}
+
+export function isWithinDailyClockWindow(
+  now: Date,
+  timezone: string,
+  start: string,
+  end: string
+): boolean {
+  assertClock(start, "start");
+  assertWindowEndClock(end, "end");
+  const current = minuteOfDay(zonedParts(now, timezone));
+  const startValue = clockToMinutes(start);
+  const endValue = windowEndClockToMinutes(end);
+  if (startValue < endValue) {
+    return current >= startValue && current < endValue;
+  }
+  if (startValue > endValue) {
+    return current >= startValue || current < endValue;
+  }
+  return false;
 }
 
 export function nextWeeklyApplyWeek(

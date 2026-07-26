@@ -17,7 +17,10 @@ export class AgentApi {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(`${path}: ${payload.error || `HTTP ${response.status}`}`);
+      const code = payload.code ? ` [${payload.code}]` : "";
+      throw new Error(
+        `${path}: ${payload.error || `HTTP ${response.status}`}${code}`
+      );
     }
     return payload;
   }

@@ -12,7 +12,7 @@ import type {
   WeeklyEvent,
   WeeklySchedule
 } from "./domain";
-import { assertClock, assertTimezone } from "./time";
+import { assertClock, assertTimezone, assertWindowEndClock } from "./time";
 
 const CATEGORY_VALUES = new Set<TechnologyCategory>([
   "military",
@@ -100,9 +100,24 @@ export function validateCampConfig(value: unknown): CampConfig {
   assertTimezone(timezone);
   const gameResetTime = text(source.gameResetTime, "campConfig.gameResetTime", { max: 5 });
   assertClock(gameResetTime, "campConfig.gameResetTime");
+  const voteWindowStart =
+    source.voteWindowStart === undefined
+      ? "06:30"
+      : text(source.voteWindowStart, "campConfig.voteWindowStart", { max: 5 });
+  const voteWindowEnd =
+    source.voteWindowEnd === undefined
+      ? "24:00"
+      : text(source.voteWindowEnd, "campConfig.voteWindowEnd", { max: 5 });
+  assertClock(voteWindowStart, "campConfig.voteWindowStart");
+  assertWindowEndClock(voteWindowEnd, "campConfig.voteWindowEnd");
+  if (voteWindowStart === voteWindowEnd) {
+    throw new Error("campConfig vote window cannot be empty");
+  }
   return {
     timezone,
     gameResetTime,
+    voteWindowStart,
+    voteWindowEnd,
     currentCampType: category(source.currentCampType, "campConfig.currentCampType"),
     agentId: text(source.agentId, "campConfig.agentId", { max: 80 }),
     publicSiteName: text(source.publicSiteName, "campConfig.publicSiteName", { max: 80 }),

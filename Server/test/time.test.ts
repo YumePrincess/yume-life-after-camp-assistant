@@ -1,11 +1,44 @@
 import { describe, expect, it } from "vitest";
 import {
   addWeeksToWeekKey,
+  isWithinDailyClockWindow,
   nextTechnologyTargetDate,
   nextWeeklyApplyWeek,
   targetDateForTechnologyRun,
   weekKeyForDateKey
 } from "../src/time";
+
+describe("daily voting window", () => {
+  it("accepts the default 06:30–24:00 window in the configured timezone", () => {
+    expect(
+      isWithinDailyClockWindow(
+        new Date("2026-07-26T10:30:00.000Z"),
+        "Asia/Shanghai",
+        "06:30",
+        "24:00"
+      )
+    ).toBe(true);
+    expect(
+      isWithinDailyClockWindow(
+        new Date("2026-07-25T22:29:00.000Z"),
+        "Asia/Shanghai",
+        "06:30",
+        "24:00"
+      )
+    ).toBe(false);
+  });
+
+  it("supports a voting window that crosses midnight", () => {
+    expect(
+      isWithinDailyClockWindow(
+        new Date("2026-07-26T17:00:00.000Z"),
+        "Asia/Shanghai",
+        "20:00",
+        "02:00"
+      )
+    ).toBe(true);
+  });
+});
 
 describe("technology target date", () => {
   it("treats Monday 02:00 as Sunday's game day but Monday's effective tech", () => {

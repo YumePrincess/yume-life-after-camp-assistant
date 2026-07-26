@@ -30,6 +30,8 @@ export type TechnologyLane = "core" | "general";
 export interface CampConfig {
   timezone: string;
   gameResetTime: string;
+  voteWindowStart: string;
+  voteWindowEnd: string;
   currentCampType: TechnologyCategory;
   agentId: string;
   publicSiteName: string;
@@ -174,7 +176,10 @@ export interface VoteOption extends TechnologyDefinition {
 
 export interface VoteSummary {
   pollDate: string;
+  opensAt: string;
   closesAt: string;
+  isOpen: boolean;
+  timezone: string;
   options: VoteOption[];
   ballotCount: number;
 }

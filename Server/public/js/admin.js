@@ -147,13 +147,22 @@
         age < (state.bootstrap?.agentOnlineThresholdSeconds || 45) * 1000;
       const card = create("article", "agent-card");
       card.append(
-        create("strong", "", `${item.agent_id} · ${online ? "在线" : "离线"}`),
+        create(
+          "strong",
+          "",
+          window.MrzhI18n.format("{agent} · {state}", {
+            agent: item.agent_id,
+            state: window.MrzhI18n.t(online ? "在线" : "离线")
+          })
+        ),
         create(
           "span",
           "",
           item.active_task_key
             ? `${taskName(item.active_task_key)} / ${item.status}`
-            : `空闲 / ${formatDate(item.updated_at)}`
+            : window.MrzhI18n.format("空闲 / {date}", {
+                date: formatDate(item.updated_at)
+              })
         )
       );
       root.append(card);
@@ -171,6 +180,8 @@
       publicSiteName: camp.publicSiteName,
       timezone: automation.timezone,
       gameResetTime: camp.gameResetTime,
+      voteWindowStart: camp.voteWindowStart || "06:30",
+      voteWindowEnd: camp.voteWindowEnd || "24:00",
       currentCampType: camp.currentCampType,
       publicMembersEnabled: camp.publicMembersEnabled,
       inactivityWarningDays: camp.inactivityWarningDays,
@@ -223,8 +234,10 @@
     );
     byId("routines-json").value = JSON.stringify(automation.routines, null, 2);
     byId("weekly-dirty").textContent = bundle.weeklySchedule.dirty
-      ? `待应用 ${bundle.weeklySchedule.pendingApplyWeek || ""}`
-      : "已应用";
+      ? window.MrzhI18n.format("待应用 {week}", {
+          week: bundle.weeklySchedule.pendingApplyWeek || ""
+        })
+      : window.MrzhI18n.t("已应用");
     renderWeeklyEvents(bundle.weeklySchedule.events || []);
   }
 
@@ -265,10 +278,25 @@
     byId("next-tech-date").textContent = summary.pollDate || "--";
     const root = byId("admin-vote-summary");
     root.replaceChildren();
-    root.append(create("span", "vote-summary-item", `${summary.ballotCount || 0} 人投票`));
+    root.append(
+      create(
+        "span",
+        "vote-summary-item",
+        window.MrzhI18n.format("{count} 人投票", {
+          count: summary.ballotCount || 0
+        })
+      )
+    );
     for (const option of summary.options || []) {
       root.append(
-        create("span", "vote-summary-item", `${option.name} · ${option.votes} 票`)
+        create(
+          "span",
+          "vote-summary-item",
+          window.MrzhI18n.format("{name} · {votes} 票", {
+            name: option.name,
+            votes: option.votes
+          })
+        )
       );
     }
   }
@@ -361,13 +389,23 @@
       const identity = create("div");
       identity.append(
         create("strong", "", item.name),
-        create("div", "key-item-meta", `编号 ${item.id}`)
+        create(
+          "div",
+          "key-item-meta",
+          window.MrzhI18n.format("编号 {id}", { id: item.id })
+        )
       );
       const suffix = [
-        permissions.length ? permissions.join(" · ") : "仅预览",
-        `有效期 ${formatDate(item.expires_at)}`,
-        item.last_used_at ? `最近使用 ${formatDate(item.last_used_at)}` : "",
-        item.revoked_at ? "已撤销" : ""
+        permissions.length ? permissions.join(" · ") : window.MrzhI18n.t("仅预览"),
+        window.MrzhI18n.format("有效期 {date}", {
+          date: formatDate(item.expires_at)
+        }),
+        item.last_used_at
+          ? window.MrzhI18n.format("最近使用 {date}", {
+              date: formatDate(item.last_used_at)
+            })
+          : "",
+        item.revoked_at ? window.MrzhI18n.t("已撤销") : ""
       ]
         .filter(Boolean)
         .join(" · ");
@@ -444,8 +482,17 @@
       Number(camp.inactivityWarningDays || 0) +
       Number(camp.automaticKickGraceDays || 0);
     byId("auto-kick-summary").textContent = camp.automaticKickEnabled
-      ? `已开启：离线达到 ${threshold} 天时按最新识别名单处理；当前候选 ${candidates.length} 人。`
-      : `默认关闭。若开启，判定线为预警 ${camp.inactivityWarningDays} 天＋宽限 ${camp.automaticKickGraceDays} 天。`;
+      ? window.MrzhI18n.format(
+          "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。",
+          { threshold, count: candidates.length }
+        )
+      : window.MrzhI18n.format(
+          "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。",
+          {
+            warning: camp.inactivityWarningDays,
+            grace: camp.automaticKickGraceDays
+          }
+        );
     byId("auto-kick-evaluate").disabled =
       !camp.automaticKickEnabled || !candidates.length || !hasPermission("member:kick");
   }
@@ -454,7 +501,10 @@
     const member = state.selectedMember;
     if (!member) return;
     const confirmation = window.prompt(
-      `高风险操作：将从市政厅沙盘踢出“${member.name}”。请输入完整成员姓名确认：`
+      window.MrzhI18n.format(
+        "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：",
+        { name: member.name }
+      )
     );
     if (confirmation !== member.name) {
       byId("save-state").textContent = "姓名不一致，已取消踢出";
@@ -469,7 +519,10 @@
         })
       });
       byId("member-dialog").close();
-      byId("save-state").textContent = `踢出 ${member.name} 的任务已入队`;
+      byId("save-state").textContent = window.MrzhI18n.format(
+        "踢出 {name} 的任务已入队",
+        { name: member.name }
+      );
       await refresh(false);
     } catch (error) {
       byId("save-state").textContent = error.message;
@@ -490,8 +543,10 @@
         body: "{}"
       });
       byId("save-state").textContent = result.run
-        ? `自动斩杀任务已入队，共 ${result.candidates.length} 人`
-        : "当前没有达到斩杀线的成员";
+        ? window.MrzhI18n.format("自动斩杀任务已入队，共 {count} 人", {
+            count: result.candidates.length
+          })
+        : window.MrzhI18n.t("当前没有达到斩杀线的成员");
       await refresh(false);
     } catch (error) {
       byId("save-state").textContent = error.message;
@@ -518,7 +573,10 @@
         method: "POST",
         body: JSON.stringify({ taskKey, ...(routineId ? { routineId } : {}) })
       });
-      byId("save-state").textContent = `${taskName(taskKey)}已入队`;
+      byId("save-state").textContent = window.MrzhI18n.format(
+        "{task}已入队",
+        { task: taskName(taskKey) }
+      );
       await refresh(false);
     } catch (error) {
       byId("save-state").textContent = error.message;
@@ -602,6 +660,8 @@
         publicSiteName: String(getField("publicSiteName")).trim(),
         timezone,
         gameResetTime: getField("gameResetTime"),
+        voteWindowStart: String(getField("voteWindowStart")).trim(),
+        voteWindowEnd: String(getField("voteWindowEnd")).trim(),
         currentCampType: getField("currentCampType"),
         publicMembersEnabled: getField("publicMembersEnabled"),
         inactivityWarningDays: Number(getField("inactivityWarningDays")),
@@ -774,6 +834,9 @@
   byId("copy-temporary-key").addEventListener("click", async () => {
     await navigator.clipboard.writeText(byId("temporary-key-value").textContent);
     byId("save-state").textContent = "临时 Key 已复制";
+  });
+  document.addEventListener("mrzh:languagechange", () => {
+    if (state.bootstrap) render(state.bootstrap, false);
   });
   setDefaultKeyExpiry();
   refresh(true);

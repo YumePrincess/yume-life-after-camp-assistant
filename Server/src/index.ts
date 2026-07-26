@@ -225,6 +225,13 @@ async function handlePublicApi(
     }
     const bundle = await getConfigBundle(env);
     const summary = await buildVoteSummary(env, bundle);
+    if (!summary.isOpen) {
+      return problem(
+        `科技投票开放时间为 ${summary.opensAt}–${summary.closesAt} ${summary.timezone}`,
+        409,
+        "vote_closed"
+      );
+    }
     const allowed = new Set(summary.options.map((option) => option.key));
     const selections = [
       ...new Set(
@@ -644,6 +651,8 @@ async function buildPublicBootstrap(env: Env): Promise<Record<string, unknown>> 
       currentCampType: bundle.campConfig.currentCampType,
       timezone: bundle.campConfig.timezone,
       gameResetTime: bundle.campConfig.gameResetTime,
+      voteWindowStart: bundle.campConfig.voteWindowStart,
+      voteWindowEnd: bundle.campConfig.voteWindowEnd,
       inactivityWarningDays: bundle.campConfig.inactivityWarningDays
     },
     inactivityWarnings: members
@@ -819,6 +828,22 @@ async function requireAgentAuth(request: Request, env: Env): Promise<Response | 
   const authorization = request.headers.get("Authorization") ?? "";
   if (!authorization.startsWith("Bearer ")) {
     return problem("Agent authentication required", 401, "agent_auth_required");
+  }
+  if (
+    typeof env.AGENT_SHARED_TOKEN !== "string" ||
+    env.AGENT_SHARED_TOKEN.length < 20
+  ) {
+    console.error(
+      JSON.stringify({
+        event: "agent_auth_configuration_error",
+        reason: "AGENT_SHARED_TOKEN is missing or shorter than 20 characters"
+      })
+    );
+    return problem(
+      "Agent token is not configured on this Worker deployment",
+      503,
+      "agent_token_not_configured"
+    );
   }
   const token = authorization.slice(7);
   if (!(await timingSafeEqual(token, env.AGENT_SHARED_TOKEN))) {

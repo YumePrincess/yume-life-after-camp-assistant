@@ -4,6 +4,7 @@
   const originalText = new WeakMap();
   const originalPlaceholder = new WeakMap();
   const originalAttributes = new WeakMap();
+  const originalTitle = document.title;
   const languageNames = {
     auto: "Auto",
     "zh-cn": "简体中文",
@@ -14,7 +15,7 @@
   };
   const translations = {
     en: {
-      "明日之后营地助手": "LifeAfter Camp Assistant",
+      "明日之后“愿”营地助手": "LifeAfter “Wish” Camp Assistant",
       "管理后台": "Admin console",
       "营地管理后台": "Camp admin console",
       "进入管理后台": "Open admin console",
@@ -50,6 +51,8 @@
       "站点名称": "Site name",
       "时区": "Time zone",
       "每日刷新": "Daily reset",
+      "科技投票开放时间": "Technology voting opens",
+      "科技投票截止时间": "Technology voting closes",
       "营地科技类型": "Camp technology type",
       "公开展示成员信息": "Show member information publicly",
       "开放临时 Key 登录": "Enable temporary-key sign-in",
@@ -109,6 +112,9 @@
       "失败": "Failed",
       "已跳过": "Skipped",
       "共 {count} 人投票 · 截止 {closesAt}": "{count} voters · closes {closesAt}",
+      "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
+        "Open {opensAt}–{closesAt} {timezone} · {count} voters",
+      "当前不在科技投票开放时间内。": "Technology voting is currently closed.",
       "更新于 {date}": "Updated {date}",
       "已同步 {date}": "Synced {date}",
       "尚未收到本地 Agent 心跳。": "No heartbeat from the local agent yet.",
@@ -168,10 +174,129 @@
       "仅贡献": "Contribution only",
       "仅斩杀预警": "Warning scan only",
       "仅成员资料与公职": "Profiles and officers only",
-      "踢出成员": "Remove members"
+      "踢出成员": "Remove members",
+      "明日之后“愿”营地公共信息、科技投票与成员贡献":
+        "LifeAfter “Wish” camp public information, technology voting, and member contributions",
+      "登录 · 明日之后“愿”营地助手": "Sign in · LifeAfter “Wish” Camp Assistant",
+      "管理后台 · 明日之后“愿”营地助手": "Admin · LifeAfter “Wish” Camp Assistant",
+      "选择语言": "Select language",
+      "选择主题": "Select theme",
+      "自动": "Auto",
+      "深色": "Dark",
+      "浅色": "Light",
+      "愿": "愿",
+      "正在连接营地…": "Connecting to the camp…",
+      "正在读取最新公共信息。": "Loading the latest public information.",
+      "科技类型待配置": "Technology type pending configuration",
+      "数据同步中": "Syncing data",
+      "投票截止时间读取中。": "Loading the voting deadline.",
+      "成员信息": "Member information",
+      "未命名营地": "Unnamed camp",
+      "投票已保存，可在截止前再次修改。":
+        "Vote saved. You can change it again before the deadline.",
+      "请至少选择一项科技。": "Select at least one technology.",
+      "正在提交…": "Submitting…",
+      "登录状态已失效，请重新登录。": "Your sign-in state expired. Please sign in again.",
+      "Yume Account 登录状态已退出，请重新登录。":
+        "Your Yume Account session ended. Please sign in again.",
+      "身份提供方没有返回授权码。": "The identity provider did not return an authorization code.",
+      "登录令牌交换失败，请稍后重试。": "Token exchange failed. Please try again later.",
+      "无法读取账号信息，请稍后重试。":
+        "Account information could not be loaded. Please try again later.",
+      "当前账号未被授权进入营地管理后台。":
+        "This account is not authorized to access the camp admin console.",
+      "登录失败，请稍后重试。": "Sign-in failed. Please try again later.",
+      "临时 Key 登录失败。": "Temporary-key sign-in failed.",
+      "正在验证临时 Key…": "Verifying temporary key…",
+      "正在验证身份": "Verifying identity",
+      "登录已失效": "Session expired",
+      "正在加载…": "Loading…",
+      "正在保存…": "Saving…",
+      "配置已保存": "Settings saved",
+      "有未保存修改": "Unsaved changes",
+      "科技配置 JSON 格式错误": "Invalid technology configuration JSON",
+      "轮询窗口或任务例程 JSON 格式错误":
+        "Invalid polling-window or task-routine JSON",
+      "任务例程": "Task routines",
+      "任务例程 JSON（groups 外层依次执行，内层同一时间触发）":
+        "Task routine JSON (outer groups run in order; items in a group start together)",
+      "分时轮询窗口 JSON（支持跨午夜，weekdays 为周一 1 至周日 7）":
+        "Time-based polling window JSON (supports midnight crossover; weekdays are Monday 1 through Sunday 7)",
+      "按后台配置的先后与同组关系执行":
+        "Run using the configured order and parallel groups",
+      "立即执行例程": "Run routine now",
+      "健康检查（秒）": "Health check (seconds)",
+      "动作超时（秒）": "Action timeout (seconds)",
+      "画面冻结判定（秒）": "Frozen-screen threshold (seconds)",
+      "最多重启次数": "Maximum restart attempts",
+      "重启冷却（秒）": "Restart cooldown (seconds)",
+      "更新贡献": "Update contributions",
+      "更新斩杀预警": "Update removal warning",
+      "更新成员资料": "Update member profiles",
+      "仅从市政厅沙盘更新三项贡献数据":
+        "Update only the three contribution values from the town hall sandbox",
+      "仅从市政厅沙盘活跃页更新离线时间":
+        "Update only offline time from the town hall Activity page",
+      "仅更新职业、庄园、同居与公职":
+        "Update only profession, manor, roommate, and officer data",
+      "自动斩杀": "Automatic removal",
+      "处理最新识别仍达到斩杀线的成员":
+        "Process members who still meet the removal threshold after the latest scan",
+      "从最新名单精确选择成员后执行":
+        "Select the exact member from the latest roster before running",
+      "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？":
+        "Using the latest online status, add the exact members who meet “warning days + grace days” to the removal task. Continue?",
+      "姓名不一致，已取消踢出": "Name mismatch; removal was cancelled",
+      "当前没有达到斩杀线的成员": "No members currently meet the removal threshold",
+      "中断": "Interrupt",
+      "中断指令已发送": "Interrupt command sent",
+      "事件": "Events",
+      "暂无步骤事件。": "No step events yet.",
+      "在线情况": "Online status",
+      "离线": "Offline",
+      "离线折算天数": "Converted offline days",
+      "活跃采集时间": "Activity capture time",
+      "资料采集时间": "Profile capture time",
+      "庄园等级": "Manor level",
+      "营地称号": "Camp title",
+      "科技点": "Technology points",
+      "物资": "Materials",
+      "搜索姓名、职业、同居、离线时间":
+        "Search name, profession, roommate, or offline time",
+      "周日 22:30 后修改的日程自动顺延到下一周。":
+        "Schedule changes after Sunday 22:30 automatically move to the following week.",
+      "仅预览": "Preview only",
+      "例如：巡逻代班 01": "Example: Patrol cover 01",
+      "Key 明文只在创建时显示一次": "The plain-text key is shown only once when created",
+      "请立即复制，此后无法再次查看": "Copy it now; it cannot be viewed again",
+      "尚未生成临时 Key。": "No temporary key has been generated.",
+      "临时 Key 已复制": "Temporary key copied",
+      "撤销": "Revoke",
+      "已撤销": "Revoked",
+      "uiLabel 必须与游戏科技页面 OCR 文本一致；执行时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建。第一行仅允许当前营地类型，两个分区上限均不得超过 6。":
+        "uiLabel must match the OCR text on the in-game technology page. Each run clears both existing rows, then rebuilds them using fixed choices first and vote results second. Row 1 only allows the current camp type, and neither section may exceed 6.",
+      "{days} 天前": "{days} days ago",
+      "公共数据加载失败：{message}": "Public data failed to load: {message}",
+      "在线": "Online",
+      "空闲 / {date}": "Idle / {date}",
+      "待应用 {week}": "Pending {week}",
+      "{count} 人投票": "{count} voters",
+      "{name} · {votes} 票": "{name} · {votes} votes",
+      "编号 {id}": "ID {id}",
+      "有效期 {date}": "Expires {date}",
+      "最近使用 {date}": "Last used {date}",
+      "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。":
+        "Enabled: process the latest recognized roster after {threshold} offline days; {count} current candidates.",
+      "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。":
+        "Off by default. When enabled, the threshold is {warning} warning days + {grace} grace days.",
+      "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：":
+        "High-risk action: remove “{name}” through the town hall sandbox. Enter the full member name to confirm:",
+      "踢出 {name} 的任务已入队": "Removal task for {name} queued",
+      "自动斩杀任务已入队，共 {count} 人": "Automatic-removal task queued for {count} members",
+      "{task}已入队": "{task} queued"
     },
     fr: {
-      "明日之后营地助手": "Assistant de camp LifeAfter",
+      "明日之后“愿”营地助手": "Assistant du camp « Vœu » LifeAfter",
       "管理后台": "Administration",
       "营地管理后台": "Administration du camp",
       "进入管理后台": "Ouvrir l’administration",
@@ -207,6 +332,8 @@
       "站点名称": "Nom du site",
       "时区": "Fuseau horaire",
       "每日刷新": "Réinitialisation quotidienne",
+      "科技投票开放时间": "Ouverture du vote technologique",
+      "科技投票截止时间": "Clôture du vote technologique",
       "营地科技类型": "Type technologique du camp",
       "公开展示成员信息": "Afficher publiquement les membres",
       "开放临时 Key 登录": "Activer la connexion par clé temporaire",
@@ -266,6 +393,9 @@
       "失败": "Échouée",
       "已跳过": "Ignorée",
       "共 {count} 人投票 · 截止 {closesAt}": "{count} votants · clôture {closesAt}",
+      "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
+        "Ouvert de {opensAt} à {closesAt} {timezone} · {count} votants",
+      "当前不在科技投票开放时间内。": "Le vote technologique est actuellement fermé.",
       "更新于 {date}": "Mis à jour {date}",
       "已同步 {date}": "Synchronisé {date}",
       "尚未收到本地 Agent 心跳。": "Aucun signal de l’agent local.",
@@ -325,10 +455,134 @@
       "仅贡献": "Contributions uniquement",
       "仅斩杀预警": "Alerte uniquement",
       "仅成员资料与公职": "Profils et responsables uniquement",
-      "踢出成员": "Exclure des membres"
+      "踢出成员": "Exclure des membres",
+      "明日之后“愿”营地公共信息、科技投票与成员贡献":
+        "Informations publiques, vote technologique et contributions du camp « Vœu » de LifeAfter",
+      "登录 · 明日之后“愿”营地助手": "Connexion · Assistant du camp « Vœu » LifeAfter",
+      "管理后台 · 明日之后“愿”营地助手": "Administration · Camp « Vœu » LifeAfter",
+      "选择语言": "Choisir la langue",
+      "选择主题": "Choisir le thème",
+      "自动": "Automatique",
+      "深色": "Sombre",
+      "浅色": "Clair",
+      "愿": "愿",
+      "正在连接营地…": "Connexion au camp…",
+      "正在读取最新公共信息。": "Chargement des dernières informations publiques.",
+      "科技类型待配置": "Type technologique à configurer",
+      "数据同步中": "Synchronisation des données",
+      "投票截止时间读取中。": "Chargement de la date limite du vote.",
+      "成员信息": "Informations des membres",
+      "未命名营地": "Camp sans nom",
+      "投票已保存，可在截止前再次修改。":
+        "Vote enregistré. Vous pouvez le modifier avant la date limite.",
+      "请至少选择一项科技。": "Sélectionnez au moins une technologie.",
+      "正在提交…": "Envoi…",
+      "登录状态已失效，请重新登录。": "Votre session a expiré. Reconnectez-vous.",
+      "Yume Account 登录状态已退出，请重新登录。":
+        "Votre session Yume Account est terminée. Reconnectez-vous.",
+      "身份提供方没有返回授权码。":
+        "Le fournisseur d’identité n’a pas renvoyé de code d’autorisation.",
+      "登录令牌交换失败，请稍后重试。":
+        "Échec de l’échange du jeton. Réessayez plus tard.",
+      "无法读取账号信息，请稍后重试。":
+        "Impossible de lire les informations du compte. Réessayez plus tard.",
+      "当前账号未被授权进入营地管理后台。":
+        "Ce compte n’est pas autorisé à accéder à l’administration du camp.",
+      "登录失败，请稍后重试。": "Échec de la connexion. Réessayez plus tard.",
+      "临时 Key 登录失败。": "Échec de la connexion avec la clé temporaire.",
+      "正在验证临时 Key…": "Vérification de la clé temporaire…",
+      "正在验证身份": "Vérification de l’identité",
+      "登录已失效": "Session expirée",
+      "正在加载…": "Chargement…",
+      "正在保存…": "Enregistrement…",
+      "配置已保存": "Paramètres enregistrés",
+      "有未保存修改": "Modifications non enregistrées",
+      "科技配置 JSON 格式错误": "JSON de configuration technologique invalide",
+      "轮询窗口或任务例程 JSON 格式错误":
+        "JSON des fenêtres d’interrogation ou des routines invalide",
+      "任务例程": "Routines de tâches",
+      "任务例程 JSON（groups 外层依次执行，内层同一时间触发）":
+        "JSON des routines (les groupes externes sont séquentiels, les éléments internes démarrent ensemble)",
+      "分时轮询窗口 JSON（支持跨午夜，weekdays 为周一 1 至周日 7）":
+        "JSON des fenêtres d’interrogation (minuit pris en charge ; weekdays va de lundi 1 à dimanche 7)",
+      "按后台配置的先后与同组关系执行":
+        "Exécuter selon l’ordre et les groupes parallèles configurés",
+      "立即执行例程": "Exécuter la routine",
+      "健康检查（秒）": "Contrôle de santé (secondes)",
+      "动作超时（秒）": "Délai d’action (secondes)",
+      "画面冻结判定（秒）": "Seuil d’écran figé (secondes)",
+      "最多重启次数": "Nombre maximal de redémarrages",
+      "重启冷却（秒）": "Délai entre redémarrages (secondes)",
+      "更新贡献": "Mettre à jour les contributions",
+      "更新斩杀预警": "Mettre à jour l’alerte de retrait",
+      "更新成员资料": "Mettre à jour les profils",
+      "仅从市政厅沙盘更新三项贡献数据":
+        "Mettre à jour uniquement les trois contributions depuis la table de la mairie",
+      "仅从市政厅沙盘活跃页更新离线时间":
+        "Mettre à jour uniquement l’absence depuis la page Activité de la mairie",
+      "仅更新职业、庄园、同居与公职":
+        "Mettre à jour uniquement profession, manoir, cohabitant et responsables",
+      "自动斩杀": "Retrait automatique",
+      "处理最新识别仍达到斩杀线的成员":
+        "Traiter les membres encore au seuil après la dernière analyse",
+      "从最新名单精确选择成员后执行":
+        "Sélectionner précisément le membre dans la dernière liste avant exécution",
+      "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？":
+        "Selon le dernier état en ligne, ajouter à la tâche de retrait les membres atteignant « jours d’alerte + jours de grâce ». Continuer ?",
+      "姓名不一致，已取消踢出": "Nom différent ; retrait annulé",
+      "当前没有达到斩杀线的成员": "Aucun membre n’atteint le seuil de retrait",
+      "中断": "Interrompre",
+      "中断指令已发送": "Commande d’interruption envoyée",
+      "事件": "Événements",
+      "暂无步骤事件。": "Aucun événement d’étape.",
+      "在线情况": "État en ligne",
+      "离线": "Hors ligne",
+      "离线折算天数": "Jours d’absence convertis",
+      "活跃采集时间": "Collecte de l’activité",
+      "资料采集时间": "Collecte du profil",
+      "庄园等级": "Niveau du manoir",
+      "营地称号": "Titre du camp",
+      "科技点": "Points technologiques",
+      "物资": "Ressources",
+      "搜索姓名、职业、同居、离线时间":
+        "Rechercher nom, profession, cohabitant ou absence",
+      "周日 22:30 后修改的日程自动顺延到下一周。":
+        "Les horaires modifiés après dimanche 22 h 30 passent automatiquement à la semaine suivante.",
+      "仅预览": "Aperçu uniquement",
+      "例如：巡逻代班 01": "Exemple : Remplacement patrouille 01",
+      "Key 明文只在创建时显示一次":
+        "La clé en clair n’est affichée qu’une fois lors de sa création",
+      "请立即复制，此后无法再次查看":
+        "Copiez-la maintenant ; elle ne pourra plus être affichée",
+      "尚未生成临时 Key。": "Aucune clé temporaire n’a été générée.",
+      "临时 Key 已复制": "Clé temporaire copiée",
+      "撤销": "Révoquer",
+      "已撤销": "Révoquée",
+      "uiLabel 必须与游戏科技页面 OCR 文本一致；执行时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建。第一行仅允许当前营地类型，两个分区上限均不得超过 6。":
+        "uiLabel doit correspondre au texte OCR de la page technologique du jeu. Chaque exécution efface les deux lignes, puis les reconstruit avec les choix fixes avant les résultats du vote. La première ligne est limitée au type actuel du camp et chaque section est limitée à 6.",
+      "{days} 天前": "il y a {days} jours",
+      "公共数据加载失败：{message}": "Échec du chargement des données publiques : {message}",
+      "在线": "En ligne",
+      "空闲 / {date}": "Inactif / {date}",
+      "待应用 {week}": "À appliquer : {week}",
+      "{count} 人投票": "{count} votants",
+      "{name} · {votes} 票": "{name} · {votes} votes",
+      "编号 {id}": "ID {id}",
+      "有效期 {date}": "Expire le {date}",
+      "最近使用 {date}": "Dernière utilisation {date}",
+      "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。":
+        "Activé : traitement de la dernière liste après {threshold} jours hors ligne ; {count} candidats actuels.",
+      "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。":
+        "Désactivé par défaut. Une fois activé, le seuil est de {warning} jours d’alerte + {grace} jours de grâce.",
+      "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：":
+        "Action à risque : exclure « {name} » depuis la table de la mairie. Saisissez le nom complet pour confirmer :",
+      "踢出 {name} 的任务已入队": "Tâche d’exclusion de {name} mise en file",
+      "自动斩杀任务已入队，共 {count} 人":
+        "Tâche d’exclusion automatique mise en file pour {count} membres",
+      "{task}已入队": "{task} mis en file"
     },
     ja: {
-      "明日之后营地助手": "ライフアフター野営地アシスタント",
+      "明日之后“愿”营地助手": "ライフアフター「願」野営地アシスタント",
       "管理后台": "管理画面",
       "营地管理后台": "野営地管理画面",
       "进入管理后台": "管理画面を開く",
@@ -363,6 +617,8 @@
       "站点名称": "サイト名",
       "时区": "タイムゾーン",
       "每日刷新": "毎日のリセット",
+      "科技投票开放时间": "技術投票の開始時刻",
+      "科技投票截止时间": "技術投票の締切時刻",
       "营地科技类型": "野営地技術タイプ",
       "公开展示成员信息": "メンバー情報を公開",
       "开放临时 Key 登录": "一時キーのログインを有効化",
@@ -422,6 +678,9 @@
       "失败": "失敗",
       "已跳过": "スキップ",
       "共 {count} 人投票 · 截止 {closesAt}": "{count}人が投票 · 締切 {closesAt}",
+      "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
+        "受付時間 {opensAt}～{closesAt} {timezone} · {count}人が投票",
+      "当前不在科技投票开放时间内。": "現在は技術投票の受付時間外です。",
       "更新于 {date}": "更新 {date}",
       "已同步 {date}": "同期済み {date}",
       "尚未收到本地 Agent 心跳。": "ローカルエージェントの応答はまだありません。",
@@ -481,10 +740,126 @@
       "仅贡献": "貢献のみ",
       "仅斩杀预警": "警告確認のみ",
       "仅成员资料与公职": "プロフィールと役職のみ",
-      "踢出成员": "メンバーを除名"
+      "踢出成员": "メンバーを除名",
+      "明日之后“愿”营地公共信息、科技投票与成员贡献":
+        "ライフアフター「願」野営地の公開情報・技術投票・メンバー貢献",
+      "登录 · 明日之后“愿”营地助手": "ログイン · ライフアフター「願」野営地アシスタント",
+      "管理后台 · 明日之后“愿”营地助手": "管理画面 · ライフアフター「願」野営地アシスタント",
+      "选择语言": "言語を選択",
+      "选择主题": "テーマを選択",
+      "自动": "自動",
+      "深色": "ダーク",
+      "浅色": "ライト",
+      "愿": "願",
+      "正在连接营地…": "野営地に接続しています…",
+      "正在读取最新公共信息。": "最新の公開情報を読み込んでいます。",
+      "科技类型待配置": "技術タイプ未設定",
+      "数据同步中": "データ同期中",
+      "投票截止时间读取中。": "投票締切を読み込んでいます。",
+      "成员信息": "メンバー情報",
+      "未命名营地": "名称未設定の野営地",
+      "投票已保存，可在截止前再次修改。":
+        "投票を保存しました。締切前であれば再度変更できます。",
+      "请至少选择一项科技。": "技術を1つ以上選択してください。",
+      "正在提交…": "送信中…",
+      "登录状态已失效，请重新登录。": "ログイン状態が失効しました。再度ログインしてください。",
+      "Yume Account 登录状态已退出，请重新登录。":
+        "Yume Account からログアウトしました。再度ログインしてください。",
+      "身份提供方没有返回授权码。": "IDプロバイダーから認可コードが返されませんでした。",
+      "登录令牌交换失败，请稍后重试。": "トークン交換に失敗しました。後でもう一度お試しください。",
+      "无法读取账号信息，请稍后重试。":
+        "アカウント情報を取得できません。後でもう一度お試しください。",
+      "当前账号未被授权进入营地管理后台。":
+        "このアカウントには野営地管理画面へのアクセス権がありません。",
+      "登录失败，请稍后重试。": "ログインに失敗しました。後でもう一度お試しください。",
+      "临时 Key 登录失败。": "一時キーでのログインに失敗しました。",
+      "正在验证临时 Key…": "一時キーを確認しています…",
+      "正在验证身份": "本人確認中",
+      "登录已失效": "ログイン期限切れ",
+      "正在加载…": "読み込み中…",
+      "正在保存…": "保存中…",
+      "配置已保存": "設定を保存しました",
+      "有未保存修改": "未保存の変更があります",
+      "科技配置 JSON 格式错误": "技術設定 JSON の形式が正しくありません",
+      "轮询窗口或任务例程 JSON 格式错误":
+        "ポーリング時間帯またはタスクルーチン JSON の形式が正しくありません",
+      "任务例程": "タスクルーチン",
+      "任务例程 JSON（groups 外层依次执行，内层同一时间触发）":
+        "タスクルーチン JSON（外側の groups は順番に実行し、同じグループ内は同時に開始）",
+      "分时轮询窗口 JSON（支持跨午夜，weekdays 为周一 1 至周日 7）":
+        "時間帯別ポーリング JSON（日付またぎ対応、weekdays は月曜1〜日曜7）",
+      "按后台配置的先后与同组关系执行": "設定された順序と並列グループに従って実行",
+      "立即执行例程": "ルーチンを今すぐ実行",
+      "健康检查（秒）": "ヘルスチェック（秒）",
+      "动作超时（秒）": "操作タイムアウト（秒）",
+      "画面冻结判定（秒）": "画面停止判定（秒）",
+      "最多重启次数": "最大再起動回数",
+      "重启冷却（秒）": "再起動クールダウン（秒）",
+      "更新贡献": "貢献を更新",
+      "更新斩杀预警": "除名警告を更新",
+      "更新成员资料": "メンバー情報を更新",
+      "仅从市政厅沙盘更新三项贡献数据":
+        "市役所のサンドテーブルから3つの貢献値のみ更新",
+      "仅从市政厅沙盘活跃页更新离线时间":
+        "市役所の「アクティブ」ページからオフライン時間のみ更新",
+      "仅更新职业、庄园、同居与公职": "職業・荘園・同居人・役職のみ更新",
+      "自动斩杀": "自動除名",
+      "处理最新识别仍达到斩杀线的成员":
+        "最新認識後も除名基準に達しているメンバーを処理",
+      "从最新名单精确选择成员后执行": "最新名簿から対象メンバーを正確に選択して実行",
+      "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？":
+        "最新のオンライン状況に基づき「警告日数＋猶予日数」に達した正確な名簿を除名タスクへ追加します。続行しますか？",
+      "姓名不一致，已取消踢出": "名前が一致しないため除名を中止しました",
+      "当前没有达到斩杀线的成员": "現在、除名基準に達したメンバーはいません",
+      "中断": "中断",
+      "中断指令已发送": "中断指示を送信しました",
+      "事件": "イベント",
+      "暂无步骤事件。": "ステップイベントはありません。",
+      "在线情况": "オンライン状況",
+      "离线": "オフライン",
+      "离线折算天数": "換算オフライン日数",
+      "活跃采集时间": "アクティブ取得日時",
+      "资料采集时间": "プロフィール取得日時",
+      "庄园等级": "荘園レベル",
+      "营地称号": "野営地称号",
+      "科技点": "技術点",
+      "物资": "物資",
+      "搜索姓名、职业、同居、离线时间": "名前・職業・同居人・オフライン時間を検索",
+      "周日 22:30 后修改的日程自动顺延到下一周。":
+        "日曜22:30以降のスケジュール変更は自動的に翌週へ繰り越されます。",
+      "仅预览": "閲覧のみ",
+      "例如：巡逻代班 01": "例：パトロール代行 01",
+      "Key 明文只在创建时显示一次": "キーの平文は作成時に一度だけ表示されます",
+      "请立即复制，此后无法再次查看": "今すぐコピーしてください。後から再表示できません",
+      "尚未生成临时 Key。": "一時キーはまだ生成されていません。",
+      "临时 Key 已复制": "一時キーをコピーしました",
+      "撤销": "取り消す",
+      "已撤销": "取り消し済み",
+      "uiLabel 必须与游戏科技页面 OCR 文本一致；执行时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建。第一行仅允许当前营地类型，两个分区上限均不得超过 6。":
+        "uiLabel はゲーム内技術ページの OCR テキストと一致させてください。実行時は既存の2行を消去し、固定技術を優先して投票結果で補完します。1行目は現在の野営地タイプのみ許可され、各区分の上限は6です。",
+      "{days} 天前": "{days}日前",
+      "公共数据加载失败：{message}": "公開データの読み込みに失敗しました：{message}",
+      "在线": "オンライン",
+      "空闲 / {date}": "待機中 / {date}",
+      "待应用 {week}": "適用待ち {week}",
+      "{count} 人投票": "{count}人が投票",
+      "{name} · {votes} 票": "{name} · {votes}票",
+      "编号 {id}": "ID {id}",
+      "有效期 {date}": "有効期限 {date}",
+      "最近使用 {date}": "最終使用 {date}",
+      "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。":
+        "有効：{threshold}日オフラインで最新認識名簿を処理します。現在の候補は{count}人です。",
+      "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。":
+        "初期設定はオフです。有効時の基準は警告{warning}日＋猶予{grace}日です。",
+      "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：":
+        "高リスク操作：市役所のサンドテーブルから「{name}」を除名します。確認のため完全なメンバー名を入力してください：",
+      "踢出 {name} 的任务已入队": "{name} の除名タスクをキューに追加しました",
+      "自动斩杀任务已入队，共 {count} 人":
+        "{count}人の自動除名タスクをキューに追加しました",
+      "{task}已入队": "{task}をキューに追加しました"
     },
     "zh-tw": {
-      "明日之后营地助手": "明日之後營地助手",
+      "明日之后“愿”营地助手": "明日之後「願」營地助手",
       "管理后台": "管理後台",
       "营地管理后台": "營地管理後台",
       "进入管理后台": "進入管理後台",
@@ -519,6 +894,8 @@
       "站点名称": "站點名稱",
       "时区": "時區",
       "每日刷新": "每日重設",
+      "科技投票开放时间": "科技投票開放時間",
+      "科技投票截止时间": "科技投票截止時間",
       "营地科技类型": "營地科技類型",
       "公开展示成员信息": "公開展示成員資訊",
       "开放临时 Key 登录": "開放臨時 Key 登入",
@@ -578,6 +955,9 @@
       "失败": "失敗",
       "已跳过": "已跳過",
       "共 {count} 人投票 · 截止 {closesAt}": "共 {count} 人投票 · 截止 {closesAt}",
+      "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
+        "開放時間 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票",
+      "当前不在科技投票开放时间内。": "目前不在科技投票開放時間內。",
       "更新于 {date}": "更新於 {date}",
       "已同步 {date}": "已同步 {date}",
       "尚未收到本地 Agent 心跳。": "尚未收到本機 Agent 心跳。",
@@ -637,7 +1017,115 @@
       "仅贡献": "僅貢獻",
       "仅斩杀预警": "僅斬殺預警",
       "仅成员资料与公职": "僅成員資料與公職",
-      "踢出成员": "踢出成員"
+      "踢出成员": "踢出成員",
+      "明日之后“愿”营地公共信息、科技投票与成员贡献":
+        "明日之後「願」營地公共資訊、科技投票與成員貢獻",
+      "登录 · 明日之后“愿”营地助手": "登入 · 明日之後「願」營地助手",
+      "管理后台 · 明日之后“愿”营地助手": "管理後台 · 明日之後「願」營地助手",
+      "选择语言": "選擇語言",
+      "选择主题": "選擇主題",
+      "自动": "自動",
+      "深色": "深色",
+      "浅色": "淺色",
+      "愿": "願",
+      "正在连接营地…": "正在連線營地…",
+      "正在读取最新公共信息。": "正在讀取最新公共資訊。",
+      "科技类型待配置": "科技類型待設定",
+      "数据同步中": "資料同步中",
+      "投票截止时间读取中。": "正在讀取投票截止時間。",
+      "成员信息": "成員資訊",
+      "未命名营地": "未命名營地",
+      "投票已保存，可在截止前再次修改。": "投票已儲存，可在截止前再次修改。",
+      "请至少选择一项科技。": "請至少選擇一項科技。",
+      "正在提交…": "正在提交…",
+      "登录状态已失效，请重新登录。": "登入狀態已失效，請重新登入。",
+      "Yume Account 登录状态已退出，请重新登录。":
+        "Yume Account 登入狀態已登出，請重新登入。",
+      "身份提供方没有返回授权码。": "身分提供者沒有回傳授權碼。",
+      "登录令牌交换失败，请稍后重试。": "登入權杖交換失敗，請稍後再試。",
+      "无法读取账号信息，请稍后重试。": "無法讀取帳號資訊，請稍後再試。",
+      "当前账号未被授权进入营地管理后台。": "目前帳號未獲授權進入營地管理後台。",
+      "登录失败，请稍后重试。": "登入失敗，請稍後再試。",
+      "临时 Key 登录失败。": "臨時 Key 登入失敗。",
+      "正在验证临时 Key…": "正在驗證臨時 Key…",
+      "正在验证身份": "正在驗證身分",
+      "登录已失效": "登入已失效",
+      "正在加载…": "正在載入…",
+      "正在保存…": "正在儲存…",
+      "配置已保存": "設定已儲存",
+      "有未保存修改": "有未儲存的修改",
+      "科技配置 JSON 格式错误": "科技設定 JSON 格式錯誤",
+      "轮询窗口或任务例程 JSON 格式错误": "輪詢視窗或任務例程 JSON 格式錯誤",
+      "任务例程": "任務例程",
+      "任务例程 JSON（groups 外层依次执行，内层同一时间触发）":
+        "任務例程 JSON（外層 groups 依序執行，同組內同時觸發）",
+      "分时轮询窗口 JSON（支持跨午夜，weekdays 为周一 1 至周日 7）":
+        "分時輪詢視窗 JSON（支援跨午夜，weekdays 為週一 1 至週日 7）",
+      "按后台配置的先后与同组关系执行": "依後台設定的順序與同組關係執行",
+      "立即执行例程": "立即執行例程",
+      "健康检查（秒）": "健康檢查（秒）",
+      "动作超时（秒）": "動作逾時（秒）",
+      "画面冻结判定（秒）": "畫面凍結判定（秒）",
+      "最多重启次数": "最多重新啟動次數",
+      "重启冷却（秒）": "重新啟動冷卻（秒）",
+      "更新贡献": "更新貢獻",
+      "更新斩杀预警": "更新斬殺預警",
+      "更新成员资料": "更新成員資料",
+      "仅从市政厅沙盘更新三项贡献数据": "僅從市政廳沙盤更新三項貢獻資料",
+      "仅从市政厅沙盘活跃页更新离线时间": "僅從市政廳沙盤活躍頁更新離線時間",
+      "仅更新职业、庄园、同居与公职": "僅更新職業、莊園、同居與公職",
+      "自动斩杀": "自動斬殺",
+      "处理最新识别仍达到斩杀线的成员": "處理最新辨識後仍達到斬殺線的成員",
+      "从最新名单精确选择成员后执行": "從最新名單精確選擇成員後執行",
+      "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？":
+        "將依據最新上線情況，把目前達到「預警天數＋寬限天數」的精確名單加入踢出任務。繼續嗎？",
+      "姓名不一致，已取消踢出": "姓名不一致，已取消踢出",
+      "当前没有达到斩杀线的成员": "目前沒有達到斬殺線的成員",
+      "中断": "中斷",
+      "中断指令已发送": "中斷指令已傳送",
+      "事件": "事件",
+      "暂无步骤事件。": "暫無步驟事件。",
+      "在线情况": "上線情況",
+      "离线": "離線",
+      "离线折算天数": "離線折算天數",
+      "活跃采集时间": "活躍採集時間",
+      "资料采集时间": "資料採集時間",
+      "庄园等级": "莊園等級",
+      "营地称号": "營地稱號",
+      "科技点": "科技點",
+      "物资": "物資",
+      "搜索姓名、职业、同居、离线时间": "搜尋姓名、職業、同居、離線時間",
+      "周日 22:30 后修改的日程自动顺延到下一周。":
+        "週日 22:30 後修改的日程會自動順延到下一週。",
+      "仅预览": "僅預覽",
+      "例如：巡逻代班 01": "例如：巡邏代班 01",
+      "Key 明文只在创建时显示一次": "Key 明文只在建立時顯示一次",
+      "请立即复制，此后无法再次查看": "請立即複製，此後無法再次查看",
+      "尚未生成临时 Key。": "尚未產生臨時 Key。",
+      "临时 Key 已复制": "臨時 Key 已複製",
+      "撤销": "撤銷",
+      "已撤销": "已撤銷",
+      "uiLabel 必须与游戏科技页面 OCR 文本一致；执行时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建。第一行仅允许当前营地类型，两个分区上限均不得超过 6。":
+        "uiLabel 必須與遊戲科技頁面 OCR 文字一致；執行時會先清空兩行既有科技，再依固定科技優先、投票結果補足的順序重建。第一行僅允許目前營地類型，兩個分區上限均不得超過 6。",
+      "{days} 天前": "{days} 天前",
+      "公共数据加载失败：{message}": "公共資料載入失敗：{message}",
+      "在线": "上線",
+      "空闲 / {date}": "閒置 / {date}",
+      "待应用 {week}": "待套用 {week}",
+      "{count} 人投票": "{count} 人投票",
+      "{name} · {votes} 票": "{name} · {votes} 票",
+      "编号 {id}": "編號 {id}",
+      "有效期 {date}": "有效期 {date}",
+      "最近使用 {date}": "最近使用 {date}",
+      "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。":
+        "已開啟：離線達到 {threshold} 天時依最新辨識名單處理；目前候選 {count} 人。",
+      "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。":
+        "預設關閉。若開啟，判定線為預警 {warning} 天＋寬限 {grace} 天。",
+      "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：":
+        "高風險操作：將從市政廳沙盤踢出「{name}」。請輸入完整成員姓名確認：",
+      "踢出 {name} 的任务已入队": "踢出 {name} 的任務已排入佇列",
+      "自动斩杀任务已入队，共 {count} 人": "自動斬殺任務已排入佇列，共 {count} 人",
+      "{task}已入队": "{task}已排入佇列"
     }
   };
 
@@ -655,9 +1143,57 @@
     return P.resolveLanguage(P.getLanguageChoice());
   }
 
+  function updateSiteFooter(language) {
+    const year = String(new Date().getFullYear());
+    const localized = {
+      "zh-cn": {
+        prefix: `版权所有 © 2012–${year} `,
+        company: "美国雨梦互联网有限公司",
+        suffix: " 保留所有权利。本页面为在中国大陆使用而设计。"
+      },
+      "zh-tw": {
+        prefix: `版權所有 © 2012–${year} `,
+        company: "美國雨夢網際網路有限公司",
+        suffix: "。保留所有權利。"
+      },
+      en: {
+        prefix: `Copyright © 2012–${year} `,
+        company: "Yume Internet LLC",
+        suffix: ". All Rights Reserved."
+      },
+      fr: {
+        prefix: `Copyright © 2012–${year} `,
+        company: "Yume Internet LLC",
+        suffix: ". Tous droits réservés."
+      },
+      ja: {
+        prefix: `Copyright © 2012–${year} `,
+        company: "Yume Internet LLC",
+        suffix: "。無断転載を禁じます。"
+      }
+    }[language];
+    if (!localized) return;
+    for (const footer of document.querySelectorAll("[data-footer-copy]")) {
+      if (footer.dataset.footerLanguage === language && footer.dataset.footerYear === year) {
+        continue;
+      }
+      const link = document.createElement("a");
+      link.href = "https://www.yume.zone/";
+      link.textContent = localized.company;
+      footer.replaceChildren(
+        document.createTextNode(localized.prefix),
+        link,
+        document.createTextNode(localized.suffix)
+      );
+      footer.dataset.footerLanguage = language;
+      footer.dataset.footerYear = year;
+    }
+  }
+
   function translateDocument() {
     const language = currentLanguage();
     document.documentElement.lang = language === "zh-cn" ? "zh-CN" : language;
+    document.title = translate(originalTitle, language);
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
     while ((node = walker.nextNode())) {
@@ -688,6 +1224,7 @@
         element.setAttribute(attribute, translate(originals[attribute], language));
       }
     }
+    updateSiteFooter(language);
     syncControls();
     document.dispatchEvent(
       new CustomEvent("mrzh:languagechange", { detail: { language } })
@@ -699,43 +1236,100 @@
       if (header.querySelector(".preference-controls")) continue;
       const controls = document.createElement("div");
       controls.className = "preference-controls";
-      const language = document.createElement("select");
-      language.className = "preference-select";
-      language.setAttribute("aria-label", "Language");
-      language.dataset.preference = "language";
-      for (const value of ["auto", "zh-cn", "zh-tw", "en", "fr", "ja"]) {
-        language.append(new Option(languageNames[value], value));
-      }
-      const theme = document.createElement("select");
-      theme.className = "preference-select";
-      theme.setAttribute("aria-label", "Theme");
-      theme.dataset.preference = "theme";
-      theme.append(new Option("Auto", "auto"), new Option("Light", "light"), new Option("Dark", "dark"));
-      language.addEventListener("change", () => {
-        P.setLanguageChoice(language.value);
-        translateDocument();
-      });
-      theme.addEventListener("change", () => {
-        P.applyTheme(P.setThemeChoice(theme.value));
-      });
-      controls.append(language, theme);
+      controls.append(
+        createPreferenceMenu({
+          type: "language",
+          label: "选择语言",
+          icon:
+            '<svg class="preference-icon" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 5.8h6M8 5.8V5m1.5.8C9 8 7.5 10 5.8 11.2M7.8 9c.8 1 1.7 1.8 2.8 2.6M13.5 19l.8-2m4.2 2-.8-2m-3.4 0 1.7-4 1.7 4"/><path d="M14 10V8c0-4.8-1.2-6-6-6S2 3.2 2 8s1.2 6 6 6h2m0 2c0 4.8 1.2 6 6 6s6-1.2 6-6-1.2-6-6-6-6 1.2-6 6Z"/></g></svg>',
+          options: ["auto", "zh-cn", "zh-tw", "en", "fr", "ja"].map(value => ({
+            value,
+            label: languageNames[value]
+          }))
+        }),
+        createPreferenceMenu({
+          type: "theme",
+          label: "选择主题",
+          icon:
+            '<svg class="preference-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 1 0 0 20zm0 2v4a4 4 0 1 0 0 8v4a8 8 0 1 1 0-16Z"/></svg>',
+          options: [
+            { value: "auto", label: "自动" },
+            { value: "dark", label: "深色" },
+            { value: "light", label: "浅色" }
+          ]
+        })
+      );
       header.append(controls);
     }
     syncControls();
   }
 
-  function syncControls() {
-    for (const field of document.querySelectorAll('[data-preference="language"]')) {
-      field.value = P.getLanguageChoice();
+  function createPreferenceMenu({ type, label, icon, options }) {
+    const details = document.createElement("details");
+    details.className = `preference-menu preference-menu-${type}`;
+    const trigger = document.createElement("summary");
+    trigger.className = "preference-trigger";
+    trigger.setAttribute("aria-label", label);
+    trigger.innerHTML = icon;
+    const dropdown = document.createElement("div");
+    dropdown.className = "preference-dropdown";
+    dropdown.setAttribute("role", "radiogroup");
+    dropdown.setAttribute("aria-label", label);
+
+    for (const option of options) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "preference-option";
+      button.dataset.preference = type;
+      button.dataset.value = option.value;
+      button.setAttribute("role", "radio");
+      button.textContent = option.label;
+      button.addEventListener("click", () => {
+        if (type === "language") {
+          P.setLanguageChoice(option.value);
+          translateDocument();
+        } else {
+          P.applyTheme(P.setThemeChoice(option.value));
+        }
+        details.removeAttribute("open");
+        syncControls();
+      });
+      dropdown.append(button);
     }
-    for (const field of document.querySelectorAll('[data-preference="theme"]')) {
-      field.value = P.getThemeChoice();
+
+    details.addEventListener("toggle", () => {
+      trigger.setAttribute("aria-expanded", String(details.open));
+      if (!details.open) return;
+      for (const other of document.querySelectorAll(".preference-menu[open]")) {
+        if (other !== details) other.removeAttribute("open");
+      }
+    });
+    details.append(trigger, dropdown);
+    return details;
+  }
+
+  function syncControls() {
+    const values = {
+      language: P.getLanguageChoice(),
+      theme: P.getThemeChoice()
+    };
+    for (const field of document.querySelectorAll(".preference-option")) {
+      field.setAttribute(
+        "aria-checked",
+        String(field.dataset.value === values[field.dataset.preference])
+      );
     }
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     installControls();
     translateDocument();
+    document.addEventListener("click", event => {
+      if (event.target.closest(".preference-menu")) return;
+      for (const menu of document.querySelectorAll(".preference-menu[open]")) {
+        menu.removeAttribute("open");
+      }
+    });
     const observer = new MutationObserver(() => translateDocument());
     observer.observe(document.body, { childList: true, subtree: true });
   });

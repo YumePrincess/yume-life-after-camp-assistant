@@ -65,6 +65,9 @@ html {
 }
 
 body {
+  position: relative;
+  display: flex;
+  isolation: isolate;
   min-height: 100vh;
   margin: 0;
   color: var(--text);
@@ -72,6 +75,7 @@ body {
     radial-gradient(circle at 20% 0%, rgba(210, 128, 93, 0.22), transparent 34rem),
     radial-gradient(circle at 90% 20%, rgba(107, 133, 170, 0.2), transparent 30rem),
     linear-gradient(150deg, var(--bg), color-mix(in srgb, var(--bg) 86%, #ffffff));
+  flex-direction: column;
 }
 
 body::before {
@@ -79,12 +83,43 @@ body::before {
   inset: 0;
   z-index: -2;
   content: "";
-  opacity: 0.28;
-  background-image:
+  background-image: url("https://www.yume.zone/img/background7.webp");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  transform: scale(1.02);
+}
+
+body::after {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  background:
     linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: linear-gradient(to bottom, black, transparent 80%);
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(150deg, rgba(243, 236, 229, 0.54), rgba(237, 227, 220, 0.72));
+  background-size: 32px 32px, 32px 32px, auto;
+  backdrop-filter: blur(3px) saturate(1.08);
+  -webkit-backdrop-filter: blur(3px) saturate(1.08);
+}
+
+:root[data-theme="dark"] body::after {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(150deg, rgba(5, 7, 11, 0.62), rgba(5, 7, 11, 0.82));
+  background-size: 32px 32px, 32px 32px, auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) body::after {
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(150deg, rgba(5, 7, 11, 0.62), rgba(5, 7, 11, 0.82));
+    background-size: 32px 32px, 32px 32px, auto;
+  }
 }
 
 button,
@@ -96,19 +131,112 @@ textarea {
 
 .preference-controls {
   display: flex;
-  flex-wrap: wrap;
+  position: relative;
+  z-index: 20;
   gap: 8px;
   margin-left: auto;
 }
 
-.preference-select {
-  min-height: 38px;
-  padding: 7px 30px 7px 12px;
+.preference-menu {
+  position: relative;
+}
+
+.preference-menu > summary {
+  list-style: none;
+}
+
+.preference-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.preference-trigger {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 50%;
   color: var(--text);
   background: var(--panel);
-  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 10px 24px rgba(31, 41, 55, 0.1);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  cursor: pointer;
+  place-items: center;
+  transition:
+    transform 160ms ease,
+    background 160ms ease;
+}
+
+.preference-trigger:hover,
+.preference-menu[open] .preference-trigger {
+  background: var(--panel-strong);
+  transform: translateY(-1px);
+}
+
+.preference-trigger:focus-visible,
+.preference-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.preference-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.preference-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 206px;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  animation: preference-menu-in 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.preference-option {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.preference-option:hover,
+.preference-option[aria-checked="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.preference-option[aria-checked="true"] {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+@keyframes preference-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .key-login-section {
@@ -774,10 +902,52 @@ td {
 
 .site-footer {
   display: flex;
-  justify-content: space-between;
-  padding-block: 16px 36px;
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  min-height: 46px;
+  margin-top: 32px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 28px 28px 0 0;
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  font-size: 13px;
+  text-align: center;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.site-footer .power {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.45;
+}
+
+.site-footer .power a {
+  color: inherit;
+  font-weight: 650;
+}
+
+.footer-timezone {
+  position: absolute;
+  right: 18px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.public-page > main,
+.admin-page > main,
+.login-page > main {
+  flex: 1 0 auto;
 }
 
 .login-shell {
@@ -791,6 +961,12 @@ td {
   width: min(470px, 100%);
   margin: 0;
   padding: clamp(28px, 6vw, 48px);
+}
+
+.login-card .preference-controls {
+  position: absolute;
+  top: 20px;
+  right: 20px;
 }
 
 .login-brand {
@@ -1004,8 +1180,21 @@ dialog::backdrop {
     width: min(100% - 20px, 1180px);
   }
 
+  .footer-timezone {
+    display: none;
+  }
+
   .site-header {
     padding-block: 14px;
+  }
+
+  .preference-dropdown {
+    min-width: 188px;
+  }
+
+  .preference-trigger {
+    width: 40px;
+    height: 40px;
   }
 
   .brand small,
