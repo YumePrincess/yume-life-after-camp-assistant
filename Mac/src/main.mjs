@@ -110,16 +110,36 @@ do {
 
     if (once) {
       if (active) await active.promise.catch(() => undefined);
+      console.log(
+        JSON.stringify({
+          event: "agent_once_complete",
+          commandHandled: Boolean(command)
+        })
+      );
       break;
     }
   } catch (error) {
     console.error(JSON.stringify({ event: "agent_loop_error", message: error.message }));
+    if (once) {
+      process.exitCode = 1;
+      break;
+    }
   }
-  await delay(nextPollSeconds * 1000).catch(() => undefined);
+  if (!once) await delay(nextPollSeconds * 1000).catch(() => undefined);
 } while (!stopping);
 
 if (active) await active.promise.catch(() => undefined);
-await new Promise((resolve) => debugServer.close(resolve));
+await closeDebugServer(debugServer);
+
+async function closeDebugServer(server) {
+  await new Promise((resolve) => {
+    server.close(resolve);
+    // A Cloudflare Tunnel or local health check can keep an HTTP connection to
+    // port 8091 alive. `--once` must still return control to the shell.
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
+  });
+}
 
 function startCommand(command) {
   const controller = new AbortController();

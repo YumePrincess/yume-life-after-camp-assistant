@@ -1190,7 +1190,7 @@
     }
   }
 
-  function translateDocument() {
+  function translateDocument({ emitEvent = true } = {}) {
     const language = currentLanguage();
     document.documentElement.lang = language === "zh-cn" ? "zh-CN" : language;
     document.title = translate(originalTitle, language);
@@ -1226,9 +1226,11 @@
     }
     updateSiteFooter(language);
     syncControls();
-    document.dispatchEvent(
-      new CustomEvent("mrzh:languagechange", { detail: { language } })
-    );
+    if (emitEvent) {
+      document.dispatchEvent(
+        new CustomEvent("mrzh:languagechange", { detail: { language } })
+      );
+    }
   }
 
   function installControls() {
@@ -1330,7 +1332,18 @@
         menu.removeAttribute("open");
       }
     });
-    const observer = new MutationObserver(() => translateDocument());
+    let translationScheduled = false;
+    const observer = new MutationObserver(() => {
+      if (translationScheduled) return;
+      translationScheduled = true;
+      queueMicrotask(() => {
+        translationScheduled = false;
+        // Dynamic cards still need their text translated, but emitting the
+        // language-change event here would make their renderer mutate the DOM
+        // again and create an endless observer/render loop.
+        translateDocument({ emitEvent: false });
+      });
+    });
     observer.observe(document.body, { childList: true, subtree: true });
   });
   window.addEventListener("storage", (event) => {

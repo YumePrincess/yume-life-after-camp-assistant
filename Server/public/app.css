@@ -60,6 +60,7 @@
 }
 
 html {
+  min-height: 100%;
   min-width: 320px;
   background: var(--bg);
 }
@@ -69,7 +70,9 @@ body {
   display: flex;
   isolation: isolate;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
+  padding-bottom: calc(62px + env(safe-area-inset-bottom));
   color: var(--text);
   background:
     radial-gradient(circle at 20% 0%, rgba(210, 128, 93, 0.22), transparent 34rem),
@@ -902,12 +905,15 @@ td {
 
 .site-footer {
   display: flex;
-  position: relative;
-  z-index: 2;
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 40;
   width: 100%;
   min-height: 46px;
-  margin-top: 32px;
-  padding: 8px 14px;
+  margin-top: 0;
+  padding: 8px 14px max(8px, env(safe-area-inset-bottom));
   border: 1px solid var(--line);
   border-right: 0;
   border-bottom: 0;
@@ -948,11 +954,12 @@ td {
 .admin-page > main,
 .login-page > main {
   flex: 1 0 auto;
+  padding-bottom: 32px;
 }
 
 .login-shell {
   display: grid;
-  min-height: 100vh;
+  min-height: 0;
   padding: 24px;
   place-items: center;
 }

@@ -6,15 +6,30 @@ export class AgentApi {
   }
 
   async request(path, body, signal) {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body),
-      signal
-    });
+    let response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body),
+        signal
+      });
+    } catch (error) {
+      const cause = error?.cause;
+      const causeDetail = [
+        cause?.code,
+        cause?.hostname,
+        cause?.port
+      ].filter(Boolean).join(" ");
+      throw new Error(
+        `${path}: ${error?.message || "Network request failed"}${
+          causeDetail ? ` (${causeDetail})` : ""
+        }`
+      );
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const code = payload.code ? ` [${payload.code}]` : "";

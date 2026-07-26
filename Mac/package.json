@@ -11,6 +11,7 @@
     "once": "node src/main.mjs --once",
     "doctor": "node src/doctor.mjs",
     "agent:install": "./scripts/install-launch-agent.sh",
+    "agent:uninstall": "./scripts/uninstall-launch-agent.sh",
     "agent:start": "./scripts/agent-control.sh start",
     "agent:stop": "./scripts/agent-control.sh stop",
     "agent:restart": "./scripts/agent-control.sh restart",
