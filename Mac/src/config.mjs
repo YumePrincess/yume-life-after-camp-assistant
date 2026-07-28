@@ -20,6 +20,12 @@ export async function loadConfig() {
       config.localVisionModel.model
     );
   }
+  if (config.localVisionModel?.pythonBinary?.startsWith(".")) {
+    config.localVisionModel.pythonBinary = resolve(
+      MAC_ROOT,
+      config.localVisionModel.pythonBinary
+    );
+  }
   validate(config);
   return config;
 }
@@ -47,6 +53,7 @@ function validate(config) {
   }
   if (
     config.localVisionModel?.enabled &&
+    config.localVisionModel?.transport !== "cli" &&
     !/^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(
       config.localVisionModel?.baseUrl || ""
     )

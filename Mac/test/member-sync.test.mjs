@@ -1,0 +1,104 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { reconcilePageRows } from "../src/workflows/member-sync.mjs";
+
+test("page overlap reconciles only the same positional member", () => {
+  const previous = [
+    { name: "甲" },
+    { name: "乙" },
+    { name: "星河踏月归✨", roommateName: "踏月追星河" },
+    { name: "相似名字" },
+    { name: "锚点一" },
+    { name: "锚点二" }
+  ];
+  const current = [
+    { name: "星河踏月归", roommateName: "踏月追星河" },
+    { name: "相似名字" },
+    { name: "锚点一" },
+    { name: "锚点二" },
+    { name: "相似名字二" },
+    { name: "新成员" }
+  ];
+
+  assert.deepEqual(
+    reconcilePageRows(previous, current).map((row) => row.name),
+    [
+      "星河踏月归✨",
+      "相似名字",
+      "锚点一",
+      "锚点二",
+      "相似名字二",
+      "新成员"
+    ]
+  );
+});
+
+test("similar names are untouched without three exact overlap anchors", () => {
+  const previous = [{ name: "角色A" }, { name: "角色B" }, { name: "角色C" }];
+  const current = [{ name: "角色Ａ" }, { name: "角色D" }, { name: "角色E" }];
+
+  assert.deepEqual(reconcilePageRows(previous, current), current);
+});
+
+test("page alignment prefers the denser exact overlap", () => {
+  const previous = [
+    { name: "甲" },
+    { name: "乙" },
+    { name: "锚点一" },
+    { name: "锚点二" },
+    { name: "锚点三" },
+    { name: "尾部", roommateName: "同居对象" }
+  ];
+  const current = [
+    { name: "锚点一" },
+    { name: "锚点二" },
+    { name: "锚点三" },
+    { name: "尾部变体", roommateName: "同居对象" },
+    { name: "新成员一" },
+    { name: "新成员二" }
+  ];
+
+  assert.deepEqual(
+    reconcilePageRows(previous, current).map((row) => row.name),
+    [
+      "锚点一",
+      "锚点二",
+      "锚点三",
+      "尾部",
+      "新成员一",
+      "新成员二"
+    ]
+  );
+});
+
+test("two anchors cannot merge a different member", () => {
+  const previous = [
+    { name: "锚点一" },
+    { name: "锚点二" },
+    { name: "相似姓名甲", profession: "步枪兵王", manorLevel: "30" }
+  ];
+  const current = [
+    { name: "锚点一" },
+    { name: "锚点二" },
+    { name: "相似姓名乙", profession: "步枪兵王", manorLevel: "30" }
+  ];
+
+  assert.equal(reconcilePageRows(previous, current)[2].name, "相似姓名乙");
+});
+
+test("shared camp titles never merge distinct members", () => {
+  const previous = [
+    { name: "前一人" },
+    { name: "锚点一" },
+    { name: "锚点二" },
+    { name: "相似姓名甲", campTitle: "#G春之音" }
+  ];
+  const current = [
+    { name: "锚点一" },
+    { name: "锚点二" },
+    { name: "相似姓名乙", campTitle: "#G春之音" },
+    { name: "新成员" }
+  ];
+
+  assert.equal(reconcilePageRows(previous, current)[2].name, "相似姓名乙");
+});

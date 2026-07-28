@@ -18,6 +18,7 @@
     "instanceIndex": 3,
     "startManagerInBackground": true,
     "stopEmulatorAfterTask": true,
+    "keepRunningOnTaskError": true,
     "adbReadyTimeoutSeconds": 180,
     "containerRestartTimeoutSeconds": 60,
     "deviceProcessName": "MuMuEmulator",
@@ -39,24 +40,35 @@
     "binary": "./bin/mrzh-vision-ocr",
     "pixelProbeBinary": "./bin/mrzh-pixel-probe",
     "mode": "fast",
-    "minimumConfidence": 0.35
+    "minimumConfidence": 0.35,
+    "quickTravelPrecheckEnabled": false,
+    "accurateFallbackEnabled": false,
+    "accurateFallbackSeconds": 5,
+    "accurateTimeoutSeconds": 15
   },
   "localVisionModel": {
     "enabled": true,
-    "mode": "shadow",
+    "mode": "guarded",
+    "transport": "http",
     "baseUrl": "http://127.0.0.1:8092",
-    "model": "./.local-model/models/deepseek-vl-7b-chat-4bit",
-    "timeoutSeconds": 45,
+    "model": "./.local-model/models/Qwen3-VL-2B-Instruct-4bit",
+    "pythonBinary": "./.local-model/venv/bin/python",
+    "timeoutSeconds": 180,
     "minimumConfidence": 0.9,
-    "consecutiveMatches": 2,
-    "intervalSeconds": 8,
+    "minimumActionConfidence": 0.95,
+    "consecutiveMatches": 1,
+    "maxAdviceAgeSeconds": 8,
+    "intervalSeconds": 3,
+    "unknownRecoveryDelaySeconds": 8,
+    "unknownRecoveryMatches": 2,
     "autoStartForTasks": true,
     "stopAfterTask": true
   },
   "timeouts": {
     "gameLaunchSeconds": 180,
-    "screenTransitionSeconds": 20,
-    "actionDelayMs": 650
+    "screenTransitionSeconds": 180,
+    "actionDelayMs": 400,
+    "neverAbortHealthyTaskOnTimeout": true
   },
   "postLoginPromotions": {
     "maxPages": 2,
@@ -158,6 +170,7 @@
   "tables": {
     "contribution": {
       "region": { "left": 1220, "top": 270, "right": 1900, "bottom": 1000 },
+      "minimumCompleteRows": 100,
       "columns": [
         { "key": "name", "left": 0, "right": 0.32 },
         { "key": "weeklyContribution", "left": 0.32, "right": 0.54 },
@@ -174,28 +187,30 @@
       }
     },
     "members": {
-      "region": { "left": 235, "top": 290, "right": 1800, "bottom": 910 },
+      "extractionMode": "hybrid",
+      "region": { "left": 115, "top": 315, "right": 1800, "bottom": 810 },
       "columns": [
         {
           "key": "identity",
           "stackedKeys": ["name", "campTitle"],
           "left": 0,
-          "right": 0.265
+          "right": 0.318
         },
-        { "key": "profession", "left": 0.265, "right": 0.425 },
-        { "key": "weeklyContribution", "left": 0.425, "right": 0.53 },
-        { "key": "manorLevel", "left": 0.53, "right": 0.63 },
-        { "key": "onlineState", "left": 0.63, "right": 0.735 },
-        { "key": "scene", "left": 0.735, "right": 0.88 },
-        { "key": "roommateName", "left": 0.88, "right": 1 }
+        { "key": "profession", "left": 0.318, "right": 0.46 },
+        { "key": "weeklyContribution", "left": 0.46, "right": 0.555 },
+        { "key": "manorLevel", "left": 0.555, "right": 0.65 },
+        { "key": "onlineState", "left": 0.65, "right": 0.745 },
+        { "key": "scene", "left": 0.745, "right": 0.858 },
+        { "key": "roommateName", "left": 0.858, "right": 1 }
       ],
       "headerPattern": ["全部成员", "输入玩家昵称", "营地招募"],
       "pagination": {
-        "from": { "x": 1200, "y": 850 },
-        "to": { "x": 1200, "y": 350 },
-        "durationMs": 800,
-        "maxPages": 40,
-        "stopAfterStagnantPages": 2
+        "from": { "x": 1700, "y": 700 },
+        "to": { "x": 1700, "y": 350 },
+        "durationMs": 650,
+        "minimumRowsPerPage": 5,
+        "maxPages": 30,
+        "stopAfterStagnantPages": 3
       }
     },
     "activity": {
@@ -255,8 +270,22 @@
   },
   "flows": {
     "openCampPanel": [
-      { "op": "key", "code": 34 },
-      { "op": "waitAnyText", "texts": ["科技", "成员", "玩法"], "timeoutSeconds": 12 }
+      { "op": "tap", "x": 250, "y": 1095 },
+      { "op": "sleep", "ms": 800 },
+      { "op": "tap", "x": 1660, "y": 380 },
+      {
+        "op": "waitAnyText",
+        "texts": ["营地频道"],
+        "region": { "left": 790, "top": 25, "right": 1040, "bottom": 115 },
+        "timeoutSeconds": 12
+      },
+      { "op": "tap", "x": 980, "y": 65 },
+      {
+        "op": "waitAnyText",
+        "texts": ["首页", "玩法", "科技", "成员"],
+        "region": { "left": 350, "top": 170, "right": 1320, "bottom": 245 },
+        "timeoutSeconds": 12
+      }
     ],
     "teleportNoticeBoard": [
       {
@@ -282,13 +311,15 @@
           "name": "公告版",
           "x": 270,
           "y": 577,
-          "readyTexts": ["查看玩法", "营地巡逻", "交谈"]
+          "readyTexts": ["查看玩法", "营地巡逻", "交谈"],
+          "readyRegion": { "left": 1180, "top": 300, "right": 1920, "bottom": 1050 }
         },
         "fallback": {
           "name": "中心出入口",
           "x": 280,
           "y": 337,
-          "readyTexts": ["中心出入口", "配方", "背包"]
+          "readyTexts": ["中心出入口", "配方", "背包"],
+          "readyRegion": { "left": 0, "top": 300, "right": 650, "bottom": 1000 }
         },
         "failureTexts": ["已在目标点附近", "目标点附近", "无法传送", "传送冷却中"],
         "cooldownSeconds": 10,
@@ -377,13 +408,15 @@
           "name": "市政厅",
           "x": 280,
           "y": 420,
-          "readyTexts": ["营地数据中心", "营地管理"]
+          "readyTexts": ["营地数据中心", "营地管理"],
+          "readyRegion": { "left": 1150, "top": 450, "right": 1650, "bottom": 900 }
         },
         "fallback": {
           "name": "中心出入口",
           "x": 280,
           "y": 337,
-          "readyTexts": ["中心出入口", "配方", "背包"]
+          "readyTexts": ["中心出入口", "配方", "背包"],
+          "readyRegion": { "left": 0, "top": 300, "right": 650, "bottom": 1000 }
         },
         "failureTexts": ["已在目标点附近", "目标点附近", "无法传送", "传送冷却中"],
         "cooldownSeconds": 10,
@@ -391,10 +424,6 @@
       }
     ],
     "teleportCentralExit": [
-      { "op": "key", "code": 4 },
-      { "op": "sleep", "ms": 700 },
-      { "op": "key", "code": 4 },
-      { "op": "sleep", "ms": 700 },
       {
         "op": "teleportWithFallback",
         "mapButton": { "x": 1780, "y": 120 },
@@ -418,13 +447,15 @@
           "name": "中心出入口",
           "x": 280,
           "y": 337,
-          "readyTexts": ["中心出入口", "配方", "背包"]
+          "readyTexts": ["中心出入口", "配方", "背包"],
+          "readyRegion": { "left": 0, "top": 300, "right": 650, "bottom": 1000 }
         },
         "fallback": {
           "name": "中心出入口",
           "x": 280,
           "y": 337,
-          "readyTexts": ["中心出入口", "配方", "背包"]
+          "readyTexts": ["中心出入口", "配方", "背包"],
+          "readyRegion": { "left": 0, "top": 300, "right": 650, "bottom": 1000 }
         },
         "nearbyIsSuccess": true,
         "failureTexts": ["已在目标点附近", "目标点附近", "无法传送", "传送冷却中"],
@@ -434,13 +465,28 @@
     ],
     "navigateToSandTable": [
       { "op": "tap", "x": 1370, "y": 715 },
-      { "op": "waitAnyText", "texts": ["成员信息", "活动时间管理"], "timeoutSeconds": 12 }
+      {
+        "op": "waitAnyText",
+        "texts": ["成员信息", "活动时间管理"],
+        "region": { "left": 760, "top": 280, "right": 1350, "bottom": 620 },
+        "timeoutSeconds": 12
+      }
     ],
     "openContribution": [
       { "op": "tap", "x": 1050, "y": 450 },
-      { "op": "waitAnyText", "texts": ["营地资料", "全部成员"], "timeoutSeconds": 12 },
+      {
+        "op": "waitAnyText",
+        "texts": ["营地资料", "全部成员"],
+        "region": { "left": 1200, "top": 100, "right": 1600, "bottom": 280 },
+        "timeoutSeconds": 12
+      },
       { "op": "tap", "x": 1785, "y": 1042 },
-      { "op": "waitAnyText", "texts": ["一周贡献", "贡献物资"], "timeoutSeconds": 12 }
+      {
+        "op": "waitAnyText",
+        "texts": ["一周贡献", "贡献物资"],
+        "region": { "left": 1200, "top": 180, "right": 1900, "bottom": 270 },
+        "timeoutSeconds": 12
+      }
     ],
     "openActivity": [
       { "op": "tap", "x": 1050, "y": 450 },
@@ -460,42 +506,25 @@
     ],
     "closeContribution": [
       { "op": "tap", "x": 80, "y": 1080 },
-      { "op": "sleep", "ms": 800 },
-      { "op": "tap", "x": 80, "y": 1080 },
       { "op": "sleep", "ms": 1000 }
     ],
     "openMemberPanel": [
       { "op": "tap", "x": 1190, "y": 208 },
-      { "op": "waitAnyText", "texts": ["职业", "庄园等级", "同居"], "timeoutSeconds": 12 }
+      {
+        "op": "waitAnyText",
+        "texts": ["职业", "庄园等级", "同居"],
+        "region": { "left": 650, "top": 235, "right": 1800, "bottom": 295 },
+        "timeoutSeconds": 12
+      }
     ],
     "openStaffPanel": [
       { "op": "tap", "x": 1640, "y": 950 },
-      { "op": "waitAnyText", "texts": ["营地公职人员", "公职人员"], "timeoutSeconds": 12 }
-    ],
-    "teleportSpecialInfected": [],
-    "openWeeklySchedule": [],
-    "brickNavigateFurnitureStore": [
-      { "op": "tap", "x": 620, "y": 165 },
-      { "op": "waitAnyText", "texts": ["搬运建材", "加固篝火", "提交美食"], "timeoutSeconds": 8 },
-      { "op": "clickText", "text": "搬运建材", "timeoutSeconds": 8 },
-      { "op": "key", "code": 4 }
-    ],
-    "brickWaitAndPick": [
-      { "op": "waitAnyText", "texts": ["喷泉建材", "搬起"], "timeoutSeconds": 45 },
-      { "op": "clickText", "text": "搬起", "timeoutSeconds": 8 }
-    ],
-    "brickCarryAndDrop": [
       {
-        "op": "keyUntilText",
-        "code": 47,
-        "longPress": true,
-        "repeat": 3,
-        "minimumKeyBatches": 1,
-        "texts": ["放下"],
-        "timeoutSeconds": 25,
-        "intervalMs": 180
-      },
-      { "op": "clickText", "text": "放下", "timeoutSeconds": 8 }
+        "op": "waitAnyText",
+        "texts": ["营地公职人员", "公职人员"],
+        "region": { "left": 500, "top": 235, "right": 900, "bottom": 290 },
+        "timeoutSeconds": 12
+      }
     ]
   },
   "memberKick": {

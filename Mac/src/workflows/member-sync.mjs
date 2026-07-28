@@ -39,7 +39,7 @@ export async function runMemberSync(context, command, _bundle, signal) {
 
 export async function runContributionSync(context, command, _bundle, signal) {
   const rows = normalizeContribution(await captureContribution(context, signal));
-  if (!rows.length) throw new Error("No contribution rows recognized");
+  assertContributionComplete(rows, context.config.tables.contribution);
   await context.api.snapshot(
     command.runId,
     "contribution",
@@ -92,12 +92,42 @@ export async function captureContribution(context, signal) {
   await context.ui.executeFlow("teleportCityHall", {}, signal);
   await context.ui.executeFlow("navigateToSandTable", {}, signal);
   await context.ui.executeFlow("openContribution", {}, signal);
-  return capturePagedTable(
+  let rows = await capturePagedTable(
     context,
     "member-contribution",
     context.config.tables.contribution,
     signal
   );
+  const minimumRows = contributionMinimum(context.config.tables.contribution);
+  if (rows.length < minimumRows) {
+    await context.report(
+      "warning",
+      "contribution_empty_retry",
+      `贡献表首次仅识别 ${rows.length}/${minimumRows} 名成员，点击左下角返回并重新进入贡献页；不关闭游戏或容器`
+    );
+    await context.ui.tap({ x: 80, y: 1080 }, signal);
+    await context.ui.executeFlow("openContribution", {}, signal);
+    rows = await capturePagedTable(
+      context,
+      "member-contribution-retry",
+      context.config.tables.contribution,
+      signal
+    );
+  }
+  return rows;
+}
+
+export function assertContributionComplete(rows, definition) {
+  const minimumRows = contributionMinimum(definition);
+  if (rows.length < minimumRows) {
+    throw new Error(
+      `CONTRIBUTION_INCOMPLETE: recognized ${rows.length}/${minimumRows} required unique member rows`
+    );
+  }
+}
+
+function contributionMinimum(definition) {
+  return Math.max(1, Number(definition?.minimumCompleteRows) || 1);
 }
 
 async function captureActivity(context, startFromWorld, signal) {
@@ -146,23 +176,53 @@ async function ensureActivityDescending(context, signal) {
   }
 }
 
-async function captureProfilesAndStaff(context, signal) {
-  await context.ui.executeFlow("teleportNoticeBoard", {}, signal);
+export async function captureProfilesAndStaff(context, signal) {
   await context.ui.executeFlow("openCampPanel", {}, signal);
   await context.ui.executeFlow("openMemberPanel", {}, signal);
+  const expectedMembers = await context.vision.readMemberExpectedTotal(signal);
   const details = await capturePagedTable(
     context,
     "member-details",
     context.config.tables.members,
     signal
   );
+  if (details.length !== expectedMembers) {
+    throw new Error(
+      `MEMBER_PROFILE_COUNT_MISMATCH: recognized ${details.length}, page header reports ${expectedMembers}`
+    );
+  }
   await context.ui.executeFlow("openStaffPanel", {}, signal);
-  const staffFrame = await context.vision.capture("camp-staff", signal);
-  const staff = normalizeStaffGrid(
+  const staffFrame = await context.vision.captureAccurate(
+    "camp-staff",
+    signal
+  );
+  let staff = normalizeStaffGrid(
     staffFrame.observations,
     context.config.tables.staffGrid
   );
+  if (
+    typeof context.vision.extractStaffRows === "function" &&
+    staffFrame.path
+  ) {
+    const advisedStaff = await context.vision
+      .extractStaffRows(staffFrame.path, signal)
+      .catch(async (error) => {
+        await context.report(
+          "warning",
+          "staff_ai_ocr_failed",
+          "公职页面模型识别失败，保留 Apple OCR 结果",
+          { reason: error.message }
+        );
+        return [];
+      });
+    if (advisedStaff.length > staff.length) staff = advisedStaff;
+  }
   if (!staff.length) throw new Error("No staff rows recognized; snapshot was not uploaded");
+  if (staff.length > 11) {
+    throw new Error(
+      `STAFF_COUNT_INVALID: recognized ${staff.length}, maximum is mayor 1 + staff 10`
+    );
+  }
   return { details, staff };
 }
 
@@ -171,11 +231,67 @@ export async function capturePagedTable(context, label, definition, signal) {
   const byName = new Map();
   let stagnantPages = 0;
   let previousFingerprint = "";
+  let previousRows = [];
   for (let page = 0; page < definition.pagination.maxPages; page += 1) {
-    const frame = await vision.capture(`${label}-${page + 1}`, signal);
-    const rows = parseTable(frame.observations, definition).filter(
-      (row) => row.name && !definition.headerPattern.some((value) => row.name.includes(value))
+    let frame;
+    let rows = [];
+    const minimumRowsPerPage = Math.max(
+      1,
+      Number(definition.pagination.minimumRowsPerPage) || 1
     );
+    for (let readAttempt = 1; readAttempt <= 3; readAttempt += 1) {
+      const attemptLabel =
+        readAttempt === 1
+          ? `${label}-${page + 1}`
+          : `${label}-${page + 1}-retry-${readAttempt}`;
+      const attemptFrame = await vision.capture(attemptLabel, signal);
+      let attemptRows =
+        definition.extractionMode === "hybrid"
+          ? []
+          : parseTable(attemptFrame.observations, definition).filter(
+              (row) =>
+                row.name &&
+                !definition.headerPattern.some((value) =>
+                  row.name.includes(value)
+                )
+            );
+      if (
+        (!attemptRows.length || definition.extractionMode === "hybrid") &&
+        typeof vision.extractTableRows === "function"
+      ) {
+        attemptRows = await vision.extractTableRows(
+          attemptFrame.path,
+          definition,
+          attemptLabel,
+          signal
+        ).catch(async (error) => {
+          await report(
+            "warning",
+            `${label}_ai_ocr_failed`,
+            `第 ${page + 1} 页 AI 表格识别失败，保留当前界面并继续重试`,
+            { reason: error.message }
+          );
+          return [];
+        });
+      }
+      if (!frame || attemptRows.length > rows.length) {
+        frame = attemptFrame;
+        rows = attemptRows;
+      }
+      if (rows.length >= minimumRowsPerPage || readAttempt === 3) break;
+      await report(
+        "warning",
+        `${label}_empty_page_retry`,
+        `第 ${page + 1} 页仅识别 ${rows.length}/${minimumRowsPerPage} 行，保持当前位置原地重读`
+      );
+      await ui.afterAction(signal);
+    }
+    rows = rows.filter(
+      (row) =>
+        row.name &&
+        !definition.headerPattern.some((value) => row.name.includes(value))
+    );
+    rows = reconcilePageRows(previousRows, rows);
     const fingerprint = rows.map((row) => row.name).join("|");
     let added = 0;
     for (const row of rows) {
@@ -193,6 +309,7 @@ export async function capturePagedTable(context, label, definition, signal) {
       added === 0 || fingerprint === previousFingerprint ? stagnantPages + 1 : 0;
     if (stagnantPages >= definition.pagination.stopAfterStagnantPages) break;
     previousFingerprint = fingerprint;
+    previousRows = rows.map((row) => ({ ...row }));
     await adb.mouseSwipe(
       definition.pagination.from,
       definition.pagination.to,
@@ -202,4 +319,60 @@ export async function capturePagedTable(context, label, definition, signal) {
     await ui.afterAction(signal);
   }
   return [...byName.values()];
+}
+
+export function reconcilePageRows(previousRows, currentRows) {
+  if (previousRows.length < 3 || currentRows.length < 3) return currentRows;
+  let best = null;
+  for (let offset = 1; offset < previousRows.length; offset += 1) {
+    const overlap = Math.min(
+      previousRows.length - offset,
+      currentRows.length
+    );
+    if (overlap < 2) continue;
+    let exactMatches = 0;
+    for (let index = 0; index < overlap; index += 1) {
+      if (
+        exactPageName(previousRows[offset + index].name) ===
+        exactPageName(currentRows[index].name)
+      ) {
+        exactMatches += 1;
+      }
+    }
+    const candidate = {
+      offset,
+      overlap,
+      exactMatches,
+      ratio: exactMatches / overlap
+    };
+    if (
+      !best ||
+      candidate.ratio > best.ratio ||
+      (
+        candidate.ratio === best.ratio &&
+        candidate.exactMatches > best.exactMatches
+      ) ||
+      (
+        candidate.ratio === best.ratio &&
+        candidate.exactMatches === best.exactMatches &&
+        candidate.overlap < best.overlap
+      )
+    ) {
+      best = candidate;
+    }
+  }
+  if (!best || best.exactMatches < 3 || best.ratio < 0.75) {
+    return currentRows;
+  }
+  return currentRows.map((row, index) => {
+    if (index >= best.overlap) return row;
+    const previous = previousRows[best.offset + index];
+    return exactPageName(previous.name) === exactPageName(row.name)
+      ? row
+      : { ...row, name: previous.name };
+  });
+}
+
+function exactPageName(value) {
+  return String(value || "").trim().normalize("NFKC").toLowerCase();
 }

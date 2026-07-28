@@ -67,27 +67,27 @@ export function normalizeMembers(contributionRows, detailRows, activityRows = []
   const combined = [];
   for (const row of contributionRows) {
     const name = clean(row.name);
-    if (!name || /成员|姓名|贡献|职业/.test(name)) continue;
+    if (!name || /玩家名|成员|姓名|贡献|职业/.test(name)) continue;
     combined.push({ ...row, name });
   }
   for (const row of detailRows) {
     const name = clean(row.name);
     if (!name || /成员|姓名|贡献|职业/.test(name)) continue;
-    const match = closestMember(combined, name);
-    if (match) Object.assign(match, row, { name });
+    const match = exactMember(combined, name);
+    if (match) Object.assign(match, row, { name: match.name });
     else combined.push({ ...row, name });
   }
   for (const row of activityRows) {
     const name = clean(row.name);
     if (!name || /成员|姓名|在线情况|职业/.test(name)) continue;
-    const match = closestMember(combined, name);
+    const match = exactMember(combined, name);
     const normalized = {
       ...row,
       name,
       lastActiveText: clean(row.onlineState) || null,
       inactiveDays: parseInactiveDays(row.onlineState)
     };
-    if (match) Object.assign(match, normalized);
+    if (match) Object.assign(match, normalized, { name: match.name });
     else combined.push(normalized);
   }
   return combined.map((row) => ({
@@ -159,44 +159,15 @@ export function parseInactiveDays(value) {
   return null;
 }
 
-function closestMember(rows, name) {
-  const wanted = comparableName(name);
-  let best = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const row of rows) {
-    const candidate = comparableName(row.name);
-    if (candidate === wanted) return row;
-    const distance = editDistance(candidate, wanted);
-    const threshold = Math.min(3, Math.max(1, Math.ceil(Math.max(candidate.length, wanted.length) * 0.25)));
-    if (distance <= threshold && distance < bestDistance) {
-      best = row;
-      bestDistance = distance;
-    }
-  }
-  return best;
+function exactMember(rows, name) {
+  const wanted = exactNameKey(name);
+  return rows.find((row) => exactNameKey(row.name) === wanted) || null;
 }
 
-function comparableName(value) {
+function exactNameKey(value) {
   return clean(value)
     .normalize("NFKC")
-    .replace(/[^\p{L}\p{N}]/gu, "")
     .toLowerCase();
-}
-
-function editDistance(left, right) {
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let i = 1; i <= left.length; i += 1) {
-    const current = [i];
-    for (let j = 1; j <= right.length; j += 1) {
-      current[j] = Math.min(
-        current[j - 1] + 1,
-        previous[j] + 1,
-        previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1)
-      );
-    }
-    previous.splice(0, previous.length, ...current);
-  }
-  return previous[right.length];
 }
 
 export function normalizeStaff(rows) {

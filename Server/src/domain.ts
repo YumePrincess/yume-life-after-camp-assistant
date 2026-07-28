@@ -7,8 +7,6 @@ export const TASK_KEYS = [
   "kick_member",
   "kick_inactive_members",
   "patrol",
-  "brick_transport",
-  "weekly_schedule_update",
   "automation_routine"
 ] as const;
 
@@ -106,16 +104,6 @@ export interface AutomationConfig {
       chatPollSeconds: number;
       deadline: string;
     };
-    brick_transport: TaskSchedule & {
-      latestStart: string;
-      stop: string;
-      inlineWithPatrol: boolean;
-    };
-    weekly_schedule_update: TaskSchedule & {
-      weekday: number;
-      cutoff: string;
-      onlyWhenDirty: boolean;
-    };
   };
   routines: AutomationRoutine[];
 }
@@ -145,29 +133,12 @@ export interface AutomationRoutine {
   >;
 }
 
-export interface WeeklyEvent {
-  key: "infected_invasion" | "special_infected";
-  name: string;
-  weekday: number;
-  time: string;
-  level: string;
-}
-
-export interface WeeklySchedule {
-  events: WeeklyEvent[];
-  dirty: boolean;
-  updatedAt: string | null;
-  pendingApplyWeek: string | null;
-  lastAppliedAt: string | null;
-}
-
 export interface ConfigBundle {
   campConfig: CampConfig;
   authConfig: AuthConfig;
   publicOverview: PublicOverview;
   technologyConfig: TechnologyConfig;
   automationConfig: AutomationConfig;
-  weeklySchedule: WeeklySchedule;
 }
 
 export interface VoteOption extends TechnologyDefinition {

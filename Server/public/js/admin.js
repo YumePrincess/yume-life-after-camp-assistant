@@ -8,20 +8,22 @@
     ["inactivity_sync", "更新斩杀预警", "仅从市政厅沙盘活跃页更新离线时间"],
     ["member_profile_sync", "更新成员资料", "仅更新职业、庄园、同居与公职"],
     ["patrol", "营地巡逻", "组队、困难路线、古籍分享与聊天指令"],
-    ["brick_transport", "搬砖", "按时间窗执行营地搬砖路线"],
-    ["weekly_schedule_update", "周日程更新", "更新感染者活动时间与等级"],
     ["automation_routine", "任务例程", "按后台配置的先后与同组关系执行"],
     ["kick_member", "踢出成员", "从最新名单精确选择成员后执行"],
     ["kick_inactive_members", "自动斩杀", "处理最新识别仍达到斩杀线的成员"]
   ];
+  const CONFIG_SECTIONS = ["general", "tasks", "agent", "technology"];
   const ACTIVE_STATES = new Set(["queued", "claimed", "running", "cancelling"]);
   const state = {
     bootstrap: null,
     csrfToken: "",
-    dirty: false,
+    dirtySections: new Set(),
     refreshing: false,
+    saving: false,
     memberQuery: "",
-    selectedMember: null
+    selectedMember: null,
+    activeView: "overview",
+    accessAllowed: false
   };
 
   function byId(id) {
@@ -102,6 +104,17 @@
     return field?.type === "checkbox" ? field.checked : field?.value;
   }
 
+  function updateSaveState(fallback = "") {
+    if (!state.dirtySections.size) {
+      byId("save-state").textContent = fallback;
+      return;
+    }
+    byId("save-state").textContent =
+      state.dirtySections.size === 1
+        ? "有 1 个分区未保存"
+        : `有 ${state.dirtySections.size} 个分区未保存`;
+  }
+
   function renderTaskActions() {
     const root = byId("task-actions");
     root.replaceChildren();
@@ -169,109 +182,88 @@
     }
   }
 
-  function fillConfig(bundle) {
+  function fillConfig(bundle, sections = CONFIG_SECTIONS) {
     const camp = bundle.campConfig;
     const overview = bundle.publicOverview;
     const automation = bundle.automationConfig;
     const tasks = automation.tasks;
-    for (const [name, value] of Object.entries({
-      campName: camp.campName,
-      serverName: camp.serverName,
-      publicSiteName: camp.publicSiteName,
-      timezone: automation.timezone,
-      gameResetTime: camp.gameResetTime,
-      voteWindowStart: camp.voteWindowStart || "06:30",
-      voteWindowEnd: camp.voteWindowEnd || "24:00",
-      currentCampType: camp.currentCampType,
-      publicMembersEnabled: camp.publicMembersEnabled,
-      inactivityWarningDays: camp.inactivityWarningDays,
-      automaticKickEnabled: camp.automaticKickEnabled,
-      automaticKickGraceDays: camp.automaticKickGraceDays,
-      temporaryKeyLoginEnabled: bundle.authConfig.temporaryKeyLoginEnabled,
-      announcement: overview.announcement,
-      highlights: (overview.highlights || []).join("\n"),
-      techEnabled: tasks.tech_switch.enabled,
-      techTime: tasks.tech_switch.time,
-      memberEnabled: tasks.member_sync.enabled,
-      memberTime: tasks.member_sync.time,
-      contributionEnabled: tasks.contribution_sync.enabled,
-      contributionTime: tasks.contribution_sync.time,
-      inactivityEnabled: tasks.inactivity_sync.enabled,
-      inactivityTime: tasks.inactivity_sync.time,
-      profileEnabled: tasks.member_profile_sync.enabled,
-      profileTime: tasks.member_profile_sync.time,
-      patrolEnabled: tasks.patrol.enabled,
-      patrolTime: tasks.patrol.time,
-      patrolReadyTime: tasks.patrol.teamReadyTime,
-      patrolDeadline: tasks.patrol.deadline,
-      shareInterval: tasks.patrol.shareIntervalMinutes,
-      chatPollSeconds: tasks.patrol.chatPollSeconds,
-      brickEnabled: tasks.brick_transport.enabled,
-      brickTime: tasks.brick_transport.time,
-      brickLatestStart: tasks.brick_transport.latestStart,
-      brickStop: tasks.brick_transport.stop,
-      brickInline: tasks.brick_transport.inlineWithPatrol,
-      weeklyEnabled: tasks.weekly_schedule_update.enabled,
-      weeklyTime: tasks.weekly_schedule_update.time,
-      weeklyCutoff: tasks.weekly_schedule_update.cutoff,
-      weeklyDirtyOnly: tasks.weekly_schedule_update.onlyWhenDirty,
-      pollActiveSeconds: automation.agentPolling.activeSeconds,
-      pollIdleSeconds: automation.agentPolling.idleSeconds,
-      watchdogEnabled: automation.gameWatchdog.enabled,
-      watchdogHealthSeconds: automation.gameWatchdog.healthCheckSeconds,
-      watchdogActionSeconds: automation.gameWatchdog.actionTimeoutSeconds,
-      watchdogFrozenSeconds: automation.gameWatchdog.frozenScreenSeconds,
-      watchdogMaxRestarts: automation.gameWatchdog.maxRestarts,
-      watchdogCooldownSeconds: automation.gameWatchdog.restartCooldownSeconds
-    })) {
-      setField(name, value);
+    if (sections.includes("general")) {
+      for (const [name, value] of Object.entries({
+        campName: camp.campName,
+        serverName: camp.serverName,
+        publicSiteName: camp.publicSiteName,
+        timezone: automation.timezone,
+        gameResetTime: camp.gameResetTime,
+        voteWindowStart: camp.voteWindowStart || "06:30",
+        voteWindowEnd: camp.voteWindowEnd || "24:00",
+        currentCampType: camp.currentCampType,
+        publicMembersEnabled: camp.publicMembersEnabled,
+        inactivityWarningDays: camp.inactivityWarningDays,
+        automaticKickEnabled: camp.automaticKickEnabled,
+        automaticKickGraceDays: camp.automaticKickGraceDays,
+        temporaryKeyLoginEnabled: bundle.authConfig.temporaryKeyLoginEnabled,
+        announcement: overview.announcement,
+        highlights: (overview.highlights || []).join("\n")
+      })) {
+        setField(name, value);
+      }
     }
-    byId("technology-json").value = JSON.stringify(bundle.technologyConfig, null, 2);
-    byId("polling-windows-json").value = JSON.stringify(
-      automation.agentPolling.windows,
-      null,
-      2
-    );
-    byId("routines-json").value = JSON.stringify(automation.routines, null, 2);
-    byId("weekly-dirty").textContent = bundle.weeklySchedule.dirty
-      ? window.MrzhI18n.format("待应用 {week}", {
-          week: bundle.weeklySchedule.pendingApplyWeek || ""
-        })
-      : window.MrzhI18n.t("已应用");
-    renderWeeklyEvents(bundle.weeklySchedule.events || []);
-  }
-
-  function renderWeeklyEvents(events) {
-    const root = byId("weekly-events");
-    root.replaceChildren();
-    for (const event of events) {
-      const row = create("div", "weekly-row");
-      row.dataset.key = event.key;
-      row.dataset.name = event.name;
-      row.append(
-        weeklyField("活动", "text", "eventName", event.name, true),
-        weeklyField("星期（1-7）", "number", "weekday", event.weekday),
-        weeklyField("时间", "time", "time", event.time),
-        weeklyField("等级", "text", "level", event.level)
+    if (sections.includes("tasks")) {
+      for (const [name, value] of Object.entries({
+        techEnabled: tasks.tech_switch.enabled,
+        techTime: tasks.tech_switch.time,
+        memberEnabled: tasks.member_sync.enabled,
+        memberTime: tasks.member_sync.time,
+        contributionEnabled: tasks.contribution_sync.enabled,
+        contributionTime: tasks.contribution_sync.time,
+        inactivityEnabled: tasks.inactivity_sync.enabled,
+        inactivityTime: tasks.inactivity_sync.time,
+        profileEnabled: tasks.member_profile_sync.enabled,
+        profileTime: tasks.member_profile_sync.time,
+        patrolEnabled: tasks.patrol.enabled,
+        patrolTime: tasks.patrol.time,
+        patrolReadyTime: tasks.patrol.teamReadyTime,
+        patrolDeadline: tasks.patrol.deadline,
+        shareInterval: tasks.patrol.shareIntervalMinutes,
+        chatPollSeconds: tasks.patrol.chatPollSeconds
+      })) {
+        setField(name, value);
+      }
+    }
+    if (sections.includes("agent")) {
+      for (const [name, value] of Object.entries({
+        pollActiveSeconds: automation.agentPolling.activeSeconds,
+        pollIdleSeconds: automation.agentPolling.idleSeconds,
+        watchdogEnabled: automation.gameWatchdog.enabled,
+        watchdogHealthSeconds: automation.gameWatchdog.healthCheckSeconds,
+        watchdogActionSeconds: automation.gameWatchdog.actionTimeoutSeconds,
+        watchdogFrozenSeconds: automation.gameWatchdog.frozenScreenSeconds,
+        watchdogMaxRestarts: automation.gameWatchdog.maxRestarts,
+        watchdogCooldownSeconds: automation.gameWatchdog.restartCooldownSeconds
+      })) {
+        setField(name, value);
+      }
+      byId("polling-windows-json").value = JSON.stringify(
+        automation.agentPolling.windows,
+        null,
+        2
       );
-      root.append(row);
+      byId("routines-json").value = JSON.stringify(automation.routines, null, 2);
     }
-  }
-
-  function weeklyField(labelText, type, name, value, readonly = false) {
-    const label = create("label", "field");
-    const title = create("span", "", labelText);
-    const field = document.createElement("input");
-    field.type = type;
-    field.name = name;
-    field.value = value;
-    field.readOnly = readonly;
-    if (type === "number") {
-      field.min = "1";
-      field.max = "7";
+    if (sections.includes("technology")) {
+      byId("technology-json").value = JSON.stringify(
+        bundle.technologyConfig,
+        null,
+        2
+      );
     }
-    label.append(title, field);
-    return label;
+    for (const section of sections) {
+      const form = document.querySelector(
+        `.config-form[data-config-section="${section}"]`
+      );
+      const feedback = form?.querySelector("[data-save-feedback]");
+      if (feedback) feedback.textContent = "当前配置已同步";
+    }
   }
 
   function renderVote(summary) {
@@ -330,7 +322,30 @@
     }
   }
 
-  function render(data, fillForm = true) {
+  function activateView(view) {
+    const availableViews = new Set(
+      [...document.querySelectorAll("[data-admin-view]")].map(
+        (element) => element.dataset.adminView
+      )
+    );
+    const resolved =
+      availableViews.has(view) && (view !== "access" || state.accessAllowed)
+        ? view
+        : "overview";
+    state.activeView = resolved;
+    for (const element of document.querySelectorAll("[data-admin-view]")) {
+      element.hidden =
+        element.dataset.adminView !== resolved ||
+        (element.dataset.adminView === "access" && !state.accessAllowed);
+    }
+    for (const link of document.querySelectorAll("[data-nav-target]")) {
+      const active = link.dataset.navTarget === resolved;
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    }
+  }
+
+  function render(data, fillSections = []) {
     state.bootstrap = data;
     state.csrfToken = data.session.csrfToken;
     renderTaskActions();
@@ -350,23 +365,26 @@
     renderAdminMembers(data.members || []);
     renderAutoKick(data.autoKickCandidates || [], data.configBundle.campConfig);
     renderTemporaryKeys(data.temporaryKeys || []);
-    byId("temporary-key-panel").hidden = !hasPermission("keys:manage");
-    if (fillForm) {
-      fillConfig(data.configBundle);
-      state.dirty = false;
-      setConfigReadOnly(!hasPermission("config:write"));
-      if (!hasPermission("member:kick")) {
-        input("automaticKickEnabled").disabled = true;
-        input("automaticKickGraceDays").disabled = true;
-      }
+    state.accessAllowed = hasPermission("keys:manage");
+    document.querySelector('[data-nav-target="access"]').hidden =
+      !state.accessAllowed;
+    if (fillSections.length) {
+      fillConfig(data.configBundle, fillSections);
     }
+    setConfigReadOnly(!hasPermission("config:write"));
+    if (!hasPermission("member:kick")) {
+      input("automaticKickEnabled").disabled = true;
+      input("automaticKickGraceDays").disabled = true;
+    }
+    const requestedView = location.hash.slice(1) || state.activeView;
+    activateView(requestedView);
   }
 
   function setConfigReadOnly(readonly) {
     for (const field of document.querySelectorAll(
-      "#config-form input, #config-form select, #config-form textarea, #config-form button"
+      ".config-form input, .config-form select, .config-form textarea, .config-form button"
     )) {
-      field.disabled = readonly;
+      field.disabled = readonly || (state.saving && field.matches('button[type="submit"]'));
     }
   }
 
@@ -553,12 +571,17 @@
     }
   }
 
-  async function refresh(forceForm = false) {
-    if (state.refreshing) return;
+  async function refresh(forceAll = false) {
+    if (state.refreshing || state.saving) return;
     state.refreshing = true;
     try {
       const data = await request(`/api/admin/bootstrap?t=${Date.now()}`);
-      render(data, forceForm || !state.dirty);
+      const sections = forceAll
+        ? CONFIG_SECTIONS
+        : CONFIG_SECTIONS.filter(
+            (section) => !state.dirtySections.has(section)
+          );
+      render(data, sections);
     } catch (error) {
       byId("save-state").textContent = error.message;
     } finally {
@@ -625,36 +648,14 @@
     }
   }
 
-  function collectWeeklyEvents() {
-    return [...document.querySelectorAll(".weekly-row")].map((row) => ({
-      key: row.dataset.key,
-      name: row.dataset.name,
-      weekday: Number(row.querySelector('[name="weekday"]').value),
-      time: row.querySelector('[name="time"]').value,
-      level: row.querySelector('[name="level"]').value.trim()
-    }));
-  }
-
-  function collectConfig() {
-    const current = state.bootstrap.configBundle;
-    let technologyConfig;
-    let pollingWindows;
-    let routines;
-    try {
-      technologyConfig = JSON.parse(byId("technology-json").value);
-    } catch {
-      throw new Error("科技配置 JSON 格式错误");
-    }
-    try {
-      pollingWindows = JSON.parse(byId("polling-windows-json").value);
-      routines = JSON.parse(byId("routines-json").value);
-    } catch {
-      throw new Error("轮询窗口或任务例程 JSON 格式错误");
-    }
-    const timezone = String(getField("timezone")).trim();
-    return {
-      campConfig: {
-        ...current.campConfig,
+  function collectConfig(section) {
+    const next = JSON.parse(
+      JSON.stringify(state.bootstrap.configBundle)
+    );
+    if (section === "general") {
+      const timezone = String(getField("timezone")).trim();
+      next.campConfig = {
+        ...next.campConfig,
         campName: String(getField("campName")).trim(),
         serverName: String(getField("serverName")).trim(),
         publicSiteName: String(getField("publicSiteName")).trim(),
@@ -667,99 +668,114 @@
         inactivityWarningDays: Number(getField("inactivityWarningDays")),
         automaticKickEnabled: getField("automaticKickEnabled"),
         automaticKickGraceDays: Number(getField("automaticKickGraceDays"))
-      },
-      authConfig: {
+      };
+      next.authConfig = {
         temporaryKeyLoginEnabled: getField("temporaryKeyLoginEnabled")
-      },
-      publicOverview: {
+      };
+      next.publicOverview = {
         announcement: String(getField("announcement")).trim(),
         highlights: String(getField("highlights"))
           .split("\n")
           .map((value) => value.trim())
           .filter(Boolean)
-      },
-      technologyConfig,
-      automationConfig: {
-        timezone,
-        schedulerGraceMinutes: current.automationConfig.schedulerGraceMinutes,
-        agentPolling: {
-          activeSeconds: Number(getField("pollActiveSeconds")),
-          idleSeconds: Number(getField("pollIdleSeconds")),
-          windows: pollingWindows
+      };
+      next.automationConfig.timezone = timezone;
+    } else if (section === "tasks") {
+      next.automationConfig.tasks = {
+        tech_switch: {
+          enabled: getField("techEnabled"),
+          time: getField("techTime")
         },
-        gameWatchdog: {
-          enabled: getField("watchdogEnabled"),
-          healthCheckSeconds: Number(getField("watchdogHealthSeconds")),
-          actionTimeoutSeconds: Number(getField("watchdogActionSeconds")),
-          frozenScreenSeconds: Number(getField("watchdogFrozenSeconds")),
-          maxRestarts: Number(getField("watchdogMaxRestarts")),
-          restartCooldownSeconds: Number(getField("watchdogCooldownSeconds"))
+        member_sync: {
+          enabled: getField("memberEnabled"),
+          time: getField("memberTime")
         },
-        tasks: {
-          tech_switch: {
-            enabled: getField("techEnabled"),
-            time: getField("techTime")
-          },
-          member_sync: {
-            enabled: getField("memberEnabled"),
-            time: getField("memberTime")
-          },
-          contribution_sync: {
-            enabled: getField("contributionEnabled"),
-            time: getField("contributionTime")
-          },
-          inactivity_sync: {
-            enabled: getField("inactivityEnabled"),
-            time: getField("inactivityTime")
-          },
-          member_profile_sync: {
-            enabled: getField("profileEnabled"),
-            time: getField("profileTime")
-          },
-          patrol: {
-            enabled: getField("patrolEnabled"),
-            time: getField("patrolTime"),
-            teamReadyTime: getField("patrolReadyTime"),
-            shareIntervalMinutes: Number(getField("shareInterval")),
-            chatPollSeconds: Number(getField("chatPollSeconds")),
-            deadline: getField("patrolDeadline")
-          },
-          brick_transport: {
-            enabled: getField("brickEnabled"),
-            time: getField("brickTime"),
-            latestStart: getField("brickLatestStart"),
-            stop: getField("brickStop"),
-            inlineWithPatrol: getField("brickInline")
-          },
-          weekly_schedule_update: {
-            enabled: getField("weeklyEnabled"),
-            time: getField("weeklyTime"),
-            weekday: 7,
-            cutoff: getField("weeklyCutoff"),
-            onlyWhenDirty: getField("weeklyDirtyOnly")
-          }
+        contribution_sync: {
+          enabled: getField("contributionEnabled"),
+          time: getField("contributionTime")
         },
-        routines
-      },
-      weeklySchedule: {
-        ...current.weeklySchedule,
-        events: collectWeeklyEvents()
+        inactivity_sync: {
+          enabled: getField("inactivityEnabled"),
+          time: getField("inactivityTime")
+        },
+        member_profile_sync: {
+          enabled: getField("profileEnabled"),
+          time: getField("profileTime")
+        },
+        patrol: {
+          enabled: getField("patrolEnabled"),
+          time: getField("patrolTime"),
+          teamReadyTime: getField("patrolReadyTime"),
+          shareIntervalMinutes: Number(getField("shareInterval")),
+          chatPollSeconds: Number(getField("chatPollSeconds")),
+          deadline: getField("patrolDeadline")
+        }
+      };
+    } else if (section === "agent") {
+      let pollingWindows;
+      let routines;
+      try {
+        pollingWindows = JSON.parse(byId("polling-windows-json").value);
+        routines = JSON.parse(byId("routines-json").value);
+      } catch {
+        throw new Error("轮询窗口或任务例程 JSON 格式错误");
       }
-    };
+      next.automationConfig.agentPolling = {
+        activeSeconds: Number(getField("pollActiveSeconds")),
+        idleSeconds: Number(getField("pollIdleSeconds")),
+        windows: pollingWindows
+      };
+      next.automationConfig.gameWatchdog = {
+        enabled: getField("watchdogEnabled"),
+        healthCheckSeconds: Number(getField("watchdogHealthSeconds")),
+        actionTimeoutSeconds: Number(getField("watchdogActionSeconds")),
+        frozenScreenSeconds: Number(getField("watchdogFrozenSeconds")),
+        maxRestarts: Number(getField("watchdogMaxRestarts")),
+        restartCooldownSeconds: Number(getField("watchdogCooldownSeconds"))
+      };
+      next.automationConfig.routines = routines;
+    } else if (section === "technology") {
+      try {
+        next.technologyConfig = JSON.parse(byId("technology-json").value);
+      } catch {
+        throw new Error("科技配置 JSON 格式错误");
+      }
+    } else {
+      throw new Error("未知配置分区");
+    }
+    return next;
   }
 
   async function saveConfig(event) {
     event.preventDefault();
+    if (state.saving) return;
+    const form = event.currentTarget;
+    const section = form.dataset.configSection;
+    const feedback = form.querySelector("[data-save-feedback]");
+    const buttons = [
+      ...document.querySelectorAll('.config-form button[type="submit"]')
+    ];
+    state.saving = true;
+    feedback.textContent = "正在保存…";
     byId("save-state").textContent = "正在保存…";
+    for (const button of buttons) button.disabled = true;
     try {
       const data = await request("/api/admin/config", {
         method: "PUT",
-        body: JSON.stringify(collectConfig())
+        body: JSON.stringify(collectConfig(section))
       });
-      render(data, true);
-      byId("save-state").textContent = "配置已保存";
+      state.dirtySections.delete(section);
+      render(data, [section]);
+      feedback.textContent = "配置已保存";
+      updateSaveState("配置已保存");
     } catch (error) {
+      feedback.textContent = error.message;
       byId("save-state").textContent = error.message;
+    } finally {
+      state.saving = false;
+      for (const button of buttons) {
+        button.disabled = !hasPermission("config:write");
+      }
     }
   }
 
@@ -817,18 +833,36 @@
   }
 
   renderTaskActions();
-  byId("config-form").addEventListener("input", () => {
-    state.dirty = true;
-    byId("save-state").textContent = "有未保存修改";
+  for (const form of document.querySelectorAll(".config-form")) {
+    form.addEventListener("input", () => {
+      const section = form.dataset.configSection;
+      state.dirtySections.add(section);
+      form.querySelector("[data-save-feedback]").textContent = "有未保存修改";
+      updateSaveState();
+    });
+    form.addEventListener("submit", saveConfig);
+  }
+  for (const link of document.querySelectorAll("[data-nav-target]")) {
+    link.addEventListener("click", () => {
+      activateView(link.dataset.navTarget);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+  window.addEventListener("hashchange", () => {
+    activateView(location.hash.slice(1) || "overview");
   });
-  byId("config-form").addEventListener("submit", saveConfig);
+  window.addEventListener("beforeunload", (event) => {
+    if (!state.dirtySections.size) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
   byId("admin-member-search").addEventListener("input", (event) => {
     state.memberQuery = event.target.value || "";
     renderAdminMembers(state.bootstrap?.members || []);
   });
   byId("kick-member").addEventListener("click", kickSelectedMember);
   byId("auto-kick-evaluate").addEventListener("click", evaluateAutoKick);
-  byId("refresh-admin").addEventListener("click", () => refresh(!state.dirty));
+  byId("refresh-admin").addEventListener("click", () => refresh(false));
   byId("logout").addEventListener("click", logout);
   byId("temporary-key-form").addEventListener("submit", generateTemporaryKey);
   byId("copy-temporary-key").addEventListener("click", async () => {
@@ -836,7 +870,7 @@
     byId("save-state").textContent = "临时 Key 已复制";
   });
   document.addEventListener("mrzh:languagechange", () => {
-    if (state.bootstrap) render(state.bootstrap, false);
+    if (state.bootstrap) render(state.bootstrap, []);
   });
   setDefaultKeyExpiry();
   refresh(true);

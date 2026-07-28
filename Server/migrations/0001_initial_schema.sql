@@ -194,11 +194,6 @@ INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
 ),
 (
   'automation_config',
-  '{"timezone":"Asia/Shanghai","schedulerGraceMinutes":5,"agentPolling":{"activeSeconds":2,"idleSeconds":300,"windows":[{"id":"early","name":"凌晨任务窗口","start":"01:45","end":"03:10","seconds":5,"weekdays":[1,2,3,4,5,6,7]},{"id":"evening","name":"晚间任务窗口","start":"19:00","end":"21:35","seconds":5,"weekdays":[1,2,3,4,5,6,7]},{"id":"weekly","name":"周日程窗口","start":"22:45","end":"23:20","seconds":5,"weekdays":[7]}]},"gameWatchdog":{"enabled":true,"healthCheckSeconds":10,"actionTimeoutSeconds":45,"frozenScreenSeconds":90,"maxRestarts":2,"restartCooldownSeconds":8},"tasks":{"tech_switch":{"enabled":true,"time":"02:00"},"member_sync":{"enabled":true,"time":"02:30"},"contribution_sync":{"enabled":false,"time":"02:30"},"inactivity_sync":{"enabled":false,"time":"02:30"},"member_profile_sync":{"enabled":false,"time":"02:30"},"patrol":{"enabled":true,"time":"19:20","teamReadyTime":"19:30","shareIntervalMinutes":10,"chatPollSeconds":5,"deadline":"21:25"},"brick_transport":{"enabled":true,"time":"19:30","latestStart":"19:33","stop":"19:40","inlineWithPatrol":true},"weekly_schedule_update":{"enabled":true,"time":"23:00","weekday":7,"cutoff":"22:30","onlyWhenDirty":true}},"routines":[]}',
-  CURRENT_TIMESTAMP
-),
-(
-  'weekly_schedule',
-  '{"events":[{"key":"infected_invasion","name":"感染者入侵","weekday":7,"time":"20:00","level":"普通"},{"key":"special_infected","name":"围剿特殊感染者","weekday":7,"time":"20:30","level":"普通"}],"dirty":false,"updatedAt":null,"pendingApplyWeek":null,"lastAppliedAt":null}',
+  '{"timezone":"Asia/Shanghai","schedulerGraceMinutes":5,"agentPolling":{"activeSeconds":2,"idleSeconds":300,"windows":[{"id":"early","name":"凌晨任务窗口","start":"01:45","end":"03:10","seconds":5,"weekdays":[1,2,3,4,5,6,7]},{"id":"evening","name":"晚间任务窗口","start":"19:00","end":"21:35","seconds":5,"weekdays":[1,2,3,4,5,6,7]}]},"gameWatchdog":{"enabled":true,"healthCheckSeconds":10,"actionTimeoutSeconds":45,"frozenScreenSeconds":90,"maxRestarts":2,"restartCooldownSeconds":8},"tasks":{"tech_switch":{"enabled":true,"time":"02:00"},"member_sync":{"enabled":true,"time":"02:30"},"contribution_sync":{"enabled":false,"time":"02:30"},"inactivity_sync":{"enabled":false,"time":"02:30"},"member_profile_sync":{"enabled":false,"time":"02:30"},"patrol":{"enabled":true,"time":"19:20","teamReadyTime":"19:30","shareIntervalMinutes":10,"chatPollSeconds":5,"deadline":"21:25"}},"routines":[]}',
   CURRENT_TIMESTAMP
 );

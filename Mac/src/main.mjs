@@ -15,8 +15,6 @@ import {
   runMemberProfileSync
 } from "./workflows/member-sync.mjs";
 import { runPatrol } from "./workflows/patrol.mjs";
-import { runBrickTransport } from "./workflows/brick.mjs";
-import { runWeeklySchedule } from "./workflows/weekly.mjs";
 import {
   runKickInactiveMembers,
   runKickMember
@@ -49,8 +47,6 @@ const workflows = {
   inactivity_sync: runInactivitySync,
   member_profile_sync: runMemberProfileSync,
   patrol: runPatrol,
-  brick_transport: runBrickTransport,
-  weekly_schedule_update: runWeeklySchedule,
   kick_member: runKickMember,
   kick_inactive_members: runKickInactiveMembers
 };

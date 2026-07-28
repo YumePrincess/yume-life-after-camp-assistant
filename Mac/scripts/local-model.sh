@@ -5,10 +5,10 @@ SCRIPT_DIR=${0:A:h}
 MAC_ROOT=${SCRIPT_DIR:h}
 STATE_DIR="${MAC_ROOT}/.local-model"
 VENV_DIR="${STATE_DIR}/venv"
-MODEL_DIR="${STATE_DIR}/models/deepseek-vl-7b-chat-4bit"
+MODEL_DIR="${STATE_DIR}/models/Qwen3-VL-2B-Instruct-4bit"
 PID_PATH="${STATE_DIR}/server.pid"
 LOG_PATH="${STATE_DIR}/server.log"
-MODEL_REPO="mlx-community/deepseek-vl-7b-chat-4bit"
+MODEL_REPO="mlx-community/Qwen3-VL-2B-Instruct-4bit"
 HOST="127.0.0.1"
 PORT="8092"
 
@@ -63,18 +63,12 @@ start_server() {
     exit 1
   fi
   mkdir -p "${STATE_DIR}"
-  if [[ -f "${PID_PATH}" ]]; then
-    local stale_server_pid="$(<"${PID_PATH}")"
-    if [[ "${stale_server_pid}" == <-> ]] && kill -0 "${stale_server_pid}" 2>/dev/null; then
-      kill "${stale_server_pid}" 2>/dev/null || true
-    fi
-    rm -f -- "${PID_PATH}"
-  fi
+  stop_server
   nohup "${VENV_DIR}/bin/mlx_vlm.server" \
     --host "${HOST}" \
     --port "${PORT}" \
     --model "${MODEL_DIR}" \
-    --max-tokens 256 \
+    --max-tokens 512 \
     >"${LOG_PATH}" 2>&1 &
   echo $! > "${PID_PATH}"
   local attempts=0
@@ -125,8 +119,6 @@ stop_server() {
 show_status() {
   if server_running; then
     echo "Local vision model: running at http://${HOST}:${PORT}"
-    curl -fsS "http://${HOST}:${PORT}/health"
-    echo
   elif [[ -f "${MODEL_DIR}/config.json" ]]; then
     echo "Local vision model: installed, stopped"
   else

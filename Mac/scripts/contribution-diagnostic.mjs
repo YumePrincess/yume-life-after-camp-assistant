@@ -5,6 +5,7 @@ import { Vision } from "../src/vision.mjs";
 import { GameUi } from "../src/ui.mjs";
 import { withGameSession } from "../src/game-session.mjs";
 import { captureContribution } from "../src/workflows/member-sync.mjs";
+import { assertContributionComplete } from "../src/workflows/member-sync.mjs";
 import { normalizeContribution } from "../src/table-parser.mjs";
 
 const config = await loadConfig();
@@ -14,8 +15,8 @@ const vision = new Vision(config, adb);
 const watchdog = {
   enabled: true,
   healthCheckSeconds: 10,
-  actionTimeoutSeconds: 45,
-  frozenScreenSeconds: 90,
+  actionTimeoutSeconds: 180,
+  frozenScreenSeconds: 180,
   maxRestarts: 1,
   restartCooldownSeconds: 8
 };
@@ -61,9 +62,7 @@ try {
     async (signal) => {
       const rawRows = await captureContribution(context, signal);
       contribution = normalizeContribution(rawRows);
-      if (!contribution.length) {
-        throw new Error("Contribution test recognized no member rows");
-      }
+      assertContributionComplete(contribution, config.tables.contribution);
       completed = true;
     },
     controller.signal,
@@ -84,7 +83,7 @@ try {
       uniqueNames: names.size,
       duplicateNames: contribution.length - names.size,
       maximumMaterialContribution: maximumMaterial,
-      expectedKnownMaximumObserved: maximumMaterial === 17_892_175,
+      overflowMaterialValueObserved: maximumMaterial >= 10_000_000,
       firstRow: contribution[0] || null,
       lastRow: contribution.at(-1) || null,
       removedScreenshots

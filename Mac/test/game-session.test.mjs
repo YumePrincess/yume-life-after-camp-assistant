@@ -70,18 +70,83 @@ test("a local-model login hallucination never clicks or advances the workflow", 
   );
 });
 
-function createFixture(frames, modelAdvice = null) {
+test("accurate OCR recovers a login button missed by fast OCR", async () => {
+  const fixture = createFixture(
+    [[], [], ["背包"]],
+    null,
+    [["点击登录游戏"]]
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+  assert.equal(fixture.accurateCaptures, 1);
+});
+
+test("a slow local model never blocks the deterministic login loop", async () => {
+  const fixture = createFixture(
+    [[], ["背包"]],
+    () => new Promise(() => {})
+  );
+  const startedAt = Date.now();
+  await waitForGameReady(fixture.context);
+  assert.ok(Date.now() - startedAt < 1_500);
+  assert.deepEqual(fixture.taps, []);
+});
+
+test("an accurate OCR timeout degrades to fast OCR without ending login", async () => {
+  const fixture = createFixture(
+    [[], [], ["背包"]],
+    null,
+    [new Error("accurate OCR timed out")]
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, []);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("已自动退回快速 OCR")
+    )
+  );
+});
+
+test("guarded mode permits a fixed login tap at 0.95 confidence", async () => {
+  const fixture = createFixture(
+    [[], [], [], ["背包"]],
+    {
+      state: "login",
+      action: "wait",
+      confidence: 0.95,
+      evidence: "底部登录按钮清晰可见"
+    },
+    [],
+    "guarded"
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("高置信度")
+    )
+  );
+});
+
+function createFixture(
+  frames,
+  modelAdvice = null,
+  accurateFrames = [],
+  advisorMode = "shadow"
+) {
   const taps = [];
   const messages = [];
   let frameIndex = 0;
+  let accurateFrameIndex = 0;
   const vision = {
     advisor: modelAdvice
       ? {
           enabled: true,
           config: {
-            mode: "shadow",
-            intervalSeconds: 2,
+            mode: advisorMode,
+            intervalSeconds: 0.05,
             minimumConfidence: 0.9,
+            minimumActionConfidence: 0.95,
             consecutiveMatches: 2
           }
         }
@@ -99,11 +164,30 @@ function createFixture(frames, modelAdvice = null) {
         }))
       };
     },
+    async captureAccurateTransient() {
+      const texts =
+        accurateFrames[
+          Math.min(accurateFrameIndex++, accurateFrames.length - 1)
+        ] || [];
+      if (texts instanceof Error) throw texts;
+      return {
+        observations: texts.map((text) => ({
+          text,
+          confidence: 1,
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10
+        }))
+      };
+    },
     find(observations, text) {
       return observations.find((item) => item.text.includes(text));
     },
     async adviseCurrent() {
-      return modelAdvice;
+      return typeof modelAdvice === "function"
+        ? modelAdvice()
+        : modelAdvice;
     }
   };
   const context = {
@@ -122,7 +206,8 @@ function createFixture(frames, modelAdvice = null) {
         maxClosures: 2,
         closePoint: { x: 1742, y: 155 },
         texts: ["系统公告", "更新公告", "游戏公告"]
-      }
+      },
+      vision: { accurateFallbackSeconds: 0.05 }
     },
     adb: {
       async key() {},
@@ -143,5 +228,12 @@ function createFixture(frames, modelAdvice = null) {
       messages.push(message);
     }
   };
-  return { context, taps, messages };
+  return {
+    context,
+    taps,
+    messages,
+    get accurateCaptures() {
+      return accurateFrameIndex;
+    }
+  };
 }

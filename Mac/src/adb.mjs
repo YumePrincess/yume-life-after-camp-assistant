@@ -170,6 +170,17 @@ export class AdbClient {
       Math.round(durationMs)
     ];
     try {
+      await this.shell(
+        [
+          "input",
+          "mouse",
+          "motionevent",
+          "UP",
+          Math.round(from.x),
+          Math.round(from.y)
+        ],
+        { signal, timeoutMs: 5_000 }
+      ).catch(() => undefined);
       await this.shell(args, { signal, timeoutMs: 5_000 });
     } catch (error) {
       if (signal?.aborted) throw error;

@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  addWeeksToWeekKey,
   isWithinDailyClockWindow,
   nextTechnologyTargetDate,
-  nextWeeklyApplyWeek,
-  targetDateForTechnologyRun,
-  weekKeyForDateKey
+  targetDateForTechnologyRun
 } from "../src/time";
 
 describe("daily voting window", () => {
@@ -58,22 +55,5 @@ describe("technology target date", () => {
         "03:00"
       )
     ).toBe("2026-07-27");
-  });
-});
-
-describe("weekly cutoff", () => {
-  it("uses current ISO week before Sunday cutoff", () => {
-    const sundayAtTenShanghai = new Date("2026-07-26T14:00:00.000Z");
-    expect(
-      nextWeeklyApplyWeek(sundayAtTenShanghai, "Asia/Shanghai", "22:30")
-    ).toBe(weekKeyForDateKey("2026-07-26"));
-  });
-
-  it("moves changes after cutoff to next week", () => {
-    const sundayAtElevenShanghai = new Date("2026-07-26T15:00:00.000Z");
-    const current = weekKeyForDateKey("2026-07-26");
-    expect(
-      nextWeeklyApplyWeek(sundayAtElevenShanghai, "Asia/Shanghai", "22:30")
-    ).toBe(addWeeksToWeekKey(current, 1));
   });
 });

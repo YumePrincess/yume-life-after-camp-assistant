@@ -8,6 +8,7 @@ export class GameUi {
     this.vision = vision;
     this.report = report;
     this.runtimeAutomation = null;
+    this.lastConfirmedDestination = null;
   }
 
   setRuntimeAutomation(automation) {
@@ -25,7 +26,7 @@ export class GameUi {
 
   async clickText(text, options = {}, signal) {
     const timeoutMs = this.timeoutMs(options);
-    const deadline = Date.now() + timeoutMs;
+    let deadline = Date.now() + timeoutMs;
     do {
       const frame = await this.vision.capture(`find-${text}`, signal);
       const match = this.vision.find(frame.observations, text, options.mode);
@@ -34,21 +35,117 @@ export class GameUi {
         return { frame, match };
       }
       await delay(700, signal);
+      if (
+        Date.now() >= deadline &&
+        this.config.timeouts.neverAbortHealthyTaskOnTimeout
+      ) {
+        await this.report(
+          "warning",
+          "healthy_ui_wait_extended",
+          `游戏进程健康，继续等待可点击文字：${text}`
+        );
+        deadline = Date.now() + timeoutMs;
+      }
     } while (Date.now() < deadline);
     throw new Error(`OCR could not find text: ${text}`);
   }
 
   async waitAnyText(texts, options = {}, signal) {
     const timeoutMs = this.timeoutMs(options);
-    const deadline = Date.now() + timeoutMs;
+    let deadline = Date.now() + timeoutMs;
     let unchangedSince = Date.now();
     let previousFingerprint = "";
+    let nextAdvisorAt = 0;
+    let nextRegionOcrAt = 0;
+    let regionOcrFailureReported = false;
     do {
       const frame = await this.vision.capture("wait-text", signal);
-      const found = texts
-        .map((text) => ({ text, match: this.vision.find(frame.observations, text) }))
+      let found = texts
+        .map((text) => ({
+          text,
+          match: this.findInRegion(frame.observations, text, options.region)
+        }))
         .find((item) => item.match);
       if (found) return { ...found, frame };
+      if (
+        options.region &&
+        frame.path &&
+        typeof this.vision.ocrRegion === "function" &&
+        Date.now() >= nextRegionOcrAt
+      ) {
+        nextRegionOcrAt = Date.now() + 2_000;
+        try {
+          const regionalObservations = await this.vision.ocrRegion(
+            frame.path,
+            options.region,
+            `wait-${texts.join("-")}`,
+            signal
+          );
+          found = texts
+            .map((text) => ({
+              text,
+              match: this.findInRegion(
+                regionalObservations,
+                text,
+                options.region
+              )
+            }))
+            .find((item) => item.match);
+          if (found) {
+            return {
+              ...found,
+              frame,
+              regionalOcr: true
+            };
+          }
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          if (!regionOcrFailureReported) {
+            regionOcrFailureReported = true;
+            await this.report(
+              "warning",
+              "regional_ocr_unavailable",
+              "目标小区域中文 OCR 本次不可用，保留界面并继续等待；不会由模型代替放行",
+              { reason: error.message, region: options.region }
+            );
+          }
+        }
+      }
+      if (
+        Date.now() >= nextAdvisorAt &&
+        this.vision.advisor?.enabled &&
+        this.vision.advisor.config.mode === "guarded"
+      ) {
+        nextAdvisorAt = Date.now() + 1_000;
+        const advice = await this.vision.adviseCurrent(
+          "wait-text-advisor",
+          {
+            expectedState: "target_text_visible",
+            taskHint: `确认画面是否清晰显示以下任一文字：${texts.join("、")}`,
+            ocrTexts: frame.observations.map((item) => item.text)
+          },
+          signal
+        ).catch(() => null);
+        const minimum =
+          Number(
+            this.vision.advisor.config.minimumActionConfidence
+          ) || 0.95;
+        const accepted =
+          advice?.state === "target_text_visible" &&
+          Number(advice.confidence) >= minimum;
+        await this.report(
+          "info",
+          "local_model_text_verification",
+          `本地模型页面候选仅供记录：${advice?.state || "unavailable"}；不会替代限定区域 OCR 推动流程`,
+          {
+            ...advice,
+            accepted: false,
+            modelWouldAccept: accepted,
+            texts,
+            region: options.region || null
+          }
+        );
+      }
       const fingerprint = frame.observations
         .map((item) => `${item.text}:${Math.round(item.x / 8)}:${Math.round(item.y / 8)}`)
         .join("|");
@@ -59,6 +156,7 @@ export class GameUi {
         const frozenSeconds =
           this.runtimeAutomation?.gameWatchdog?.frozenScreenSeconds;
         if (
+          !this.config.timeouts.neverAbortHealthyTaskOnTimeout &&
           Number.isFinite(frozenSeconds) &&
           Date.now() - unchangedSince >= frozenSeconds * 1000
         ) {
@@ -66,8 +164,34 @@ export class GameUi {
         }
       }
       await delay(800, signal);
+      if (
+        Date.now() >= deadline &&
+        this.config.timeouts.neverAbortHealthyTaskOnTimeout
+      ) {
+        await this.report(
+          "warning",
+          "healthy_ui_wait_extended",
+          `游戏进程健康，继续等待界面文字：${texts.join(" / ")}`
+        );
+        deadline = Date.now() + timeoutMs;
+      }
     } while (Date.now() < deadline);
     throw new Error(`Timed out waiting for: ${texts.join(" / ")}`);
+  }
+
+  findInRegion(observations, text, region, mode = "includes") {
+    if (!region) return this.vision.find(observations, text, mode);
+    const filtered = observations.filter((item) => {
+      const x = item.x + item.width / 2;
+      const y = item.y + item.height / 2;
+      return (
+        x >= region.left &&
+        x <= region.right &&
+        y >= region.top &&
+        y <= region.bottom
+      );
+    });
+    return this.vision.find(filtered, text, mode);
   }
 
   async keyUntilText(action, signal) {
@@ -165,8 +289,14 @@ export class GameUi {
 
   async teleportWithFallback(action, signal) {
     let result = await this.attemptTeleport(action, action.target, signal);
-    if (result.state === "success") return result;
-    if (result.state === "nearby" && action.nearbyIsSuccess) return result;
+    if (result.state === "success") {
+      this.lastConfirmedDestination = action.target.name;
+      return result;
+    }
+    if (result.state === "nearby" && action.nearbyIsSuccess) {
+      this.lastConfirmedDestination = action.target.name;
+      return result;
+    }
 
     if (result.state === "cooldown") {
       await this.report(
@@ -176,7 +306,10 @@ export class GameUi {
       );
       await delay(action.cooldownSeconds * 1000, signal);
       result = await this.attemptTeleport(action, action.target, signal);
-      if (result.state === "success") return result;
+      if (result.state === "success") {
+        this.lastConfirmedDestination = action.target.name;
+        return result;
+      }
     }
 
     if (result.state !== "nearby") {
@@ -200,18 +333,28 @@ export class GameUi {
       action.fallback,
       signal
     );
-    if (fallback.state !== "success") {
+    if (!["success", "nearby"].includes(fallback.state)) {
       throw new Error(
         `Teleport fallback to ${action.fallback.name} failed: ${fallback.state}${fallback.text ? ` (${fallback.text})` : ""}`
       );
     }
-    await delay(action.cooldownSeconds * 1000, signal);
+    this.lastConfirmedDestination = action.fallback.name;
+    if (fallback.state === "success") {
+      await delay(action.cooldownSeconds * 1000, signal);
+    } else {
+      await this.report(
+        "info",
+        "teleport_fallback_already_there",
+        `角色已在${action.fallback.name}附近，跳过备用传送和冷却等待，直接继续前往${action.target.name}`
+      );
+    }
     const returned = await this.attemptTeleport(action, action.target, signal);
     if (returned.state !== "success") {
       throw new Error(
         `Teleport return to ${action.target.name} failed after fallback: ${returned.state}${returned.text ? ` (${returned.text})` : ""}`
       );
     }
+    this.lastConfirmedDestination = action.target.name;
     return returned;
   }
 
@@ -238,7 +381,10 @@ export class GameUi {
     }
     await this.tap(destination, signal);
     await delay(action.destinationSelectDelayMs || 600, signal);
-    if (action.quickTravelEnabledDetection) {
+    if (
+      action.quickTravelEnabledDetection &&
+      this.config.vision.quickTravelPrecheckEnabled !== false
+    ) {
       const selected = await this.vision.capture(
         `teleport-selected-${destination.name || "target"}`,
         signal
@@ -266,30 +412,77 @@ export class GameUi {
       action.resultTimeoutSeconds,
       signal
     );
+    if (
+      result.state === "success" &&
+      destination.readyRegion &&
+      !(await this.verifyDestination(destination, signal))
+    ) {
+      return {
+        state: "nearby",
+        text: `已到达${destination.name}传送点，但未出现正确交互选项`
+      };
+    }
     return result;
   }
 
-  async ensureMapOpen(action, signal) {
-    const frame = await this.vision.captureTransient("teleport-map-state", signal);
-    const alreadyOpen = (action.mapReadyTexts || [])
-      .map((text) => this.vision.find(frame.observations, text))
-      .find(Boolean);
-    const failureOverlay = (action.failureTexts || [])
-      .map((text) => this.vision.find(frame.observations, text))
-      .find(Boolean);
-    if (failureOverlay) {
-      await this.adb.key(4, signal);
-      await this.afterAction(signal);
-    }
-    if (!alreadyOpen || failureOverlay) {
-      if (action.mapKey) {
-        await this.adb.key(action.mapKey, signal);
-      } else {
-        await this.tap(action.mapButton, signal);
+  async verifyDestination(destination, signal) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const frame = await this.vision.capture(
+        `verify-destination-${destination.name}-${attempt + 1}`,
+        signal
+      );
+      let observations = frame.observations;
+      if (typeof this.vision.ocrRegion === "function") {
+        observations = await this.vision.ocrRegion(
+          frame.path,
+          destination.readyRegion,
+          `verify-${destination.name}-${attempt + 1}`,
+          signal
+        ).catch(() => observations);
       }
+      const found = (destination.readyTexts || [])
+        .map((text) => ({
+          text,
+          match: this.findInRegion(
+            observations,
+            text,
+            destination.readyRegion
+          )
+        }))
+        .find((item) => item.match);
+      if (found) {
+        await this.report(
+          "info",
+          "teleport_destination_verified",
+          `已确认到达${destination.name}并出现正确交互选项：${found.text}`
+        );
+        return true;
+      }
+      await delay(1_000, signal);
     }
-    const deadline =
-      Date.now() + (action.mapOpenTimeoutSeconds || 10) * 1000;
+    await this.report(
+      "warning",
+      "teleport_destination_unverified",
+      `已到达${destination.name}传送点，但没有出现配置的正确交互选项；将执行中心出入口往返恢复`,
+      { readyTexts: destination.readyTexts }
+    );
+    return false;
+  }
+
+  async ensureMapOpen(action, signal) {
+    const prepared = await this.closePagesBeforeMap(action, signal);
+    if (prepared === "map") return;
+    if (action.mapKey) {
+      await this.adb.key(action.mapKey, signal);
+    } else {
+      await this.tap(action.mapButton, signal);
+    }
+    const timeoutMs = Math.max(
+      180,
+      Number(action.mapOpenTimeoutSeconds) || 10
+    ) * 1000;
+    let deadline = Date.now() + timeoutMs;
+    let advisorChecked = false;
     do {
       await delay(action.mapOpenPollMs || 500, signal);
       const verification = await this.vision.captureTransient(
@@ -300,10 +493,162 @@ export class GameUi {
         .map((text) => this.vision.find(verification.observations, text))
         .find(Boolean);
       if (verified) return;
+      if (
+        !advisorChecked &&
+        this.vision.advisor?.enabled &&
+        this.vision.advisor.config.mode === "guarded"
+      ) {
+        advisorChecked = true;
+        const advice = await this.vision.adviseCurrent(
+          "teleport-map-advisor",
+          {
+            expectedState: "map",
+            taskHint: `确认营地地图是否已打开；可见文字通常包括${(
+              action.mapReadyTexts || []
+            ).join("、")}`,
+            ocrTexts: verification.observations.map((item) => item.text)
+          },
+          signal
+        ).catch(() => null);
+        const minimum =
+          Number(
+            this.vision.advisor.config.minimumActionConfidence
+          ) || 0.95;
+        await this.report(
+          "info",
+          "local_model_map_verification",
+          `本地模型地图确认结果：${advice?.state || "unavailable"}`,
+          { ...advice, accepted: advice?.state === "map" && advice.confidence >= minimum }
+        );
+        if (advice?.state === "map" && advice.confidence >= minimum) return;
+        advisorChecked = false;
+      }
+      if (
+        Date.now() >= deadline &&
+        this.config.timeouts.neverAbortHealthyTaskOnTimeout
+      ) {
+        await this.report(
+          "warning",
+          "healthy_map_wait_extended",
+          "游戏进程健康，地图确认等待已延长，不重启游戏"
+        );
+        advisorChecked = false;
+        deadline = Date.now() + timeoutMs;
+      }
     } while (Date.now() < deadline);
     throw new Error(
       "MAP_DID_NOT_OPEN: 未识别到“标志查看/查看庄园”，已停止后续地点与快速前往点击"
     );
+  }
+
+  async closePagesBeforeMap(action, signal) {
+    const maximumClosures = Math.max(
+      1,
+      Math.min(8, Number(action.mapPreparationMaxClosures) || 6)
+    );
+    const bottomLeftBack = action.pageBackPoint || { x: 80, y: 1045 };
+    const topRightClose = action.pageClosePoint || { x: 1840, y: 72 };
+    const panelTexts = [
+      "一周贡献",
+      "贡献物资",
+      "营地资料",
+      "全部成员",
+      "在线情况",
+      "所在场景",
+      "成员信息",
+      "活动时间管理",
+      "营地公职人员",
+      "调整队伍目标",
+      "创建队伍",
+      "离开队伍",
+      "确定",
+      "取消"
+    ];
+    for (let attempt = 0; attempt <= maximumClosures; attempt += 1) {
+      const frame = await this.vision.captureTransient(
+        `map-preparation-${attempt}`,
+        signal
+      );
+      const mapOpen = (action.mapReadyTexts || [])
+        .map((text) => this.vision.find(frame.observations, text))
+        .find(Boolean);
+      if (mapOpen) return "map";
+
+      const closeText = ["关闭", "×", "X"]
+        .map((text) => this.vision.find(frame.observations, text, "exact"))
+        .find(
+          (item) =>
+            item &&
+            item.x >= 1200 &&
+            item.y <= 260
+        );
+      const visiblePanelText = panelTexts
+        .map((text) => this.vision.find(frame.observations, text))
+        .find(Boolean);
+      const failureOverlay = (action.failureTexts || [])
+        .map((text) => this.vision.find(frame.observations, text))
+        .find(Boolean);
+
+      let advice = null;
+      if (
+        this.vision.advisor?.enabled &&
+        this.vision.advisor.config.mode === "guarded"
+      ) {
+        advice = await this.vision.adviseCurrent(
+          `map-preparation-advisor-${attempt}`,
+          {
+            expectedState: "hud or map or panel",
+            taskHint:
+              "打开地图前确认：map=地图已开；hud=无遮挡角色主界面；panel=贡献表、成员页、队伍页、弹窗等功能窗口仍遮挡",
+            ocrTexts: frame.observations.map((item) => item.text)
+          },
+          signal
+        ).catch(() => null);
+      }
+      const minimum =
+        Number(this.vision.advisor?.config.minimumActionConfidence) || 0.95;
+      const confident = Number(advice?.confidence) >= minimum;
+      if (confident && advice.state === "map") return "map";
+      if (
+        confident &&
+        advice.state === "hud" &&
+        !visiblePanelText &&
+        !failureOverlay
+      ) {
+        return "hud";
+      }
+      if (attempt >= maximumClosures) {
+        throw new Error(
+          "MAP_PREPARATION_BLOCKED: 无法确认已关闭全部功能页面，已停止打开地图以避免隔着窗口误操作"
+        );
+      }
+
+      await this.report(
+        "info",
+        "map_page_closing",
+        `打开地图前正在关闭遮挡页面（${attempt + 1}/${maximumClosures}）`,
+        {
+          modelState: advice?.state || null,
+          confidence: advice?.confidence || null,
+          visiblePanelText: visiblePanelText?.text || null
+        }
+      );
+      if (closeText) {
+        await this.tap(center(closeText), signal);
+      } else if (
+        confident &&
+        advice.state === "panel" &&
+        /右上|关闭|X/i.test(String(advice.evidence || ""))
+      ) {
+        await this.tap(topRightClose, signal);
+      } else if (visiblePanelText || failureOverlay || advice?.state !== "hud") {
+        await this.tap(bottomLeftBack, signal);
+      } else {
+        await this.adb.key(4, signal);
+        await this.afterAction(signal);
+      }
+    }
+    return "hud";
   }
 
   async waitTeleportResult(
@@ -312,7 +657,11 @@ export class GameUi {
     timeoutSeconds = 30,
     signal
   ) {
-    const deadline = Date.now() + timeoutSeconds * 1000;
+    const timeoutMs = Math.max(180, Number(timeoutSeconds) || 30) * 1000;
+    let deadline = Date.now() + timeoutMs;
+    const startedAt = Date.now();
+    let advisorChecks = 0;
+    let confirmedMapFrames = 0;
     do {
       const frame = await this.vision.captureTransient(
         "teleport-result",
@@ -337,7 +686,68 @@ export class GameUi {
           text: failure.text
         };
       }
+      if (
+        Date.now() - startedAt >= 1_500 &&
+        this.vision.advisor?.enabled &&
+        this.vision.advisor.config.mode === "guarded"
+      ) {
+        advisorChecks += 1;
+        const advice = await this.vision.adviseCurrent(
+          `teleport-result-advisor-${advisorChecks % 100}`,
+          {
+            expectedState: "hud or teleport_error",
+            taskHint: `确认传送结果。到达后的HUD提示可能包括${(
+              readyTexts || []
+            ).join("、")}；失败提示包括${(failureTexts || []).join("、")}`,
+            ocrTexts: frame.observations.map((item) => item.text)
+          },
+          signal
+        ).catch(() => null);
+        const minimum =
+          Number(
+            this.vision.advisor.config.minimumActionConfidence
+          ) || 0.95;
+        const accepted = Number(advice?.confidence) >= minimum;
+        await this.report(
+          "info",
+          "local_model_teleport_verification",
+          `本地模型传送结果：${advice?.state || "unavailable"}`,
+          { ...advice, accepted }
+        );
+        if (accepted && advice.state === "hud") {
+          return { state: "success", text: advice.evidence };
+        }
+        if (accepted && advice.state === "teleport_error") {
+          return {
+            state: /冷却/.test(advice.evidence) ? "cooldown" : "nearby",
+            text: advice.evidence
+          };
+        }
+        if (accepted && advice.state === "map") {
+          confirmedMapFrames += 1;
+          if (confirmedMapFrames >= 2) {
+            return {
+              state: "nearby",
+              text: "点击快速前往后地图持续打开（目标点附近）"
+            };
+          }
+        } else if (advice?.state && advice.state !== "loading") {
+          confirmedMapFrames = 0;
+        }
+      }
       await delay(600, signal);
+      if (
+        Date.now() >= deadline &&
+        this.config.timeouts.neverAbortHealthyTaskOnTimeout
+      ) {
+        await this.report(
+          "warning",
+          "healthy_teleport_wait_extended",
+          "游戏进程健康，继续确认传送结果，不重启游戏"
+        );
+        advisorChecks = 0;
+        deadline = Date.now() + timeoutMs;
+      }
     } while (Date.now() < deadline);
     return { state: "timeout", text: null };
   }
@@ -356,7 +766,10 @@ export class GameUi {
       },
       signal
     );
-    if (action.quickTravelEnabledDetection) {
+    if (
+      action.quickTravelEnabledDetection &&
+      this.config.vision.quickTravelPrecheckEnabled !== false
+    ) {
       const selected = await this.vision.capture(
         `teleport-selected-${action.targetText}`,
         signal
@@ -417,6 +830,9 @@ export class GameUi {
     const local = options.timeoutSeconds || this.config.timeouts.screenTransitionSeconds;
     const configured =
       this.runtimeAutomation?.gameWatchdog?.actionTimeoutSeconds || local;
+    if (this.config.timeouts.neverAbortHealthyTaskOnTimeout) {
+      return Math.max(180, local, configured) * 1000;
+    }
     return Math.min(local, configured) * 1000;
   }
 

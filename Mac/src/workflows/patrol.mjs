@@ -1,12 +1,10 @@
 import { delay } from "../process.mjs";
-import { inside, reached } from "../clock.mjs";
+import { reached } from "../clock.mjs";
 import { center } from "../vision.mjs";
-import { runBrickTransport } from "./brick.mjs";
 
 export async function runPatrol(context, command, bundle, signal) {
   const { ui, vision, report } = context;
   const patrol = bundle.automationConfig.tasks.patrol;
-  const brick = bundle.automationConfig.tasks.brick_transport;
   const timezone = bundle.automationConfig.timezone;
 
   await ui.executeFlow("createPatrolTeam", {}, signal);
@@ -43,31 +41,6 @@ export async function runPatrol(context, command, bundle, signal) {
   const teamCommandState = {
     handledAt: new Map()
   };
-
-  if (
-    brick.enabled &&
-    brick.inlineWithPatrol &&
-    inside(timezone, brick.time, brick.latestStart)
-  ) {
-    await runBrickTransport(context, command, bundle, signal, async () => {
-      if (Date.now() >= nextShareAt) {
-        await ui.executeFlow("shareTeam", {}, signal);
-        await report("info", "patrol_share", "搬砖期间已再次分享到营地频道");
-        nextShareAt = Date.now() + patrol.shareIntervalMinutes * 60_000;
-      }
-      const match = await scanPatrolCommands(
-        context,
-        lastCleanupFingerprint,
-        teamCommandState,
-        signal
-      );
-      if (match) {
-        lastCleanupFingerprint = `${match.text}:${match.x}:${match.y}`;
-      }
-    });
-  } else if (brick.enabled && reached(timezone, brick.latestStart)) {
-    await report("warning", "brick_skipped", "巡逻队伍未在最晚时间前就绪，今日不执行搬砖");
-  }
 
   while (!reached(timezone, patrol.deadline)) {
     if (Date.now() >= nextShareAt) {

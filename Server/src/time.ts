@@ -106,27 +106,6 @@ export function weekdayForDateKey(value: string): number {
   return native === 0 ? 7 : native;
 }
 
-export function weekKeyForDateKey(value: string): string {
-  const date = new Date(`${value}T12:00:00Z`);
-  const day = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1, 12));
-  const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
-  return `${date.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
-}
-
-export function addWeeksToWeekKey(value: string, weeks: number): string {
-  const match = /^(\d{4})-W(\d{2})$/.exec(value);
-  if (!match) throw new Error(`Invalid week key: ${value}`);
-  const year = Number(match[1]);
-  const week = Number(match[2]);
-  const januaryFourth = new Date(Date.UTC(year, 0, 4, 12));
-  const januaryFourthDay = januaryFourth.getUTCDay() || 7;
-  const monday = new Date(januaryFourth);
-  monday.setUTCDate(januaryFourth.getUTCDate() - januaryFourthDay + 1 + (week - 1 + weeks) * 7);
-  return weekKeyForDateKey(monday.toISOString().slice(0, 10));
-}
-
 export function minuteOfDay(parts: Pick<ZonedParts, "hour" | "minute">): number {
   return parts.hour * 60 + parts.minute;
 }
@@ -171,16 +150,6 @@ export function nextTechnologyTargetDate(
     : addDaysToDateKey(nextRunDate, 1);
 }
 
-export function clockIsInsideWindow(clock: string, start: string, end: string): boolean {
-  const value = clockToMinutes(clock);
-  const startValue = clockToMinutes(start);
-  const endValue = clockToMinutes(end);
-  if (startValue <= endValue) {
-    return value >= startValue && value <= endValue;
-  }
-  return value >= startValue || value <= endValue;
-}
-
 export function isWithinDailyClockWindow(
   now: Date,
   timezone: string,
@@ -199,18 +168,4 @@ export function isWithinDailyClockWindow(
     return current >= startValue || current < endValue;
   }
   return false;
-}
-
-export function nextWeeklyApplyWeek(
-  now: Date,
-  timezone: string,
-  cutoffClock: string
-): string {
-  const parts = zonedParts(now, timezone);
-  const currentWeek = weekKeyForDateKey(dateKey(parts));
-  if (parts.weekday < 7) return currentWeek;
-  if (parts.weekday === 7 && minuteOfDay(parts) <= clockToMinutes(cutoffClock)) {
-    return currentWeek;
-  }
-  return addWeeksToWeekKey(currentWeek, 1);
 }

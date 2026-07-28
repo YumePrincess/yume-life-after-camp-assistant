@@ -61,9 +61,7 @@
     const source = {
       tech_switch: "科技切换",
       member_sync: "成员同步",
-      patrol: "营地巡逻",
-      brick_transport: "搬砖",
-      weekly_schedule_update: "周日程更新"
+      patrol: "营地巡逻"
     }[value];
     return source ? window.MrzhI18n.t(source) : value;
   }

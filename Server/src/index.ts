@@ -59,7 +59,6 @@ import { runScheduler } from "./scheduler";
 import { buildVoteSummary, enqueueTask } from "./tasks";
 import {
   nextTechnologyTargetDate,
-  nextWeeklyApplyWeek,
   zonedDateKey,
   zonedParts
 } from "./time";
@@ -324,25 +323,6 @@ async function handleAdminApi(
         "member_kick_permission_required"
       );
     }
-    const weeklyChanged =
-      JSON.stringify(current.weeklySchedule.events) !==
-      JSON.stringify(next.weeklySchedule.events);
-    if (weeklyChanged) {
-      const now = new Date();
-      next.weeklySchedule = {
-        ...next.weeklySchedule,
-        dirty: true,
-        updatedAt: now.toISOString(),
-        pendingApplyWeek: nextWeeklyApplyWeek(
-          now,
-          next.automationConfig.timezone,
-          next.automationConfig.tasks.weekly_schedule_update.cutoff
-        ),
-        lastAppliedAt: current.weeklySchedule.lastAppliedAt
-      };
-    } else {
-      next.weeklySchedule = current.weeklySchedule;
-    }
     await saveConfigBundle(env, next);
     return json(await buildAdminBootstrap(env, session));
   }
@@ -556,16 +536,6 @@ async function handleAgentApi(
         detail: event.detail ?? {}
       });
     }
-    if (run.task_key === "weekly_schedule_update" && run.state === "succeeded") {
-      const bundle = await getConfigBundle(env);
-      bundle.weeklySchedule = {
-        ...bundle.weeklySchedule,
-        dirty: false,
-        pendingApplyWeek: null,
-        lastAppliedAt: new Date().toISOString()
-      };
-      await saveConfigBundle(env, bundle);
-    }
     return json({ run });
   }
   if (path === "/api/agent/snapshot" && method === "POST") {
@@ -669,7 +639,7 @@ async function buildPublicBootstrap(env: Env): Promise<Record<string, unknown>> 
     voteSummary,
     staffAssignments: staff,
     members,
-    recentRuns: recentRuns.map(publicRun)
+    recentRuns: recentRuns.filter(isCurrentFeatureRun).map(publicRun)
   };
 }
 
@@ -697,7 +667,7 @@ async function buildAdminBootstrap(
     configBundle: bundle,
     voteSummary,
     heartbeats,
-    recentRuns,
+    recentRuns: recentRuns.filter(isCurrentFeatureRun),
     staffAssignments: staff,
     members,
     autoKickCandidates: automaticKickCandidates(bundle, members),
@@ -715,6 +685,13 @@ async function buildAdminBootstrap(
       bundle.campConfig.gameResetTime
     )
   };
+}
+
+function isCurrentFeatureRun(run: { task_key: string }): boolean {
+  return (
+    run.task_key !== "brick_transport" &&
+    run.task_key !== "weekly_schedule_update"
+  );
 }
 
 function pollingIntervalSeconds(

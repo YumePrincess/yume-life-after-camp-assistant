@@ -12,8 +12,7 @@ import {
   validateAuthConfig,
   validateCampConfig,
   validatePublicOverview,
-  validateTechnologyConfig,
-  validateWeeklySchedule
+  validateTechnologyConfig
 } from "./validate";
 
 function isoNow(): string {
@@ -38,21 +37,19 @@ async function getSetting(env: Env, key: string): Promise<unknown> {
 }
 
 export async function getConfigBundle(env: Env): Promise<ConfigBundle> {
-  const [camp, auth, overview, technology, automation, weekly] = await Promise.all([
+  const [camp, auth, overview, technology, automation] = await Promise.all([
     getSetting(env, "camp_config"),
     getSetting(env, "auth_config"),
     getSetting(env, "public_overview"),
     getSetting(env, "technology_config"),
-    getSetting(env, "automation_config"),
-    getSetting(env, "weekly_schedule")
+    getSetting(env, "automation_config")
   ]);
   return {
     campConfig: validateCampConfig(camp),
     authConfig: validateAuthConfig(auth),
     publicOverview: validatePublicOverview(overview),
     technologyConfig: validateTechnologyConfig(technology),
-    automationConfig: validateAutomationConfig(automation),
-    weeklySchedule: validateWeeklySchedule(weekly)
+    automationConfig: validateAutomationConfig(automation)
   };
 }
 
@@ -74,9 +71,6 @@ export async function saveConfigBundle(env: Env, bundle: ConfigBundle): Promise<
     env.DB.prepare(
       "INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
     ).bind("automation_config", JSON.stringify(bundle.automationConfig), now),
-    env.DB.prepare(
-      "INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
-    ).bind("weekly_schedule", JSON.stringify(bundle.weeklySchedule), now)
   ]);
 }
 

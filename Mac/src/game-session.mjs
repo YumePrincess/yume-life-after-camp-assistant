@@ -16,6 +16,8 @@ export async function withGameSession(
   let started = false;
   let gameReady = false;
   let advisorStarted = false;
+  let preserveSceneAfterError = false;
+  let preservedError = null;
   try {
     if (vision?.advisor?.enabled) {
       await report(
@@ -91,26 +93,45 @@ export async function withGameSession(
         await delay(watchdog.restartCooldownSeconds * 1000, signal);
       }
     }
+  } catch (error) {
+    preservedError = error;
+    preserveSceneAfterError =
+      started &&
+      !signal.aborted &&
+      config.mumu.keepRunningOnTaskError === true &&
+      !isFatalDeviceFailure(error);
+    throw error;
   } finally {
     if (started) {
-      if (gameReady && config.mumu.returnToCenterAfterTask !== false) {
-        await returnToCenterExit(context);
-      }
-      await report("info", "game_stop", "正在关闭游戏进程").catch(() => undefined);
-      await adb.stopGame();
-      if (config.mumu.stopEmulatorAfterTask) {
+      if (preserveSceneAfterError) {
         await report(
-          "info",
-          "emulator_stop",
-          "任务已结束，正在停止 MuMu 以节约资源和能耗"
+          "warning",
+          "task_error_scene_preserved",
+          "任务遇到普通流程或识别错误，已保留当前游戏与 MuMu 现场；不会返回中心、关闭游戏或停止容器",
+          { reason: preservedError?.message || "unknown" }
         ).catch(() => undefined);
-        await mumu.stopAfterTask();
+      } else {
+        if (gameReady && config.mumu.returnToCenterAfterTask !== false) {
+          await returnToCenterExit(context);
+        }
+        await report("info", "game_stop", "正在关闭游戏进程").catch(() => undefined);
+        await adb.stopGame();
+        if (config.mumu.stopEmulatorAfterTask) {
+          await report(
+            "info",
+            "emulator_stop",
+            "任务已结束，正在停止 MuMu 以节约资源和能耗"
+          ).catch(() => undefined);
+          await mumu.stopAfterTask();
+        }
       }
       if (advisorStarted) {
         await report(
           "info",
           "local_model_stop",
-          "任务已结束，正在释放本地视觉模型内存"
+          preserveSceneAfterError
+            ? "已保留游戏现场，正在单独释放本地视觉模型内存"
+            : "任务已结束，正在释放本地视觉模型内存"
         ).catch(() => undefined);
         await vision.stopAdvisor().catch(() => undefined);
       }
@@ -118,8 +139,22 @@ export async function withGameSession(
   }
 }
 
+function isFatalDeviceFailure(error) {
+  return /(?:MUMU_DEVICE_|ADB device|GAME_PROCESS_EXITED|GAME_ANR|GAME_SCREEN_FROZEN|device offline|device unauthorized|no devices)/i.test(
+    String(error?.message || "")
+  );
+}
+
 async function returnToCenterExit(context) {
   const { adb, ui, report, config } = context;
+  if (ui.lastConfirmedDestination === "中心出入口") {
+    await report(
+      "info",
+      "return_center_skipped",
+      "角色已确认位于中心出入口，跳过重复打开地图与传送"
+    ).catch(() => undefined);
+    return;
+  }
   const deviceState = await adb.state().catch(() => "offline");
   const health = await adb.gameHealth().catch(() => ({
     running: false,
@@ -231,8 +266,61 @@ export async function waitForGameReady(context, signal) {
   let lastAdviceSignature = "";
   let repeatedAdvice = 0;
   let advisorFailureReported = false;
+  let advisorPending = false;
+  let guardedAdvice = null;
+  let unknownAfterLoginCount = 0;
+  let unknownRecoveryRequested = false;
+  let unknownRecoveryAttempted = false;
+  let accurateOcrFailureReported = false;
+  let lastAccurateOcrAt = Date.now();
   while (Date.now() < deadline) {
-    const frame = await vision.captureTransient("game-login-state", signal);
+    let frame = await vision.captureTransient("game-login-state", signal);
+    const knownStateTexts = [
+      ...promotions.readyTexts,
+      ...announcements.texts,
+      ...updates.stateTexts,
+      ...updates.restartButtonTexts,
+      "点击登录游戏",
+      "登录游戏",
+      "明日希望报",
+      "加入队伍语音频道"
+    ];
+    const fastMatchedKnownState = knownStateTexts.some((text) =>
+      vision.find(frame.observations, text)
+    );
+    const accurateFallbackMs =
+      Math.max(
+        0.05,
+        Number(config.vision?.accurateFallbackSeconds) || 5
+      ) * 1000;
+    if (
+      !fastMatchedKnownState &&
+      config.vision?.accurateFallbackEnabled !== false &&
+      typeof vision.captureAccurateTransient === "function" &&
+      Date.now() - lastAccurateOcrAt >= accurateFallbackMs
+    ) {
+      lastAccurateOcrAt = Date.now();
+      try {
+        const accurateFrame = await vision.captureAccurateTransient(
+          "game-login-state-accurate",
+          signal
+        );
+        if (accurateFrame.observations.length) {
+          frame = accurateFrame;
+        }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        if (!accurateOcrFailureReported) {
+          accurateOcrFailureReported = true;
+          await report(
+            "warning",
+            "accurate_ocr_unavailable",
+            "高精度 OCR 本次未能及时返回，已自动退回快速 OCR，任务继续执行",
+            { reason: error.message }
+          );
+        }
+      }
+    }
     const ready = promotions.readyTexts.find((text) =>
       vision.find(frame.observations, text)
     );
@@ -350,50 +438,181 @@ export async function waitForGameReady(context, signal) {
     }
 
     const advisorConfig = vision.advisor?.config;
+    if (unknownRecoveryRequested && !unknownRecoveryAttempted) {
+      unknownRecoveryAttempted = true;
+      unknownRecoveryRequested = false;
+      await report(
+        "warning",
+        "local_model_unknown_recovery",
+        "AI 连续无法确认当前登录后场景，正在传送到中心出入口恢复已知位置；随后继续当前任务的目标传送"
+      );
+      await ui.executeFlow("teleportCentralExit", {}, signal);
+      await report(
+        "info",
+        "local_model_unknown_recovered",
+        "已回到中心出入口，当前任务将继续前往所需场所"
+      );
+      return;
+    }
+    const actionableAdvice =
+      advisorConfig?.mode === "guarded" &&
+      guardedAdvice &&
+      Date.now() - guardedAdvice.acceptedAt <=
+        Math.max(
+          2,
+          Number(advisorConfig.maxAdviceAgeSeconds) || 8
+        ) * 1000
+        ? guardedAdvice
+        : null;
+    if (actionableAdvice?.state === "hud") {
+      guardedAdvice = null;
+      await report(
+        "info",
+        "local_model_guarded_hud",
+        "本地模型以连续极高置信度确认 HUD，允许流程继续；未执行点击"
+      );
+      await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
+      return;
+    }
+    if (
+      actionableAdvice?.state === "login" &&
+      !loginClicked &&
+      Date.now() - lastLoginClickAt >= 5_000
+    ) {
+      guardedAdvice = null;
+      await report(
+        "info",
+        "local_model_guarded_login",
+        "本地模型以高置信度确认登录页，正在点击已校准的固定登录按钮"
+      );
+      await ui.tap(config.adb.loginButton, signal);
+      loginClicked = true;
+      lastLoginClickAt = Date.now();
+      dismissedPages = 0;
+      newspaperSeen = false;
+      continue;
+    }
+    if (
+      loginClicked &&
+      dismissedPages < promotions.maxPages &&
+      ["promotion", "promotion_newspaper"].includes(actionableAdvice?.state)
+    ) {
+      const state = actionableAdvice.state;
+      guardedAdvice = null;
+      dismissedPages += 1;
+      newspaperSeen ||= state === "promotion_newspaper";
+      await report(
+        "info",
+        "local_model_guarded_promotion",
+        "本地模型以高置信度确认登录后宣传页，正在点击已校准的底部关闭区域",
+        { state, dismissedPages }
+      );
+      await ui.tap(promotions.dismissPoint, signal);
+      await ui.afterAction(signal);
+      continue;
+    }
+
     if (
       vision.advisor?.enabled &&
+      !advisorPending &&
       Date.now() - lastAdviceAt >=
-        Math.max(2, Number(advisorConfig.intervalSeconds) || 8) * 1000
+        Math.max(0.05, Number(advisorConfig.intervalSeconds) || 8) * 1000
     ) {
       lastAdviceAt = Date.now();
-      try {
-        const advice = await vision.adviseCurrent(
+      advisorPending = true;
+      void vision.adviseCurrent(
           "game-login-advisor",
           {
             loginClicked,
+            expectedState: loginClicked
+              ? "promotion, promotion_newspaper, hud"
+              : "prelogin_announcement, login, resource_update",
             ocrTexts: frame.observations.map((item) => item.text)
           },
           signal
-        );
-        const signature = advice
-          ? `${advice.state}:${advice.action}`
-          : "";
-        repeatedAdvice = signature && signature === lastAdviceSignature
-          ? repeatedAdvice + 1
-          : 1;
-        lastAdviceSignature = signature;
-        await report(
-          "info",
-          "local_model_classification",
-          `本地模型只读记录候选画面 ${advice?.state || "unknown"}，不会点击或推动任务流程`,
-          {
-            ...advice,
-            repeatedAdvice,
-            accepted: false,
-            executionMode: "shadow"
+        )
+        .then(async (advice) => {
+          const signature = advice
+            ? `${advice.state}:${advice.action}`
+            : "";
+          repeatedAdvice = signature && signature === lastAdviceSignature
+            ? repeatedAdvice + 1
+            : 1;
+          lastAdviceSignature = signature;
+          const guardedCandidate =
+            advisorConfig.mode === "guarded" &&
+            ["login", "promotion", "promotion_newspaper", "hud"].includes(
+              advice?.state
+            ) &&
+            Number(advice?.confidence) >=
+              Math.max(
+                0.9,
+                Number(advisorConfig.minimumActionConfidence) || 0.95
+              ) &&
+            repeatedAdvice >=
+              Math.max(
+                1,
+                Number(advisorConfig.consecutiveMatches) || 1
+              );
+          if (guardedCandidate) {
+            guardedAdvice = {
+              ...advice,
+              acceptedAt: Date.now()
+            };
           }
-        );
-      } catch (error) {
-        if (!advisorFailureReported) {
-          advisorFailureReported = true;
+          if (
+            loginClicked &&
+            Date.now() - lastLoginClickAt >=
+              Math.max(
+                5,
+                Number(advisorConfig.unknownRecoveryDelaySeconds) || 8
+              ) * 1000 &&
+            advice?.state === "unknown"
+          ) {
+            unknownAfterLoginCount += 1;
+            if (
+              unknownAfterLoginCount >=
+                Math.max(
+                  1,
+                  Number(advisorConfig.unknownRecoveryMatches) || 2
+                )
+            ) {
+              unknownRecoveryRequested = true;
+            }
+          } else if (
+            advice?.state &&
+            advice.state !== "loading"
+          ) {
+            unknownAfterLoginCount = 0;
+          }
           await report(
-            "warning",
-            "local_model_request_failed",
-            "本地模型请求失败，本次登录继续使用 OCR 规则",
-            { reason: error.message }
+            "info",
+            "local_model_classification",
+            advisorConfig.mode === "guarded"
+              ? `本地模型记录受限候选画面 ${advice?.state || "unknown"}`
+              : `本地模型只读记录候选画面 ${advice?.state || "unknown"}，不会点击或推动任务流程`,
+            {
+              ...advice,
+              repeatedAdvice,
+              accepted: guardedCandidate,
+              executionMode: advisorConfig.mode
+            }
           );
-        }
-      }
+        })
+        .catch(async (error) => {
+          if (!advisorFailureReported) {
+            advisorFailureReported = true;
+            await report(
+              "warning",
+              "local_model_request_failed",
+              "本地模型请求失败，本次登录继续使用 OCR 规则",
+              { reason: error.message }
+            );
+          }
+        })
+        .finally(() => {
+          advisorPending = false;
+        });
     }
 
     if (
@@ -431,6 +650,18 @@ export async function waitForGameReady(context, signal) {
     }
 
     await delay(800, signal);
+    if (
+      Date.now() >= deadline &&
+      config.timeouts.neverAbortHealthyTaskOnTimeout
+    ) {
+      await report(
+        "warning",
+        "healthy_login_wait_extended",
+        "游戏进程健康，登录/加载等待已延长，不重启或关闭游戏"
+      );
+      deadline = Date.now() +
+        Math.max(180, Number(config.timeouts.gameLaunchSeconds) || 180) * 1000;
+    }
   }
   throw new Error(
     updateObserved
@@ -472,7 +703,7 @@ async function monitorGame(context, watchdog, signal) {
 
 function isRecoverableGameFailure(error, health) {
   if (health.anr || !health.running) return true;
-  return /timed out|timeout|OCR could not find|ADB|GAME_|MUMU_DEVICE_|screencap|无响应/i.test(
+  return /ADB|GAME_PROCESS_EXITED|GAME_ANR|MUMU_DEVICE_|screencap|无响应/i.test(
     error.message
   );
 }

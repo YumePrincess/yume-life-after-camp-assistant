@@ -8,9 +8,7 @@ import type {
   TechnologyCategory,
   TechnologyConfig,
   TechnologyDefinition,
-  TechnologyLane,
-  WeeklyEvent,
-  WeeklySchedule
+  TechnologyLane
 } from "./domain";
 import { assertClock, assertTimezone, assertWindowEndClock } from "./time";
 
@@ -268,11 +266,6 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     "automationConfig.tasks.member_profile_sync"
   );
   const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol");
-  const brick = taskSchedule(tasks.brick_transport, "automationConfig.tasks.brick_transport");
-  const weekly = taskSchedule(
-    tasks.weekly_schedule_update,
-    "automationConfig.tasks.weekly_schedule_update"
-  );
 
   const patrolTeamReadyTime = text(
     patrol.source.teamReadyTime,
@@ -284,27 +277,9 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     "automationConfig.tasks.patrol.deadline",
     { max: 5 }
   );
-  const brickLatestStart = text(
-    brick.source.latestStart,
-    "automationConfig.tasks.brick_transport.latestStart",
-    { max: 5 }
-  );
-  const brickStop = text(
-    brick.source.stop,
-    "automationConfig.tasks.brick_transport.stop",
-    { max: 5 }
-  );
-  const weeklyCutoff = text(
-    weekly.source.cutoff,
-    "automationConfig.tasks.weekly_schedule_update.cutoff",
-    { max: 5 }
-  );
   const clocks: Array<[string, string]> = [
     ["patrol.teamReadyTime", patrolTeamReadyTime],
-    ["patrol.deadline", patrolDeadline],
-    ["brick.latestStart", brickLatestStart],
-    ["brick.stop", brickStop],
-    ["weekly.cutoff", weeklyCutoff]
+    ["patrol.deadline", patrolDeadline]
   ];
   for (const [field, clock] of clocks) {
     assertClock(clock, field);
@@ -377,7 +352,13 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
               `automationConfig.routines[${index}].groups[${groupIndex}] is invalid`
             );
           }
-          return rawGroup.map((rawTask) => {
+          return rawGroup
+            .filter(
+              (rawTask) =>
+                rawTask !== "brick_transport" &&
+                rawTask !== "weekly_schedule_update"
+            )
+            .map((rawTask) => {
             const task = text(
               rawTask,
               `automationConfig.routines[${index}].groups[${groupIndex}]`,
@@ -388,7 +369,7 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
             }
             return task;
           });
-        });
+        }).filter((group) => group.length > 0);
         return {
           id: text(routine.id, `automationConfig.routines[${index}].id`, { max: 64 }),
           name: text(routine.name, `automationConfig.routines[${index}].name`, {
@@ -406,6 +387,7 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
           groups
         };
       })
+      .filter((routine) => routine.groups.length > 0)
     : [];
   if (routines.length > 40) throw new Error("automationConfig.routines is too large");
 
@@ -515,31 +497,6 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
           60
         ),
         deadline: patrolDeadline
-      },
-      brick_transport: {
-        enabled: brick.enabled,
-        time: brick.time,
-        latestStart: brickLatestStart,
-        stop: brickStop,
-        inlineWithPatrol: boolean(
-          brick.source.inlineWithPatrol,
-          "automationConfig.tasks.brick_transport.inlineWithPatrol"
-        )
-      },
-      weekly_schedule_update: {
-        enabled: weekly.enabled,
-        time: weekly.time,
-        weekday: integer(
-          weekly.source.weekday,
-          "automationConfig.tasks.weekly_schedule_update.weekday",
-          1,
-          7
-        ),
-        cutoff: weeklyCutoff,
-        onlyWhenDirty: boolean(
-          weekly.source.onlyWhenDirty,
-          "automationConfig.tasks.weekly_schedule_update.onlyWhenDirty"
-        )
       }
     },
     routines
@@ -565,39 +522,8 @@ function isTaskKeyForRoutine(
     "contribution_sync",
     "inactivity_sync",
     "member_profile_sync",
-    "patrol",
-    "brick_transport",
-    "weekly_schedule_update"
+    "patrol"
   ].includes(value);
-}
-
-export function validateWeeklySchedule(value: unknown): WeeklySchedule {
-  const source = object(value, "weeklySchedule");
-  if (!Array.isArray(source.events)) throw new Error("weeklySchedule.events must be an array");
-  const events: WeeklyEvent[] = source.events.map((raw, index) => {
-    const event = object(raw, `weeklySchedule.events[${index}]`);
-    const key = text(event.key, `weeklySchedule.events[${index}].key`, { max: 40 });
-    if (key !== "infected_invasion" && key !== "special_infected") {
-      throw new Error(`weeklySchedule.events[${index}].key is invalid`);
-    }
-    const time = text(event.time, `weeklySchedule.events[${index}].time`, { max: 5 });
-    assertClock(time, `weeklySchedule.events[${index}].time`);
-    return {
-      key,
-      name: text(event.name, `weeklySchedule.events[${index}].name`, { max: 80 }),
-      weekday: integer(event.weekday, `weeklySchedule.events[${index}].weekday`, 1, 7),
-      time,
-      level: text(event.level, `weeklySchedule.events[${index}].level`, { max: 40 })
-    };
-  });
-  return {
-    events,
-    dirty: typeof source.dirty === "boolean" ? source.dirty : false,
-    updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : null,
-    pendingApplyWeek:
-      typeof source.pendingApplyWeek === "string" ? source.pendingApplyWeek : null,
-    lastAppliedAt: typeof source.lastAppliedAt === "string" ? source.lastAppliedAt : null
-  };
 }
 
 export function validateConfigBundle(value: unknown): ConfigBundle {
@@ -607,7 +533,6 @@ export function validateConfigBundle(value: unknown): ConfigBundle {
     authConfig: validateAuthConfig(source.authConfig),
     publicOverview: validatePublicOverview(source.publicOverview),
     technologyConfig: validateTechnologyConfig(source.technologyConfig),
-    automationConfig: validateAutomationConfig(source.automationConfig),
-    weeklySchedule: validateWeeklySchedule(source.weeklySchedule)
+    automationConfig: validateAutomationConfig(source.automationConfig)
   };
 }

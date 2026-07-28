@@ -50,8 +50,13 @@ do {
 
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = recognitionMode == "fast" ? .fast : .accurate
-    request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
-    request.usesLanguageCorrection = true
+    request.recognitionLanguages = recognitionMode == "fast"
+        ? ["en-US"]
+        : ["zh-Hans", "zh-Hant", "en-US"]
+    // Game UI consists of short labels and numbers. Language correction is
+    // expensive on full-resolution emulator frames and can stall for tens of
+    // seconds without improving these tokens.
+    request.usesLanguageCorrection = false
     request.minimumTextHeight = 0.008
 
     let handler = VNImageRequestHandler(url: imageURL, options: [:])

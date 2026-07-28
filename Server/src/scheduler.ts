@@ -2,11 +2,9 @@ import { getConfigBundle } from "./db";
 import type { ConfigBundle } from "./domain";
 import { enqueueTask } from "./tasks";
 import {
-  clockIsInsideWindow,
   dateKey,
   isWithinDueWindow,
   targetDateForTechnologyRun,
-  weekKeyForDateKey,
   zonedParts
 } from "./time";
 
@@ -45,47 +43,6 @@ export async function runScheduler(
   await maybeEnqueueDaily(env, bundle, now, localDate, "member_profile_sync", result);
   await maybeEnqueueDaily(env, bundle, now, localDate, "patrol", result);
 
-  const patrol = bundle.automationConfig.tasks.patrol;
-  const brick = bundle.automationConfig.tasks.brick_transport;
-  const inline =
-    brick.inlineWithPatrol &&
-    clockIsInsideWindow(brick.time, patrol.time, patrol.deadline);
-  if (!inline) {
-    await maybeEnqueueDaily(env, bundle, now, localDate, "brick_transport", result);
-  } else {
-    result.skipped.push("brick_transport:inline_with_patrol");
-  }
-
-  const weekly = bundle.automationConfig.tasks.weekly_schedule_update;
-  if (
-    weekly.enabled &&
-    parts.weekday === weekly.weekday &&
-    isWithinDueWindow(
-      now,
-      timezone,
-      weekly.time,
-      bundle.automationConfig.schedulerGraceMinutes
-    )
-  ) {
-    const currentWeek = weekKeyForDateKey(localDate);
-    const eligible =
-      (!weekly.onlyWhenDirty || bundle.weeklySchedule.dirty) &&
-      bundle.weeklySchedule.pendingApplyWeek === currentWeek;
-    if (eligible) {
-      const queued = await enqueueTask(env, {
-        bundle,
-        taskKey: "weekly_schedule_update",
-        triggerMode: "scheduled",
-        scheduleKey: `weekly_schedule_update:${currentWeek}`,
-        localDate,
-        now
-      });
-      if (queued.run) result.enqueued.push("weekly_schedule_update");
-    } else {
-      result.skipped.push("weekly_schedule_update:not_dirty_or_not_due_week");
-    }
-  }
-
   for (const routine of bundle.automationConfig.routines) {
     if (
       !routine.enabled ||
@@ -119,7 +76,7 @@ async function maybeEnqueueDaily(
   bundle: ConfigBundle,
   now: Date,
   localDate: string,
-  taskKey: Exclude<keyof ConfigBundle["automationConfig"]["tasks"], "weekly_schedule_update">,
+  taskKey: keyof ConfigBundle["automationConfig"]["tasks"],
   result: SchedulerResult,
   options: { targetDate?: string } = {}
 ): Promise<void> {
