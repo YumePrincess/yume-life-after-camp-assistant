@@ -42,8 +42,8 @@
     "mode": "fast",
     "minimumConfidence": 0.35,
     "quickTravelPrecheckEnabled": false,
-    "accurateFallbackEnabled": false,
-    "accurateFallbackSeconds": 5,
+    "accurateFallbackEnabled": true,
+    "accurateFallbackSeconds": 1,
     "accurateTimeoutSeconds": 15
   },
   "localVisionModel": {
@@ -81,6 +81,7 @@
     "enabled": true,
     "maxClosures": 2,
     "closePoint": { "x": 1742, "y": 155 },
+    "fixedCloseIntervalSeconds": 3,
     "texts": ["系统公告", "更新公告", "游戏公告"]
   },
   "gameUpdates": {

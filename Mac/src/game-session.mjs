@@ -247,6 +247,7 @@ export async function waitForGameReady(context, signal) {
     enabled: true,
     maxClosures: 2,
     closePoint: { x: 1742, y: 155 },
+    fixedCloseIntervalSeconds: 3,
     texts: ["系统公告", "更新公告", "游戏公告"],
     ...config.preLoginAnnouncements
   };
@@ -262,6 +263,8 @@ export async function waitForGameReady(context, signal) {
   let processMissingSince = null;
   let updateRestartCount = 0;
   let announcementClosures = 0;
+  let announcementCloseAttempts = 0;
+  let lastAnnouncementCloseAt = 0;
   let lastAdviceAt = 0;
   let lastAdviceSignature = "";
   let repeatedAdvice = 0;
@@ -274,6 +277,33 @@ export async function waitForGameReady(context, signal) {
   let accurateOcrFailureReported = false;
   let lastAccurateOcrAt = Date.now();
   while (Date.now() < deadline) {
+    const fixedAnnouncementCloseIntervalMs =
+      Math.max(
+        0.5,
+        Number(announcements.fixedCloseIntervalSeconds) || 3
+      ) * 1000;
+    if (
+      announcements.enabled &&
+      !loginClicked &&
+      Date.now() - lastAnnouncementCloseAt >=
+        fixedAnnouncementCloseIntervalMs
+    ) {
+      announcementCloseAttempts += 1;
+      lastAnnouncementCloseAt = Date.now();
+      if (
+        announcementCloseAttempts === 1 ||
+        announcementCloseAttempts % 20 === 0
+      ) {
+        await report(
+          "info",
+          "prelogin_announcement_fixed_close",
+          "正在固定点击登录前更新公告右上角关闭位置；无公告时该点击不会影响登录流程",
+          { attempt: announcementCloseAttempts }
+        );
+      }
+      await ui.tap(announcements.closePoint, signal);
+      await ui.afterAction(signal);
+    }
     let frame = await vision.captureTransient("game-login-state", signal);
     const knownStateTexts = [
       ...promotions.readyTexts,
@@ -400,6 +430,7 @@ export async function waitForGameReady(context, signal) {
       : null;
     if (announcement && announcementClosures < announcements.maxClosures) {
       announcementClosures += 1;
+      lastAnnouncementCloseAt = Date.now();
       await report(
         "info",
         "prelogin_announcement_close",

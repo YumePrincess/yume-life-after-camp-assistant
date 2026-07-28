@@ -37,36 +37,10 @@ export async function runScheduler(
       bundle.campConfig.gameResetTime
     )
   });
-  await maybeEnqueueDaily(env, bundle, now, localDate, "member_sync", result);
   await maybeEnqueueDaily(env, bundle, now, localDate, "contribution_sync", result);
   await maybeEnqueueDaily(env, bundle, now, localDate, "inactivity_sync", result);
   await maybeEnqueueDaily(env, bundle, now, localDate, "member_profile_sync", result);
   await maybeEnqueueDaily(env, bundle, now, localDate, "patrol", result);
-
-  for (const routine of bundle.automationConfig.routines) {
-    if (
-      !routine.enabled ||
-      !routine.weekdays.includes(parts.weekday) ||
-      !isWithinDueWindow(
-        now,
-        timezone,
-        routine.time,
-        bundle.automationConfig.schedulerGraceMinutes
-      )
-    ) {
-      continue;
-    }
-    const queued = await enqueueTask(env, {
-      bundle,
-      taskKey: "automation_routine",
-      triggerMode: "scheduled",
-      scheduleKey: `automation_routine:${routine.id}:${localDate}`,
-      localDate,
-      now,
-      routine
-    });
-    if (queued.run) result.enqueued.push(`automation_routine:${routine.id}`);
-  }
 
   return result;
 }

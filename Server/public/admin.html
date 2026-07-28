@@ -135,22 +135,17 @@
                   <label class="field"><span>执行时间</span><input name="techTime" type="time" /></label>
                 </fieldset>
                 <fieldset class="schedule-card">
-                  <legend>成员同步</legend>
-                  <label class="field field-checkbox"><input name="memberEnabled" type="checkbox" /><span>启用</span></label>
-                  <label class="field"><span>执行时间</span><input name="memberTime" type="time" /></label>
-                </fieldset>
-                <fieldset class="schedule-card">
-                  <legend>仅贡献</legend>
+                  <legend>更新贡献</legend>
                   <label class="field field-checkbox"><input name="contributionEnabled" type="checkbox" /><span>启用</span></label>
                   <label class="field"><span>执行时间</span><input name="contributionTime" type="time" /></label>
                 </fieldset>
                 <fieldset class="schedule-card">
-                  <legend>仅斩杀预警</legend>
+                  <legend>更新斩杀预警</legend>
                   <label class="field field-checkbox"><input name="inactivityEnabled" type="checkbox" /><span>启用</span></label>
                   <label class="field"><span>执行时间</span><input name="inactivityTime" type="time" /></label>
                 </fieldset>
                 <fieldset class="schedule-card">
-                  <legend>仅成员资料与公职</legend>
+                  <legend>更新成员资料</legend>
                   <label class="field field-checkbox"><input name="profileEnabled" type="checkbox" /><span>启用</span></label>
                   <label class="field"><span>执行时间</span><input name="profileTime" type="time" /></label>
                 </fieldset>
@@ -178,8 +173,8 @@
               <div class="section-heading">
                 <div>
                   <p class="eyebrow">AGENT POLICY</p>
-                  <h1>轮询、无响应恢复与任务例程</h1>
-                  <p class="section-intro">设置执行器轮询节奏、游戏恢复策略和组合任务。</p>
+                  <h1>轮询与无响应恢复</h1>
+                  <p class="section-intro">设置执行器轮询节奏和游戏恢复策略。</p>
                 </div>
               </div>
               <div class="form-grid">
@@ -195,10 +190,6 @@
               <label class="field">
                 <span>分时轮询窗口 JSON（支持跨午夜，weekdays 为周一 1 至周日 7）</span>
                 <textarea id="polling-windows-json" class="code-editor" rows="10" spellcheck="false"></textarea>
-              </label>
-              <label class="field">
-                <span>任务例程 JSON（groups 外层依次执行，内层同一时间触发）</span>
-                <textarea id="routines-json" class="code-editor" rows="12" spellcheck="false"></textarea>
               </label>
               <div class="section-savebar">
                 <span class="feedback" data-save-feedback>当前配置已同步</span>

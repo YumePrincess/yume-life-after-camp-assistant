@@ -5,6 +5,34 @@ SCRIPT_DIR=${0:A:h}
 MAC_ROOT=${SCRIPT_DIR:h}
 MODEL_CONTROL="${SCRIPT_DIR}/local-model.sh"
 AGENT_CONTROL="${SCRIPT_DIR}/agent-control.sh"
+INSTALL_AGENT="${SCRIPT_DIR}/install-launch-agent.sh"
+UNINSTALL_AGENT="${SCRIPT_DIR}/uninstall-launch-agent.sh"
+
+print_usage() {
+  cat <<'EOF'
+Yume Life After 本地 Agent 综合管理
+
+用法：
+  ./scripts/manage-local-agent.sh <命令>
+
+命令：
+  install     安装/更新依赖、视觉模型、登录自启动并启动 Agent
+  uninstall   停止并卸载 Agent 与本地模型（保留源码和 config.json）
+  update      更新依赖、OCR、模型和 LaunchAgent，然后恢复运行
+  start       启动 Agent（本地模型会按任务自动启动）
+  stop        停止 Agent 和本地模型
+  restart     重启 Agent
+  status      检查 launchd、PID、8091 健康端点和本地模型
+  health      只检查 Agent 的 8091 健康端点
+  repair      重新生成 LaunchAgent、启动并执行完整状态检查
+  doctor      检查配置、ADB、Workers 与本机依赖
+  logs        查看外置盘 Agent 日志和本地模型日志
+  once        前台领取并执行一次任务
+  deps        只安装/更新依赖
+  model ...   单独管理模型
+  help        显示本帮助
+EOF
+}
 
 install_dependencies() {
   if ! command -v brew >/dev/null 2>&1; then
@@ -25,12 +53,13 @@ install_all() {
   "${MODEL_CONTROL}" install
   cd "${MAC_ROOT}"
   npm run doctor
-  "${SCRIPT_DIR}/install-launch-agent.sh"
+  "${INSTALL_AGENT}"
+  wait_for_health
 }
 
 start_all() {
-  "${MODEL_CONTROL}" start
   "${AGENT_CONTROL}" start
+  wait_for_health
 }
 
 stop_all() {
@@ -39,27 +68,61 @@ stop_all() {
 }
 
 status_all() {
-  "${AGENT_CONTROL}" status || true
+  local failed=0
+  "${AGENT_CONTROL}" status || failed=1
+  health_agent || failed=1
   "${MODEL_CONTROL}" status || true
+  return "${failed}"
+}
+
+health_agent() {
+  cd "${MAC_ROOT}"
+  node src/agent-health.mjs
+}
+
+wait_for_health() {
+  local result=""
+  for _ in {1..30}; do
+    if result=$(health_agent 2>&1); then
+      echo "${result}"
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "${result}" >&2
+  echo "Agent process started, but port 8091 did not become healthy within 15 seconds." >&2
+  return 1
 }
 
 update_all() {
-  local was_loaded="no"
-  if launchctl print "gui/${UID}/zone.yume.mrzh-agent" >/dev/null 2>&1; then
-    was_loaded="yes"
+  local should_restart="no"
+  if "${AGENT_CONTROL}" status >/dev/null 2>&1; then
+    should_restart="yes"
     "${AGENT_CONTROL}" stop
   fi
   install_dependencies
   "${MODEL_CONTROL}" update
-  if [[ "${was_loaded}" == "yes" ]]; then
-    "${AGENT_CONTROL}" start
+  if [[ -f "${HOME}/Library/LaunchAgents/zone.yume.mrzh-agent.plist" ]]; then
+    "${INSTALL_AGENT}"
+    should_restart="yes"
+  fi
+  if [[ "${should_restart}" == "yes" ]]; then
+    status_all
   fi
 }
 
 uninstall_all() {
-  "${SCRIPT_DIR}/uninstall-launch-agent.sh"
+  "${UNINSTALL_AGENT}"
   "${MODEL_CONTROL}" uninstall
   echo "Source code and config.json were preserved."
+}
+
+repair_agent() {
+  cd "${MAC_ROOT}"
+  npm run doctor
+  "${INSTALL_AGENT}"
+  wait_for_health
+  "${MODEL_CONTROL}" status || true
 }
 
 run_once() {
@@ -83,8 +146,8 @@ case "${1:-status}" in
     stop_all
     ;;
   restart)
-    stop_all
-    start_all
+    "${AGENT_CONTROL}" restart
+    wait_for_health
     ;;
   status)
     status_all
@@ -110,8 +173,17 @@ case "${1:-status}" in
     shift
     "${MODEL_CONTROL}" "${1:-status}"
     ;;
+  health)
+    health_agent
+    ;;
+  repair)
+    repair_agent
+    ;;
+  help|-h|--help)
+    print_usage
+    ;;
   *)
-    echo "Usage: $0 {deps|install|start|stop|restart|status|update|uninstall|doctor|once|logs|model <command>}" >&2
+    print_usage >&2
     exit 2
     ;;
 esac

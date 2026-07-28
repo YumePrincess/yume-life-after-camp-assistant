@@ -440,7 +440,9 @@
     setText("announcement", data.publicOverview?.announcement || "");
     setText("timezone-label", data.campConfig?.timezone || "Asia/Shanghai");
     const memberSync = (data.recentRuns || []).find(
-      (run) => run.taskKey === "member_sync" && run.state === "succeeded"
+      (run) =>
+        run.taskKey === "member_profile_sync" &&
+        run.state === "succeeded"
     );
     setText(
       "sync-state",

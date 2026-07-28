@@ -354,25 +354,23 @@ async function handleAdminApi(
     const body = await readJsonObject(request, 16_000);
     const taskKeyValue = boundedText(body.taskKey, "taskKey", 80);
     if (!isTaskKey(taskKeyValue)) return problem("Unknown taskKey", 400, "unknown_task");
-    if (taskKeyValue === "kick_member" || taskKeyValue === "kick_inactive_members") {
-      return problem("踢出成员必须通过成员详情或自动斩杀评估发起", 400);
+    if (
+      ![
+        "tech_switch",
+        "contribution_sync",
+        "inactivity_sync",
+        "member_profile_sync",
+        "patrol"
+      ].includes(taskKeyValue)
+    ) {
+      return problem("该任务不在管理员通用流程列表中", 400, "task_not_available");
     }
     const bundle = await getConfigBundle(env);
-    const routine =
-      taskKeyValue === "automation_routine" && typeof body.routineId === "string"
-        ? bundle.automationConfig.routines.find(
-            (item) => item.id === body.routineId
-          )
-        : undefined;
-    if (taskKeyValue === "automation_routine" && !routine) {
-      return problem("Unknown routineId", 400, "unknown_routine");
-    }
     const result = await enqueueTask(env, {
       bundle,
       taskKey: taskKeyValue,
       triggerMode: "manual",
-      requestedBy: session,
-      routine
+      requestedBy: session
     });
     return json(result, 201);
   }
@@ -441,7 +439,7 @@ async function handleAdminApi(
         step: null,
         message: `管理员 ${session.email} 在任务领取前取消任务`
       });
-      return json({ changed, commandId: null });
+      return json({ changed, commandId: null, state: "interrupted" });
     }
     const bundle = await getConfigBundle(env);
     const command = await createCommand(env, {
@@ -462,7 +460,7 @@ async function handleAdminApi(
       step: run.current_step,
       message: `管理员 ${session.email} 请求中断任务`
     });
-    return json({ changed, commandId: command.id });
+    return json({ changed, commandId: command.id, state: "cancelling" });
   }
   const eventMatch = /^\/api\/admin\/runs\/([^/]+)\/events$/.exec(path);
   if (eventMatch && method === "GET") {

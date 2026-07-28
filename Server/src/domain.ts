@@ -97,7 +97,6 @@ export interface AutomationConfig {
   };
   tasks: {
     tech_switch: TaskSchedule;
-    member_sync: TaskSchedule;
     contribution_sync: TaskSchedule;
     inactivity_sync: TaskSchedule;
     member_profile_sync: TaskSchedule;

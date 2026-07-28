@@ -147,8 +147,21 @@
       "按固定科技与投票结果开启次日科技":
         "Enable next-day technologies from fixed choices and vote results",
       "立即执行": "Run now",
-      "读取贡献、职业、庄园、同居与公职":
-        "Read contributions, professions, manors, roommates and officers",
+      "更新科技": "Update technologies",
+      "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单":
+        "Update profession, manor, roommate and officer data, then refresh the current roster from the complete member page",
+      "取消排队": "Cancel queued task",
+      "终止任务": "Terminate task",
+      "终止已提交": "Termination requested",
+      "排队任务已终止": "Queued task terminated",
+      "终止指令已发送": "Termination request sent",
+      "轮询与无响应恢复": "Polling and unresponsive-game recovery",
+      "设置执行器轮询节奏和游戏恢复策略。":
+        "Configure agent polling and game recovery.",
+      "轮询窗口 JSON 格式错误": "Invalid polling-window JSON",
+      "完整成员同步": "Full member sync",
+      "完整读取贡献、离线时间、职业、庄园、同居与公职，并替换当前成员名单":
+        "Read contributions, offline time, professions, manors, roommates and officers, then replace the current roster",
       "组队、困难路线与定时古籍分享":
         "Team formation, hard route, and scheduled book-defense sharing",
       "全部时间使用上方时区": "All times use the time zone above",
@@ -450,8 +463,21 @@
       "按固定科技与投票结果开启次日科技":
         "Activer les technologies du lendemain selon les choix fixes et les votes",
       "立即执行": "Exécuter",
-      "读取贡献、职业、庄园、同居与公职":
-        "Lire contributions, professions, manoirs, cohabitants et responsables",
+      "更新科技": "Mettre à jour les technologies",
+      "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单":
+        "Mettre à jour profession, manoir, cohabitant et responsables, puis actualiser la liste depuis la page complète",
+      "取消排队": "Annuler la tâche en attente",
+      "终止任务": "Arrêter la tâche",
+      "终止已提交": "Arrêt demandé",
+      "排队任务已终止": "Tâche en attente arrêtée",
+      "终止指令已发送": "Demande d’arrêt envoyée",
+      "轮询与无响应恢复": "Interrogation et récupération du jeu",
+      "设置执行器轮询节奏和游戏恢复策略。":
+        "Configurer l’interrogation de l’agent et la récupération du jeu.",
+      "轮询窗口 JSON 格式错误": "JSON des fenêtres d’interrogation invalide",
+      "完整成员同步": "Synchronisation complète des membres",
+      "完整读取贡献、离线时间、职业、庄园、同居与公职，并替换当前成员名单":
+        "Lire contributions, absence, professions, manoirs, cohabitants et responsables, puis remplacer la liste actuelle",
       "组队、困难路线与定时古籍分享":
         "Équipe, route difficile et partage planifié des livres",
       "全部时间使用上方时区": "Toutes les heures utilisent le fuseau ci-dessus",
@@ -757,8 +783,21 @@
       "按固定科技与投票结果开启次日科技":
         "固定技術と投票結果から翌日の技術を有効化",
       "立即执行": "今すぐ実行",
-      "读取贡献、职业、庄园、同居与公职":
-        "貢献・職業・荘園・同居人・役職を読み取る",
+      "更新科技": "技術を更新",
+      "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单":
+        "職業・荘園・同居人・役職を更新し、完全なメンバーページから現在の名簿を更新",
+      "取消排队": "待機タスクを取り消す",
+      "终止任务": "タスクを終了",
+      "终止已提交": "終了要求済み",
+      "排队任务已终止": "待機タスクを終了しました",
+      "终止指令已发送": "終了要求を送信しました",
+      "轮询与无响应恢复": "ポーリングと無応答復旧",
+      "设置执行器轮询节奏和游戏恢复策略。":
+        "エージェントのポーリングとゲーム復旧を設定します。",
+      "轮询窗口 JSON 格式错误": "ポーリング時間帯 JSON の形式が正しくありません",
+      "完整成员同步": "メンバー完全同期",
+      "完整读取贡献、离线时间、职业、庄园、同居与公职，并替换当前成员名单":
+        "貢献・オフライン時間・職業・荘園・同居人・役職を読み取り、現在の名簿を置き換える",
       "组队、困难路线与定时古籍分享":
         "チーム編成・困難ルート・古籍の定期共有",
       "全部时间使用上方时区": "すべて上記タイムゾーンを使用",
@@ -1056,8 +1095,21 @@
       "按固定科技与投票结果开启次日科技":
         "按固定科技與投票結果開啟次日科技",
       "立即执行": "立即執行",
-      "读取贡献、职业、庄园、同居与公职":
-        "讀取貢獻、職業、莊園、同居與公職",
+      "更新科技": "更新科技",
+      "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单":
+        "更新職業、莊園、同居與公職，並以完整成員頁重新整理目前名單",
+      "取消排队": "取消排隊",
+      "终止任务": "終止任務",
+      "终止已提交": "已提交終止",
+      "排队任务已终止": "排隊任務已終止",
+      "终止指令已发送": "終止指令已傳送",
+      "轮询与无响应恢复": "輪詢與無回應復原",
+      "设置执行器轮询节奏和游戏恢复策略。":
+        "設定執行器輪詢節奏和遊戲復原策略。",
+      "轮询窗口 JSON 格式错误": "輪詢視窗 JSON 格式錯誤",
+      "完整成员同步": "完整成員同步",
+      "完整读取贡献、离线时间、职业、庄园、同居与公职，并替换当前成员名单":
+        "完整讀取貢獻、離線時間、職業、莊園、同居與公職，並取代目前成員名單",
       "组队、困难路线与定时古籍分享":
         "組隊、困難路線與定時古籍分享",
       "全部时间使用上方时区": "全部時間使用上方時區",

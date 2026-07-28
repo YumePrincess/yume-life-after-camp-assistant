@@ -564,6 +564,14 @@ export class GameUi {
       "确定",
       "取消"
     ];
+    const interactionPanelTexts = [
+      "查看玩法",
+      "营地巡逻",
+      "营地竞赛",
+      "营地擂台",
+      "查看巡逻进度",
+      "交谈"
+    ];
     for (let attempt = 0; attempt <= maximumClosures; attempt += 1) {
       const frame = await this.vision.captureTransient(
         `map-preparation-${attempt}`,
@@ -585,12 +593,18 @@ export class GameUi {
       const visiblePanelText = panelTexts
         .map((text) => this.vision.find(frame.observations, text))
         .find(Boolean);
+      const visibleInteractionPanelText = interactionPanelTexts
+        .map((text) => this.vision.find(frame.observations, text))
+        .find(Boolean);
       const failureOverlay = (action.failureTexts || [])
         .map((text) => this.vision.find(frame.observations, text))
         .find(Boolean);
 
       let advice = null;
       if (
+        !visiblePanelText &&
+        !visibleInteractionPanelText &&
+        !failureOverlay &&
         this.vision.advisor?.enabled &&
         this.vision.advisor.config.mode === "guarded"
       ) {
@@ -631,13 +645,19 @@ export class GameUi {
           modelState: advice?.state || null,
           confidence: advice?.confidence || null,
           visiblePanelText: visiblePanelText?.text || null
+          ,
+          visibleInteractionPanelText:
+            visibleInteractionPanelText?.text || null
         }
       );
       if (closeText) {
         await this.tap(center(closeText), signal);
+      } else if (visibleInteractionPanelText) {
+        await this.adb.key(4, signal);
+        await this.afterAction(signal);
       } else if (
         confident &&
-        advice.state === "panel" &&
+        ["panel", "patrol_notice_board"].includes(advice.state) &&
         /右上|关闭|X/i.test(String(advice.evidence || ""))
       ) {
         await this.tap(topRightClose, signal);

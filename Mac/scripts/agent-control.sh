@@ -6,6 +6,7 @@ SERVICE_TARGET="gui/${UID}/${LABEL}"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 SCRIPT_DIR=${0:A:h}
 MAC_ROOT=${SCRIPT_DIR:h}
+LOG_DIR="${MAC_ROOT}/logs"
 
 require_plist() {
   if [[ ! -f "${PLIST_PATH}" ]]; then
@@ -18,13 +19,45 @@ is_loaded() {
   launchctl print "${SERVICE_TARGET}" >/dev/null 2>&1
 }
 
+service_field() {
+  local field=$1
+  launchctl print "${SERVICE_TARGET}" 2>/dev/null |
+    awk -v field="${field}" '
+      $0 ~ "^\t" field " = " {
+        sub("^\t" field " = ", "")
+        print
+        exit
+      }
+    '
+}
+
+wait_until_running() {
+  local state pid
+  for _ in {1..20}; do
+    state=$(service_field "state")
+    pid=$(service_field "pid")
+    if [[ "${state}" == "running" && -n "${pid}" ]]; then
+      echo "${LABEL} is running (pid ${pid})."
+      return 0
+    fi
+    sleep 0.5
+  done
+  state=$(service_field "state")
+  echo "${LABEL} was loaded but did not reach the running state (state: ${state:-unknown})." >&2
+  local last_exit
+  last_exit=$(service_field "last exit code")
+  [[ -n "${last_exit}" ]] && echo "last exit code: ${last_exit}" >&2
+  echo "Inspect external-volume logs with: npm run agent:logs" >&2
+  return 1
+}
+
 start_agent() {
   require_plist
   if ! is_loaded; then
     launchctl bootstrap "gui/${UID}" "${PLIST_PATH}"
   fi
   launchctl kickstart -k "${SERVICE_TARGET}"
-  echo "Started ${LABEL}"
+  wait_until_running
 }
 
 stop_agent() {
@@ -49,19 +82,26 @@ case "${1:-status}" in
     ;;
   status)
     if is_loaded; then
-      echo "${LABEL} is running."
-      launchctl print "${SERVICE_TARGET}" | sed -n \
-        -e '/state =/p' \
-        -e '/pid =/p' \
-        -e '/last exit code =/p'
+      state=$(service_field "state")
+      pid=$(service_field "pid")
+      if [[ "${state}" == "running" && -n "${pid}" ]]; then
+        echo "${LABEL} is running (pid ${pid})."
+      else
+        echo "${LABEL} is loaded but not running."
+        echo "state = ${state:-unknown}"
+        last_exit=$(service_field "last exit code")
+        [[ -n "${last_exit}" ]] && echo "last exit code = ${last_exit}"
+        exit 1
+      fi
     else
       echo "${LABEL} is stopped."
+      exit 1
     fi
     ;;
   logs)
-    mkdir -p "${MAC_ROOT}/logs"
-    touch "${MAC_ROOT}/logs/agent.log" "${MAC_ROOT}/logs/agent-error.log"
-    tail -n 80 "${MAC_ROOT}/logs/agent.log" "${MAC_ROOT}/logs/agent-error.log"
+    mkdir -p "${LOG_DIR}"
+    touch "${LOG_DIR}/agent.log" "${LOG_DIR}/agent-error.log"
+    tail -n 80 "${LOG_DIR}/agent.log" "${LOG_DIR}/agent-error.log"
     ;;
   *)
     echo "Usage: $0 {start|stop|restart|status|logs}" >&2

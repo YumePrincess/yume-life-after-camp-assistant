@@ -4,7 +4,6 @@ import type {
   CampConfig,
   ConfigBundle,
   PublicOverview,
-  TaskKey,
   TechnologyCategory,
   TechnologyConfig,
   TechnologyDefinition,
@@ -274,18 +273,20 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
   const timezone = text(source.timezone, "automationConfig.timezone", { max: 80 });
   assertTimezone(timezone);
   const tasks = object(source.tasks, "automationConfig.tasks");
-  const tech = taskSchedule(tasks.tech_switch, "automationConfig.tasks.tech_switch");
-  const member = taskSchedule(tasks.member_sync, "automationConfig.tasks.member_sync");
+  const tech = taskSchedule(
+    tasks.tech_switch ?? { enabled: true, time: "02:00" },
+    "automationConfig.tasks.tech_switch"
+  );
   const contribution = taskSchedule(
-    tasks.contribution_sync ?? { enabled: false, time: member.time },
+    tasks.contribution_sync ?? { enabled: true, time: "02:30" },
     "automationConfig.tasks.contribution_sync"
   );
   const inactivity = taskSchedule(
-    tasks.inactivity_sync ?? { enabled: false, time: member.time },
+    tasks.inactivity_sync ?? { enabled: true, time: "02:50" },
     "automationConfig.tasks.inactivity_sync"
   );
   const profile = taskSchedule(
-    tasks.member_profile_sync ?? { enabled: false, time: member.time },
+    tasks.member_profile_sync ?? { enabled: true, time: "03:10" },
     "automationConfig.tasks.member_profile_sync"
   );
   const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol");
@@ -359,61 +360,6 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     source.gameWatchdog && typeof source.gameWatchdog === "object"
       ? object(source.gameWatchdog, "automationConfig.gameWatchdog")
       : {};
-  const routines = Array.isArray(source.routines)
-    ? source.routines.map((raw, index) => {
-        const routine = object(raw, `automationConfig.routines[${index}]`);
-        const time = text(routine.time, `automationConfig.routines[${index}].time`, {
-          max: 5
-        });
-        assertClock(time, `automationConfig.routines[${index}].time`);
-        if (!Array.isArray(routine.groups) || !routine.groups.length) {
-          throw new Error(`automationConfig.routines[${index}].groups must not be empty`);
-        }
-        const groups = routine.groups.map((rawGroup, groupIndex) => {
-          if (!Array.isArray(rawGroup) || !rawGroup.length || rawGroup.length > 8) {
-            throw new Error(
-              `automationConfig.routines[${index}].groups[${groupIndex}] is invalid`
-            );
-          }
-          return rawGroup
-            .filter(
-              (rawTask) =>
-                rawTask !== "brick_transport" &&
-                rawTask !== "weekly_schedule_update"
-            )
-            .map((rawTask) => {
-            const task = text(
-              rawTask,
-              `automationConfig.routines[${index}].groups[${groupIndex}]`,
-              { max: 80 }
-            );
-            if (task === "automation_routine" || !isTaskKeyForRoutine(task)) {
-              throw new Error(`Unknown routine task: ${task}`);
-            }
-            return task;
-          });
-        }).filter((group) => group.length > 0);
-        return {
-          id: text(routine.id, `automationConfig.routines[${index}].id`, { max: 64 }),
-          name: text(routine.name, `automationConfig.routines[${index}].name`, {
-            max: 80
-          }),
-          enabled: boolean(
-            routine.enabled,
-            `automationConfig.routines[${index}].enabled`
-          ),
-          time,
-          weekdays: weekdays(
-            routine.weekdays,
-            `automationConfig.routines[${index}].weekdays`
-          ),
-          groups
-        };
-      })
-      .filter((routine) => routine.groups.length > 0)
-    : [];
-  if (routines.length > 40) throw new Error("automationConfig.routines is too large");
-
   return {
     timezone,
     schedulerGraceMinutes: integer(
@@ -496,7 +442,6 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     },
     tasks: {
       tech_switch: { enabled: tech.enabled, time: tech.time },
-      member_sync: { enabled: member.enabled, time: member.time },
       contribution_sync: {
         enabled: contribution.enabled,
         time: contribution.time
@@ -522,7 +467,7 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
         deadline: patrolDeadline
       }
     },
-    routines
+    routines: []
   };
 }
 
@@ -537,22 +482,6 @@ function weekdays(value: unknown, field: string): number[] {
       )
     )
   ];
-}
-
-function isTaskKeyForRoutine(
-  value: string
-): value is Exclude<
-  TaskKey,
-  "automation_routine" | "kick_member" | "kick_inactive_members"
-> {
-  return [
-    "tech_switch",
-    "member_sync",
-    "contribution_sync",
-    "inactivity_sync",
-    "member_profile_sync",
-    "patrol"
-  ].includes(value);
 }
 
 export function validateConfigBundle(value: unknown): ConfigBundle {

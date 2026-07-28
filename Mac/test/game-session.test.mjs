@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { waitForGameReady } from "../src/game-session.mjs";
 
-test("zero promotion pages reaches HUD without a bottom tap", async () => {
+test("zero promotion pages reaches HUD after only the safe announcement close tap", async () => {
   const fixture = createFixture([["背包"]]);
   await waitForGameReady(fixture.context);
-  assert.equal(fixture.taps.length, 0);
+  assert.deepEqual(fixture.taps, [{ x: 1742, y: 155 }]);
   assert.match(fixture.messages.at(-1), /未出现活动宣传页/);
 });
 
@@ -13,6 +13,7 @@ test("the newspaper is recognized as a promotion page", async () => {
   const fixture = createFixture([["登录游戏"], ["明日希望报"], ["背包"]]);
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
+    { x: 1742, y: 155 },
     { x: 960, y: 945 },
     { x: 960, y: 1135 }
   ]);
@@ -27,6 +28,7 @@ test("resource update restart is handled before login and promotion dismissal", 
   ]);
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
+    { x: 1742, y: 155 },
     { x: 5, y: 5 },
     { x: 960, y: 945 }
   ]);
@@ -43,6 +45,7 @@ test("pre-login announcement closes by its top-right X before clicking login", a
   ]);
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
+    { x: 1742, y: 155 },
     { x: 1742, y: 155 },
     { x: 960, y: 945 }
   ]);
@@ -62,7 +65,7 @@ test("a local-model login hallucination never clicks or advances the workflow", 
     }
   );
   await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, []);
+  assert.deepEqual(fixture.taps, [{ x: 1742, y: 155 }]);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("不会点击或推动任务流程")
@@ -77,7 +80,10 @@ test("accurate OCR recovers a login button missed by fast OCR", async () => {
     [["点击登录游戏"]]
   );
   await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+  assert.deepEqual(fixture.taps, [
+    { x: 1742, y: 155 },
+    { x: 960, y: 945 }
+  ]);
   assert.equal(fixture.accurateCaptures, 1);
 });
 
@@ -89,7 +95,7 @@ test("a slow local model never blocks the deterministic login loop", async () =>
   const startedAt = Date.now();
   await waitForGameReady(fixture.context);
   assert.ok(Date.now() - startedAt < 1_500);
-  assert.deepEqual(fixture.taps, []);
+  assert.deepEqual(fixture.taps, [{ x: 1742, y: 155 }]);
 });
 
 test("an accurate OCR timeout degrades to fast OCR without ending login", async () => {
@@ -99,7 +105,7 @@ test("an accurate OCR timeout degrades to fast OCR without ending login", async 
     [new Error("accurate OCR timed out")]
   );
   await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, []);
+  assert.deepEqual(fixture.taps, [{ x: 1742, y: 155 }]);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("已自动退回快速 OCR")
@@ -120,7 +126,10 @@ test("guarded mode permits a fixed login tap at 0.95 confidence", async () => {
     "guarded"
   );
   await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+  assert.deepEqual(fixture.taps, [
+    { x: 1742, y: 155 },
+    { x: 960, y: 945 }
+  ]);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("高置信度")
@@ -205,6 +214,7 @@ function createFixture(
         enabled: true,
         maxClosures: 2,
         closePoint: { x: 1742, y: 155 },
+        fixedCloseIntervalSeconds: 3,
         texts: ["系统公告", "更新公告", "游戏公告"]
       },
       vision: { accurateFallbackSeconds: 0.05 }

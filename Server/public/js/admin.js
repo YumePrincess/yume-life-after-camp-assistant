@@ -2,17 +2,24 @@
   "use strict";
 
   const TASKS = [
-    ["tech_switch", "科技切换", "按固定科技与投票结果开启次日科技"],
-    ["member_sync", "成员同步", "读取贡献、职业、庄园、同居与公职"],
+    ["tech_switch", "更新科技", "按固定科技与投票结果开启次日科技"],
     ["contribution_sync", "更新贡献", "仅从市政厅沙盘更新三项贡献数据"],
     ["inactivity_sync", "更新斩杀预警", "仅从市政厅沙盘活跃页更新离线时间"],
-    ["member_profile_sync", "更新成员资料", "仅更新职业、庄园、同居与公职"],
-    ["patrol", "营地巡逻", "组队、困难路线与定时古籍分享"],
-    ["automation_routine", "任务例程", "按后台配置的先后与同组关系执行"],
-    ["kick_member", "踢出成员", "从最新名单精确选择成员后执行"],
-    ["kick_inactive_members", "自动斩杀", "处理最新识别仍达到斩杀线的成员"]
+    [
+      "member_profile_sync",
+      "更新成员资料",
+      "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单"
+    ],
+    ["patrol", "营地巡逻", "组队、困难路线与定时古籍分享"]
   ];
   const CONFIG_SECTIONS = ["general", "tasks", "agent", "technology"];
+  const TASK_NAMES = {
+    ...Object.fromEntries(TASKS.map(([key, name]) => [key, name])),
+    member_sync: "成员同步",
+    automation_routine: "任务例程",
+    kick_member: "踢出成员",
+    kick_inactive_members: "自动斩杀"
+  };
   const ACTIVE_STATES = new Set(["queued", "claimed", "running", "cancelling"]);
   const state = {
     bootstrap: null,
@@ -62,7 +69,7 @@
   }
 
   function taskName(value) {
-    return Object.fromEntries(TASKS.map(([key, name]) => [key, name]))[value] || value;
+    return TASK_NAMES[value] || value;
   }
 
   function hasPermission(permission) {
@@ -121,30 +128,12 @@
     const root = byId("task-actions");
     root.replaceChildren();
     for (const [key, name, copy] of TASKS) {
-      if (["automation_routine", "kick_member", "kick_inactive_members"].includes(key)) {
-        continue;
-      }
       const card = create("article", "task-card");
       const button = create("button", "button button-primary", "立即执行");
       button.type = "button";
       button.disabled = !hasPermission("task:run");
       button.addEventListener("click", () => runTask(key, button));
       card.append(create("h3", "", name), create("p", "", copy), button);
-      root.append(card);
-    }
-    for (const routine of state.bootstrap?.configBundle?.automationConfig?.routines || []) {
-      const card = create("article", "task-card");
-      const button = create("button", "button button-primary", "立即执行例程");
-      button.type = "button";
-      button.disabled = !hasPermission("task:run");
-      button.addEventListener("click", () =>
-        runTask("automation_routine", button, routine.id)
-      );
-      card.append(
-        create("h3", "", routine.name),
-        create("p", "", `${routine.time} · ${routine.groups.map((g) => g.join(" + ")).join(" → ")}`),
-        button
-      );
       root.append(card);
     }
   }
@@ -214,8 +203,6 @@
       for (const [name, value] of Object.entries({
         techEnabled: tasks.tech_switch.enabled,
         techTime: tasks.tech_switch.time,
-        memberEnabled: tasks.member_sync.enabled,
-        memberTime: tasks.member_sync.time,
         contributionEnabled: tasks.contribution_sync.enabled,
         contributionTime: tasks.contribution_sync.time,
         inactivityEnabled: tasks.inactivity_sync.enabled,
@@ -250,7 +237,6 @@
         null,
         2
       );
-      byId("routines-json").value = JSON.stringify(automation.routines, null, 2);
     }
     if (sections.includes("technology")) {
       state.technologyDraft = JSON.parse(JSON.stringify(bundle.technologyConfig));
@@ -479,9 +465,19 @@
       detail.addEventListener("click", () => showEvents(run.id));
       actions.append(detail);
       if (ACTIVE_STATES.has(run.state)) {
-        const cancel = create("button", "button button-danger", "中断");
+        const cancellationPending = run.state === "cancelling";
+        const cancel = create(
+          "button",
+          "button button-danger",
+          cancellationPending
+            ? "终止已提交"
+            : run.state === "queued"
+              ? "取消排队"
+              : "终止任务"
+        );
         cancel.type = "button";
-        cancel.disabled = !hasPermission("task:interrupt");
+        cancel.disabled =
+          cancellationPending || !hasPermission("task:interrupt");
         cancel.addEventListener("click", () => interruptRun(run.id, cancel));
         actions.append(cancel);
       }
@@ -779,11 +775,14 @@
   async function interruptRun(runId, button) {
     button.disabled = true;
     try {
-      await request("/api/admin/interrupt", {
+      const result = await request("/api/admin/interrupt", {
         method: "POST",
         body: JSON.stringify({ runId })
       });
-      byId("save-state").textContent = "中断指令已发送";
+      byId("save-state").textContent =
+        result.state === "interrupted"
+          ? "排队任务已终止"
+          : "终止指令已发送";
       await refresh(false);
     } catch (error) {
       byId("save-state").textContent = error.message;
@@ -854,10 +853,6 @@
           enabled: getField("techEnabled"),
           time: getField("techTime")
         },
-        member_sync: {
-          enabled: getField("memberEnabled"),
-          time: getField("memberTime")
-        },
         contribution_sync: {
           enabled: getField("contributionEnabled"),
           time: getField("contributionTime")
@@ -881,12 +876,10 @@
       };
     } else if (section === "agent") {
       let pollingWindows;
-      let routines;
       try {
         pollingWindows = JSON.parse(byId("polling-windows-json").value);
-        routines = JSON.parse(byId("routines-json").value);
       } catch {
-        throw new Error("轮询窗口或任务例程 JSON 格式错误");
+        throw new Error("轮询窗口 JSON 格式错误");
       }
       next.automationConfig.agentPolling = {
         activeSeconds: Number(getField("pollActiveSeconds")),
@@ -901,7 +894,7 @@
         maxRestarts: Number(getField("watchdogMaxRestarts")),
         restartCooldownSeconds: Number(getField("watchdogCooldownSeconds"))
       };
-      next.automationConfig.routines = routines;
+      next.automationConfig.routines = [];
     } else if (section === "technology") {
       next.technologyConfig = JSON.parse(
         JSON.stringify(state.technologyDraft)

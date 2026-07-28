@@ -517,7 +517,12 @@ export async function updateMemberProfiles(
       )
     );
   }
-  if (statements.length) await env.DB.batch(statements);
+  if (statements.length) {
+    await env.DB.batch(statements);
+    await env.DB.prepare(
+      "DELETE FROM members WHERE source_run_id IS NULL OR source_run_id <> ?"
+    ).bind(input.runId).run();
+  }
 }
 
 export async function removeCurrentMembers(

@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
-import { loadConfig } from "./config.mjs";
+import { loadConfig, MAC_ROOT } from "./config.mjs";
+import { enableExternalFileLogging } from "./file-logger.mjs";
 import { AdbClient } from "./adb.mjs";
 import { AgentApi } from "./api.mjs";
 import { MumuLifecycle } from "./mumu.mjs";
@@ -8,7 +9,6 @@ import { GameUi } from "./ui.mjs";
 import { withGameSession } from "./game-session.mjs";
 import { delay } from "./process.mjs";
 import { runTechnology } from "./workflows/technology.mjs";
-import { runMemberSync } from "./workflows/member-sync.mjs";
 import {
   runContributionSync,
   runInactivitySync,
@@ -19,8 +19,8 @@ import {
   runKickInactiveMembers,
   runKickMember
 } from "./workflows/kick-member.mjs";
-import { createRoutineWorkflow } from "./workflows/routine.mjs";
 
+enableExternalFileLogging(MAC_ROOT);
 const config = await loadConfig();
 const api = new AgentApi(config);
 const adb = new AdbClient(config);
@@ -42,7 +42,6 @@ let nextPollSeconds = config.server.pollSeconds;
 
 const workflows = {
   tech_switch: runTechnology,
-  member_sync: runMemberSync,
   contribution_sync: runContributionSync,
   inactivity_sync: runInactivitySync,
   member_profile_sync: runMemberProfileSync,
@@ -50,7 +49,6 @@ const workflows = {
   kick_member: runKickMember,
   kick_inactive_members: runKickInactiveMembers
 };
-workflows.automation_routine = createRoutineWorkflow(workflows);
 
 const debugServer = createDebugServer();
 debugServer.listen(config.debug.port, config.debug.host, () => {
