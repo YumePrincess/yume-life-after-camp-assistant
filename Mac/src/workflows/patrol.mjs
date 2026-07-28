@@ -60,6 +60,7 @@ async function patrolTeamIsFull(context, frame, signal) {
     vision.find(frame.observations, "队伍人数4");
   if (fourMembers) return true;
   if (vision.find(frame.observations, "等待队员加入")) return false;
+  if (vision.find(frame.observations, "2D模式")) return true;
   if (!vision.advisor?.enabled) return false;
 
   const advice = await vision
