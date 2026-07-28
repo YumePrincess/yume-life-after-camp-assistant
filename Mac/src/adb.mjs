@@ -7,14 +7,36 @@ export class AdbClient {
     this.config = config;
     this.binary = config.adb.binary;
     this.serial = config.adb.serial;
+    this.rawQueue = Promise.resolve();
+  }
+
+  setSerial(serial) {
+    if (!/^127\.0\.0\.1:\d{2,5}$/.test(serial)) {
+      throw new Error(`Refusing non-loopback ADB serial: ${serial}`);
+    }
+    this.serial = serial;
+    this.config.adb.serial = serial;
   }
 
   async raw(args, options = {}) {
-    return runFile(this.binary, args, options);
+    const execute = () => runFile(this.binary, args, options);
+    const pending = this.rawQueue.then(execute, execute);
+    this.rawQueue = pending.catch(() => undefined);
+    return pending;
   }
 
   async connect() {
     return this.raw(["connect", this.serial], { timeoutMs: 15_000 });
+  }
+
+  async reconnect() {
+    await this.raw(["disconnect", this.serial], { timeoutMs: 5_000 }).catch(
+      () => undefined
+    );
+    await this.connect();
+    if ((await this.state()) !== "device") {
+      throw new Error(`ADB device ${this.serial} is offline after reconnect`);
+    }
   }
 
   async state() {
@@ -86,6 +108,12 @@ export class AdbClient {
       }).catch(() => null)
     ]);
     const detail = `${activityResult?.stdout || ""}\n${windowResult?.stdout || ""}`;
+    const focusLines = String(windowResult?.stdout || "")
+      .split("\n")
+      .filter((line) =>
+        /mCurrentFocus|mFocusedApp|mObscuringWindow/i.test(line)
+      )
+      .join("\n");
     const packageLines = detail
       .split("\n")
       .filter((line) => line.includes(packageName))
@@ -101,6 +129,7 @@ export class AdbClient {
     return {
       running: Boolean(pidResult?.stdout?.trim()),
       anr,
+      foreground: focusLines.includes(packageName),
       detail: packageLines.slice(0, 4_000)
     };
   }
@@ -116,29 +145,54 @@ export class AdbClient {
   }
 
   async mouseTap(x, y, signal) {
-    await this.shell(["input", "mouse", "tap", Math.round(x), Math.round(y)], {
-      signal
-    });
+    const args = ["input", "mouse", "tap", Math.round(x), Math.round(y)];
+    try {
+      await this.shell(args, { signal, timeoutMs: 5_000 });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      await this.reconnect();
+      await this.shell(args, { signal, timeoutMs: 5_000 }).catch((retryError) => {
+        retryError.cause = error;
+        throw retryError;
+      });
+    }
   }
 
   async mouseSwipe(from, to, durationMs = 500, signal) {
+    const args = [
+      "input",
+      "mouse",
+      "swipe",
+      Math.round(from.x),
+      Math.round(from.y),
+      Math.round(to.x),
+      Math.round(to.y),
+      Math.round(durationMs)
+    ];
+    try {
+      await this.shell(args, { signal, timeoutMs: 5_000 });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      await this.reconnect();
+      await this.shell(args, { signal, timeoutMs: 5_000 }).catch((retryError) => {
+        retryError.cause = error;
+        throw retryError;
+      });
+    }
+  }
+
+  async key(code, signal, options = {}) {
+    const repeat = Math.max(1, Math.min(20, Number(options.repeat) || 1));
+    const codes = Array.from({ length: repeat }, () => String(code));
     await this.shell(
       [
         "input",
-        "mouse",
-        "swipe",
-        Math.round(from.x),
-        Math.round(from.y),
-        Math.round(to.x),
-        Math.round(to.y),
-        Math.round(durationMs)
+        "keyevent",
+        ...(options.longPress ? ["--longpress"] : []),
+        ...codes
       ],
-      { signal }
+      { signal, timeoutMs: 5_000 }
     );
-  }
-
-  async key(code, signal) {
-    await this.shell(["input", "keyevent", String(code)], { signal });
   }
 
   async currentIme() {

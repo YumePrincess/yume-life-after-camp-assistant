@@ -2,6 +2,7 @@ import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { MAC_ROOT } from "./config.mjs";
 import { runFile } from "./process.mjs";
+import { LocalVisionAdvisor } from "./local-vision-advisor.mjs";
 
 export class Vision {
   constructor(config, adb) {
@@ -10,6 +11,7 @@ export class Vision {
     this.sequence = 0;
     this.snapshotDir = resolve(MAC_ROOT, "snapshots");
     this.taskPaths = new Set();
+    this.advisor = new LocalVisionAdvisor(config.localVisionModel);
   }
 
   beginTask() {
@@ -17,6 +19,40 @@ export class Vision {
   }
 
   async capture(label = "screen", signal) {
+    return this.#capture(label, signal, false);
+  }
+
+  async captureTransient(label = "screen", signal) {
+    return this.#capture(label, signal, true);
+  }
+
+  async startAdvisor(signal) {
+    return this.advisor.start(signal);
+  }
+
+  async stopAdvisor() {
+    return this.advisor.stop();
+  }
+
+  async adviseCurrent(label, context = {}, signal) {
+    if (!this.advisor.enabled) return null;
+    await mkdir(this.snapshotDir, { recursive: true });
+    const stamp = new Date().toISOString().replaceAll(":", "-");
+    const path = resolve(
+      this.snapshotDir,
+      `${stamp}-${String(++this.sequence).padStart(4, "0")}-${safe(label)}-advisor.png`
+    );
+    await this.adb.screenshot(path);
+    this.taskPaths.add(path);
+    try {
+      return await this.advisor.analyze(path, context, signal);
+    } finally {
+      this.taskPaths.delete(path);
+      await rm(path, { force: true });
+    }
+  }
+
+  async #capture(label, signal, transient) {
     await mkdir(this.snapshotDir, { recursive: true });
     const stamp = new Date().toISOString().replaceAll(":", "-");
     const path = resolve(
@@ -25,15 +61,22 @@ export class Vision {
     );
     await this.adb.screenshot(path);
     this.taskPaths.add(path);
-    const result = await runFile(
-      this.config.vision.binary,
-      [path, this.config.vision.mode],
-      { timeoutMs: 30_000, signal }
-    );
-    const observations = JSON.parse(result.stdout).filter(
-      (item) => item.confidence >= this.config.vision.minimumConfidence
-    );
-    return { path, observations };
+    try {
+      const result = await runFile(
+        this.config.vision.binary,
+        [path, this.config.vision.mode],
+        { timeoutMs: 30_000, signal }
+      );
+      const observations = JSON.parse(result.stdout).filter(
+        (item) => item.confidence >= this.config.vision.minimumConfidence
+      );
+      return { path: transient ? null : path, observations };
+    } finally {
+      if (transient) {
+        this.taskPaths.delete(path);
+        await rm(path, { force: true });
+      }
+    }
   }
 
   async cleanupTask() {

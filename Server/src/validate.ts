@@ -463,7 +463,7 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
             ),
       frozenScreenSeconds:
         watchdogSource.frozenScreenSeconds === undefined
-          ? 90
+          ? 60
           : integer(
               watchdogSource.frozenScreenSeconds,
               "automationConfig.gameWatchdog.frozenScreenSeconds",

@@ -14,6 +14,12 @@ export async function loadConfig() {
     MAC_ROOT,
     config.vision.pixelProbeBinary
   );
+  if (config.localVisionModel?.model?.startsWith(".")) {
+    config.localVisionModel.model = resolve(
+      MAC_ROOT,
+      config.localVisionModel.model
+    );
+  }
   validate(config);
   return config;
 }
@@ -28,12 +34,25 @@ function validate(config) {
   ) {
     throw new Error("Set server.agentToken in Mac/config.json");
   }
-  if (config.adb?.serial !== "127.0.0.1:26688") {
+  if (
+    config.adb?.serial !== "auto" &&
+    !/^127\.0\.0\.1:\d{2,5}$/.test(config.adb?.serial || "")
+  ) {
     throw new Error(
-      "adb.serial must remain 127.0.0.1:26688; the public ADB mapping is not used by the Mac Agent"
+      "adb.serial must be auto or a 127.0.0.1 loopback endpoint; public ADB addresses are forbidden"
     );
   }
   if (config.debug?.host !== "127.0.0.1") {
     throw new Error("debug.host must remain 127.0.0.1");
+  }
+  if (
+    config.localVisionModel?.enabled &&
+    !/^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(
+      config.localVisionModel?.baseUrl || ""
+    )
+  ) {
+    throw new Error(
+      "localVisionModel.baseUrl must remain a 127.0.0.1 loopback endpoint"
+    );
   }
 }

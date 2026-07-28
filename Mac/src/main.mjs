@@ -87,7 +87,10 @@ do {
       },
       detail: {
         adbSerial: config.adb.serial,
-        emulatorInstance: config.mumu.instanceIndex
+        emulatorInstance:
+          mumu.currentInstance()?.index ?? config.mumu.instanceIndex,
+        emulatorName:
+          mumu.currentInstance()?.name ?? config.mumu.instanceName ?? null
       }
     });
 

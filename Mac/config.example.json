@@ -1,6 +1,6 @@
 {
   "server": {
-    "baseUrl": "https://mrzh.yume.zone",
+    "baseUrl": "https://lifeafter.yume.zone",
     "agentToken": "REPLACE_WITH_AGENT_SHARED_TOKEN",
     "agentId": "mumu-main",
     "pollSeconds": 5
@@ -11,16 +11,23 @@
     "token": "REPLACE_WITH_LONG_LOCAL_DEBUG_TOKEN"
   },
   "mumu": {
-    "appName": "MuMuPlayer Pro",
-    "toolPath": "/Applications/MuMuPlayer Pro.app/Contents/MacOS/mumutool",
-    "instanceIndex": 1,
+    "appName": "MuMuPlayer",
+    "appPath": "/Applications/MuMuPlayer.app",
+    "toolPath": "/Applications/MuMuPlayer.app/Contents/MacOS/mumutool",
+    "instanceName": "Life After CN Auto",
+    "instanceIndex": 3,
     "startManagerInBackground": true,
     "stopEmulatorAfterTask": true,
-    "adbReadyTimeoutSeconds": 180
+    "adbReadyTimeoutSeconds": 180,
+    "containerRestartTimeoutSeconds": 60,
+    "deviceProcessName": "MuMuEmulator",
+    "hardRestartDelaySeconds": 4,
+    "returnToCenterAfterTask": true,
+    "returnToCenterTimeoutSeconds": 60
   },
   "adb": {
     "binary": "adb",
-    "serial": "127.0.0.1:26688",
+    "serial": "127.0.0.1:16480",
     "packageName": "com.netease.mrzh.mumumnqmacos_cps",
     "launchActivity": "com.netease.ntunisdk.external.protocol.ProtocolLauncher",
     "screenWidth": 1920,
@@ -31,13 +38,70 @@
   "vision": {
     "binary": "./bin/mrzh-vision-ocr",
     "pixelProbeBinary": "./bin/mrzh-pixel-probe",
-    "mode": "accurate",
+    "mode": "fast",
     "minimumConfidence": 0.35
+  },
+  "localVisionModel": {
+    "enabled": true,
+    "mode": "shadow",
+    "baseUrl": "http://127.0.0.1:8092",
+    "model": "./.local-model/models/deepseek-vl-7b-chat-4bit",
+    "timeoutSeconds": 45,
+    "minimumConfidence": 0.9,
+    "consecutiveMatches": 2,
+    "intervalSeconds": 8,
+    "autoStartForTasks": true,
+    "stopAfterTask": true
   },
   "timeouts": {
     "gameLaunchSeconds": 180,
     "screenTransitionSeconds": 20,
     "actionDelayMs": 650
+  },
+  "postLoginPromotions": {
+    "maxPages": 2,
+    "initialWaitMs": 7000,
+    "betweenPagesMs": 4000,
+    "dismissPoint": { "x": 960, "y": 1135 },
+    "readyTexts": ["配方", "背包", "营地"]
+  },
+  "preLoginAnnouncements": {
+    "enabled": true,
+    "maxClosures": 2,
+    "closePoint": { "x": 1742, "y": 155 },
+    "texts": ["系统公告", "更新公告", "游戏公告"]
+  },
+  "gameUpdates": {
+    "enabled": true,
+    "timeoutSeconds": 1800,
+    "maxGameRestarts": 3,
+    "processCheckSeconds": 3,
+    "relaunchDelaySeconds": 5,
+    "stateTexts": [
+      "资源更新",
+      "正在更新",
+      "检查更新",
+      "状态检测",
+      "游戏状态检测",
+      "更新资源",
+      "下载资源",
+      "正在下载",
+      "正在解压"
+    ],
+    "restartButtonTexts": ["重启游戏", "重新启动", "立即重启"]
+  },
+  "patrolTeam": {
+    "kickCommandCooldownSeconds": 60,
+    "slots": [
+      { "number": 1, "x": 155, "y": 620, "left": 25, "right": 270 },
+      { "number": 2, "x": 380, "y": 620, "left": 270, "right": 500 },
+      { "number": 3, "x": 610, "y": 620, "left": 500, "right": 730 },
+      { "number": 4, "x": 840, "y": 620, "left": 730, "right": 960 },
+      { "number": 5, "x": 1070, "y": 620, "left": 960, "right": 1190 },
+      { "number": 6, "x": 1300, "y": 620, "left": 1190, "right": 1420 },
+      { "number": 7, "x": 1530, "y": 620, "left": 1420, "right": 1650 },
+      { "number": 8, "x": 1760, "y": 620, "left": 1650, "right": 1895 }
+    ]
   },
   "technology": {
     "tabs": {
@@ -195,31 +259,180 @@
       { "op": "waitAnyText", "texts": ["科技", "成员", "玩法"], "timeoutSeconds": 12 }
     ],
     "teleportNoticeBoard": [
-      { "op": "tap", "x": 1780, "y": 120 },
-      { "op": "sleep", "ms": 1500 },
-      { "op": "tap", "x": 270, "y": 577 },
-      { "op": "sleep", "ms": 600 },
-      { "op": "tap", "x": 1600, "y": 905 },
-      { "op": "waitAnyText", "texts": ["查看玩法", "营地巡逻"], "timeoutSeconds": 30 }
+      {
+        "op": "teleportWithFallback",
+        "mapButton": { "x": 1780, "y": 120 },
+        "mapKey": 41,
+        "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
+        "mapModeButton": { "x": 245, "y": 48 },
+        "mapModeDelayMs": 800,
+        "mapOpenTimeoutSeconds": 10,
+        "mapListSwipe": {
+          "from": { "x": 350, "y": 950 },
+          "to": { "x": 350, "y": 350 },
+          "durationMs": 500,
+          "betweenMs": 500
+        },
+        "quickTravel": { "x": 1600, "y": 905 },
+        "quickTravelEnabledDetection": {
+          "radius": 30,
+          "minimumSaturation": 0.25
+        },
+        "target": {
+          "name": "公告版",
+          "x": 270,
+          "y": 577,
+          "readyTexts": ["查看玩法", "营地巡逻", "交谈"]
+        },
+        "fallback": {
+          "name": "中心出入口",
+          "x": 280,
+          "y": 337,
+          "readyTexts": ["中心出入口", "配方", "背包"]
+        },
+        "failureTexts": ["已在目标点附近", "目标点附近", "无法传送", "传送冷却中"],
+        "cooldownSeconds": 10,
+        "resultTimeoutSeconds": 30
+      }
     ],
-    "openPatrol": [],
-    "createPatrolTeam": [],
-    "shareTeam": [],
-    "startHardPatrol": [],
-    "switchToBookDefense": [],
+    "openPatrol": [
+      {
+        "op": "clickTextsUntilAnyText",
+        "clickTexts": ["营地巡逻", "交谈", "查看巡逻队当前进程"],
+        "targetTexts": ["简单巡逻路线", "普通巡逻路线", "困难巡逻路线"],
+        "timeoutSeconds": 45,
+        "intervalMs": 800
+      }
+    ],
+    "createPatrolTeam": [
+      {
+        "op": "tapUnlessAnyText",
+        "texts": ["创建队伍", "加入队伍", "调整", "离开队伍"],
+        "x": 50,
+        "y": 325
+      },
+      { "op": "waitAnyText", "texts": ["创建队伍", "加入队伍", "退出队伍"], "timeoutSeconds": 8 },
+      { "op": "tapIfAnyText", "texts": ["创建队伍"], "x": 150, "y": 180 },
+      { "op": "waitAnyText", "texts": ["队伍目标", "营地巡逻任务", "退出队伍"], "timeoutSeconds": 12 },
+      { "op": "tapIfAnyText", "texts": ["队伍目标"], "x": 470, "y": 930 },
+      { "op": "tapIfAnyText", "texts": ["队伍目标"], "x": 1375, "y": 910 },
+      { "op": "keyIfAnyText", "texts": ["加入队伍语音频道"], "code": 111 },
+      { "op": "waitAnyText", "texts": ["营地巡逻任务", "1/4", "队伍"], "timeoutSeconds": 15 }
+    ],
+    "shareTeam": [
+      { "op": "clickText", "text": "招募", "timeoutSeconds": 8 },
+      { "op": "clickText", "text": "营地频道", "timeoutSeconds": 8 }
+    ],
+    "startHardPatrol": [
+      { "op": "waitAnyText", "texts": ["困难巡逻路线"], "timeoutSeconds": 12 },
+      { "op": "tap", "x": 1770, "y": 995 },
+      { "op": "sleep", "ms": 800 },
+      { "op": "clickIfText", "text": "确定", "mode": "exact" },
+      { "op": "sleep", "ms": 800 },
+      {
+        "op": "tapIfAnyText",
+        "texts": ["是否召请队友", "召请队友"],
+        "x": 1125,
+        "y": 680
+      },
+      { "op": "waitAnyText", "texts": ["巡逻进度", "困难巡逻", "营地巡逻"], "timeoutSeconds": 15 }
+    ],
+    "switchToBookDefense": [
+      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 230, "y": 140 },
+      { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
+      { "op": "tapIfAnyText", "texts": ["调整"], "x": 100, "y": 55 },
+      { "op": "waitAnyText", "texts": ["调整队伍目标"], "timeoutSeconds": 10 },
+      { "op": "clickText", "text": "限时活动", "timeoutSeconds": 8 },
+      { "op": "clickText", "text": "保卫古籍", "timeoutSeconds": 8 },
+      { "op": "clickText", "text": "修改队伍", "timeoutSeconds": 8 },
+      { "op": "waitAnyText", "texts": ["限时活动>保卫古籍", "保卫古籍"], "timeoutSeconds": 10 }
+    ],
     "openCampChat": [],
-    "openTeamPanel": [],
+    "openTeamPanel": [
+      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 230, "y": 140 },
+      { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 }
+    ],
     "kickCompletedMembers": [],
     "teleportCityHall": [
-      { "op": "tap", "x": 1780, "y": 120 },
-      { "op": "sleep", "ms": 1500 },
-      { "op": "tap", "x": 280, "y": 420 },
-      { "op": "sleep", "ms": 600 },
-      { "op": "tap", "x": 1600, "y": 905 },
-      { "op": "waitAnyText", "texts": ["营地数据中心", "营地管理"], "timeoutSeconds": 30 }
+      {
+        "op": "teleportWithFallback",
+        "mapButton": { "x": 1780, "y": 120 },
+        "mapKey": 41,
+        "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
+        "mapModeButton": { "x": 245, "y": 48 },
+        "mapModeDelayMs": 800,
+        "mapOpenTimeoutSeconds": 10,
+        "mapListSwipe": {
+          "from": { "x": 350, "y": 950 },
+          "to": { "x": 350, "y": 350 },
+          "durationMs": 500,
+          "betweenMs": 500
+        },
+        "quickTravel": { "x": 1600, "y": 905 },
+        "quickTravelEnabledDetection": {
+          "radius": 30,
+          "minimumSaturation": 0.25
+        },
+        "target": {
+          "name": "市政厅",
+          "x": 280,
+          "y": 420,
+          "readyTexts": ["营地数据中心", "营地管理"]
+        },
+        "fallback": {
+          "name": "中心出入口",
+          "x": 280,
+          "y": 337,
+          "readyTexts": ["中心出入口", "配方", "背包"]
+        },
+        "failureTexts": ["已在目标点附近", "目标点附近", "无法传送", "传送冷却中"],
+        "cooldownSeconds": 10,
+        "resultTimeoutSeconds": 30
+      }
+    ],
+    "teleportCentralExit": [
+      { "op": "key", "code": 4 },
+      { "op": "sleep", "ms": 700 },
+      { "op": "key", "code": 4 },
+      { "op": "sleep", "ms": 700 },
+      {
+        "op": "teleportWithFallback",
+        "mapButton": { "x": 1780, "y": 120 },
+        "mapKey": 41,
+        "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
+        "mapModeButton": { "x": 245, "y": 48 },
+        "mapModeDelayMs": 800,
+        "mapOpenTimeoutSeconds": 10,
+        "mapListSwipe": {
+          "from": { "x": 350, "y": 950 },
+          "to": { "x": 350, "y": 350 },
+          "durationMs": 500,
+          "betweenMs": 500
+        },
+        "quickTravel": { "x": 1600, "y": 905 },
+        "quickTravelEnabledDetection": {
+          "radius": 30,
+          "minimumSaturation": 0.25
+        },
+        "target": {
+          "name": "中心出入口",
+          "x": 280,
+          "y": 337,
+          "readyTexts": ["中心出入口", "配方", "背包"]
+        },
+        "fallback": {
+          "name": "中心出入口",
+          "x": 280,
+          "y": 337,
+          "readyTexts": ["中心出入口", "配方", "背包"]
+        },
+        "nearbyIsSuccess": true,
+        "failureTexts": ["已在目标点附近", "目标点附近", "无法传送", "传送冷却中"],
+        "cooldownSeconds": 10,
+        "resultTimeoutSeconds": 30
+      }
     ],
     "navigateToSandTable": [
-      { "op": "waitAnyText", "texts": ["营地管理", "营地数据中心"], "timeoutSeconds": 12 },
       { "op": "tap", "x": 1370, "y": 715 },
       { "op": "waitAnyText", "texts": ["成员信息", "活动时间管理"], "timeoutSeconds": 12 }
     ],
@@ -261,7 +474,29 @@
     ],
     "teleportSpecialInfected": [],
     "openWeeklySchedule": [],
-    "brickTransportCycle": []
+    "brickNavigateFurnitureStore": [
+      { "op": "tap", "x": 620, "y": 165 },
+      { "op": "waitAnyText", "texts": ["搬运建材", "加固篝火", "提交美食"], "timeoutSeconds": 8 },
+      { "op": "clickText", "text": "搬运建材", "timeoutSeconds": 8 },
+      { "op": "key", "code": 4 }
+    ],
+    "brickWaitAndPick": [
+      { "op": "waitAnyText", "texts": ["喷泉建材", "搬起"], "timeoutSeconds": 45 },
+      { "op": "clickText", "text": "搬起", "timeoutSeconds": 8 }
+    ],
+    "brickCarryAndDrop": [
+      {
+        "op": "keyUntilText",
+        "code": 47,
+        "longPress": true,
+        "repeat": 3,
+        "minimumKeyBatches": 1,
+        "texts": ["放下"],
+        "timeoutSeconds": 25,
+        "intervalMs": 180
+      },
+      { "op": "clickText", "text": "放下", "timeoutSeconds": 8 }
+    ]
   },
   "memberKick": {
     "enabled": false,

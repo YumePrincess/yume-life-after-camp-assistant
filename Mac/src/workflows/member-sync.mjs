@@ -88,7 +88,7 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
   );
 }
 
-async function captureContribution(context, signal) {
+export async function captureContribution(context, signal) {
   await context.ui.executeFlow("teleportCityHall", {}, signal);
   await context.ui.executeFlow("navigateToSandTable", {}, signal);
   await context.ui.executeFlow("openContribution", {}, signal);
@@ -166,7 +166,7 @@ async function captureProfilesAndStaff(context, signal) {
   return { details, staff };
 }
 
-async function capturePagedTable(context, label, definition, signal) {
+export async function capturePagedTable(context, label, definition, signal) {
   const { vision, adb, ui, report } = context;
   const byName = new Map();
   let stagnantPages = 0;
