@@ -149,14 +149,14 @@
       "立即执行": "Run now",
       "读取贡献、职业、庄园、同居与公职":
         "Read contributions, professions, manors, roommates and officers",
-      "组队、困难路线、古籍分享与聊天指令":
-        "Team formation, hard route, book-defense sharing and chat commands",
+      "组队、困难路线与定时古籍分享":
+        "Team formation, hard route, and scheduled book-defense sharing",
       "全部时间使用上方时区": "All times use the time zone above",
       "启动": "Start",
       "最早开巡逻": "Earliest patrol start",
       "结束": "End",
       "分享间隔（分钟）": "Share interval (minutes)",
-      "聊天轮询（秒）": "Chat polling (seconds)",
+      "满员检测（秒）": "Full-team check (seconds)",
       "巡逻中内联执行": "Run inside patrol",
       "执行": "Run",
       "本周截止": "This-week cutoff",
@@ -452,14 +452,14 @@
       "立即执行": "Exécuter",
       "读取贡献、职业、庄园、同居与公职":
         "Lire contributions, professions, manoirs, cohabitants et responsables",
-      "组队、困难路线、古籍分享与聊天指令":
-        "Équipe, route difficile, partage des livres et commandes de discussion",
+      "组队、困难路线与定时古籍分享":
+        "Équipe, route difficile et partage planifié des livres",
       "全部时间使用上方时区": "Toutes les heures utilisent le fuseau ci-dessus",
       "启动": "Démarrage",
       "最早开巡逻": "Début de patrouille au plus tôt",
       "结束": "Fin",
       "分享间隔（分钟）": "Intervalle de partage (minutes)",
-      "聊天轮询（秒）": "Lecture du chat (secondes)",
+      "满员检测（秒）": "Vérification équipe complète (secondes)",
       "巡逻中内联执行": "Exécuter dans la patrouille",
       "执行": "Exécution",
       "本周截止": "Limite de la semaine",
@@ -759,14 +759,14 @@
       "立即执行": "今すぐ実行",
       "读取贡献、职业、庄园、同居与公职":
         "貢献・職業・荘園・同居人・役職を読み取る",
-      "组队、困难路线、古籍分享与聊天指令":
-        "チーム編成・困難ルート・古籍共有・チャット指示",
+      "组队、困难路线与定时古籍分享":
+        "チーム編成・困難ルート・古籍の定期共有",
       "全部时间使用上方时区": "すべて上記タイムゾーンを使用",
       "启动": "開始",
       "最早开巡逻": "パトロール最早開始",
       "结束": "終了",
       "分享间隔（分钟）": "共有間隔（分）",
-      "聊天轮询（秒）": "チャット確認（秒）",
+      "满员检测（秒）": "満員確認（秒）",
       "巡逻中内联执行": "パトロール内で実行",
       "执行": "実行",
       "本周截止": "今週の締切",
@@ -1058,14 +1058,14 @@
       "立即执行": "立即執行",
       "读取贡献、职业、庄园、同居与公职":
         "讀取貢獻、職業、莊園、同居與公職",
-      "组队、困难路线、古籍分享与聊天指令":
-        "組隊、困難路線、古籍分享與聊天指令",
+      "组队、困难路线与定时古籍分享":
+        "組隊、困難路線與定時古籍分享",
       "全部时间使用上方时区": "全部時間使用上方時區",
       "启动": "啟動",
       "最早开巡逻": "最早開巡邏",
       "结束": "結束",
       "分享间隔（分钟）": "分享間隔（分鐘）",
-      "聊天轮询（秒）": "聊天輪詢（秒）",
+      "满员检测（秒）": "滿員檢測（秒）",
       "巡逻中内联执行": "巡邏中內聯執行",
       "执行": "執行",
       "本周截止": "本週截止",

@@ -10,6 +10,11 @@ const STATES = new Set([
   "promotion",
   "promotion_newspaper",
   "panel",
+  "patrol_team_full",
+  "patrol_team_waiting",
+  "patrol_notice_board",
+  "patrol_route_selection",
+  "patrol_book_defense",
   "map",
   "hud",
   "teleport_error",
@@ -73,8 +78,8 @@ export class LocalVisionAdvisor {
     const prompt = [
       "分类《明日之后》中国大陆服画面。你只读、无操作权限。",
       focusRule,
-      'state 只能是 "prelogin_announcement","login","resource_update","promotion","promotion_newspaper","panel","map","hud","teleport_error","target_text_visible","loading","unknown"。',
-      "规则：底部有“点击登录游戏”=login；“希望谷地”只是服务器名。登录前覆盖中央且右上有X的大公告=prelogin_announcement，右侧小气泡不是公告。更新/下载/状态检测=resource_update。登录后时装全屏页=promotion，《明日希望报》=promotion_newspaper。营地贡献表、成员页、队伍页、交谈页、确认框或其他覆盖3D场景的功能窗口=panel。右上小地图且有血条/聊天/动作键、且没有大功能窗口遮挡=hud，左侧任务指引仍是hud。全屏地点列表或“标志查看/查看庄园”=map。明确显示目标点附近、无法传送或传送冷却=teleport_error。任务提示要求确认指定文字且画面中清晰可见任一指定文字=target_text_visible。不确定=unknown。",
+      'state 只能是 "prelogin_announcement","login","resource_update","promotion","promotion_newspaper","panel","patrol_team_full","patrol_team_waiting","patrol_notice_board","patrol_route_selection","patrol_book_defense","map","hud","teleport_error","target_text_visible","loading","unknown"。',
+      "规则：底部有“点击登录游戏”=login；“希望谷地”只是服务器名。登录前覆盖中央且右上有X的大公告=prelogin_announcement，右侧小气泡不是公告。更新/下载/状态检测=resource_update。登录后时装全屏页=promotion，《明日希望报》=promotion_newspaper。4人巡逻队四个卡位均有成员=patrol_team_full，仍有“等待队员加入”空位=patrol_team_waiting；公告版/NPC的营地巡逻交互页=patrol_notice_board；简单/普通/困难巡逻路线选择页=patrol_route_selection；队伍目标明确显示“限时活动>保卫古籍”=patrol_book_defense。其他营地贡献表、成员页、队伍页、交谈页、确认框或覆盖3D场景的功能窗口=panel。右上小地图且有血条/聊天/动作键、且没有大功能窗口遮挡=hud，左侧任务指引仍是hud。全屏地点列表或“标志查看/查看庄园”=map。明确显示目标点附近、无法传送或传送冷却=teleport_error。任务提示要求确认指定文字且画面中清晰可见任一指定文字=target_text_visible。不确定=unknown。",
       "对应特征清晰且无冲突时 confidence=0.97；基本明确但有轻微遮挡时 confidence=0.95；有明显疑问时 confidence 不得超过0.85。",
       "evidence 只写关键依据，不超过20个汉字。",
       `当前流程 loginClicked=${loginClicked}；期望状态=${expectedState || "未指定"}；任务提示=${String(taskHint).slice(0, 240) || "无"}；OCR=${JSON.stringify(ocrTexts.slice(0, 30))}。`,
@@ -386,6 +391,9 @@ function focusedRule(expectedState, taskHint) {
   }
   if (expected === "target_text_visible") {
     return `本次只确认指定界面文字是否可见：${String(taskHint).slice(0, 240)}。任一指定文字清晰可见就判为target_text_visible，否则unknown。`;
+  }
+  if (expected.includes("patrol_team_full")) {
+    return "本次只判断巡逻队人数：四个玩家卡位都有人且没有任何“等待队员加入”空位时判patrol_team_full；只要有一个空位就判patrol_team_waiting。不要根据队伍目标猜人数。";
   }
   return "优先依据完整界面结构分类，不要把普通说明文字当作公告。";
 }

@@ -67,7 +67,7 @@
   "timeouts": {
     "gameLaunchSeconds": 180,
     "screenTransitionSeconds": 180,
-    "actionDelayMs": 400,
+    "actionDelayMs": 250,
     "neverAbortHealthyTaskOnTimeout": true
   },
   "postLoginPromotions": {
@@ -101,36 +101,6 @@
       "正在解压"
     ],
     "restartButtonTexts": ["重启游戏", "重新启动", "立即重启"]
-  },
-  "patrolTeam": {
-    "kickCommandCooldownSeconds": 60,
-    "chat": {
-      "messageRegion": {
-        "left": 760,
-        "top": 150,
-        "right": 1500,
-        "bottom": 1040
-      },
-      "fallbackMessagePoints": [
-        { "x": 1080, "y": 990 },
-        { "x": 1080, "y": 840 },
-        { "x": 1080, "y": 690 },
-        { "x": 1080, "y": 540 },
-        { "x": 1080, "y": 390 }
-      ],
-      "dismissContextPoint": { "x": 1510, "y": 1110 },
-      "maximumCandidates": 6
-    },
-    "slots": [
-      { "number": 1, "x": 155, "y": 620, "left": 25, "right": 270 },
-      { "number": 2, "x": 380, "y": 620, "left": 270, "right": 500 },
-      { "number": 3, "x": 610, "y": 620, "left": 500, "right": 730 },
-      { "number": 4, "x": 840, "y": 620, "left": 730, "right": 960 },
-      { "number": 5, "x": 1070, "y": 620, "left": 960, "right": 1190 },
-      { "number": 6, "x": 1300, "y": 620, "left": 1190, "right": 1420 },
-      { "number": 7, "x": 1530, "y": 620, "left": 1420, "right": 1650 },
-      { "number": 8, "x": 1760, "y": 620, "left": 1650, "right": 1895 }
-    ]
   },
   "technology": {
     "tabs": {
@@ -296,7 +266,7 @@
   },
   "flows": {
     "openCampPanel": [
-      { "op": "tap", "x": 250, "y": 1095 },
+      { "op": "tap", "x": 375, "y": 1000 },
       { "op": "sleep", "ms": 800 },
       { "op": "tap", "x": 1660, "y": 380 },
       {
@@ -371,7 +341,7 @@
       { "op": "waitAnyText", "texts": ["创建队伍", "加入队伍", "退出队伍"], "timeoutSeconds": 8 },
       { "op": "tapIfAnyText", "texts": ["创建队伍"], "x": 150, "y": 180 },
       { "op": "waitAnyText", "texts": ["队伍目标", "营地巡逻任务", "退出队伍"], "timeoutSeconds": 12 },
-      { "op": "tapIfAnyText", "texts": ["队伍目标"], "x": 470, "y": 930 },
+      { "op": "tapIfAnyText", "texts": ["队伍目标"], "x": 470, "y": 900 },
       { "op": "tapIfAnyText", "texts": ["队伍目标"], "x": 1375, "y": 910 },
       { "op": "keyIfAnyText", "texts": ["加入队伍语音频道"], "code": 111 },
       { "op": "waitAnyText", "texts": ["营地巡逻任务", "1/4", "队伍"], "timeoutSeconds": 15 }
@@ -394,8 +364,18 @@
       },
       { "op": "waitAnyText", "texts": ["巡逻进度", "困难巡逻", "营地巡逻"], "timeoutSeconds": 15 }
     ],
+    "exitPatrolPages": [
+      { "op": "tap", "x": 75, "y": 1120 },
+      { "op": "sleep", "ms": 250 },
+      { "op": "tap", "x": 75, "y": 1120 },
+      { "op": "sleep", "ms": 300 }
+    ],
     "switchToBookDefense": [
-      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 230, "y": 140 },
+      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 350, "y": 150 },
+      { "op": "sleep", "ms": 500 },
+      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 50, "y": 325 },
+      { "op": "sleep", "ms": 300 },
+      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 350, "y": 150 },
       { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
       { "op": "tapIfAnyText", "texts": ["调整"], "x": 100, "y": 55 },
       { "op": "waitAnyText", "texts": ["调整队伍目标"], "timeoutSeconds": 10 },
@@ -404,23 +384,16 @@
       { "op": "clickText", "text": "修改队伍", "timeoutSeconds": 8 },
       { "op": "waitAnyText", "texts": ["限时活动>保卫古籍", "保卫古籍"], "timeoutSeconds": 10 }
     ],
-    "openCampChat": [
-      { "op": "key", "code": 111 },
-      { "op": "tap", "x": 250, "y": 1095 },
-      { "op": "sleep", "ms": 800 },
-      { "op": "tap", "x": 1660, "y": 380 },
-      {
-        "op": "waitAnyText",
-        "texts": ["营地频道"],
-        "region": { "left": 790, "top": 25, "right": 1040, "bottom": 115 },
-        "timeoutSeconds": 12
-      }
-    ],
     "openTeamPanel": [
-      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 230, "y": 140 },
-      { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 }
+      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150 },
+      { "op": "sleep", "ms": 500 },
+      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 50, "y": 325 },
+      { "op": "sleep", "ms": 300 },
+      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150 },
+      { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
+      { "op": "tapIfAnyText", "texts": ["3D模式"], "x": 1655, "y": 55 },
+      { "op": "sleep", "ms": 500 }
     ],
-    "kickCompletedMembers": [],
     "teleportCityHall": [
       {
         "op": "teleportWithFallback",
