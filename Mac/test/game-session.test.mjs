@@ -137,11 +137,29 @@ test("guarded mode permits a fixed login tap at 0.95 confidence", async () => {
   );
 });
 
+test("a transient HUD during loading does not start the task", async () => {
+  const fixture = createFixture(
+    [["背包"], ["加载中"], ["背包"], ["背包"], ["背包"]],
+    null,
+    [],
+    "shadow",
+    { readyStableFrames: 3, readyStableMs: 0 }
+  );
+  await waitForGameReady(fixture.context);
+  assert.equal(fixture.captures, 5);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("继续等待登录场景连续稳定")
+    )
+  );
+});
+
 function createFixture(
   frames,
   modelAdvice = null,
   accurateFrames = [],
-  advisorMode = "shadow"
+  advisorMode = "shadow",
+  readyPolicy = {}
 ) {
   const taps = [];
   const messages = [];
@@ -201,14 +219,18 @@ function createFixture(
   };
   const context = {
     config: {
-      timeouts: { gameLaunchSeconds: 2 },
+      timeouts: { gameLaunchSeconds: 5 },
       adb: { loginButton: { x: 960, y: 945 } },
       postLoginPromotions: {
         maxPages: 2,
         initialWaitMs: 0,
         betweenPagesMs: 0,
         dismissPoint: { x: 960, y: 1135 },
-        readyTexts: ["配方", "背包", "营地"]
+        readyTexts: ["配方", "背包", "营地"],
+        loadingTexts: ["加载中"],
+        readyStableFrames: 1,
+        readyStableMs: 0,
+        ...readyPolicy
       },
       preLoginAnnouncements: {
         enabled: true,
@@ -242,6 +264,9 @@ function createFixture(
     context,
     taps,
     messages,
+    get captures() {
+      return frameIndex;
+    },
     get accurateCaptures() {
       return accurateFrameIndex;
     }

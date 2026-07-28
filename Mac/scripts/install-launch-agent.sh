@@ -26,7 +26,27 @@ chmod 755 "${LAUNCHER_PATH}"
 /usr/libexec/PlistBuddy -c "Add :StandardErrorPath string /dev/null" "${PLIST_PATH}"
 
 launchctl bootout "${SERVICE_TARGET}" 2>/dev/null || true
-launchctl bootstrap "gui/${UID}" "${PLIST_PATH}"
+for _ in {1..20}; do
+  if ! launchctl print "${SERVICE_TARGET}" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
+
+bootstrap_succeeded=false
+for attempt in {1..3}; do
+  if launchctl bootstrap "gui/${UID}" "${PLIST_PATH}"; then
+    bootstrap_succeeded=true
+    break
+  fi
+  if (( attempt < 3 )); then
+    sleep 1
+  fi
+done
+if [[ "${bootstrap_succeeded}" != true ]]; then
+  echo "Unable to bootstrap ${LABEL} after 3 attempts." >&2
+  exit 1
+fi
 launchctl kickstart -k "${SERVICE_TARGET}"
 
 echo "Installed ${LABEL}; launcher and logs remain on the external project volume."

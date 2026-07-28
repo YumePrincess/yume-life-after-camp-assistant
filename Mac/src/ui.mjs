@@ -360,12 +360,7 @@ export class GameUi {
 
   async attemptTeleport(action, destination, signal) {
     await this.ensureMapOpen(action, signal);
-    if (action.mapModeButton) {
-      // The camp map can reopen on "查看庄园". "标志查看" is idempotent,
-      // so always select it before using the fixed destination list.
-      await this.tap(action.mapModeButton, signal);
-      await delay(action.mapModeDelayMs || 800, signal);
-    }
+    await this.ensureMapDestinationList(action, signal);
     const scrollSteps = Math.max(
       0,
       Math.min(20, Number(destination.scrollSteps) || 0)
@@ -472,8 +467,15 @@ export class GameUi {
   async ensureMapOpen(action, signal) {
     const prepared = await this.closePagesBeforeMap(action, signal);
     if (prepared === "map") return;
-    if (action.mapKey) {
-      await this.adb.key(action.mapKey, signal);
+    const mapKey = action.mapKey || "KEYCODE_M";
+    if (mapKey) {
+      await this.report(
+        "info",
+        "map_open_key",
+        "已发送 M 键打开地图；确认地图界面后才会继续选择传送点",
+        { key: mapKey }
+      );
+      await this.adb.key(mapKey, signal);
     } else {
       await this.tap(action.mapButton, signal);
     }
@@ -538,6 +540,82 @@ export class GameUi {
     } while (Date.now() < deadline);
     throw new Error(
       "MAP_DID_NOT_OPEN: 未识别到“标志查看/查看庄园”，已停止后续地点与快速前往点击"
+    );
+  }
+
+  async ensureMapDestinationList(action, signal) {
+    const modeText = action.mapModeText || "标志查看";
+    const frame = await this.vision.captureTransient(
+      "teleport-map-mode",
+      signal
+    );
+    const modeButton = this.vision.find(
+      frame.observations,
+      modeText,
+      "includes"
+    );
+    if (modeButton) {
+      await this.report(
+        "info",
+        "map_mode_switch",
+        `已识别并点击“${modeText}”切换到可选传送点列表`
+      );
+      await this.tap(center(modeButton), signal);
+      await delay(action.mapModeDelayMs || 800, signal);
+      return;
+    }
+    if (action.mapModeFallbackEnabled && action.mapModeButton) {
+      await this.report(
+        "warning",
+        "map_mode_coordinate_fallback",
+        "未识别到“标志查看”，使用已校准坐标回退"
+      );
+      await this.tap(action.mapModeButton, signal);
+      await delay(action.mapModeDelayMs || 800, signal);
+    }
+  }
+
+  async openCampPanelViaChat(action, signal) {
+    const attempts = Math.max(1, Math.min(5, Number(action.attempts) || 3));
+    const readyTexts = action.readyTexts || ["首页", "玩法", "科技", "成员"];
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (signal?.aborted) throw signal.reason || new Error("Interrupted");
+      const before = await this.vision.captureTransient(
+        `camp-panel-before-${attempt}`,
+        signal
+      );
+      if (readyTexts.some((text) => this.vision.find(before.observations, text))) {
+        return;
+      }
+      await this.report(
+        "info",
+        "open_camp_panel_attempt",
+        `通过聊天营地频道打开营地界面（${attempt}/${attempts}）`
+      );
+      await this.tap(action.chatButton || { x: 250, y: 1060 }, signal);
+      await delay(action.chatDelayMs || 500, signal);
+      await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
+      await delay(action.channelDelayMs || 500, signal);
+      await this.tap(action.campIconButton || { x: 980, y: 65 }, signal);
+
+      const verifyDeadline =
+        Date.now() + Math.max(1_500, Number(action.verifySeconds || 5) * 1000);
+      while (Date.now() < verifyDeadline) {
+        if (signal?.aborted) throw signal.reason || new Error("Interrupted");
+        const frame = await this.vision.captureTransient(
+          `camp-panel-verify-${attempt}`,
+          signal
+        );
+        if (readyTexts.some((text) => this.vision.find(frame.observations, text))) {
+          return;
+        }
+        await delay(350, signal);
+      }
+      await this.adb.key(4, signal).catch(() => undefined);
+      await delay(350, signal);
+    }
+    throw new Error(
+      "CAMP_PANEL_DID_NOT_OPEN: 已重试聊天→营地频道→市政厅图标，但未识别到营地首页"
     );
   }
 
@@ -774,10 +852,7 @@ export class GameUi {
 
   async teleportByText(action, signal) {
     await this.ensureMapOpen(action, signal);
-    if (action.mapModeButton) {
-      await this.tap(action.mapModeButton, signal);
-      await delay(action.mapModeDelayMs || 800, signal);
-    }
+    await this.ensureMapDestinationList(action, signal);
     await this.clickText(
       action.targetText,
       {
@@ -823,10 +898,7 @@ export class GameUi {
     if (result.state === "cooldown") {
       await delay(action.cooldownSeconds * 1000, signal);
       await this.ensureMapOpen(action, signal);
-      if (action.mapModeButton) {
-        await this.tap(action.mapModeButton, signal);
-        await delay(action.mapModeDelayMs || 800, signal);
-      }
+      await this.ensureMapDestinationList(action, signal);
       await this.clickText(
         action.targetText,
         { timeoutSeconds: action.targetFindTimeoutSeconds || 12 },
@@ -868,6 +940,9 @@ export class GameUi {
       switch (action.op) {
         case "tap":
           await this.tap(action, signal);
+          break;
+        case "openCampPanelViaChat":
+          await this.openCampPanelViaChat(action, signal);
           break;
         case "clickText":
           await this.clickText(action.text, action, signal);

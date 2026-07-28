@@ -75,7 +75,10 @@
     "initialWaitMs": 7000,
     "betweenPagesMs": 4000,
     "dismissPoint": { "x": 960, "y": 1135 },
-    "readyTexts": ["配方", "背包", "营地"]
+    "readyTexts": ["配方", "背包", "营地"],
+    "loadingTexts": ["场景加载中", "正在加载", "加载中", "网络连接中"],
+    "readyStableFrames": 3,
+    "readyStableMs": 3000
   },
   "preLoginAnnouncements": {
     "enabled": true,
@@ -267,30 +270,24 @@
   },
   "flows": {
     "openCampPanel": [
-      { "op": "tap", "x": 375, "y": 1000 },
-      { "op": "sleep", "ms": 800 },
-      { "op": "tap", "x": 1660, "y": 380 },
       {
-        "op": "waitAnyText",
-        "texts": ["营地频道"],
-        "region": { "left": 790, "top": 25, "right": 1040, "bottom": 115 },
-        "timeoutSeconds": 12
-      },
-      { "op": "tap", "x": 980, "y": 65 },
-      {
-        "op": "waitAnyText",
-        "texts": ["首页", "玩法", "科技", "成员"],
-        "region": { "left": 350, "top": 170, "right": 1320, "bottom": 245 },
-        "timeoutSeconds": 12
+        "op": "openCampPanelViaChat",
+        "chatButton": { "x": 250, "y": 1060 },
+        "campChannelButton": { "x": 1740, "y": 355 },
+        "campIconButton": { "x": 980, "y": 65 },
+        "readyTexts": ["首页", "玩法", "科技", "成员"],
+        "attempts": 3,
+        "verifySeconds": 5
       }
     ],
     "teleportNoticeBoard": [
       {
         "op": "teleportWithFallback",
         "mapButton": { "x": 1780, "y": 120 },
-        "mapKey": 41,
+        "mapKey": "KEYCODE_M",
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
-        "mapModeButton": { "x": 245, "y": 48 },
+        "mapModeText": "标志查看",
+        "mapModeFallbackEnabled": false,
         "mapModeDelayMs": 800,
         "mapOpenTimeoutSeconds": 10,
         "mapListSwipe": {
@@ -399,9 +396,10 @@
       {
         "op": "teleportWithFallback",
         "mapButton": { "x": 1780, "y": 120 },
-        "mapKey": 41,
+        "mapKey": "KEYCODE_M",
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
-        "mapModeButton": { "x": 245, "y": 48 },
+        "mapModeText": "标志查看",
+        "mapModeFallbackEnabled": false,
         "mapModeDelayMs": 800,
         "mapOpenTimeoutSeconds": 10,
         "mapListSwipe": {
@@ -438,9 +436,10 @@
       {
         "op": "teleportWithFallback",
         "mapButton": { "x": 1780, "y": 120 },
-        "mapKey": 41,
+        "mapKey": "KEYCODE_M",
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
-        "mapModeButton": { "x": 245, "y": 48 },
+        "mapModeText": "标志查看",
+        "mapModeFallbackEnabled": false,
         "mapModeDelayMs": 800,
         "mapOpenTimeoutSeconds": 10,
         "mapListSwipe": {

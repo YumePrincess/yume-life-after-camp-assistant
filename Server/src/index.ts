@@ -479,20 +479,25 @@ async function handleAgentApi(
 ): Promise<Response> {
   if (path === "/api/agent/heartbeat" && method === "POST") {
     const body = await readJsonObject(request, 64_000);
+    const activeRunId =
+      typeof body.activeRunId === "string" ? body.activeRunId.slice(0, 80) : null;
     const activeTaskValue =
       typeof body.activeTaskKey === "string" ? body.activeTaskKey : null;
     const activeTaskKey: TaskKey | null =
       activeTaskValue && isTaskKey(activeTaskValue) ? activeTaskValue : null;
     await touchHeartbeat(env, {
       agentId: boundedText(body.agentId, "agentId", 80),
-      activeRunId:
-        typeof body.activeRunId === "string" ? body.activeRunId.slice(0, 80) : null,
+      activeRunId,
       activeTaskKey,
       status: boundedText(body.status, "status", 40),
       capabilities: body.capabilities ?? {},
       detail: body.detail ?? {}
     });
-    return json({ ok: true });
+    const activeRun = activeRunId ? await getRun(env, activeRunId) : null;
+    return json({
+      ok: true,
+      cancelRequested: activeRun?.cancel_requested === 1
+    });
   }
   if (path === "/api/agent/next-command" && method === "POST") {
     const body = await readJsonObject(request, 16_000);

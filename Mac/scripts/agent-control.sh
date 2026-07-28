@@ -19,6 +19,29 @@ is_loaded() {
   launchctl print "${SERVICE_TARGET}" >/dev/null 2>&1
 }
 
+wait_until_unloaded() {
+  for _ in {1..80}; do
+    if ! is_loaded; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "${LABEL} did not finish unloading from launchd." >&2
+  return 1
+}
+
+bootstrap_agent() {
+  local attempt
+  for attempt in 1 2 3; do
+    if launchctl bootstrap "gui/${UID}" "${PLIST_PATH}"; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "Failed to bootstrap ${LABEL} after 3 attempts." >&2
+  return 1
+}
+
 service_field() {
   local field=$1
   launchctl print "${SERVICE_TARGET}" 2>/dev/null |
@@ -54,7 +77,7 @@ wait_until_running() {
 start_agent() {
   require_plist
   if ! is_loaded; then
-    launchctl bootstrap "gui/${UID}" "${PLIST_PATH}"
+    bootstrap_agent
   fi
   launchctl kickstart -k "${SERVICE_TARGET}"
   wait_until_running
@@ -63,6 +86,7 @@ start_agent() {
 stop_agent() {
   if is_loaded; then
     launchctl bootout "${SERVICE_TARGET}"
+    wait_until_unloaded
     echo "Stopped ${LABEL}; it will start again at the next macOS login."
   else
     echo "${LABEL} is already stopped."

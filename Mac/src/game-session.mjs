@@ -221,6 +221,9 @@ export async function waitForGameReady(context, signal) {
     betweenPagesMs: 1_800,
     dismissPoint: { x: 960, y: 1135 },
     readyTexts: ["配方", "背包", "营地"],
+    loadingTexts: ["场景加载中", "正在加载", "加载中", "网络连接中"],
+    readyStableFrames: 3,
+    readyStableMs: 3_000,
     ...config.postLoginPromotions
   };
   const updates = {
@@ -276,6 +279,9 @@ export async function waitForGameReady(context, signal) {
   let unknownRecoveryAttempted = false;
   let accurateOcrFailureReported = false;
   let lastAccurateOcrAt = Date.now();
+  let readyStreak = 0;
+  let readySince = 0;
+  let readyStabilizingReported = false;
   while (Date.now() < deadline) {
     const fixedAnnouncementCloseIntervalMs =
       Math.max(
@@ -354,18 +360,55 @@ export async function waitForGameReady(context, signal) {
     const ready = promotions.readyTexts.find((text) =>
       vision.find(frame.observations, text)
     );
-    if (ready) {
-      await report(
-        "info",
-        "game_ready",
-        dismissedPages
-          ? `游戏界面已就绪，已关闭 ${dismissedPages} 张活动宣传页`
-          : "游戏界面已就绪，未出现活动宣传页"
+    const blocksReady = [
+      ...promotions.loadingTexts,
+      ...updates.stateTexts,
+      ...updates.restartButtonTexts,
+      ...announcements.texts,
+      "点击登录游戏",
+      "登录游戏",
+      "明日希望报",
+      "加入队伍语音频道"
+    ].some((text) => vision.find(frame.observations, text));
+    if (ready && !blocksReady) {
+      readyStreak += 1;
+      readySince ||= Date.now();
+      const configuredStableFrames = Number(promotions.readyStableFrames);
+      const configuredStableMs = Number(promotions.readyStableMs);
+      const stableFrames = Math.max(
+        1,
+        Number.isFinite(configuredStableFrames) ? configuredStableFrames : 3
       );
-      await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
-      return;
+      const stableMs = Math.max(
+        0,
+        Number.isFinite(configuredStableMs) ? configuredStableMs : 3_000
+      );
+      if (readyStreak < stableFrames || Date.now() - readySince < stableMs) {
+        if (!readyStabilizingReported) {
+          readyStabilizingReported = true;
+          await report(
+            "info",
+            "game_ready_stabilizing",
+            "已看到 HUD，继续等待登录场景连续稳定后再开始任务点击",
+            { stableFrames, stableMs }
+          );
+        }
+      } else {
+        await report(
+          "info",
+          "game_ready",
+          dismissedPages
+            ? `游戏界面已就绪，已关闭 ${dismissedPages} 张活动宣传页`
+            : "游戏界面已就绪，未出现活动宣传页"
+        );
+        await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
+        return;
+      }
+    } else {
+      readyStreak = 0;
+      readySince = 0;
+      readyStabilizingReported = false;
     }
-
     const updateState = updates.enabled
       ? updates.stateTexts.find((text) =>
           vision.find(frame.observations, text)
@@ -500,10 +543,8 @@ export async function waitForGameReady(context, signal) {
       await report(
         "info",
         "local_model_guarded_hud",
-        "本地模型以连续极高置信度确认 HUD，允许流程继续；未执行点击"
+        "本地模型以连续极高置信度确认 HUD；仍等待 OCR 连续稳定后再开始任务点击"
       );
-      await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
-      return;
     }
     if (
       actionableAdvice?.state === "login" &&

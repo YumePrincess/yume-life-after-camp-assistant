@@ -69,7 +69,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 do {
   try {
-    await api.heartbeat({
+    const heartbeat = await api.heartbeat({
       activeRunId: active?.command.runId || null,
       activeTaskKey: active?.command.payload?.taskKey || null,
       status: active ? "running" : "idle",
@@ -87,6 +87,9 @@ do {
           mumu.currentInstance()?.name ?? config.mumu.instanceName ?? null
       }
     });
+    if (active && heartbeat.cancelRequested === true) {
+      active.controller.abort(new Error("管理员请求中断"));
+    }
 
     const pollResponse = await api.nextCommand(Boolean(active));
     const { command } = pollResponse;
@@ -103,6 +106,10 @@ do {
       }
     } else if (command?.type === "run_task" && !active) {
       startCommand(command);
+      // The command was claimed during an idle poll. Poll again immediately
+      // so the server can switch us to its active interval and deliver an
+      // interrupt without waiting for the (possibly five-minute) idle delay.
+      nextPollSeconds = 1;
     }
 
     if (once) {
