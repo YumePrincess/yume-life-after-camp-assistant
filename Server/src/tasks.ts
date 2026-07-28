@@ -16,6 +16,7 @@ import {
   isWithinDailyClockWindow,
   nextTechnologyTargetDate,
   targetDateForTechnologyRun,
+  weekdayForDateKey,
   zonedDateKey
 } from "./time";
 
@@ -41,6 +42,13 @@ export async function buildVoteSummary(
       bundle.campConfig.gameResetTime
     );
   const ballots = await listBallots(env, pollDate);
+  const fixed = new Set(
+    bundle.technologyConfig.fixedByDate[pollDate] ??
+      bundle.technologyConfig.fixedByWeekday[
+        String(weekdayForDateKey(pollDate))
+      ] ??
+      []
+  );
   const counts = new Map<string, number>();
   for (const ballot of ballots) {
     for (const key of new Set(ballot.selections)) {
@@ -48,9 +56,15 @@ export async function buildVoteSummary(
     }
   }
   const options = bundle.technologyConfig.catalog
-    .filter((item) => item.enabledForVoting)
+    .filter((item) => item.enabledForVoting && !fixed.has(item.key))
     .map((item) => ({ ...item, votes: counts.get(item.key) ?? 0 }))
     .sort((a, b) => b.votes - a.votes || a.sortOrder - b.sortOrder);
+  const projectedPlan = buildTechnologyPlan({
+    targetDate: pollDate,
+    currentCampType: bundle.campConfig.currentCampType,
+    technologyConfig: bundle.technologyConfig,
+    voteOptions: options
+  });
   return {
     pollDate,
     opensAt: bundle.campConfig.voteWindowStart,
@@ -58,7 +72,11 @@ export async function buildVoteSummary(
     isOpen,
     timezone,
     options,
-    ballotCount: ballots.length
+    ballotCount: ballots.length,
+    projectedPlan: {
+      core: projectedPlan.core,
+      general: projectedPlan.general
+    }
   };
 }
 

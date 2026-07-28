@@ -144,18 +144,25 @@
       "from": { "x": 430, "y": 850 },
       "to": { "x": 430, "y": 380 },
       "durationMs": 600,
-      "maxPages": 10
+      "maxPages": 30,
+      "resetToTop": {
+        "from": { "x": 430, "y": 380 },
+        "to": { "x": 430, "y": 850 },
+        "durationMs": 220,
+        "repeats": 12
+      }
     },
+    "unloadSelected": { "x": 745, "y": 638 },
     "filledSlotDetection": {
       "sampleRadius": 24,
       "maximumEmptyFeatureDistance": 0.08,
       "emptyReference": {
         "core": {
-          "meanRed": 0.246,
-          "meanGreen": 0.338,
-          "meanBlue": 0.423,
-          "meanSaturation": 0.424,
-          "luminanceDeviation": 0.097
+          "meanRed": 0.344,
+          "meanGreen": 0.439,
+          "meanBlue": 0.325,
+          "meanSaturation": 0.257,
+          "luminanceDeviation": 0.068
         },
         "general": {
           "meanRed": 0.328,
@@ -188,7 +195,8 @@
     },
     "members": {
       "extractionMode": "hybrid",
-      "region": { "left": 115, "top": 315, "right": 1800, "bottom": 810 },
+      "region": { "left": 115, "top": 285, "right": 1800, "bottom": 810 },
+      "rowAnchorTop": 315,
       "columns": [
         {
           "key": "identity",
@@ -208,6 +216,7 @@
         "from": { "x": 1700, "y": 700 },
         "to": { "x": 1700, "y": 350 },
         "durationMs": 650,
+        "rowsPerPage": 5,
         "minimumRowsPerPage": 5,
         "maxPages": 30,
         "stopAfterStagnantPages": 3

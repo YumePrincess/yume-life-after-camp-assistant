@@ -5,7 +5,6 @@ export async function runTechnology(context, command, bundle, signal) {
     throw new Error("Refusing technology update without clearExistingFirst safety flag");
   }
   const { ui, config, vision, report } = context;
-  await ui.executeFlow("teleportNoticeBoard", {}, signal);
   await ui.executeFlow("openCampPanel", {}, signal);
   await ui.tap(config.technology.tabs.technology, signal);
   await ui.waitAnyText(["待生效科技", "科技配置"], {}, signal);
@@ -78,6 +77,14 @@ async function clearAllConfiguredSlots(context, signal) {
       await ui.tap(slot, signal);
     }
   }
+  if (configured.length) {
+    await report(
+      "info",
+      "tech_clear",
+      "已逐个点选原有科技，正在点击“卸下”移除最后一个保持选中的科技"
+    );
+    await ui.tap(config.technology.unloadSelected, signal);
+  }
   const frame = await vision.capture("technology-after-clear", signal);
   const afterProbes = await vision.probe(
     frame.path,
@@ -95,7 +102,7 @@ async function clearAllConfiguredSlots(context, signal) {
       `科技清空校验失败：仍检测到 ${remaining.length} 个可能已配置槽位`
     );
   }
-  await report("info", "tech_clear", "右侧两行既有配置已执行逐槽移除", {
+  await report("info", "tech_clear", "右侧两行 12 个槽位均已验证为空", {
     probes: afterProbes,
     screenshot: frame.path
   });
@@ -118,6 +125,19 @@ async function selectTechnology(context, lane, slotIndex, label, signal) {
   if (!slot) throw new Error(`${lane} lane has no slot ${slotIndex + 1}`);
   await ui.tap(slot, signal);
   const swipe = config.technology.selectorSwipe;
+  for (
+    let reset = 0;
+    reset < (swipe.resetToTop?.repeats ?? 0);
+    reset += 1
+  ) {
+    await adb.mouseSwipe(
+      swipe.resetToTop.from,
+      swipe.resetToTop.to,
+      swipe.resetToTop.durationMs,
+      signal
+    );
+  }
+  await ui.afterAction(signal);
   for (let page = 0; page <= swipe.maxPages; page += 1) {
     const frame = await vision.capture(`technology-selector-${label}`, signal);
     const match = vision.find(frame.observations, label, "includes");

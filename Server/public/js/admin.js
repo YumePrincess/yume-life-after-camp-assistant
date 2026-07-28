@@ -22,6 +22,8 @@
     saving: false,
     memberQuery: "",
     selectedMember: null,
+    technologyDate: "",
+    technologyDraft: null,
     activeView: "overview",
     accessAllowed: false
   };
@@ -251,11 +253,12 @@
       byId("routines-json").value = JSON.stringify(automation.routines, null, 2);
     }
     if (sections.includes("technology")) {
-      byId("technology-json").value = JSON.stringify(
-        bundle.technologyConfig,
-        null,
-        2
-      );
+      state.technologyDraft = JSON.parse(JSON.stringify(bundle.technologyConfig));
+      state.technologyDraft.fixedByDate ||= {};
+      if (state.bootstrap?.voteSummary?.pollDate) {
+        state.technologyDate = state.bootstrap.voteSummary.pollDate;
+      }
+      renderTechnologyEditor();
     }
     for (const section of sections) {
       const form = document.querySelector(
@@ -291,6 +294,182 @@
         )
       );
     }
+  }
+
+  function datePlusDays(dateKey, days) {
+    const date = new Date(`${dateKey}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function markTechnologyDirty() {
+    state.dirtySections.add("technology");
+    updateSaveState();
+    const feedback = document
+      .querySelector('[data-config-section="technology"]')
+      ?.querySelector("[data-save-feedback]");
+    if (feedback) feedback.textContent = "科技配置尚未保存";
+  }
+
+  function renderTechnologyEditor() {
+    const config = state.technologyDraft;
+    if (!config) return;
+    const weekdayRoot = byId("technology-weekdays");
+    weekdayRoot.replaceChildren();
+    const firstDate =
+      state.bootstrap?.voteSummary?.pollDate ||
+      state.bootstrap?.nextTechnologyTargetDate ||
+      new Date().toISOString().slice(0, 10);
+    const allowedDates = new Set(
+      Array.from({ length: 7 }, (_, index) => datePlusDays(firstDate, index))
+    );
+    config.fixedByDate = Object.fromEntries(
+      Object.entries(config.fixedByDate || {}).filter(([date]) =>
+        allowedDates.has(date)
+      )
+    );
+    for (const date of allowedDates) {
+      config.fixedByDate[date] ||= [];
+    }
+    if (!state.technologyDate) state.technologyDate = firstDate;
+    Array.from({ length: 7 }, (_, index) => {
+      const date = datePlusDays(firstDate, index);
+      const weekday = new Intl.DateTimeFormat("zh-CN", {
+        weekday: "short",
+        timeZone: "UTC"
+      }).format(new Date(`${date}T00:00:00Z`));
+      const name = `${index === 0 ? "次日 · " : ""}${date.slice(5)} ${weekday}`;
+      const button = create("button", "weekday-tab", name);
+      button.type = "button";
+      button.dataset.active = String(state.technologyDate === date);
+      button.addEventListener("click", () => {
+        state.technologyDate = date;
+        renderTechnologyEditor();
+      });
+      weekdayRoot.append(button);
+    });
+
+    const fixed = new Set(
+      config.fixedByDate[state.technologyDate] || []
+    );
+    const coreCount = config.catalog.filter(
+      (item) => fixed.has(item.key) && item.lane === "core"
+    ).length;
+    const generalCount = config.catalog.filter(
+      (item) => fixed.has(item.key) && item.lane === "general"
+    ).length;
+    byId("technology-core-count").textContent =
+      `农业科技 ${coreCount} / ${config.limits.core}`;
+    byId("technology-general-count").textContent =
+      `其他科技 ${generalCount} / ${config.limits.general}`;
+
+    const root = byId("technology-catalog-grid");
+    root.replaceChildren();
+    byId("technology-empty").hidden = Boolean(config.catalog.length);
+    for (const item of [...config.catalog].sort(
+      (a, b) => a.sortOrder - b.sortOrder
+    )) {
+      const card = create("article", "technology-admin-card");
+      card.dataset.fixed = String(fixed.has(item.key));
+      const image = document.createElement(item.iconUrl ? "img" : "span");
+      image.className = "tech-icon technology-admin-icon";
+      if (item.iconUrl) {
+        image.src = item.iconUrl;
+        image.alt = "";
+        image.loading = "lazy";
+      } else {
+        image.textContent = item.name.slice(0, 1);
+      }
+      const copy = create("div", "technology-admin-copy");
+      copy.append(
+        create("strong", "", item.name),
+        create(
+          "small",
+          "",
+          `${categoryLabel(item.category)} · ${
+            item.lane === "core" ? "农业科技行" : "其他科技行"
+          }`
+        ),
+        create("p", "", item.description || "暂无科技描述")
+      );
+      const controls = create("div", "technology-admin-controls");
+      const fixedLabel = create("label", "technology-toggle");
+      const fixedInput = document.createElement("input");
+      fixedInput.type = "checkbox";
+      fixedInput.checked = fixed.has(item.key);
+      fixedInput.addEventListener("change", () => {
+        const keys = new Set(
+          config.fixedByDate[state.technologyDate] || []
+        );
+        if (fixedInput.checked) {
+          const laneCount = config.catalog.filter(
+            (technology) =>
+              keys.has(technology.key) && technology.lane === item.lane
+          ).length;
+          const limit = config.limits[item.lane];
+          if (laneCount >= limit) {
+            fixedInput.checked = false;
+            alert(`${item.lane === "core" ? "农业科技" : "其他科技"}最多固定 ${limit} 项`);
+            return;
+          }
+          keys.add(item.key);
+        } else {
+          keys.delete(item.key);
+        }
+        config.fixedByDate[state.technologyDate] = [...keys];
+        markTechnologyDirty();
+        renderTechnologyEditor();
+      });
+      fixedLabel.append(fixedInput, document.createTextNode(" 固定"));
+
+      const voteLabel = create("label", "technology-toggle");
+      const voteInput = document.createElement("input");
+      voteInput.type = "checkbox";
+      voteInput.checked = item.enabledForVoting;
+      voteInput.addEventListener("change", () => {
+        item.enabledForVoting = voteInput.checked;
+        markTechnologyDirty();
+      });
+      voteLabel.append(voteInput, document.createTextNode(" 开放投票"));
+
+      const laneSelect = document.createElement("select");
+      laneSelect.className = "technology-lane-select";
+      laneSelect.innerHTML =
+        '<option value="core">农业科技行</option><option value="general">其他科技行</option>';
+      laneSelect.value = item.lane;
+      laneSelect.querySelector('[value="core"]').disabled =
+        item.category !== "agriculture";
+      laneSelect.addEventListener("change", () => {
+        const wasFixed = fixed.has(item.key);
+        if (wasFixed) {
+          const nextCount = config.catalog.filter(
+            (technology) =>
+              fixed.has(technology.key) &&
+              technology.key !== item.key &&
+              technology.lane === laneSelect.value
+          ).length;
+          if (nextCount >= config.limits[laneSelect.value]) {
+            laneSelect.value = item.lane;
+            alert("目标科技行已经达到 6 项上限");
+            return;
+          }
+        }
+        item.lane = laneSelect.value;
+        markTechnologyDirty();
+        renderTechnologyEditor();
+      });
+      controls.append(fixedLabel, voteLabel, laneSelect);
+      card.append(image, copy, controls);
+      root.append(card);
+    }
+  }
+
+  function categoryLabel(category) {
+    return {
+      agriculture: "农业",
+      military: "军事",
+      industry: "工业"
+    }[category] || category;
   }
 
   function renderRuns(runs) {
@@ -735,11 +914,9 @@
       };
       next.automationConfig.routines = routines;
     } else if (section === "technology") {
-      try {
-        next.technologyConfig = JSON.parse(byId("technology-json").value);
-      } catch {
-        throw new Error("科技配置 JSON 格式错误");
-      }
+      next.technologyConfig = JSON.parse(
+        JSON.stringify(state.technologyDraft)
+      );
     } else {
       throw new Error("未知配置分区");
     }

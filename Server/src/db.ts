@@ -7,6 +7,7 @@ import type {
   TaskRun,
   TriggerMode
 } from "./domain";
+import { BUILT_IN_TECHNOLOGY_CATALOG } from "./built-in-technology-catalog";
 import {
   validateAutomationConfig,
   validateAuthConfig,
@@ -44,11 +45,39 @@ export async function getConfigBundle(env: Env): Promise<ConfigBundle> {
     getSetting(env, "technology_config"),
     getSetting(env, "automation_config")
   ]);
+  const technologyConfig = validateTechnologyConfig(technology);
+  const technologyOverrides = new Map(
+    technologyConfig.catalog.map((item) => [item.key, item])
+  );
+  const validTechnologyKeys = new Set(
+    BUILT_IN_TECHNOLOGY_CATALOG.map((item) => item.key)
+  );
+  technologyConfig.catalog = BUILT_IN_TECHNOLOGY_CATALOG.map((item) => {
+    const override = technologyOverrides.get(item.key);
+    return {
+      ...item,
+      lane: override?.lane ?? item.lane,
+      enabledForVoting:
+        override?.enabledForVoting ?? item.enabledForVoting
+    };
+  });
+  for (const weekday of Object.keys(technologyConfig.fixedByWeekday)) {
+    technologyConfig.fixedByWeekday[weekday] =
+      technologyConfig.fixedByWeekday[weekday]!.filter((key) =>
+        validTechnologyKeys.has(key)
+      );
+  }
+  for (const date of Object.keys(technologyConfig.fixedByDate)) {
+    technologyConfig.fixedByDate[date] =
+      technologyConfig.fixedByDate[date]!.filter((key) =>
+        validTechnologyKeys.has(key)
+      );
+  }
   return {
     campConfig: validateCampConfig(camp),
     authConfig: validateAuthConfig(auth),
     publicOverview: validatePublicOverview(overview),
-    technologyConfig: validateTechnologyConfig(technology),
+    technologyConfig,
     automationConfig: validateAutomationConfig(automation)
   };
 }

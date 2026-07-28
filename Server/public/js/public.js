@@ -93,13 +93,32 @@
     );
     const root = byId("vote-options");
     root.replaceChildren();
+    renderVoteSelection(summary);
     byId("submit-vote").disabled =
       summary.isOpen === false || !summary.options?.length;
     if (!summary.options?.length) {
       root.append(create("p", "empty-state", "管理员尚未开放科技投票。"));
       return;
     }
-    for (const option of summary.options) {
+    for (const lane of ["core", "general"]) {
+      const options = summary.options.filter((option) => option.lane === lane);
+      if (!options.length) continue;
+      const section = create("section", "vote-lane");
+      section.append(
+        create(
+          "h3",
+          "vote-lane-title",
+          lane === "core"
+            ? window.MrzhI18n.t(
+                state.data?.campConfig?.currentCampType === "agriculture"
+                  ? "农业科技（第一行）"
+                  : "类型科技（第一行）"
+              )
+            : window.MrzhI18n.t("其他科技（第二行）")
+        )
+      );
+      const grid = create("div", "vote-lane-grid");
+      for (const option of options) {
       const button = create("button", "vote-option");
       button.type = "button";
       button.disabled = summary.isOpen === false;
@@ -136,11 +155,67 @@
         )
       );
       button.addEventListener("click", () => {
-        if (state.selections.has(option.key)) state.selections.delete(option.key);
-        else state.selections.add(option.key);
+        if (state.selections.has(option.key)) {
+          state.selections.delete(option.key);
+        } else {
+          if (state.selections.size >= 6) {
+            byId("vote-feedback").textContent =
+              window.MrzhI18n.t("每人最多选择 6 项科技。");
+            return;
+          }
+          state.selections.add(option.key);
+        }
         button.dataset.selected = String(state.selections.has(option.key));
+        renderVoteSelection(summary);
       });
-      root.append(button);
+        grid.append(button);
+      }
+      section.append(grid);
+      root.append(section);
+    }
+  }
+
+  function renderVoteSelection(summary) {
+    const root = byId("vote-selection-preview");
+    root.replaceChildren();
+    for (const lane of ["core", "general"]) {
+      const row = create("section", "vote-selection-row");
+      row.append(
+        create(
+          "span",
+          "vote-selection-label",
+          lane === "core"
+            ? window.MrzhI18n.t(
+                state.data?.campConfig?.currentCampType === "agriculture"
+                  ? "农业科技"
+                  : "类型科技（第一行）"
+              )
+            : window.MrzhI18n.t("其他科技")
+        )
+      );
+      const slots = create("div", "vote-selection-slots");
+      const technologies = summary.projectedPlan?.[lane] || [];
+      for (let index = 0; index < 6; index += 1) {
+        const option = technologies[index];
+        const slot = create(
+          "span",
+          `vote-selection-slot${option ? " is-filled" : ""}`
+        );
+        if (option?.iconUrl) {
+          const image = document.createElement("img");
+          image.src = option.iconUrl;
+          image.alt = option.name;
+          slot.append(image);
+        } else if (option) {
+          slot.textContent = option.name.slice(0, 1);
+        } else {
+          slot.textContent = "+";
+        }
+        if (option) slot.title = option.name;
+        slots.append(slot);
+      }
+      row.append(slots);
+      root.append(row);
     }
   }
 
@@ -335,6 +410,10 @@
     }
     if (!state.selections.size) {
       feedback.textContent = "请至少选择一项科技。";
+      return;
+    }
+    if (state.selections.size > 6) {
+      feedback.textContent = window.MrzhI18n.t("每人最多选择 6 项科技。");
       return;
     }
     button.disabled = true;

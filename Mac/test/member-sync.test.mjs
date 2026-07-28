@@ -102,3 +102,36 @@ test("shared camp titles never merge distinct members", () => {
 
   assert.equal(reconcilePageRows(previous, current)[2].name, "相似姓名乙");
 });
+
+test("a boundary OCR variant is reconciled only by the same non-empty roommate", () => {
+  const previous = [
+    { name: "成员一" },
+    { name: "成员二" },
+    { name: "纸鸢（装饰符A）", roommateName: "啾棠儿" }
+  ];
+  const current = [
+    { name: "纸鸢（装饰符B）", roommateName: "啾棠儿" },
+    { name: "新成员一" },
+    { name: "新成员二" }
+  ];
+
+  assert.equal(
+    reconcilePageRows(previous, current)[0].name,
+    "纸鸢（装饰符A）"
+  );
+});
+
+test("a boundary member without a roommate is never merged by similar fields", () => {
+  const previous = [
+    { name: "成员一" },
+    { name: "成员二" },
+    { name: "相似姓名甲", profession: "特级步枪兵王", manorLevel: "30" }
+  ];
+  const current = [
+    { name: "相似姓名乙", profession: "特级步枪兵王", manorLevel: "30" },
+    { name: "新成员一" },
+    { name: "新成员二" }
+  ];
+
+  assert.equal(reconcilePageRows(previous, current)[0].name, "相似姓名乙");
+});

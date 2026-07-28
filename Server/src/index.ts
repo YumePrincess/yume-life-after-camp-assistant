@@ -239,8 +239,8 @@ async function handlePublicApi(
           .filter((value) => allowed.has(value))
       )
     ];
-    if (!selections.length || selections.length > 12) {
-      return problem("请选择 1 至 12 项开放投票的科技", 400, "invalid_selections");
+    if (!selections.length || selections.length > 6) {
+      return problem("每人请选择 1 至 6 项开放投票的科技", 400, "invalid_selections");
     }
     await saveBallot(env, {
       pollDate: summary.pollDate,

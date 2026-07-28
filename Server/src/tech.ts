@@ -19,7 +19,10 @@ export function buildTechnologyPlan(input: {
 }): TechnologyPlan {
   const { targetDate, currentCampType, technologyConfig } = input;
   const weekday = weekdayForDateKey(targetDate);
-  const fixedKeys = technologyConfig.fixedByWeekday[String(weekday)] ?? [];
+  const fixedKeys =
+    technologyConfig.fixedByDate[targetDate] ??
+    technologyConfig.fixedByWeekday[String(weekday)] ??
+    [];
   const catalogByKey = new Map(technologyConfig.catalog.map((item) => [item.key, item]));
   const core: TechnologyDefinition[] = [];
   const general: TechnologyDefinition[] = [];
@@ -50,10 +53,10 @@ export function buildTechnologyPlan(input: {
 
   for (const option of [...input.voteOptions].sort(byVotesThenOrder)) {
     if (selected.has(option.key) || !option.enabledForVoting) continue;
-    if (option.lane === "core") {
-      if (option.category !== currentCampType || core.length >= technologyConfig.limits.core) {
-        continue;
-      }
+    if (
+      option.category === currentCampType &&
+      core.length < technologyConfig.limits.core
+    ) {
       core.push(option);
       selected.add(option.key);
       continue;

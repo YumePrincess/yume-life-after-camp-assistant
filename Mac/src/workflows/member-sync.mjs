@@ -215,7 +215,9 @@ export async function captureProfilesAndStaff(context, signal) {
         );
         return [];
       });
-    if (advisedStaff.length > staff.length) staff = advisedStaff;
+    if (advisedStaff.length >= staff.length && advisedStaff.length > 0) {
+      staff = advisedStaff;
+    }
   }
   if (!staff.length) throw new Error("No staff rows recognized; snapshot was not uploaded");
   if (staff.length > 11) {
@@ -323,6 +325,21 @@ export async function capturePagedTable(context, label, definition, signal) {
 
 export function reconcilePageRows(previousRows, currentRows) {
   if (previousRows.length < 3 || currentRows.length < 3) return currentRows;
+  const previousBoundary = previousRows.at(-1);
+  const currentBoundary = currentRows[0];
+  if (
+    exactPageName(previousBoundary.name) !==
+      exactPageName(currentBoundary.name) &&
+    sameExactNonEmpty(
+      previousBoundary.roommateName,
+      currentBoundary.roommateName
+    )
+  ) {
+    currentRows = [
+      { ...currentBoundary, name: previousBoundary.name },
+      ...currentRows.slice(1)
+    ];
+  }
   let best = null;
   for (let offset = 1; offset < previousRows.length; offset += 1) {
     const overlap = Math.min(
@@ -375,4 +392,10 @@ export function reconcilePageRows(previousRows, currentRows) {
 
 function exactPageName(value) {
   return String(value || "").trim().normalize("NFKC").toLowerCase();
+}
+
+function sameExactNonEmpty(left, right) {
+  const leftValue = exactPageName(left);
+  const rightValue = exactPageName(right);
+  return Boolean(leftValue) && leftValue === rightValue;
 }

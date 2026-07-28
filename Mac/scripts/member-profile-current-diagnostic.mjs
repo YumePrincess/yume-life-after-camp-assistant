@@ -63,6 +63,20 @@ try {
     )
   );
   if (profiles.length !== expectedProfiles) {
+    console.log(
+      JSON.stringify({
+        event: "member_profile_current_test_mismatch_rows",
+        expectedProfiles,
+        profiles: profiles.map((row, index) => ({
+          index: index + 1,
+          name: row.name,
+          profession: row.profession,
+          manorLevel: row.manorLevel,
+          roommateName: row.roommateName,
+          campTitle: row.campTitle
+        }))
+      })
+    );
     throw new Error(
       `MEMBER_PROFILE_INCOMPLETE: recognized ${profiles.length}/${expectedProfiles} required unique member rows`
     );
@@ -80,7 +94,14 @@ try {
     staffFrame.path,
     controller.signal
   );
-  if (advisedStaff.length > staff.length) staff = advisedStaff;
+  if (advisedStaff.length >= staff.length && advisedStaff.length > 0) {
+    staff = advisedStaff;
+  }
+  if (staff.length > 11) {
+    throw new Error(
+      `STAFF_COUNT_INVALID: recognized ${staff.length}, maximum is mayor 1 + staff 10`
+    );
+  }
   completed = true;
 } finally {
   const removedScreenshots = await vision.cleanupTask().catch(() => 0);

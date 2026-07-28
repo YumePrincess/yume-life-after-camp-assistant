@@ -234,11 +234,34 @@ export function validateTechnologyConfig(value: unknown): TechnologyConfig {
     if (unknown) throw new Error(`Unknown fixed technology: ${unknown}`);
     fixedByWeekday[String(weekday)] = values;
   }
+  const fixedDateSource =
+    source.fixedByDate && typeof source.fixedByDate === "object"
+      ? object(source.fixedByDate, "technologyConfig.fixedByDate")
+      : {};
+  const fixedByDate: Record<string, string[]> = {};
+  const fixedDateEntries = Object.entries(fixedDateSource);
+  if (fixedDateEntries.length > 21) {
+    throw new Error("technologyConfig.fixedByDate is too large");
+  }
+  for (const [date, raw] of fixedDateEntries) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Array.isArray(raw)) {
+      throw new Error(`technologyConfig.fixedByDate.${date} is invalid`);
+    }
+    const values = [
+      ...new Set(
+        raw.map((item) => text(item, "fixed technology key", { max: 64 }))
+      )
+    ];
+    const unknown = values.find((key) => !seen.has(key));
+    if (unknown) throw new Error(`Unknown fixed technology: ${unknown}`);
+    fixedByDate[date] = values;
+  }
 
   const limits = object(source.limits, "technologyConfig.limits");
   return {
     catalog,
     fixedByWeekday,
+    fixedByDate,
     limits: {
       core: integer(limits.core, "technologyConfig.limits.core", 0, 6),
       general: integer(limits.general, "technologyConfig.limits.general", 0, 6)
@@ -507,7 +530,13 @@ function weekdays(value: unknown, field: string): number[] {
   if (!Array.isArray(value) || !value.length || value.length > 7) {
     throw new Error(`${field} must contain weekdays`);
   }
-  return [...new Set(value.map((item, index) => integer(item, `${field}[${index}]`, 1, 7)))];
+  return [
+    ...new Set(
+      value.map((item, index) =>
+        integer(item, `${field}[${index}]`, 1, 7)
+      )
+    )
+  ];
 }
 
 function isTaskKeyForRoutine(

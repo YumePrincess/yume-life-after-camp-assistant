@@ -217,12 +217,20 @@
                 <span id="next-tech-date" class="date-badge"></span>
               </div>
               <p class="muted">
-                uiLabel 必须与游戏科技页面 OCR 文本一致；执行时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建。第一行仅允许当前营地类型，两个分区上限均不得超过 6。
+                目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。
               </p>
-              <label class="field">
-                <span>科技配置 JSON</span>
-                <textarea id="technology-json" class="code-editor" rows="22" spellcheck="false"></textarea>
-              </label>
+              <div class="technology-editor-toolbar">
+                <div>
+                  <span class="field-label">固定科技适用日期</span>
+                  <div id="technology-weekdays" class="weekday-tabs" role="tablist"></div>
+                </div>
+                <div class="technology-limits">
+                  <span id="technology-core-count">农业科技 0 / 6</span>
+                  <span id="technology-general-count">其他科技 0 / 6</span>
+                </div>
+              </div>
+              <div id="technology-catalog-grid" class="technology-catalog-grid"></div>
+              <p id="technology-empty" class="empty-state" hidden>内置科技目录未能载入，请检查当前部署版本。</p>
               <div id="admin-vote-summary" class="vote-summary"></div>
               <div class="section-savebar">
                 <span class="feedback" data-save-feedback>当前配置已同步</span>

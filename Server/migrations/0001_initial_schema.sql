@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS agent_heartbeats (
 INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
 (
   'camp_config',
-  '{"timezone":"Asia/Shanghai","gameResetTime":"03:00","voteWindowStart":"06:30","voteWindowEnd":"24:00","currentCampType":"military","agentId":"mumu-main","publicSiteName":"明日之后“愿”营地助手","campName":"愿","serverName":"中国大陆服务器","publicMembersEnabled":true,"inactivityWarningDays":1,"automaticKickEnabled":false,"automaticKickGraceDays":0}',
+  '{"timezone":"Asia/Shanghai","gameResetTime":"03:00","voteWindowStart":"06:30","voteWindowEnd":"24:00","currentCampType":"agriculture","agentId":"mumu-main","publicSiteName":"明日之后“愿”营地助手","campName":"愿","serverName":"中国大陆服务器","publicMembersEnabled":true,"inactivityWarningDays":1,"automaticKickEnabled":false,"automaticKickGraceDays":0}',
   CURRENT_TIMESTAMP
 ),
 (
@@ -189,7 +189,7 @@ INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
 ),
 (
   'technology_config',
-  '{"catalog":[],"fixedByWeekday":{"1":[],"2":[],"3":[],"4":[],"5":[],"6":[],"7":[]},"limits":{"core":6,"general":6}}',
+  '{"catalog":[],"fixedByWeekday":{"1":[],"2":[],"3":[],"4":[],"5":[],"6":[],"7":[]},"fixedByDate":{},"limits":{"core":6,"general":6}}',
   CURRENT_TIMESTAMP
 ),
 (

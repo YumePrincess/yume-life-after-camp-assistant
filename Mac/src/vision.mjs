@@ -165,11 +165,13 @@ export class Vision {
   }
 
   async #extractContributionRows(imagePath, definition, label, signal) {
-    const observations = await this.ocrRegion(
+    let observations = await this.ocrRegion(
       imagePath,
       definition.region,
       `${label}-values`,
-      signal
+      signal,
+      "accurate",
+      0.25
     );
     const rows = parseTable(observations, definition);
     const region = definition.region;
@@ -219,11 +221,13 @@ export class Vision {
   }
 
   async #extractMemberRows(imagePath, definition, label, signal) {
-    const observations = await this.ocrRegion(
+    let observations = await this.ocrRegion(
       imagePath,
       definition.region,
       `${label}-values`,
-      signal
+      signal,
+      "accurate",
+      0.25
     );
     const region = definition.region;
     const width = region.right - region.left;
@@ -237,31 +241,108 @@ export class Vision {
       ])
     );
     const onlineBounds = columnBounds.get("onlineState");
-    const anchors = observations
+    let anchors = observations
       .filter(
         (item) =>
           centerX(item) >= onlineBounds.left &&
           centerX(item) < onlineBounds.right &&
+          centerY(item) >= (definition.rowAnchorTop || region.top) &&
           /在线|离线/.test(item.text)
       )
       .map((item) => centerY(item))
       .sort((left, right) => left - right);
+    if (!anchors.length) {
+      const fallback = await runFile(
+        this.config.vision.binary,
+        [imagePath, "accurate"],
+        {
+          timeoutMs:
+            Math.max(
+              5,
+              Number(this.config.vision.accurateTimeoutSeconds) || 15
+            ) * 1000,
+          signal
+        }
+      );
+      observations = JSON.parse(fallback.stdout).filter((item) => {
+        const x = centerX(item);
+        const y = centerY(item);
+        return (
+          item.confidence >= 0.25 &&
+          x >= region.left &&
+          x < region.right &&
+          y >= region.top &&
+          y < region.bottom
+        );
+      });
+      anchors = observations
+        .filter(
+          (item) =>
+            centerX(item) >= onlineBounds.left &&
+            centerX(item) < onlineBounds.right &&
+            centerY(item) >= (definition.rowAnchorTop || region.top) &&
+            /在线|离线/.test(item.text)
+        )
+        .map((item) => centerY(item))
+        .sort((left, right) => left - right);
+    }
+    const rowsPerPage = Math.max(
+      1,
+      Number(definition.pagination?.rowsPerPage) || anchors.length
+    );
+    if (anchors.length > rowsPerPage) {
+      anchors = anchors.slice(-rowsPerPage);
+    }
     if (!anchors.length) return [];
 
-    const cropPath = resolve(
-      this.snapshotDir,
-      `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-member-crop.png`
-    );
-    this.taskPaths.add(cropPath);
-    try {
+    const rowSpacing =
+      medianNumber(
+        anchors.slice(1).map((anchor, index) => anchor - anchors[index])
+      ) || 96;
+    const rowData = anchors.map((anchor, index) => {
+      const upper =
+        index === 0
+          ? Math.max(region.top, anchor - rowSpacing / 2)
+          : (anchors[index - 1] + anchor) / 2;
+      const lower =
+        index === anchors.length - 1
+          ? Math.min(region.bottom, anchor + rowSpacing / 2)
+          : (anchor + anchors[index + 1]) / 2;
+      const items = observations.filter((item) => {
+        const y = centerY(item);
+        return y >= upper && y < lower;
+      });
+      return {
+        items,
+        identity: inferMemberIdentity(
+          itemsInColumn(items, columnBounds.get("identity"))
+        )
+      };
+    });
+    let advisedByRow = new Map();
+    if (rowData.some((row) => !row.identity.name)) {
+      const cropPath = resolve(
+        this.snapshotDir,
+        `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-member-crop.png`
+      );
+      this.taskPaths.add(cropPath);
+      try {
+      const cropTop = Math.max(
+        region.top,
+        Math.floor(anchors[0] - rowSpacing / 2)
+      );
+      const cropBottom = Math.min(
+        region.bottom,
+        Math.ceil(anchors.at(-1) + rowSpacing / 2)
+      );
       await runFile(
         "/usr/bin/sips",
         [
           "-c",
-          String(Math.round(region.bottom - region.top)),
+          String(Math.round(cropBottom - cropTop)),
           String(Math.round(region.right - region.left)),
           "--cropOffset",
-          String(Math.round(region.top)),
+          String(Math.round(cropTop)),
           String(Math.round(region.left)),
           imagePath,
           "--out",
@@ -274,54 +355,34 @@ export class Vision {
         anchors.length,
         signal
       );
-      const advisedByRow = new Map(advised.map((item) => [item.row, item]));
-      const rowSpacing =
-        medianNumber(
-          anchors.slice(1).map((anchor, index) => anchor - anchors[index])
-        ) || 96;
-      return anchors
-        .map((anchor, index) => {
-          const upper =
-            index === 0
-              ? Math.max(region.top, anchor - rowSpacing / 2)
-              : (anchors[index - 1] + anchor) / 2;
-          const lower =
-            index === anchors.length - 1
-              ? Math.min(region.bottom, anchor + rowSpacing / 2)
-              : (anchor + anchors[index + 1]) / 2;
-          const items = observations.filter((item) => {
-            const y = centerY(item);
-            return y >= upper && y < lower;
-          });
-          const ai = advisedByRow.get(index + 1) || {};
-          const identity = inferMemberIdentity(
-            itemsInColumn(items, columnBounds.get("identity"))
-          );
-          return {
-            name: identity.name || cleanModelText(ai.name),
-            campTitle:
-              identity.campTitle || cleanModelText(ai.campTitle),
-            profession:
-              cleanModelText(ai.profession) ||
-              firstColumnText(items, columnBounds.get("profession")),
-            weeklyContribution:
-              firstColumnText(items, columnBounds.get("weeklyContribution")) ||
-              "0",
-            manorLevel:
-              firstColumnText(items, columnBounds.get("manorLevel")),
-            onlineState:
-              firstColumnText(items, columnBounds.get("onlineState")),
-            scene: firstColumnText(items, columnBounds.get("scene")),
-            roommateName:
-              cleanModelText(ai.roommateName) ||
-              firstColumnText(items, columnBounds.get("roommateName"))
-          };
-        })
-        .filter((row) => row.name);
-    } finally {
-      this.taskPaths.delete(cropPath);
-      await rm(cropPath, { force: true });
+        advisedByRow = new Map(advised.map((item) => [item.row, item]));
+      } finally {
+        this.taskPaths.delete(cropPath);
+        await rm(cropPath, { force: true });
+      }
     }
+    return rowData
+      .map(({ items, identity }, index) => {
+        const ai = advisedByRow.get(index + 1) || {};
+        return {
+          name: identity.name || cleanModelText(ai.name),
+          campTitle:
+            identity.campTitle || cleanModelText(ai.campTitle),
+          profession:
+            firstColumnText(items, columnBounds.get("profession")),
+          weeklyContribution:
+            firstColumnText(items, columnBounds.get("weeklyContribution")) ||
+            "0",
+          manorLevel:
+            firstColumnText(items, columnBounds.get("manorLevel")),
+          onlineState:
+            firstColumnText(items, columnBounds.get("onlineState")),
+          scene: firstColumnText(items, columnBounds.get("scene")),
+          roommateName:
+            firstColumnText(items, columnBounds.get("roommateName"))
+        };
+      })
+      .filter((row) => row.name);
   }
 
   async ocrRegion(
@@ -437,7 +498,7 @@ export class Vision {
     const now = Date.now();
     let removed = 0;
     for (const name of await readdir(this.snapshotDir)) {
-      if (!name.endsWith(".png")) continue;
+      if (!/\.(?:png|jpe?g)$/i.test(name)) continue;
       const path = resolve(this.snapshotDir, name);
       const metadata = await stat(path).catch(() => null);
       if (metadata && now - metadata.mtimeMs >= maxAgeMs) {

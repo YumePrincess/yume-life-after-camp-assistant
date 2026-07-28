@@ -65,6 +65,7 @@ export interface TechnologyDefinition {
 export interface TechnologyConfig {
   catalog: TechnologyDefinition[];
   fixedByWeekday: Record<string, string[]>;
+  fixedByDate: Record<string, string[]>;
   limits: {
     core: number;
     general: number;
@@ -153,6 +154,10 @@ export interface VoteSummary {
   timezone: string;
   options: VoteOption[];
   ballotCount: number;
+  projectedPlan: {
+    core: TechnologyDefinition[];
+    general: TechnologyDefinition[];
+  };
 }
 
 export interface TechnologyPlan {
