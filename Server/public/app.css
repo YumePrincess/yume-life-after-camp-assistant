@@ -677,6 +677,10 @@ h2 {
   font-size: 11px;
 }
 
+.vote-option .tech-prerequisite {
+  color: var(--accent);
+}
+
 .vote-count {
   flex: 0 0 auto;
   color: var(--accent);

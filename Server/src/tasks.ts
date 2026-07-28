@@ -11,7 +11,10 @@ import type {
   TechnologyPlan,
   VoteSummary
 } from "./domain";
-import { buildTechnologyPlan } from "./tech";
+import {
+  buildTechnologyPlan,
+  technologyCatalogWithPrerequisites
+} from "./tech";
 import {
   isWithinDailyClockWindow,
   nextTechnologyTargetDate,
@@ -55,9 +58,18 @@ export async function buildVoteSummary(
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
-  const options = bundle.technologyConfig.catalog
+  const options = technologyCatalogWithPrerequisites(
+    bundle.technologyConfig.catalog
+  )
     .filter((item) => item.enabledForVoting && !fixed.has(item.key))
-    .map((item) => ({ ...item, votes: counts.get(item.key) ?? 0 }))
+    .map((item) => ({
+      ...item,
+      lane:
+        item.category === bundle.campConfig.currentCampType
+          ? ("core" as const)
+          : ("general" as const),
+      votes: counts.get(item.key) ?? 0
+    }))
     .sort((a, b) => b.votes - a.votes || a.sortOrder - b.sortOrder);
   const projectedPlan = buildTechnologyPlan({
     targetDate: pollDate,

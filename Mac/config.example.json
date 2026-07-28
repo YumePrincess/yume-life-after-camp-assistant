@@ -104,6 +104,23 @@
   },
   "patrolTeam": {
     "kickCommandCooldownSeconds": 60,
+    "chat": {
+      "messageRegion": {
+        "left": 760,
+        "top": 150,
+        "right": 1500,
+        "bottom": 1040
+      },
+      "fallbackMessagePoints": [
+        { "x": 1080, "y": 990 },
+        { "x": 1080, "y": 840 },
+        { "x": 1080, "y": 690 },
+        { "x": 1080, "y": 540 },
+        { "x": 1080, "y": 390 }
+      ],
+      "dismissContextPoint": { "x": 1510, "y": 1110 },
+      "maximumCandidates": 6
+    },
     "slots": [
       { "number": 1, "x": 155, "y": 620, "left": 25, "right": 270 },
       { "number": 2, "x": 380, "y": 620, "left": 270, "right": 500 },
@@ -338,7 +355,7 @@
     "openPatrol": [
       {
         "op": "clickTextsUntilAnyText",
-        "clickTexts": ["营地巡逻", "交谈", "查看巡逻队当前进程"],
+        "clickTexts": ["营地巡逻", "交谈", "查看巡逻进度", "查看巡逻队当前进程"],
         "targetTexts": ["简单巡逻路线", "普通巡逻路线", "困难巡逻路线"],
         "timeoutSeconds": 45,
         "intervalMs": 800
@@ -387,7 +404,18 @@
       { "op": "clickText", "text": "修改队伍", "timeoutSeconds": 8 },
       { "op": "waitAnyText", "texts": ["限时活动>保卫古籍", "保卫古籍"], "timeoutSeconds": 10 }
     ],
-    "openCampChat": [],
+    "openCampChat": [
+      { "op": "key", "code": 111 },
+      { "op": "tap", "x": 250, "y": 1095 },
+      { "op": "sleep", "ms": 800 },
+      { "op": "tap", "x": 1660, "y": 380 },
+      {
+        "op": "waitAnyText",
+        "texts": ["营地频道"],
+        "region": { "left": 790, "top": 25, "right": 1040, "bottom": 115 },
+        "timeoutSeconds": 12
+      }
+    ],
     "openTeamPanel": [
       { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 230, "y": 140 },
       { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 }

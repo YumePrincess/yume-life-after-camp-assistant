@@ -60,6 +60,8 @@ export interface TechnologyDefinition {
   enabledForVoting: boolean;
   sortOrder: number;
   uiLabel: string;
+  prerequisiteKey?: string;
+  prerequisiteName?: string;
 }
 
 export interface TechnologyConfig {

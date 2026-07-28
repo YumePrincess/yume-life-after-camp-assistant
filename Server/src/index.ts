@@ -41,6 +41,7 @@ import {
   updateRun,
   type SessionRow
 } from "./db";
+import { normalizeBallotSelections } from "./tech";
 import {
   isTaskKey,
   type ConfigBundle,
@@ -59,6 +60,7 @@ import { runScheduler } from "./scheduler";
 import { buildVoteSummary, enqueueTask } from "./tasks";
 import {
   nextTechnologyTargetDate,
+  weekdayForDateKey,
   zonedDateKey,
   zonedParts
 } from "./time";
@@ -232,14 +234,36 @@ async function handlePublicApi(
       );
     }
     const allowed = new Set(summary.options.map((option) => option.key));
-    const selections = [
+    const requestedSelections = [
       ...new Set(
         body.selections
           .map((value) => String(value))
           .filter((value) => allowed.has(value))
       )
     ];
-    if (!selections.length || selections.length > 6) {
+    const fixed = new Set(
+      bundle.technologyConfig.fixedByDate[summary.pollDate] ??
+        bundle.technologyConfig.fixedByWeekday[
+          String(weekdayForDateKey(summary.pollDate))
+        ] ??
+        []
+    );
+    const normalized = normalizeBallotSelections({
+      selections: requestedSelections,
+      catalog: bundle.technologyConfig.catalog,
+      allowedKeys: allowed,
+      satisfiedKeys: fixed,
+      maximum: 6
+    });
+    if (!normalized.selections.length || normalized.error) {
+      return problem(
+        normalized.error ?? "每人请选择 1 至 6 项开放投票的科技",
+        400,
+        "invalid_selections"
+      );
+    }
+    const selections = normalized.selections;
+    if (selections.length > 6) {
       return problem("每人请选择 1 至 6 项开放投票的科技", 400, "invalid_selections");
     }
     await saveBallot(env, {

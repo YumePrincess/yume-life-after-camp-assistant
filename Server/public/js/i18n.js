@@ -99,6 +99,12 @@
       "工业科技": "Industrial technology",
       "其他科技": "Other technologies",
       "每人最多选择 6 项科技。": "Each person may select up to 6 technologies.",
+      "前置科技：{name}": "Prerequisite: {name}",
+      "已同时选择前置科技：{name}": "Prerequisite selected too: {name}",
+      "选择该科技及其前置科技后将超过 6 票。":
+        "This technology and its prerequisite would exceed the 6-vote limit.",
+      "取消前置科技时，依赖它的科技也会一并取消。":
+        "Technologies that depend on the removed prerequisite were also deselected.",
       "全部可选科技（每人最多 6 票）": "All voting options (up to 6 votes per person)",
       "固定科技适用日期": "Fixed-technology day",
       "农业科技行": "Agricultural row",
@@ -396,6 +402,12 @@
       "工业科技": "Technologie industrielle",
       "其他科技": "Autres technologies",
       "每人最多选择 6 项科技。": "Chaque personne peut choisir jusqu’à 6 technologies.",
+      "前置科技：{name}": "Prérequis : {name}",
+      "已同时选择前置科技：{name}": "Prérequis également sélectionné : {name}",
+      "选择该科技及其前置科技后将超过 6 票。":
+        "Cette technologie et son prérequis dépasseraient la limite de 6 votes.",
+      "取消前置科技时，依赖它的科技也会一并取消。":
+        "Les technologies dépendantes ont aussi été désélectionnées.",
       "全部可选科技（每人最多 6 票）": "Toutes les technologies (6 votes maximum par personne)",
       "固定科技适用日期": "Jour des technologies fixes",
       "农业科技行": "Ligne agricole",
@@ -697,6 +709,12 @@
       "工业科技": "工業技術",
       "其他科技": "その他の技術",
       "每人最多选择 6 项科技。": "1人につき最大6件まで選択できます。",
+      "前置科技：{name}": "前提技術：{name}",
+      "已同时选择前置科技：{name}": "前提技術も選択しました：{name}",
+      "选择该科技及其前置科技后将超过 6 票。":
+        "この技術と前提技術を選ぶと6票の上限を超えます。",
+      "取消前置科技时，依赖它的科技也会一并取消。":
+        "前提技術を外したため、依存する技術も選択解除しました。",
       "全部可选科技（每人最多 6 票）": "投票可能な全技術（1人最大6票）",
       "固定科技适用日期": "固定技術の曜日",
       "农业科技行": "農業技術行",
@@ -990,6 +1008,12 @@
       "工业科技": "工業科技",
       "其他科技": "其他科技",
       "每人最多选择 6 项科技。": "每人最多選擇 6 項科技。",
+      "前置科技：{name}": "前置科技：{name}",
+      "已同时选择前置科技：{name}": "已同時選擇前置科技：{name}",
+      "选择该科技及其前置科技后将超过 6 票。":
+        "選擇該科技及其前置科技後將超過 6 票。",
+      "取消前置科技时，依赖它的科技也会一并取消。":
+        "取消前置科技時，依賴它的科技也會一併取消。",
       "全部可选科技（每人最多 6 票）": "全部可選科技（每人最多 6 票）",
       "固定科技适用日期": "固定科技適用日期",
       "农业科技行": "農業科技行",

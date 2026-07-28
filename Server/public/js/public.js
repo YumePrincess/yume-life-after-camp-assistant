@@ -80,6 +80,75 @@
     return source ? window.MrzhI18n.t(source) : value;
   }
 
+  function optionMap(summary) {
+    return new Map((summary.options || []).map((option) => [option.key, option]));
+  }
+
+  function requiredVoteKeys(summary, key, result = new Set(), visiting = new Set()) {
+    if (result.has(key) || visiting.has(key)) return result;
+    const option = optionMap(summary).get(key);
+    if (!option) return result;
+    visiting.add(key);
+    if (option.prerequisiteKey) {
+      requiredVoteKeys(summary, option.prerequisiteKey, result, visiting);
+    }
+    visiting.delete(key);
+    result.add(key);
+    return result;
+  }
+
+  function removeVoteAndDependents(summary, key) {
+    const before = state.selections.size;
+    state.selections.delete(key);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const option of summary.options || []) {
+        if (
+          state.selections.has(option.key) &&
+          option.prerequisiteKey &&
+          !state.selections.has(option.prerequisiteKey) &&
+          optionMap(summary).has(option.prerequisiteKey)
+        ) {
+          state.selections.delete(option.key);
+          changed = true;
+        }
+      }
+    }
+    return before - state.selections.size;
+  }
+
+  function toggleVote(summary, option) {
+    const feedback = byId("vote-feedback");
+    if (state.selections.has(option.key)) {
+      const removed = removeVoteAndDependents(summary, option.key);
+      feedback.textContent =
+        removed > 1
+          ? window.MrzhI18n.t(
+              "取消前置科技时，依赖它的科技也会一并取消。"
+            )
+          : "";
+      renderVote(summary);
+      return;
+    }
+    const required = requiredVoteKeys(summary, option.key);
+    const additions = [...required].filter((key) => !state.selections.has(key));
+    if (state.selections.size + additions.length > 6) {
+      feedback.textContent = window.MrzhI18n.t(
+        "选择该科技及其前置科技后将超过 6 票。"
+      );
+      return;
+    }
+    for (const key of additions) state.selections.add(key);
+    feedback.textContent = option.prerequisiteName
+      ? window.MrzhI18n.format(
+          "已同时选择前置科技：{name}",
+          { name: option.prerequisiteName }
+        )
+      : "";
+    renderVote(summary);
+  }
+
   function renderVote(summary) {
     setText("poll-date", summary.pollDate || "--");
     setText(
@@ -119,55 +188,59 @@
       );
       const grid = create("div", "vote-lane-grid");
       for (const option of options) {
-      const button = create("button", "vote-option");
-      button.type = "button";
-      button.disabled = summary.isOpen === false;
-      button.dataset.key = option.key;
-      button.dataset.selected = String(state.selections.has(option.key));
-      if (option.iconUrl) {
-        const image = document.createElement("img");
-        image.className = "tech-icon";
-        image.src = option.iconUrl;
-        image.alt = "";
-        image.loading = "lazy";
-        button.append(image);
-      } else {
-        button.append(create("span", "tech-icon tech-icon-placeholder", option.name.slice(0, 1)));
-      }
-      const copy = create("span", "tech-copy");
-      copy.append(create("strong", "", option.name));
-      copy.append(
-        create(
-          "small",
-          "",
-          `${categoryName(option.category)} · ${laneName(option.lane)}`
-        )
-      );
-      if (option.description) {
-        copy.append(create("span", "tech-description", option.description));
-      }
-      button.append(
-        copy,
-        create(
-          "span",
-          "vote-count",
-          `${option.votes} ${window.MrzhI18n.t("票")}`
-        )
-      );
-      button.addEventListener("click", () => {
-        if (state.selections.has(option.key)) {
-          state.selections.delete(option.key);
-        } else {
-          if (state.selections.size >= 6) {
-            byId("vote-feedback").textContent =
-              window.MrzhI18n.t("每人最多选择 6 项科技。");
-            return;
-          }
-          state.selections.add(option.key);
-        }
+        const button = create("button", "vote-option");
+        button.type = "button";
+        button.disabled = summary.isOpen === false;
+        button.dataset.key = option.key;
         button.dataset.selected = String(state.selections.has(option.key));
-        renderVoteSelection(summary);
-      });
+        if (option.iconUrl) {
+          const image = document.createElement("img");
+          image.className = "tech-icon";
+          image.src = option.iconUrl;
+          image.alt = "";
+          image.loading = "lazy";
+          button.append(image);
+        } else {
+          button.append(
+            create(
+              "span",
+              "tech-icon tech-icon-placeholder",
+              option.name.slice(0, 1)
+            )
+          );
+        }
+        const copy = create("span", "tech-copy");
+        copy.append(create("strong", "", option.name));
+        copy.append(
+          create(
+            "small",
+            "",
+            `${categoryName(option.category)} · ${laneName(option.lane)}`
+          )
+        );
+        if (option.prerequisiteName) {
+          copy.append(
+            create(
+              "small",
+              "tech-prerequisite",
+              window.MrzhI18n.format("前置科技：{name}", {
+                name: option.prerequisiteName
+              })
+            )
+          );
+        }
+        if (option.description) {
+          copy.append(create("span", "tech-description", option.description));
+        }
+        button.append(
+          copy,
+          create(
+            "span",
+            "vote-count",
+            `${option.votes} ${window.MrzhI18n.t("票")}`
+          )
+        );
+        button.addEventListener("click", () => toggleVote(summary, option));
         grid.append(button);
       }
       section.append(grid);
@@ -401,6 +474,23 @@
     }
   }
 
+  async function refreshVoteSummary() {
+    if (document.hidden || !state.data) return;
+    try {
+      const summary = await request(`/api/public/tech-vote?t=${Date.now()}`);
+      state.data.voteSummary = summary;
+      const available = new Set(
+        (summary.options || []).map((option) => option.key)
+      );
+      state.selections = new Set(
+        [...state.selections].filter((key) => available.has(key))
+      );
+      renderVote(summary);
+    } catch {
+      // Initial loading and explicit submission already surface network errors.
+    }
+  }
+
   async function submitVote() {
     const button = byId("submit-vote");
     const feedback = byId("vote-feedback");
@@ -447,4 +537,5 @@
     if (state.data) render(state.data);
   });
   load();
+  window.setInterval(refreshVoteSummary, 10_000);
 })();

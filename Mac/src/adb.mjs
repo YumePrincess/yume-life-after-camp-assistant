@@ -240,4 +240,12 @@ export class AdbClient {
       }
     }
   }
+
+  async readHostClipboard(signal) {
+    const result = await runFile("/usr/bin/pbpaste", [], {
+      signal,
+      timeoutMs: 5_000
+    });
+    return String(result.stdout || "").replace(/\0/g, "").trim();
+  }
 }

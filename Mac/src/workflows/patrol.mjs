@@ -39,8 +39,19 @@ export async function runPatrol(context, command, bundle, signal) {
   let nextShareAt = Date.now() + patrol.shareIntervalMinutes * 60_000;
   let lastCleanupFingerprint = "";
   const teamCommandState = {
-    handledAt: new Map()
+    handledAt: new Map(),
+    chatFingerprint: ""
   };
+  teamCommandState.chatFingerprint = await readCampChatFingerprint(
+    context,
+    signal
+  );
+  await ui.executeFlow("openTeamPanel", {}, signal);
+  await report(
+    "info",
+    "patrol_chat_baseline",
+    "已记录古籍队伍分享后的营地频道基线；只处理此后出现的新复制指令"
+  );
 
   while (!reached(timezone, patrol.deadline)) {
     if (Date.now() >= nextShareAt) {
@@ -70,29 +81,40 @@ async function scanPatrolCommands(
   signal
 ) {
   const { ui, vision, report } = context;
+  const copied = await copyNewestPatrolCommand(
+    context,
+    teamCommandState,
+    signal
+  );
   await ui.executeFlow("openTeamPanel", {}, signal);
-  const frame = await vision.captureTransient("patrol-team-barrage", signal);
-  const slotCommand = findTeamSlotCommand(frame.observations);
-  if (slotCommand) {
+  if (copied) {
     const cooldownMs =
       Math.max(
         5,
         Number(context.config.patrolTeam?.kickCommandCooldownSeconds) || 60
       ) * 1000;
-    const previous = teamCommandState.handledAt.get(slotCommand.text) || 0;
+    const previous = teamCommandState.handledAt.get(copied.text) || 0;
     if (Date.now() - previous >= cooldownMs) {
-      teamCommandState.handledAt.set(slotCommand.text, Date.now());
-      if (slotCommand.slot === 1) {
+      teamCommandState.handledAt.set(copied.text, Date.now());
+      if (copied.refused) {
         await report(
           "warning",
           "patrol_kick_refused",
-          "已拒绝 T1 指令：1 号位是队长/本机角色"
+          `已拒绝 ${copied.text}：指令不得包含 1 号位，1 号位是队长/本机角色`
         );
       } else {
-        await kickTeamSlot(context, slotCommand.slot, frame.observations, signal);
+        await report(
+          "info",
+          "patrol_kick_plan",
+          `${copied.text} 将按 ${copied.slots.join(" → ")} 的倒序请离，避免后续队员前移导致错踢`
+        );
+        for (const slotNumber of copied.slots) {
+          await kickTeamSlot(context, slotNumber, signal);
+        }
       }
     }
   }
+  const frame = await vision.captureTransient("patrol-team-barrage", signal);
   const commandMatch = vision.find(frame.observations, "清理巡逻队");
   const fingerprint = commandMatch
     ? `${commandMatch.text}:${commandMatch.x}:${commandMatch.y}`
@@ -104,32 +126,37 @@ async function scanPatrolCommands(
   return null;
 }
 
-function findTeamSlotCommand(observations) {
-  return observations
-    .map((observation) => ({
-      observation,
-      normalized: String(observation.text).replace(/\s+/g, "").toUpperCase()
-    }))
-    .map(({ observation, normalized }) => {
-      const match = normalized.match(/^T([1-8])$/);
-      return match
-        ? {
-            text: `T${match[1]}`,
-            slot: Number(match[1]),
-            observation
-          }
-        : null;
-    })
-    .filter(Boolean)
-    .sort(
-      (a, b) =>
-        b.observation.confidence - a.observation.confidence ||
-        b.observation.width * b.observation.height -
-          a.observation.width * a.observation.height
-    )[0];
+export function parsePatrolKickCommand(value) {
+  const normalized = String(value || "")
+    .replace(/[\s\u200B-\u200D\uFEFF]/g, "")
+    .toUpperCase();
+  const match = normalized.match(/^T([1-8]+)$/);
+  if (!match) return null;
+  const digits = [...match[1]].map(Number);
+  if (digits.includes(1)) {
+    return {
+      text: normalized,
+      slots: [],
+      refused: true
+    };
+  }
+  const slots = [...new Set(digits)]
+    .filter((slot) => slot >= 2 && slot <= 8)
+    .sort((left, right) => right - left);
+  if (!slots.length) return null;
+  return {
+    text: normalized,
+    slots,
+    refused: false
+  };
 }
 
-async function kickTeamSlot(context, slotNumber, observations, signal) {
+export function descendingTeamSlots(value) {
+  const command = parsePatrolKickCommand(value);
+  return command && !command.refused ? command.slots : [];
+}
+
+async function kickTeamSlot(context, slotNumber, signal) {
   const { ui, vision, report } = context;
   const slot = context.config.patrolTeam?.slots?.find(
     (item) => Number(item.number) === slotNumber
@@ -138,6 +165,12 @@ async function kickTeamSlot(context, slotNumber, observations, signal) {
     await report("error", "patrol_kick_invalid_slot", `未配置 T${slotNumber} 槽位`);
     return;
   }
+  await ui.executeFlow("openTeamPanel", {}, signal);
+  const layout = await vision.captureTransient(
+    `patrol-kick-layout-${slotNumber}`,
+    signal
+  );
+  const observations = layout.observations;
   const empty = observations.some((observation) => {
     if (!String(observation.text).replace(/\s+/g, "").includes("等待队员加入")) {
       return false;
@@ -184,6 +217,132 @@ async function kickTeamSlot(context, slotNumber, observations, signal) {
       ? `已按 T${slotNumber} 指令确认请离 ${slotNumber} 号队员`
       : `已按 T${slotNumber} 指令点击最下方红色按钮请离 ${slotNumber} 号队员`
   );
+}
+
+async function readCampChatFingerprint(context, signal) {
+  const { ui, vision } = context;
+  await ui.executeFlow("openCampChat", {}, signal);
+  const frame = await vision.captureTransient("patrol-camp-chat-baseline", signal);
+  return campChatFingerprint(
+    frame.observations,
+    context.config.patrolTeam?.chat?.messageRegion
+  );
+}
+
+async function copyNewestPatrolCommand(context, state, signal) {
+  const { ui, vision, adb, report } = context;
+  const chat = context.config.patrolTeam?.chat;
+  if (!chat?.messageRegion) {
+    await report(
+      "error",
+      "patrol_chat_uncalibrated",
+      "未配置营地聊天消息区域，已跳过本轮 T 指令扫描"
+    );
+    return null;
+  }
+  await ui.executeFlow("openCampChat", {}, signal);
+  const frame = await vision.captureTransient("patrol-camp-chat", signal);
+  const fingerprint = campChatFingerprint(
+    frame.observations,
+    chat.messageRegion
+  );
+  if (fingerprint === state.chatFingerprint) return null;
+  state.chatFingerprint = fingerprint;
+
+  const candidates = messageCandidatePoints(
+    frame.observations,
+    chat.messageRegion,
+    chat.fallbackMessagePoints,
+    chat.maximumCandidates
+  );
+  for (const [index, point] of candidates.entries()) {
+    await ui.tap(point, signal);
+    const contextMenu = await vision.captureTransient(
+      `patrol-chat-context-${index + 1}`,
+      signal
+    );
+    const copy = ["复制", "复制消息"]
+      .map((label) => vision.find(contextMenu.observations, label))
+      .find(Boolean);
+    if (!copy) {
+      await ui.tap(chat.dismissContextPoint, signal);
+      continue;
+    }
+    await ui.tap(center(copy), signal);
+    const clipboard = await adb.readHostClipboard(signal).catch(() => "");
+    const command = parsePatrolKickCommand(clipboard);
+    if (command) {
+      await report(
+        "info",
+        "patrol_chat_command_copied",
+        `已从营地消息“复制”读取指令 ${command.text}`,
+        { clipboard: command.text, slots: command.slots }
+      );
+      return command;
+    }
+  }
+  return null;
+}
+
+function campChatFingerprint(observations, region) {
+  if (!region) return "";
+  return observations
+    .filter((item) => {
+      const point = center(item);
+      return (
+        point.x >= region.left &&
+        point.x <= region.right &&
+        point.y >= region.top &&
+        point.y <= region.bottom
+      );
+    })
+    .map(
+      (item) =>
+        `${String(item.text).trim()}:${Math.round(center(item).x / 12)}:${Math.round(
+          center(item).y / 12
+        )}`
+    )
+    .sort()
+    .join("|");
+}
+
+function messageCandidatePoints(
+  observations,
+  region,
+  fallbackPoints = [],
+  maximumCandidates = 6
+) {
+  const excluded =
+    /^(?:营地频道|成员|频道|私聊|世界|队伍|营地|萌芽邀请|聊天室|当前|场景|回归|同城|扬声器|收起)$/;
+  const points = observations
+    .filter((item) => {
+      const point = center(item);
+      return (
+        point.x >= region.left &&
+        point.x <= region.right &&
+        point.y >= region.top &&
+        point.y <= region.bottom &&
+        !excluded.test(String(item.text).replace(/\s+/g, ""))
+      );
+    })
+    .map(center)
+    .sort((left, right) => right.y - left.y);
+  for (const point of fallbackPoints || []) points.push(point);
+  const unique = [];
+  for (const point of points) {
+    if (
+      unique.some(
+        (current) =>
+          Math.abs(current.x - point.x) < 80 &&
+          Math.abs(current.y - point.y) < 55
+      )
+    ) {
+      continue;
+    }
+    unique.push(point);
+    if (unique.length >= Math.max(1, Number(maximumCandidates) || 6)) break;
+  }
+  return unique;
 }
 
 async function cleanupPatrolTeam(context, signal) {

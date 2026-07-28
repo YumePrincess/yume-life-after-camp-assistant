@@ -314,6 +314,12 @@
   function renderTechnologyEditor() {
     const config = state.technologyDraft;
     if (!config) return;
+    const campType =
+      state.bootstrap?.configBundle?.campConfig?.currentCampType ||
+      "agriculture";
+    const effectiveLane = (item) =>
+      item.category === campType ? "core" : "general";
+    const coreLabel = `${categoryLabel(campType)}科技`;
     const weekdayRoot = byId("technology-weekdays");
     weekdayRoot.replaceChildren();
     const firstDate =
@@ -353,13 +359,13 @@
       config.fixedByDate[state.technologyDate] || []
     );
     const coreCount = config.catalog.filter(
-      (item) => fixed.has(item.key) && item.lane === "core"
+      (item) => fixed.has(item.key) && effectiveLane(item) === "core"
     ).length;
     const generalCount = config.catalog.filter(
-      (item) => fixed.has(item.key) && item.lane === "general"
+      (item) => fixed.has(item.key) && effectiveLane(item) === "general"
     ).length;
     byId("technology-core-count").textContent =
-      `农业科技 ${coreCount} / ${config.limits.core}`;
+      `${coreLabel} ${coreCount} / ${config.limits.core}`;
     byId("technology-general-count").textContent =
       `其他科技 ${generalCount} / ${config.limits.general}`;
 
@@ -387,7 +393,7 @@
           "small",
           "",
           `${categoryLabel(item.category)} · ${
-            item.lane === "core" ? "农业科技行" : "其他科技行"
+            effectiveLane(item) === "core" ? `${coreLabel}行` : "其他科技行"
           }`
         ),
         create("p", "", item.description || "暂无科技描述")
@@ -402,14 +408,16 @@
           config.fixedByDate[state.technologyDate] || []
         );
         if (fixedInput.checked) {
+          const itemLane = effectiveLane(item);
           const laneCount = config.catalog.filter(
             (technology) =>
-              keys.has(technology.key) && technology.lane === item.lane
+              keys.has(technology.key) &&
+              effectiveLane(technology) === itemLane
           ).length;
-          const limit = config.limits[item.lane];
+          const limit = config.limits[itemLane];
           if (laneCount >= limit) {
             fixedInput.checked = false;
-            alert(`${item.lane === "core" ? "农业科技" : "其他科技"}最多固定 ${limit} 项`);
+            alert(`${itemLane === "core" ? coreLabel : "其他科技"}最多固定 ${limit} 项`);
             return;
           }
           keys.add(item.key);
@@ -435,29 +443,10 @@
       const laneSelect = document.createElement("select");
       laneSelect.className = "technology-lane-select";
       laneSelect.innerHTML =
-        '<option value="core">农业科技行</option><option value="general">其他科技行</option>';
-      laneSelect.value = item.lane;
-      laneSelect.querySelector('[value="core"]').disabled =
-        item.category !== "agriculture";
-      laneSelect.addEventListener("change", () => {
-        const wasFixed = fixed.has(item.key);
-        if (wasFixed) {
-          const nextCount = config.catalog.filter(
-            (technology) =>
-              fixed.has(technology.key) &&
-              technology.key !== item.key &&
-              technology.lane === laneSelect.value
-          ).length;
-          if (nextCount >= config.limits[laneSelect.value]) {
-            laneSelect.value = item.lane;
-            alert("目标科技行已经达到 6 项上限");
-            return;
-          }
-        }
-        item.lane = laneSelect.value;
-        markTechnologyDirty();
-        renderTechnologyEditor();
-      });
+        `<option value="core">${coreLabel}行</option><option value="general">其他科技行</option>`;
+      laneSelect.value = effectiveLane(item);
+      laneSelect.disabled = true;
+      laneSelect.title = "科技所在行由营地科技类型自动决定";
       controls.append(fixedLabel, voteLabel, laneSelect);
       card.append(image, copy, controls);
       root.append(card);

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { TechnologyConfig, VoteOption } from "../src/domain";
 import { BUILT_IN_TECHNOLOGY_CATALOG } from "../src/built-in-technology-catalog";
-import { buildTechnologyPlan } from "../src/tech";
+import {
+  buildTechnologyPlan,
+  normalizeBallotSelections,
+  prerequisiteNameForTechnology,
+  technologyCatalogWithPrerequisites
+} from "../src/tech";
 
 function technology(
   key: string,
@@ -137,6 +142,20 @@ describe("buildTechnologyPlan", () => {
     });
     expect(plan.core.map((item) => item.key)).toEqual(["vote-core"]);
   });
+
+  it("keeps both prediction rows empty without fixed technology or votes", () => {
+    const plan = buildTechnologyPlan({
+      targetDate: "2026-07-28",
+      currentCampType: "military",
+      technologyConfig,
+      voteOptions: technologyConfig.catalog.map((item) => ({
+        ...item,
+        votes: 0
+      }))
+    });
+    expect(plan.core).toEqual([]);
+    expect(plan.general).toEqual([]);
+  });
 });
 
 describe("built-in technology catalog", () => {
@@ -157,5 +176,147 @@ describe("built-in technology catalog", () => {
         (item) => item.iconUrl && item.description
       )
     ).toBe(true);
+  });
+
+  it("resolves the technology named in full-width or half-width parentheses", () => {
+    expect(prerequisiteNameForTechnology("加速印刷（墙纸印刷师）")).toBe(
+      "墙纸印刷师"
+    );
+    expect(prerequisiteNameForTechnology("加速印刷(墙纸印刷师)")).toBe(
+      "墙纸印刷师"
+    );
+    expect(prerequisiteNameForTechnology("墙纸印刷师")).toBeNull();
+
+    const catalog = technologyCatalogWithPrerequisites(
+      BUILT_IN_TECHNOLOGY_CATALOG
+    );
+    const acceleratedPrinting = catalog.find(
+      (item) => item.name === "加速印刷（墙纸印刷师）"
+    );
+    const printer = catalog.find((item) => item.name === "墙纸印刷师");
+    expect(acceleratedPrinting?.prerequisiteKey).toBe(printer?.key);
+    expect(acceleratedPrinting?.prerequisiteName).toBe("墙纸印刷师");
+  });
+});
+
+describe("technology prerequisites", () => {
+  const prerequisite = {
+    ...technology("prerequisite", "core", "agriculture", 2),
+    name: "前置科技"
+  };
+  const dependent = {
+    ...technology("dependent", "core", "agriculture", 1),
+    name: "后置科技（前置科技）"
+  };
+  const next = {
+    ...technology("next", "core", "agriculture", 3),
+    name: "顺延科技"
+  };
+
+  function config(limit = 6): TechnologyConfig {
+    return {
+      catalog: [dependent, prerequisite, next],
+      fixedByWeekday: {
+        "1": [],
+        "2": [],
+        "3": [],
+        "4": [],
+        "5": [],
+        "6": [],
+        "7": []
+      },
+      fixedByDate: {},
+      limits: { core: limit, general: 6 }
+    };
+  }
+
+  it("forces the prerequisite into a ballot selection", () => {
+    expect(
+      normalizeBallotSelections({
+        selections: ["dependent"],
+        catalog: config().catalog,
+        allowedKeys: new Set(["dependent", "prerequisite", "next"])
+      })
+    ).toEqual({ selections: ["prerequisite", "dependent"] });
+  });
+
+  it("rejects a forced prerequisite when the ballot would exceed six votes", () => {
+    const extras = Array.from({ length: 5 }, (_, index) =>
+      technology(`extra-${index}`, "general", "military", index + 10)
+    );
+    const result = normalizeBallotSelections({
+      selections: [...extras.map((item) => item.key), "dependent"],
+      catalog: [...config().catalog, ...extras],
+      allowedKeys: new Set([
+        "dependent",
+        "prerequisite",
+        ...extras.map((item) => item.key)
+      ])
+    });
+    expect(result.selections).toEqual([]);
+    expect(result.error).toContain("超过 6 票");
+  });
+
+  it("only opens the prerequisite when the dependent has fewer votes", () => {
+    const plan = buildTechnologyPlan({
+      targetDate: "2026-07-29",
+      currentCampType: "agriculture",
+      technologyConfig: config(2),
+      voteOptions: [
+        { ...dependent, votes: 9 },
+        { ...prerequisite, votes: 10 },
+        { ...next, votes: 8 }
+      ]
+    });
+    expect(plan.core.map((item) => item.key)).toEqual([
+      "prerequisite",
+      "next"
+    ]);
+  });
+
+  it("opens a dependent and prerequisite atomically when both fit", () => {
+    const plan = buildTechnologyPlan({
+      targetDate: "2026-07-29",
+      currentCampType: "agriculture",
+      technologyConfig: config(2),
+      voteOptions: [
+        { ...dependent, votes: 10 },
+        { ...prerequisite, votes: 9 },
+        { ...next, votes: 8 }
+      ]
+    });
+    expect(plan.core.map((item) => item.key)).toEqual([
+      "prerequisite",
+      "dependent"
+    ]);
+  });
+
+  it("skips both members of a pair that cannot fit and advances to the next vote", () => {
+    const plan = buildTechnologyPlan({
+      targetDate: "2026-07-29",
+      currentCampType: "agriculture",
+      technologyConfig: config(1),
+      voteOptions: [
+        { ...dependent, votes: 10 },
+        { ...prerequisite, votes: 9 },
+        { ...next, votes: 8 }
+      ]
+    });
+    expect(plan.core.map((item) => item.key)).toEqual(["next"]);
+  });
+
+  it("automatically places a fixed technology prerequisite first", () => {
+    const technologyConfig = config(2);
+    technologyConfig.fixedByDate["2026-07-29"] = ["dependent"];
+    const plan = buildTechnologyPlan({
+      targetDate: "2026-07-29",
+      currentCampType: "agriculture",
+      technologyConfig,
+      voteOptions: []
+    });
+    expect(plan.core.map((item) => item.key)).toEqual([
+      "prerequisite",
+      "dependent"
+    ]);
   });
 });
