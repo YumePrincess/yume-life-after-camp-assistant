@@ -71,8 +71,32 @@ test("an already-open camp page is confirmed before any click", async () => {
   );
 });
 
+test("map preparation closes the camp page, collapses chat, then confirms HUD", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("全部成员", 180, 260)],
+      [
+        observation("营地", 1660, 360),
+        observation("世界", 1660, 220),
+        observation("收起", 1690, 1030)
+      ],
+      [observation("背包", 120, 900)]
+    ]
+  });
+  const result = await fixture.ui.closePagesBeforeMap(
+    { mapPreparationMaxClosures: 6, mapReadyTexts: ["标志查看"] }
+  );
+  assert.equal(result, "hud");
+  assert.deepEqual(fixture.taps, [
+    { x: 1750, y: 145 },
+    { x: 1700, y: 1040 }
+  ]);
+  assert.deepEqual(fixture.keys, []);
+});
+
 function createUi({ fastFrames = [[]], accurateFrames = [[]] } = {}) {
   const taps = [];
+  const keys = [];
   const messages = [];
   let fastIndex = 0;
   let accurateIndex = 0;
@@ -99,7 +123,9 @@ function createUi({ fastFrames = [[]], accurateFrames = [[]] } = {}) {
     async mouseTap(x, y) {
       taps.push({ x, y });
     },
-    async key() {}
+    async key(code) {
+      keys.push(code);
+    }
   };
   const ui = new GameUi(
     { timeouts: { actionDelayMs: 0 } },
@@ -107,7 +133,7 @@ function createUi({ fastFrames = [[]], accurateFrames = [[]] } = {}) {
     vision,
     async (_level, _step, message) => messages.push(message)
   );
-  return { ui, taps, messages };
+  return { ui, taps, keys, messages };
 }
 
 function observation(text, x, y) {

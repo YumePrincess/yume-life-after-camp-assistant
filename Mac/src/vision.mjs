@@ -151,8 +151,8 @@ export class Vision {
           )
         ]);
         if (
-          parsePopulationCount(memberObservations, 110) !== null &&
-          parsePopulationCount(citizenObservations, 10) !== null
+          parsePopulationCapacity(memberObservations, 110) !== null &&
+          parsePopulationCapacity(citizenObservations, 10) !== null
         ) {
           break;
         }
@@ -161,8 +161,8 @@ export class Vision {
         if (signal?.aborted) throw error;
       }
     }
-    const memberCount = parsePopulationCount(memberObservations, 110);
-    const citizenCount = parsePopulationCount(citizenObservations, 10);
+    const memberCount = parsePopulationCapacity(memberObservations, 110);
+    const citizenCount = parsePopulationCapacity(citizenObservations, 10);
     let fallbackObservations = [];
     if (memberCount === null || citizenCount === null) {
       try {
@@ -649,11 +649,11 @@ function medianNumber(values) {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-export function parsePopulationCount(observations, maximumCapacity) {
+export function parsePopulationCapacity(observations, maximumCapacity) {
   const candidates = parsePopulationCounts(observations).filter(
     (item) => item.capacity > 0 && item.capacity <= maximumCapacity
   );
-  return candidates[0]?.current ?? null;
+  return candidates[0]?.capacity ?? null;
 }
 
 function parsePopulationCounts(observations) {

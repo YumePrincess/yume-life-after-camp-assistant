@@ -713,8 +713,8 @@ export class GameUi {
       1,
       Math.min(8, Number(action.mapPreparationMaxClosures) || 6)
     );
-    const bottomLeftBack = action.pageBackPoint || { x: 80, y: 1045 };
-    const topRightClose = action.pageClosePoint || { x: 1840, y: 72 };
+    const bottomLeftBack = action.pageBackPoint || { x: 200, y: 1040 };
+    const topRightClose = action.pageClosePoint || { x: 1750, y: 145 };
     const panelTexts = [
       "一周贡献",
       "贡献物资",
@@ -730,6 +730,18 @@ export class GameUi {
       "离开队伍",
       "确定",
       "取消"
+    ];
+    const campPanelTexts = [
+      "一周贡献",
+      "贡献物资",
+      "全部成员",
+      "职业",
+      "庄园等级",
+      "同居",
+      "营地公职人员",
+      "公职人员",
+      "营地周活跃",
+      "量子时代"
     ];
     const interactionPanelTexts = [
       "查看玩法",
@@ -763,6 +775,27 @@ export class GameUi {
       const visibleInteractionPanelText = interactionPanelTexts
         .map((text) => this.vision.find(frame.observations, text))
         .find(Boolean);
+      const visibleCampPanelText = campPanelTexts
+        .map((text) => this.vision.find(frame.observations, text))
+        .find(Boolean);
+      const chatCollapse = this.findInRegion(
+        frame.observations,
+        "收起",
+        { left: 1450, top: 850, right: 1900, bottom: 1150 }
+      );
+      const chatMarkers = ["世界", "队伍", "营地", "萌芽邀约", "聊天室"]
+        .map((text) =>
+          this.findInRegion(
+            frame.observations,
+            text,
+            { left: 1450, top: 120, right: 1900, bottom: 1100 }
+          )
+        )
+        .filter(Boolean);
+      const chatOpen = Boolean(chatCollapse) || chatMarkers.length >= 2;
+      const visibleHudText = ["背包", "配方", "生存手册", "任务"]
+        .map((text) => this.vision.find(frame.observations, text))
+        .find(Boolean);
       const failureOverlay = (action.failureTexts || [])
         .map((text) => this.vision.find(frame.observations, text))
         .find(Boolean);
@@ -791,6 +824,16 @@ export class GameUi {
       const confident = Number(advice?.confidence) >= minimum;
       if (confident && advice.state === "map") return "map";
       if (
+        visibleHudText &&
+        !visiblePanelText &&
+        !visibleInteractionPanelText &&
+        !visibleCampPanelText &&
+        !chatOpen &&
+        !failureOverlay
+      ) {
+        return "hud";
+      }
+      if (
         confident &&
         advice.state === "hud" &&
         !visiblePanelText &&
@@ -814,10 +857,22 @@ export class GameUi {
           visiblePanelText: visiblePanelText?.text || null
           ,
           visibleInteractionPanelText:
-            visibleInteractionPanelText?.text || null
+            visibleInteractionPanelText?.text || null,
+          visibleCampPanelText: visibleCampPanelText?.text || null,
+          chatOpen,
+          visibleHudText: visibleHudText?.text || null
         }
       );
-      if (closeText) {
+      if (visibleCampPanelText) {
+        await this.tap(topRightClose, signal);
+      } else if (chatOpen) {
+        if (chatCollapse) {
+          await this.tap(center(chatCollapse), signal);
+        } else {
+          await this.adb.key(4, signal);
+          await this.afterAction(signal);
+        }
+      } else if (closeText) {
         await this.tap(center(closeText), signal);
       } else if (visibleInteractionPanelText) {
         await this.adb.key(4, signal);
@@ -828,7 +883,7 @@ export class GameUi {
         /右上|关闭|X/i.test(String(advice.evidence || ""))
       ) {
         await this.tap(topRightClose, signal);
-      } else if (visiblePanelText || failureOverlay || advice?.state !== "hud") {
+      } else if (visiblePanelText || failureOverlay) {
         await this.tap(bottomLeftBack, signal);
       } else {
         await this.adb.key(4, signal);
