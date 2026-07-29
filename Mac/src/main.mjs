@@ -185,7 +185,22 @@ async function executeCommand(command, signal) {
     await api.updateRun(command.runId, { progress: value, currentStep });
   };
   const ui = new GameUi(config, adb, vision, report);
-  const context = { config, api, adb, mumu, vision, ui, report, progress };
+  const positionIndependent = [
+    "tech_switch",
+    "member_profile_sync"
+  ].includes(taskKey);
+  const context = {
+    config,
+    api,
+    adb,
+    mumu,
+    vision,
+    ui,
+    report,
+    progress,
+    positionIndependent,
+    skipReturnToCenter: positionIndependent
+  };
   vision.beginTask();
   try {
     const bootstrap = await api.bootstrap(command.runId, signal);

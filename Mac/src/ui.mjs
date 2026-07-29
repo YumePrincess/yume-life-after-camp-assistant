@@ -710,6 +710,7 @@ export class GameUi {
   }
 
   async openCampPanelViaChat(action, signal) {
+    await this.closeMapBeforeCampPanel(action, signal);
     const attempts = Math.max(1, Math.min(5, Number(action.attempts) || 3));
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       if (signal?.aborted) throw signal.reason || new Error("Interrupted");
@@ -782,6 +783,48 @@ export class GameUi {
     }
     throw new Error(
       "CAMP_PANEL_DID_NOT_OPEN: 已重试聊天→营地频道→市政厅图标，但未识别到营地首页"
+    );
+  }
+
+  async closeMapBeforeCampPanel(action, signal) {
+    const mapTexts =
+      action.mapReadyTexts ||
+      ["标志查看", "查看庄园", "可快捷前往地标"];
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const fast = await this.vision.captureTransient(
+        `camp-panel-map-check-${attempt}`,
+        signal
+      );
+      let match = mapTexts
+        .map((text) => this.vision.find(fast.observations, text))
+        .find(Boolean);
+      if (
+        !match &&
+        typeof this.vision.captureAccurateTransient === "function"
+      ) {
+        const accurate = await this.vision.captureAccurateTransient(
+          `camp-panel-map-check-accurate-${attempt}`,
+          signal
+        ).catch(() => null);
+        match = mapTexts
+          .map((text) =>
+            accurate
+              ? this.vision.find(accurate.observations, text)
+              : null
+          )
+          .find(Boolean);
+      }
+      if (!match) return;
+      await this.report(
+        "info",
+        "camp_panel_map_closing",
+        `打开营地面板前检测到地图遮挡（${match.text}），正在按 M 关闭地图`
+      );
+      await this.adb.key(action.mapCloseKey || "KEYCODE_M", signal);
+      await this.afterAction(signal);
+    }
+    throw new Error(
+      "CAMP_PANEL_MAP_BLOCKED: 已确认地图遮挡但两次按 M 后仍未关闭"
     );
   }
 
@@ -885,6 +928,13 @@ export class GameUi {
       "查看巡逻进度",
       "交谈"
     ];
+    const sandTableTexts = [
+      "时代信息",
+      "成员信息",
+      "活动时间管理",
+      "财政信息",
+      "建设信息"
+    ];
     for (let attempt = 0; attempt <= maximumClosures; attempt += 1) {
       const frame = await this.vision.captureTransient(
         `map-preparation-${attempt}`,
@@ -947,8 +997,17 @@ export class GameUi {
           )
         )
         .filter(Boolean);
+      const sandTableMarkers = sandTableTexts
+        .map((text) => this.vision.find(observations, text))
+        .filter(Boolean);
+      const sandTableOpen = sandTableMarkers.length >= 2;
       const campPanelOpen =
-        Boolean(visibleCampPanelText) || campTabMarkers.length >= 2;
+        campTabMarkers.length >= 2 ||
+        (
+          Boolean(visibleCampPanelText) &&
+          !visiblePanelText &&
+          !sandTableOpen
+        );
       const chatCollapse = this.findInRegion(
         observations,
         "收起",
@@ -1079,13 +1138,16 @@ export class GameUi {
             visibleInteractionPanelText?.text || null,
           visibleCampPanelText: visibleCampPanelText?.text || null,
           campTabMarkers: campTabMarkers.map((item) => item.text),
+          sandTableMarkers: sandTableMarkers.map((item) => item.text),
           chatOpen,
           visibleHudText: visibleHudText?.text || null,
           overlayControl: overlayAdvice?.control || null,
           overlayConfidence: overlayAdvice?.confidence || null
         }
       );
-      if (campPanelOpen) {
+      if (visiblePanelText || sandTableOpen || failureOverlay) {
+        await this.tap(bottomLeftBack, signal);
+      } else if (campPanelOpen) {
         await this.tap(topRightClose, signal);
       } else if (chatOpen) {
         if (chatCollapse) {
@@ -1116,8 +1178,6 @@ export class GameUi {
       } else if (visibleInteractionPanelText) {
         await this.adb.key(4, signal);
         await this.afterAction(signal);
-      } else if (visiblePanelText || failureOverlay) {
-        await this.tap(bottomLeftBack, signal);
       }
     }
     return "hud";

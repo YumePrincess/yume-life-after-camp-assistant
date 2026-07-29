@@ -31,6 +31,7 @@ test("accurate Chinese OCR can confirm a camp page missed by fast OCR", async ()
     fastFrames: [[], []],
     accurateFrames: [
       [],
+      [],
       [
         observation("营地", 150, 145),
         observation("市长：雨梦", 260, 450)
@@ -68,6 +69,37 @@ test("an already-open camp page is confirmed before any click", async () => {
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("原本就已打开")
+    )
+  );
+});
+
+test("a map blocking the camp panel is closed before any chat click", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("标志查看", 190, 35)],
+      [observation("背包", 120, 900)],
+      [observation("背包", 120, 900)],
+      [
+        observation("量子时代", 330, 330),
+        observation("营地周活跃", 760, 320)
+      ]
+    ]
+  });
+  await fixture.ui.openCampPanelViaChat({
+    attempts: 1,
+    chatDelayMs: 1,
+    channelDelayMs: 1,
+    verifySeconds: 1
+  });
+  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+  assert.deepEqual(fixture.taps, [
+    { x: 250, y: 1060 },
+    { x: 1740, y: 355 },
+    { x: 980, y: 65 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("检测到地图遮挡")
     )
   );
 });
@@ -287,6 +319,31 @@ test("an activity page found only by accurate OCR is closed with the calibrated 
   );
   assert.equal(result, "hud");
   assert.deepEqual(fixture.taps, [{ x: 80, y: 1080 }]);
+});
+
+test("city-hall data and sand-table pages both close through the bottom-left back button", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("一周贡献", 1470, 225),
+        observation("贡献物资", 1800, 225)
+      ],
+      [
+        observation("时代信息", 130, 350),
+        observation("成员信息", 840, 350),
+        observation("财政信息", 1050, 700)
+      ],
+      [observation("背包", 120, 900)]
+    ]
+  });
+  const result = await fixture.ui.closePagesBeforeMap(
+    { mapPreparationMaxClosures: 3, mapReadyTexts: ["标志查看"] }
+  );
+  assert.equal(result, "hud");
+  assert.deepEqual(fixture.taps, [
+    { x: 80, y: 1080 },
+    { x: 80, y: 1080 }
+  ]);
 });
 
 test("destination verification walks forward only until the interaction text appears", async () => {

@@ -41,6 +41,7 @@
     "pixelProbeBinary": "./bin/mrzh-pixel-probe",
     "mode": "fast",
     "minimumConfidence": 0.35,
+    "accurateMinimumConfidence": 0.25,
     "quickTravelPrecheckEnabled": false,
     "accurateFallbackEnabled": true,
     "accurateFallbackSeconds": 1,
@@ -136,10 +137,10 @@
       ]
     },
     "selectorSwipe": {
-      "from": { "x": 430, "y": 850 },
-      "to": { "x": 430, "y": 380 },
-      "durationMs": 600,
-      "maxPages": 30,
+      "from": { "x": 430, "y": 820 },
+      "to": { "x": 430, "y": 580 },
+      "durationMs": 450,
+      "maxPages": 60,
       "resetToTop": {
         "from": { "x": 430, "y": 380 },
         "to": { "x": 430, "y": 850 },
@@ -147,24 +148,25 @@
         "repeats": 12
       }
     },
+    "selectorRegion": { "left": 60, "top": 180, "right": 520, "bottom": 940 },
     "unloadSelected": { "x": 745, "y": 638 },
     "filledSlotDetection": {
       "sampleRadius": 24,
       "maximumEmptyFeatureDistance": 0.08,
       "emptyReference": {
         "core": {
-          "meanRed": 0.344,
-          "meanGreen": 0.439,
-          "meanBlue": 0.325,
-          "meanSaturation": 0.257,
-          "luminanceDeviation": 0.068
+          "meanRed": 0.3712,
+          "meanGreen": 0.4662,
+          "meanBlue": 0.3523,
+          "meanSaturation": 0.2419,
+          "luminanceDeviation": 0.0692
         },
         "general": {
-          "meanRed": 0.328,
-          "meanGreen": 0.329,
-          "meanBlue": 0.333,
-          "meanSaturation": 0.018,
-          "luminanceDeviation": 0.154
+          "meanRed": 0.2205,
+          "meanGreen": 0.2211,
+          "meanBlue": 0.2239,
+          "meanSaturation": 0.0158,
+          "luminanceDeviation": 0.1345
         }
       }
     }

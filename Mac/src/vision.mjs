@@ -80,8 +80,19 @@ export class Vision {
   }
 
   async extractTableRows(imagePath, definition, label, signal) {
-    if (!this.advisor.enabled) return [];
     const columnKeys = definition.columns.map((column) => column.key);
+    const isActivity =
+      columnKeys.length === 2 &&
+      ["name", "onlineState"].every((key) => columnKeys.includes(key));
+    if (isActivity) {
+      return this.#extractActivityRows(
+        imagePath,
+        definition,
+        label,
+        signal
+      );
+    }
+    if (!this.advisor.enabled) return [];
     const isContribution =
       columnKeys.length === 4 &&
       [
@@ -438,6 +449,27 @@ export class Vision {
       .filter((row) => row.name);
   }
 
+  async #extractActivityRows(imagePath, definition, label, signal) {
+    const observations = await this.ocrRegion(
+      imagePath,
+      definition.region,
+      `${label}-activity-values`,
+      signal,
+      "accurate",
+      0.25
+    );
+    return parseTable(observations, definition).filter(
+      (row) =>
+        row.name &&
+        row.onlineState &&
+        !definition.headerPattern.some(
+          (value) =>
+            row.name.includes(value) ||
+            row.onlineState.includes(value)
+        )
+    );
+  }
+
   async ocrRegion(
     imagePath,
     region,
@@ -551,8 +583,20 @@ export class Vision {
             signal
           }
         );
+        const minimumConfidence =
+          mode === "accurate"
+            ? Math.max(
+                0.1,
+                Number(
+                  this.config.vision.accurateMinimumConfidence
+                ) || Math.min(
+                  0.25,
+                  Number(this.config.vision.minimumConfidence) || 0.35
+                )
+              )
+            : Number(this.config.vision.minimumConfidence) || 0.35;
         observations = JSON.parse(result.stdout).filter(
-          (item) => item.confidence >= this.config.vision.minimumConfidence
+          (item) => item.confidence >= minimumConfidence
         );
       } catch (error) {
         if (signal?.aborted) throw error;

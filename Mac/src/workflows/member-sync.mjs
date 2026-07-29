@@ -55,9 +55,15 @@ export async function runInactivitySync(context, command, bundle, signal) {
     1,
     Number(bundle?.campConfig?.inactivityWarningDays) || 1
   );
+  const scanOptions = { minimumInactiveDays };
   const rows = normalizeActivity(
-    await captureActivity(context, true, signal, { minimumInactiveDays })
+    await captureActivity(context, true, signal, scanOptions)
   );
+  if (!rows.length && !scanOptions.thresholdBoundaryReached) {
+    throw new Error(
+      "INACTIVITY_SCAN_UNREADABLE: 未识别到成员行或阈值边界，已保留原有斩杀预警数据"
+    );
+  }
   await context.api.snapshot(
     command.runId,
     "activity",
@@ -167,7 +173,13 @@ async function captureActivity(
 async function ensureActivityDescending(context, signal) {
   const definition = context.config.tables.activity;
   const before = await context.vision.capture("activity-sort-before", signal);
-  const beforeRows = normalizeActivity(parseTable(before.observations, definition));
+  const beforeRows = await readActivityFrame(
+    context,
+    before,
+    definition,
+    "activity-sort-before",
+    signal
+  );
   const values = beforeRows
     .map((row) => row.inactiveDays)
     .filter((value) => Number.isFinite(value));
@@ -181,7 +193,13 @@ async function ensureActivityDescending(context, signal) {
     );
   }
   const after = await context.vision.capture("activity-sort-after", signal);
-  const afterValues = normalizeActivity(parseTable(after.observations, definition))
+  const afterValues = (await readActivityFrame(
+    context,
+    after,
+    definition,
+    "activity-sort-after",
+    signal
+  ))
     .map((row) => row.inactiveDays)
     .filter((value) => Number.isFinite(value));
   if (
@@ -192,6 +210,29 @@ async function ensureActivityDescending(context, signal) {
   ) {
     throw new Error("在线情况未成功切换为最久离线优先");
   }
+}
+
+async function readActivityFrame(
+  context,
+  frame,
+  definition,
+  label,
+  signal
+) {
+  let rows = parseTable(frame.observations, definition);
+  if (
+    !normalizeActivity(rows).length &&
+    frame.path &&
+    typeof context.vision.extractTableRows === "function"
+  ) {
+    rows = await context.vision.extractTableRows(
+      frame.path,
+      definition,
+      label,
+      signal
+    );
+  }
+  return normalizeActivity(rows);
 }
 
 export async function captureProfilesAndStaff(context, signal) {
@@ -318,6 +359,8 @@ export async function capturePagedTable(
         !definition.headerPattern.some((value) => row.name.includes(value))
     );
     rows = reconcilePageRows(previousRows, rows);
+    options.observedParsedRows =
+      (Number(options.observedParsedRows) || 0) + rows.length;
     let reachedActivityBoundary = false;
     if (Number.isFinite(Number(options.minimumInactiveDays))) {
       const selection = selectActivityWarningRows(
@@ -326,6 +369,9 @@ export async function capturePagedTable(
       );
       rows = selection.rows;
       reachedActivityBoundary = selection.reachedBoundary;
+      if (reachedActivityBoundary) {
+        options.thresholdBoundaryReached = true;
+      }
     }
     const fingerprint = rows.map((row) => row.name).join("|");
     let added = 0;

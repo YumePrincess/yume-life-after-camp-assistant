@@ -115,7 +115,11 @@ export async function withGameSession(
           { reason: preservedError?.message || "unknown" }
         ).catch(() => undefined);
       } else {
-        if (gameReady && config.mumu.returnToCenterAfterTask !== false) {
+        if (
+          gameReady &&
+          !context.skipReturnToCenter &&
+          config.mumu.returnToCenterAfterTask !== false
+        ) {
           const returnResult = await returnToCenterExit(context);
           if (!returnResult.completed) {
             cleanupResult.cleanupCompleted = false;
@@ -324,19 +328,25 @@ export async function waitForGameReady(context, signal) {
   let lastLoadingEvidenceAt = 0;
   while (Date.now() < deadline) {
     let frame = await vision.captureTransient("game-login-state", signal);
-    const knownStateTexts = [
-      ...promotions.readyTexts,
+    const blockingStateTexts = [
       ...announcements.texts,
       ...updates.stateTexts,
       ...updates.restartButtonTexts,
+      ...promotions.loadingTexts,
       "点击登录游戏",
       "登录游戏",
       "明日希望报",
       "加入队伍语音频道"
     ];
-    const fastMatchedKnownState = knownStateTexts.some((text) =>
+    const fastReadyCount = promotions.readyTexts.filter((text) =>
       vision.find(frame.observations, text)
-    );
+    ).length;
+    const fastMatchedKnownState =
+      fastReadyCount >=
+        Math.max(1, Number(promotions.readyMinimumTexts) || 2) ||
+      blockingStateTexts.some((text) =>
+        vision.find(frame.observations, text)
+      );
     const accurateFallbackMs =
       Math.max(
         0.05,
@@ -608,7 +618,11 @@ export async function waitForGameReady(context, signal) {
     }
 
     const advisorConfig = vision.advisor?.config;
-    if (unknownRecoveryRequested && !unknownRecoveryAttempted) {
+    if (
+      unknownRecoveryRequested &&
+      !unknownRecoveryAttempted &&
+      !context.positionIndependent
+    ) {
       unknownRecoveryAttempted = true;
       unknownRecoveryRequested = false;
       await report(
