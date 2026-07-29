@@ -114,10 +114,29 @@ test("map preparation permits only a high-confidence AI safe close control", asy
   assert.deepEqual(fixture.taps, [{ x: 1750, y: 145 }]);
 });
 
+test("overlay AI keeps a 0.95 safety floor when the general model threshold is lower", async () => {
+  const fixture = createUi({
+    fastFrames: [[], [observation("背包", 120, 900)]],
+    overlayAdvice: {
+      control: "close_x",
+      confidence: 0.9,
+      evidence: "疑似右上角关闭X"
+    },
+    minimumActionConfidence: 0.7
+  });
+  const result = await fixture.ui.closePagesBeforeMap(
+    { mapPreparationMaxClosures: 2, mapReadyTexts: ["标志查看"] }
+  );
+  assert.equal(result, "hud");
+  assert.deepEqual(fixture.taps, []);
+  assert.deepEqual(fixture.keys, [4]);
+});
+
 function createUi({
   fastFrames = [[]],
   accurateFrames = [[]],
-  overlayAdvice = null
+  overlayAdvice = null,
+  minimumActionConfidence = 0.95
 } = {}) {
   const taps = [];
   const keys = [];
@@ -130,7 +149,7 @@ function createUi({
           enabled: true,
           config: {
             mode: "guarded",
-            minimumActionConfidence: 0.95
+            minimumActionConfidence
           }
         }
       : undefined,

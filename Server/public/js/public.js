@@ -74,7 +74,9 @@
       cancelling: "中断中",
       interrupted: "已中断",
       succeeded: "成功",
+      partially_succeeded: "部分完成",
       failed: "失败",
+      timed_out: "已超时",
       skipped: "已跳过"
     }[value];
     return source ? window.MrzhI18n.t(source) : value;
@@ -442,7 +444,7 @@
     const memberSync = (data.recentRuns || []).find(
       (run) =>
         run.taskKey === "member_profile_sync" &&
-        run.state === "succeeded"
+        ["succeeded", "partially_succeeded"].includes(run.state)
     );
     setText(
       "sync-state",

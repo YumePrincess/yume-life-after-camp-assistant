@@ -821,7 +821,10 @@ export class GameUi {
         !campPanelOpen &&
         !chatOpen &&
         !closeText &&
+        !visiblePanelText &&
         !visibleInteractionPanelText &&
+        !visibleHudText &&
+        !failureOverlay &&
         typeof this.vision.adviseOverlayControlCurrent === "function"
       ) {
         overlayAdvice = await this.vision.adviseOverlayControlCurrent(
@@ -849,9 +852,10 @@ export class GameUi {
       }
       const minimum =
         Number(this.vision.advisor?.config.minimumActionConfidence) || 0.95;
+      const overlayMinimum = Math.max(0.95, minimum);
       const confident = Number(advice?.confidence) >= minimum;
       const overlayConfident =
-        Number(overlayAdvice?.confidence) >= minimum &&
+        Number(overlayAdvice?.confidence) >= overlayMinimum &&
         ["close_x", "back", "collapse"].includes(overlayAdvice?.control);
       if (confident && advice.state === "map") return "map";
       if (
@@ -885,8 +889,7 @@ export class GameUi {
         {
           modelState: advice?.state || null,
           confidence: advice?.confidence || null,
-          visiblePanelText: visiblePanelText?.text || null
-          ,
+          visiblePanelText: visiblePanelText?.text || null,
           visibleInteractionPanelText:
             visibleInteractionPanelText?.text || null,
           visibleCampPanelText: visibleCampPanelText?.text || null,

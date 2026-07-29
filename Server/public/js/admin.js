@@ -36,7 +36,8 @@
     activeEventRunId: null,
     eventRefreshTimer: null,
     eventRefreshInFlight: false,
-    eventSignature: ""
+    eventSignature: "",
+    runActionMenu: null
   };
 
   function byId(id) {
@@ -66,7 +67,9 @@
       "d",
       icon === "stop"
         ? "M7.5 7.5h9v9h-9z M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18z"
-        : "M5 5h14v14H5z M8 9h8 M8 12h8 M8 15h5"
+        : icon === "operation"
+          ? "M7 9.5l5 5 5-5"
+          : "M5 5h14v14H5z M8 9h8 M8 12h8 M8 15h5"
     );
     svg.append(path);
     button.append(svg, create("span", "run-action-label", label));
@@ -479,6 +482,7 @@
   }
 
   function renderRuns(runs) {
+    closeRunActionMenu();
     const root = byId("run-table");
     root.replaceChildren();
     for (const run of runs || []) {
@@ -491,30 +495,83 @@
         create("td", "", run.message || "—")
       );
       const actions = create("td", "run-actions");
-      const actionInner = create("div", "run-actions-inner");
-      const detail = createRunActionButton("事件", "button-quiet", "events");
-      detail.addEventListener("click", () => showEvents(run.id));
-      actionInner.append(detail);
-      if (ACTIVE_STATES.has(run.state)) {
-        const cancellationPending = run.state === "cancelling";
-        const cancel = createRunActionButton(
-          cancellationPending
-            ? "终止已提交"
-            : run.state === "queued"
-              ? "取消排队"
-              : "终止任务",
-          "button-danger",
-          "stop"
-        );
-        cancel.disabled =
-          cancellationPending || !hasPermission("task:interrupt");
-        cancel.addEventListener("click", () => interruptRun(run.id, cancel));
-        actionInner.append(cancel);
-      }
-      actions.append(actionInner);
+      const operation = createRunActionButton(
+        "操作",
+        "button-quiet run-action-trigger",
+        "operation"
+      );
+      operation.setAttribute("aria-haspopup", "menu");
+      operation.setAttribute("aria-expanded", "false");
+      operation.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleRunActionMenu(run, operation);
+      });
+      actions.append(operation);
       row.append(actions);
       root.append(row);
     }
+  }
+
+  function closeRunActionMenu() {
+    const active = state.runActionMenu;
+    if (!active) return;
+    active.trigger?.setAttribute("aria-expanded", "false");
+    active.menu.remove();
+    state.runActionMenu = null;
+  }
+
+  function toggleRunActionMenu(run, trigger) {
+    if (state.runActionMenu?.trigger === trigger) {
+      closeRunActionMenu();
+      return;
+    }
+    closeRunActionMenu();
+    const menu = create("div", "run-action-menu");
+    menu.setAttribute("role", "menu");
+    const detail = createRunActionButton(
+      "事件",
+      "button-quiet run-action-menu-item",
+      "events"
+    );
+    detail.setAttribute("role", "menuitem");
+    detail.addEventListener("click", () => {
+      closeRunActionMenu();
+      showEvents(run.id);
+    });
+    const cancellationPending = run.state === "cancelling";
+    const cancel = createRunActionButton(
+      cancellationPending ? "终止已提交" : "终止任务",
+      "button-danger run-action-menu-item",
+      "stop"
+    );
+    cancel.setAttribute("role", "menuitem");
+    cancel.disabled =
+      !ACTIVE_STATES.has(run.state) ||
+      cancellationPending ||
+      !hasPermission("task:interrupt");
+    cancel.addEventListener("click", () => {
+      closeRunActionMenu();
+      interruptRun(run.id, cancel);
+    });
+    menu.append(detail, cancel);
+    menu.addEventListener("click", (event) => event.stopPropagation());
+    document.body.append(menu);
+    trigger.setAttribute("aria-expanded", "true");
+    state.runActionMenu = { menu, trigger };
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const left = Math.min(
+      window.innerWidth - menuRect.width - 12,
+      Math.max(12, triggerRect.right - menuRect.width)
+    );
+    const roomBelow = window.innerHeight - triggerRect.bottom;
+    const top =
+      roomBelow >= menuRect.height + 12
+        ? triggerRect.bottom + 8
+        : Math.max(12, triggerRect.top - menuRect.height - 8);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
   }
 
   function activateView(view) {
@@ -1103,6 +1160,12 @@
   byId("logout").addEventListener("click", logout);
   byId("temporary-key-form").addEventListener("submit", generateTemporaryKey);
   byId("run-dialog").addEventListener("close", stopEventRefresh);
+  document.addEventListener("click", closeRunActionMenu);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeRunActionMenu();
+  });
+  window.addEventListener("resize", closeRunActionMenu);
+  window.addEventListener("scroll", closeRunActionMenu, true);
   byId("copy-temporary-key").addEventListener("click", async () => {
     await navigator.clipboard.writeText(byId("temporary-key-value").textContent);
     byId("save-state").textContent = "临时 Key 已复制";
