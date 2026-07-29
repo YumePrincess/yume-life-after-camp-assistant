@@ -23,6 +23,11 @@ export async function runTechnology(context, command, bundle, signal) {
     ["core", plan.core],
     ["general", plan.general]
   ]) {
+    if (technologies.length > config.technology.slots[lane].length) {
+      throw new Error(
+        `${lane === "core" ? "第一行" : "第二行"}科技数量 ${technologies.length} 超过可用槽位 ${config.technology.slots[lane].length}`
+      );
+    }
     for (let slotIndex = 0; slotIndex < technologies.length; slotIndex += 1) {
       const technology = technologies[slotIndex];
       await report(
@@ -36,13 +41,66 @@ export async function runTechnology(context, command, bundle, signal) {
     }
   }
 
+  await verifyFinalConfiguredSlots(context, plan, signal);
   const beforeSubmit = await vision.capture("technology-before-submit", signal);
   await report("info", "tech_cost", "已记录本次动态扣费信息，不对扣费数值作固定匹配", {
     screenshot: beforeSubmit.path
   });
   await ui.tap(config.technology.tabs.finish, signal);
-  await ui.waitAnyText(["待生效科技", "当前生效科技", "科技"], {}, signal);
+  await ui.waitAnyText(["待生效科技", "当前生效科技"], {}, signal);
   await report("info", "tech_done", `已提交 ${all.length} 项次日科技`);
+}
+
+export async function verifyFinalConfiguredSlots(context, plan, signal) {
+  const { config, vision, report } = context;
+  const detection = config.technology.filledSlotDetection;
+  const slots = ["core", "general"].flatMap((lane) =>
+    config.technology.slots[lane].map((point, index) => ({
+      ...point,
+      lane,
+      index,
+      expectedFilled: index < (plan[lane]?.length ?? 0)
+    }))
+  );
+  const frame = await vision.capture("technology-final-verification", signal);
+  const probes = await vision.probe(
+    frame.path,
+    slots,
+    detection.sampleRadius,
+    signal
+  );
+  const mismatches = slots.flatMap((slot, index) => {
+    const distance = featureDistance(
+      probes[index],
+      detection.emptyReference[slot.lane]
+    );
+    const filled = distance > detection.maximumEmptyFeatureDistance;
+    return filled === slot.expectedFilled
+      ? []
+      : [{
+          lane: slot.lane,
+          slot: slot.index + 1,
+          expectedFilled: slot.expectedFilled,
+          detectedFilled: filled,
+          distance
+        }];
+  });
+  if (mismatches.length) {
+    throw new Error(
+      `科技最终槽位校验失败：${mismatches
+        .map(
+          (item) =>
+            `${item.lane === "core" ? "第一行" : "第二行"}第 ${item.slot} 格应为${item.expectedFilled ? "已安装" : "空"}`
+        )
+        .join("、")}`
+    );
+  }
+  await report(
+    "info",
+    "technology_final_verified",
+    `正式 Agent 已确认 12 个槽位：第一行 ${plan.core.length} 项、第二行 ${plan.general.length} 项，其余槽位为空`,
+    { probes, screenshot: frame.path }
+  );
 }
 
 export async function clearAllConfiguredSlots(context, signal) {

@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   clearAllConfiguredSlots,
-  selectTechnology
+  selectTechnology,
+  verifyFinalConfiguredSlots
 } from "../src/workflows/technology.mjs";
 
 const emptyCore = {
@@ -121,6 +122,61 @@ test("technology selection uses the exact left-list match and verifies the targe
         item.step === "tech_slot_verified" &&
         item.message.includes("第一行第 1 个槽位")
     )
+  );
+});
+
+test("formal technology workflow verifies every expected filled and empty slot", async () => {
+  const reports = [];
+  const context = {
+    config: technologyConfig(),
+    vision: {
+      async capture() {
+        return { path: "final.png" };
+      },
+      async probe(_path, points) {
+        return points.map((point) =>
+          point.lane === "core" ? filled : emptyGeneral
+        );
+      }
+    },
+    async report(_level, step, message) {
+      reports.push({ step, message });
+    }
+  };
+  await verifyFinalConfiguredSlots(context, {
+    core: [{ name: "温室大棚" }],
+    general: []
+  });
+  assert.ok(
+    reports.some(
+      (item) =>
+        item.step === "technology_final_verified" &&
+        item.message.includes("12 个槽位")
+    )
+  );
+});
+
+test("formal technology workflow aborts when a final slot has the wrong state", async () => {
+  const context = {
+    config: technologyConfig(),
+    vision: {
+      async capture() {
+        return { path: "final.png" };
+      },
+      async probe(_path, points) {
+        return points.map((point) =>
+          point.lane === "core" ? emptyCore : emptyGeneral
+        );
+      }
+    },
+    async report() {}
+  };
+  await assert.rejects(
+    verifyFinalConfiguredSlots(context, {
+      core: [{ name: "温室大棚" }],
+      general: []
+    }),
+    /第一行第 1 格应为已安装/
   );
 });
 

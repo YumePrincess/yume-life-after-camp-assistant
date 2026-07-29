@@ -259,6 +259,16 @@ export async function waitForGameReady(context, signal) {
     betweenPagesMs: 1_800,
     dismissPoint: { x: 960, y: 1135 },
     readyTexts: ["配方", "背包", "营地"],
+    channelReadyTexts: ["综合", "世界", "场景", "营地", "队伍"],
+    channelReadyRegion: {
+      left: 0,
+      top: 980,
+      right: 760,
+      bottom: 1200
+    },
+    channelReadyMinimumTexts: 2,
+    channelReadyStableFrames: 2,
+    channelReadyStableMs: 1_000,
     loadingTexts: ["场景加载中", "正在加载", "加载中", "网络连接中"],
     readyMinimumTexts: 2,
     readyStableFrames: 5,
@@ -341,9 +351,17 @@ export async function waitForGameReady(context, signal) {
     const fastReadyCount = promotions.readyTexts.filter((text) =>
       vision.find(frame.observations, text)
     ).length;
+    const fastChannelReadyCount = findReadyTextsInRegion(
+      vision,
+      frame.observations,
+      promotions.channelReadyTexts,
+      promotions.channelReadyRegion
+    ).length;
     const fastMatchedKnownState =
       fastReadyCount >=
         Math.max(1, Number(promotions.readyMinimumTexts) || 2) ||
+      fastChannelReadyCount >=
+        Math.max(2, Number(promotions.channelReadyMinimumTexts) || 2) ||
       blockingStateTexts.some((text) =>
         vision.find(frame.observations, text)
       );
@@ -383,6 +401,12 @@ export async function waitForGameReady(context, signal) {
     const readyMatches = promotions.readyTexts
       .map((text) => ({ text, match: vision.find(frame.observations, text) }))
       .filter((item) => item.match);
+    const channelReadyMatches = findReadyTextsInRegion(
+      vision,
+      frame.observations,
+      promotions.channelReadyTexts,
+      promotions.channelReadyRegion
+    );
     const ready = readyMatches[0]?.text || null;
     const loadingProgressVisible = frame.observations.some((item) => {
       const text = String(item.text || "").replace(/\s+/g, "");
@@ -409,6 +433,12 @@ export async function waitForGameReady(context, signal) {
       1,
       Number(promotions.readyMinimumTexts) || 2
     );
+    const channelReadyMinimumTexts = Math.max(
+      2,
+      Number(promotions.channelReadyMinimumTexts) || 2
+    );
+    const channelHudReady =
+      channelReadyMatches.length >= channelReadyMinimumTexts;
     const configuredPostLoginWaitMs = Number(
       promotions.postLoginMinimumWaitMs
     );
@@ -431,7 +461,7 @@ export async function waitForGameReady(context, signal) {
       !lastLoadingEvidenceAt ||
       Date.now() - lastLoadingEvidenceAt >= loadingQuietMs;
     if (
-      readyMatches.length >= readyMinimumTexts &&
+      (readyMatches.length >= readyMinimumTexts || channelHudReady) &&
       !blocksReady &&
       postLoginWaitSatisfied &&
       loadingQuietSatisfied
@@ -442,11 +472,19 @@ export async function waitForGameReady(context, signal) {
       const configuredStableMs = Number(promotions.readyStableMs);
       const stableFrames = Math.max(
         1,
-        Number.isFinite(configuredStableFrames) ? configuredStableFrames : 3
+        channelHudReady
+          ? Number(promotions.channelReadyStableFrames) || 2
+          : Number.isFinite(configuredStableFrames)
+            ? configuredStableFrames
+            : 3
       );
       const stableMs = Math.max(
         0,
-        Number.isFinite(configuredStableMs) ? configuredStableMs : 3_000
+        channelHudReady
+          ? Number(promotions.channelReadyStableMs) || 1_000
+          : Number.isFinite(configuredStableMs)
+            ? configuredStableMs
+            : 3_000
       );
       if (readyStreak < stableFrames || Date.now() - readySince < stableMs) {
         if (!readyStabilizingReported) {
@@ -458,7 +496,11 @@ export async function waitForGameReady(context, signal) {
             {
               stableFrames,
               stableMs,
-              readyTexts: readyMatches.map((item) => item.text),
+              readyTexts: [
+                ...readyMatches.map((item) => item.text),
+                ...channelReadyMatches.map((item) => item.text)
+              ],
+              channelHudReady,
               postLoginWaitMs,
               loadingQuietMs
             }
@@ -852,6 +894,23 @@ export async function waitForGameReady(context, signal) {
       ? `Timed out waiting for resource update to finish after ${updates.timeoutSeconds}s`
       : `Timed out waiting for game HUD after login; dismissed ${dismissedPages} possible promotion pages`
   );
+}
+
+function findReadyTextsInRegion(vision, observations, texts = [], region) {
+  if (!region || !Array.isArray(texts)) return [];
+  const bounded = observations.filter((item) => {
+    const centerX = item.x + item.width / 2;
+    const centerY = item.y + item.height / 2;
+    return (
+      centerX >= region.left &&
+      centerX <= region.right &&
+      centerY >= region.top &&
+      centerY <= region.bottom
+    );
+  });
+  return texts
+    .map((text) => ({ text, match: vision.find(bounded, text) }))
+    .filter((item) => item.match);
 }
 
 async function runWithWatchdog(context, work, parentSignal, watchdog) {

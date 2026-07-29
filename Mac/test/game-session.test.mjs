@@ -176,6 +176,48 @@ test("login percentage blocks HUD readiness even when HUD anchors are visible", 
   assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
 });
 
+test("two bottom-left chat channel anchors confirm HUD without local-model classification", async () => {
+  const channelFrame = [
+    { text: "综合", x: 30, y: 1090 },
+    { text: "世界", x: 120, y: 1090 },
+    { text: "营地", x: 300, y: 1090 }
+  ];
+  const fixture = createFixture(
+    [channelFrame, channelFrame],
+    {
+      state: "unknown",
+      action: "wait",
+      confidence: 0.99,
+      evidence: "整页分类失败"
+    },
+    [],
+    "shadow",
+    {
+      readyMinimumTexts: 2,
+      channelReadyTexts: ["综合", "世界", "场景", "营地", "队伍"],
+      channelReadyRegion: {
+        left: 0,
+        top: 980,
+        right: 760,
+        bottom: 1200
+      },
+      channelReadyMinimumTexts: 2,
+      channelReadyStableFrames: 2,
+      channelReadyStableMs: 1,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    }
+  );
+  await waitForGameReady(fixture.context);
+  assert.equal(fixture.captures, 2);
+  assert.deepEqual(fixture.taps, []);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("游戏界面已就绪")
+    )
+  );
+});
+
 function createFixture(
   frames,
   modelAdvice = null,
@@ -203,14 +245,18 @@ function createFixture(
     async captureTransient() {
       const texts = frames[Math.min(frameIndex++, frames.length - 1)];
       return {
-        observations: texts.map((text) => ({
-          text,
-          confidence: 1,
-          x: 0,
-          y: 0,
-          width: 10,
-          height: 10
-        }))
+        observations: texts.map((item) => {
+          const observation =
+            typeof item === "string" ? { text: item } : item;
+          return {
+            confidence: 1,
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+            ...observation
+          };
+        })
       };
     },
     async captureAccurateTransient() {
