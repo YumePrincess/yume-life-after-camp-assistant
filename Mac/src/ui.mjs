@@ -57,7 +57,10 @@ export class GameUi {
     let previousFingerprint = "";
     let nextAdvisorAt = 0;
     let nextRegionOcrAt = 0;
+    let nextAccurateOcrAt = 0;
     let regionOcrFailureReported = false;
+    let lastAdviceSignature = "";
+    let lastAdviceReportAt = 0;
     do {
       const frame = await this.vision.capture("wait-text", signal);
       let found = texts
@@ -112,6 +115,36 @@ export class GameUi {
         }
       }
       if (
+        typeof this.vision.captureAccurateTransient === "function" &&
+        Date.now() >= nextAccurateOcrAt
+      ) {
+        nextAccurateOcrAt = Date.now() + 2_000;
+        const accurate = await this.vision.captureAccurateTransient(
+          `wait-text-accurate-${texts.join("-")}`,
+          signal
+        ).catch(() => null);
+        const accurateFound = texts
+          .map((text) => ({
+            text,
+            match: accurate
+              ? this.findInRegion(
+                  accurate.observations,
+                  text,
+                  options.region
+                )
+              : null
+          }))
+          .find((item) => item.match);
+        if (accurateFound) {
+          await this.report(
+            "info",
+            "accurate_text_verified",
+            `快速 OCR 漏读后，已通过高精度 OCR 确认界面文字：${accurateFound.text}`
+          );
+          return { ...accurateFound, frame, accurateOcr: true };
+        }
+      }
+      if (
         Date.now() >= nextAdvisorAt &&
         this.vision.advisor?.enabled &&
         this.vision.advisor.config.mode === "guarded"
@@ -133,18 +166,28 @@ export class GameUi {
         const accepted =
           advice?.state === "target_text_visible" &&
           Number(advice.confidence) >= minimum;
-        await this.report(
-          "info",
-          "local_model_text_verification",
-          `本地模型页面候选仅供记录：${advice?.state || "unavailable"}；不会替代限定区域 OCR 推动流程`,
-          {
-            ...advice,
-            accepted: false,
-            modelWouldAccept: accepted,
-            texts,
-            region: options.region || null
-          }
-        );
+        const adviceSignature = `${advice?.state || "unavailable"}:${Number(
+          advice?.confidence || 0
+        ).toFixed(2)}`;
+        if (
+          adviceSignature !== lastAdviceSignature ||
+          Date.now() - lastAdviceReportAt >= 60_000
+        ) {
+          lastAdviceSignature = adviceSignature;
+          lastAdviceReportAt = Date.now();
+          await this.report(
+            "info",
+            "local_model_text_verification",
+            `本地模型页面候选仅供记录：${advice?.state || "unavailable"}；不会替代 OCR 推动流程`,
+            {
+              ...advice,
+              accepted: false,
+              modelWouldAccept: accepted,
+              texts,
+              region: options.region || null
+            }
+          );
+        }
       }
       const fingerprint = frame.observations
         .map((item) => `${item.text}:${Math.round(item.x / 8)}:${Math.round(item.y / 8)}`)
@@ -421,7 +464,13 @@ export class GameUi {
   }
 
   async verifyDestination(destination, signal) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    const approachSteps = destination.approachUntilReady
+      ? Math.max(
+          1,
+          Math.min(12, Number(destination.approachMaxSteps) || 8)
+        )
+      : 0;
+    for (let attempt = 0; attempt < Math.max(2, approachSteps + 1); attempt += 1) {
       const frame = await this.vision.capture(
         `verify-destination-${destination.name}-${attempt + 1}`,
         signal
@@ -453,13 +502,36 @@ export class GameUi {
         );
         return true;
       }
-      await delay(1_000, signal);
+      if (attempt < approachSteps) {
+        if (attempt === 0) {
+          await this.report(
+            "warning",
+            "teleport_destination_approaching",
+            `已到达${destination.name}但暂未看到交互选项，正在按 W 分段前进，识别到目标文字后立即停止`,
+            {
+              readyTexts: destination.readyTexts,
+              maximumSteps: approachSteps
+            }
+          );
+        }
+        await this.adb.key(
+          destination.approachKey || "KEYCODE_W",
+          signal,
+          { longPress: true }
+        );
+        await delay(destination.approachIntervalMs || 250, signal);
+      } else {
+        await delay(1_000, signal);
+      }
     }
     await this.report(
       "warning",
       "teleport_destination_unverified",
-      `已到达${destination.name}传送点，但没有出现配置的正确交互选项；将执行中心出入口往返恢复`,
-      { readyTexts: destination.readyTexts }
+      `已到达${destination.name}传送点并完成前进恢复，但没有出现配置的正确交互选项；将执行中心出入口往返恢复`,
+      {
+        readyTexts: destination.readyTexts,
+        approachSteps
+      }
     );
     return false;
   }
@@ -775,8 +847,8 @@ export class GameUi {
       1,
       Math.min(8, Number(action.mapPreparationMaxClosures) || 6)
     );
-    const bottomLeftBack = action.pageBackPoint || { x: 200, y: 1040 };
-    const topRightClose = action.pageClosePoint || { x: 1750, y: 145 };
+    const bottomLeftBack = action.pageBackPoint || { x: 80, y: 1080 };
+    const topRightClose = action.pageClosePoint || { x: 1850, y: 70 };
     const panelTexts = [
       "一周贡献",
       "贡献物资",
@@ -818,13 +890,39 @@ export class GameUi {
         `map-preparation-${attempt}`,
         signal
       );
+      let accurateFrame = null;
       const mapOpen = (action.mapReadyTexts || [])
         .map((text) => this.vision.find(frame.observations, text))
         .find(Boolean);
       if (mapOpen) return "map";
+      if (typeof this.vision.captureAccurateTransient === "function") {
+        accurateFrame = await this.vision.captureAccurateTransient(
+          `map-preparation-map-accurate-${attempt}`,
+          signal
+        ).catch(() => null);
+        const accurateMapOpen = (action.mapReadyTexts || [])
+          .map((text) =>
+            accurateFrame
+              ? this.vision.find(accurateFrame.observations, text)
+              : null
+          )
+          .find(Boolean);
+        if (accurateMapOpen) {
+          await this.report(
+            "info",
+            "map_already_open_verified_accurate",
+            `已通过高精度 OCR 确认地图原本就已打开：${accurateMapOpen.text}`
+          );
+          return "map";
+        }
+      }
+      const observations = [
+        ...frame.observations,
+        ...(accurateFrame?.observations || [])
+      ];
 
       const closeText = ["关闭", "×", "X"]
-        .map((text) => this.vision.find(frame.observations, text, "exact"))
+        .map((text) => this.vision.find(observations, text, "exact"))
         .find(
           (item) =>
             item &&
@@ -832,18 +930,18 @@ export class GameUi {
             item.y <= 260
         );
       const visiblePanelText = panelTexts
-        .map((text) => this.vision.find(frame.observations, text))
+        .map((text) => this.vision.find(observations, text))
         .find(Boolean);
       const visibleInteractionPanelText = interactionPanelTexts
-        .map((text) => this.vision.find(frame.observations, text))
+        .map((text) => this.vision.find(observations, text))
         .find(Boolean);
       const visibleCampPanelText = campPanelTexts
-        .map((text) => this.vision.find(frame.observations, text))
+        .map((text) => this.vision.find(observations, text))
         .find(Boolean);
       const campTabMarkers = ["首页", "玩法", "科技", "成员", "相册"]
         .map((text) =>
           this.findInRegion(
-            frame.observations,
+            observations,
             text,
             { left: 300, top: 120, right: 1550, bottom: 260 }
           )
@@ -852,14 +950,14 @@ export class GameUi {
       const campPanelOpen =
         Boolean(visibleCampPanelText) || campTabMarkers.length >= 2;
       const chatCollapse = this.findInRegion(
-        frame.observations,
+        observations,
         "收起",
         { left: 1450, top: 850, right: 1900, bottom: 1150 }
       );
       const chatMarkers = ["世界", "队伍", "营地", "萌芽邀约", "聊天室"]
         .map((text) =>
           this.findInRegion(
-            frame.observations,
+            observations,
             text,
             { left: 1450, top: 120, right: 1900, bottom: 1100 }
           )
@@ -867,10 +965,10 @@ export class GameUi {
         .filter(Boolean);
       const chatOpen = Boolean(chatCollapse) || chatMarkers.length >= 2;
       const visibleHudText = ["背包", "配方", "生存手册", "任务"]
-        .map((text) => this.vision.find(frame.observations, text))
+        .map((text) => this.vision.find(observations, text))
         .find(Boolean);
       const failureOverlay = (action.failureTexts || [])
-        .map((text) => this.vision.find(frame.observations, text))
+        .map((text) => this.vision.find(observations, text))
         .find(Boolean);
 
       let advice = null;
@@ -891,7 +989,7 @@ export class GameUi {
       ) {
         overlayAdvice = await this.vision.adviseOverlayControlCurrent(
           `map-preparation-overlay-${attempt}`,
-          { ocrTexts: frame.observations.map((item) => item.text) },
+          { ocrTexts: observations.map((item) => item.text) },
           signal
         ).catch(() => null);
       }
@@ -907,7 +1005,7 @@ export class GameUi {
             expectedState: "hud or map or panel",
             taskHint:
               "打开地图前确认：map=地图已开；hud=无遮挡角色主界面；panel=贡献表、成员页、队伍页、弹窗等功能窗口仍遮挡",
-            ocrTexts: frame.observations.map((item) => item.text)
+            ocrTexts: observations.map((item) => item.text)
           },
           signal
         ).catch(() => null);
@@ -918,6 +1016,8 @@ export class GameUi {
       const confident = Number(advice?.confidence) >= minimum;
       const overlayConfident =
         Number(overlayAdvice?.confidence) >= overlayMinimum &&
+        confident &&
+        advice.state === "panel" &&
         ["close_x", "back", "collapse"].includes(overlayAdvice?.control);
       if (
         visibleHudText &&
@@ -936,6 +1036,30 @@ export class GameUi {
         !failureOverlay
       ) {
         return "hud";
+      }
+      const hasExplicitCloseAction =
+        campPanelOpen ||
+        chatOpen ||
+        Boolean(closeText) ||
+        overlayConfident ||
+        Boolean(visibleInteractionPanelText) ||
+        Boolean(visiblePanelText) ||
+        Boolean(failureOverlay);
+      if (!hasExplicitCloseAction) {
+        await this.report(
+          "info",
+          "map_preparation_no_overlay",
+          "未识别到需要关闭的窗口，将直接尝试打开地图；地图固定文字出现前不会执行传送坐标",
+          {
+            modelState: advice?.state || null,
+            confidence: advice?.confidence || null,
+            ocrTexts: observations
+              .map((item) => item.text)
+              .filter(Boolean)
+              .slice(0, 20)
+          }
+        );
+        return "unverified";
       }
       if (attempt >= maximumClosures) {
         throw new Error(
@@ -992,17 +1116,8 @@ export class GameUi {
       } else if (visibleInteractionPanelText) {
         await this.adb.key(4, signal);
         await this.afterAction(signal);
-      } else if (
-        confident &&
-        ["panel", "patrol_notice_board"].includes(advice.state) &&
-        /右上|关闭|X/i.test(String(advice.evidence || ""))
-      ) {
-        await this.tap(topRightClose, signal);
       } else if (visiblePanelText || failureOverlay) {
         await this.tap(bottomLeftBack, signal);
-      } else {
-        await this.adb.key(4, signal);
-        await this.afterAction(signal);
       }
     }
     return "hud";

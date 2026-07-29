@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { reconcilePageRows } from "../src/workflows/member-sync.mjs";
+import {
+  reconcilePageRows,
+  selectActivityWarningRows
+} from "../src/workflows/member-sync.mjs";
 
 test("page overlap reconciles only the same positional member", () => {
   const previous = [
@@ -134,4 +137,34 @@ test("a boundary member without a roommate is never merged by similar fields", (
   ];
 
   assert.equal(reconcilePageRows(previous, current)[0].name, "相似姓名乙");
+});
+
+test("activity warning scan keeps the threshold and stops at the first newer member", () => {
+  const selection = selectActivityWarningRows(
+    [
+      { name: "离线一月", onlineState: "1个月前" },
+      { name: "离线两天", onlineState: "2天前" },
+      { name: "离线一天", onlineState: "1天前" },
+      { name: "离线十二小时", onlineState: "12小时前" },
+      { name: "在线成员", onlineState: "在线" }
+    ],
+    1
+  );
+  assert.deepEqual(
+    selection.rows.map((row) => row.name),
+    ["离线一月", "离线两天", "离线一天"]
+  );
+  assert.equal(selection.reachedBoundary, true);
+});
+
+test("activity warning scan does not stop while every parsed member remains over threshold", () => {
+  const selection = selectActivityWarningRows(
+    [
+      { name: "离线一年", onlineState: "1年前" },
+      { name: "离线八天", onlineState: "8天前" }
+    ],
+    8
+  );
+  assert.equal(selection.rows.length, 2);
+  assert.equal(selection.reachedBoundary, false);
 });

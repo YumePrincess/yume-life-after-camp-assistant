@@ -219,6 +219,7 @@
     },
     "activity": {
       "region": { "left": 1220, "top": 245, "right": 1645, "bottom": 975 },
+      "sortPoint": { "x": 1630, "y": 230 },
       "columns": [
         { "key": "name", "left": 0, "right": 0.58 },
         { "key": "onlineState", "left": 0.58, "right": 1 }
@@ -321,6 +322,10 @@
           "name": "公告版",
           "x": 270,
           "y": 577,
+          "approachUntilReady": true,
+          "approachKey": "KEYCODE_W",
+          "approachMaxSteps": 8,
+          "approachIntervalMs": 250,
           "readyTexts": ["查看玩法", "营地巡逻", "交谈"],
           "readyRegion": { "left": 1180, "top": 300, "right": 1920, "bottom": 1050 }
         },
@@ -434,6 +439,10 @@
           "name": "市政厅",
           "x": 280,
           "y": 420,
+          "approachUntilReady": true,
+          "approachKey": "KEYCODE_W",
+          "approachMaxSteps": 8,
+          "approachIntervalMs": 250,
           "readyTexts": ["营地数据中心", "营地管理"],
           "readyRegion": { "left": 1150, "top": 450, "right": 1650, "bottom": 900 }
         },
@@ -492,7 +501,14 @@
       }
     ],
     "navigateToSandTable": [
-      { "op": "tap", "x": 1370, "y": 715 },
+      { "op": "key", "code": "KEYCODE_W", "longPress": true, "repeat": 3 },
+      {
+        "op": "waitAnyText",
+        "texts": ["营地管理", "营地数据中心"],
+        "region": { "left": 1180, "top": 540, "right": 1580, "bottom": 820 },
+        "timeoutSeconds": 12
+      },
+      { "op": "key", "code": "KEYCODE_F", "longPress": false },
       {
         "op": "waitAnyText",
         "texts": ["成员信息", "活动时间管理"],

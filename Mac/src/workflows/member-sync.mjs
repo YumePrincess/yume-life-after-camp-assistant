@@ -50,9 +50,14 @@ export async function runContributionSync(context, command, _bundle, signal) {
   await context.report("info", "contribution_done", `已更新 ${rows.length} 名成员贡献`);
 }
 
-export async function runInactivitySync(context, command, _bundle, signal) {
-  const rows = normalizeActivity(await captureActivity(context, true, signal));
-  if (!rows.length) throw new Error("No activity rows recognized");
+export async function runInactivitySync(context, command, bundle, signal) {
+  const minimumInactiveDays = Math.max(
+    1,
+    Number(bundle?.campConfig?.inactivityWarningDays) || 1
+  );
+  const rows = normalizeActivity(
+    await captureActivity(context, true, signal, { minimumInactiveDays })
+  );
   await context.api.snapshot(
     command.runId,
     "activity",
@@ -60,7 +65,11 @@ export async function runInactivitySync(context, command, _bundle, signal) {
     new Date().toISOString(),
     signal
   );
-  await context.report("info", "activity_done", `已更新 ${rows.length} 名成员在线情况`);
+  await context.report(
+    "info",
+    "activity_done",
+    `已更新 ${rows.length} 名离线达到 ${minimumInactiveDays} 天的斩杀预警成员`
+  );
 }
 
 export async function runMemberProfileSync(context, command, _bundle, signal) {
@@ -130,7 +139,12 @@ function contributionMinimum(definition) {
   return Math.max(1, Number(definition?.minimumCompleteRows) || 1);
 }
 
-async function captureActivity(context, startFromWorld, signal) {
+async function captureActivity(
+  context,
+  startFromWorld,
+  signal,
+  options = {}
+) {
   if (startFromWorld) {
     await context.ui.executeFlow("teleportCityHall", {}, signal);
     await context.ui.executeFlow("navigateToSandTable", {}, signal);
@@ -145,7 +159,8 @@ async function captureActivity(context, startFromWorld, signal) {
     context,
     "member-activity",
     context.config.tables.activity,
-    signal
+    signal,
+    options
   );
 }
 
@@ -160,7 +175,10 @@ async function ensureActivityDescending(context, signal) {
     values.some((value) => value > 0) &&
     values.every((value, index) => index === 0 || values[index - 1] >= value);
   if (!descending) {
-    await context.ui.tap({ x: 1560, y: 215 }, signal);
+    await context.ui.tap(
+      definition.sortPoint || { x: 1630, y: 230 },
+      signal
+    );
   }
   const after = await context.vision.capture("activity-sort-after", signal);
   const afterValues = normalizeActivity(parseTable(after.observations, definition))
@@ -228,7 +246,13 @@ export async function captureProfilesAndStaff(context, signal) {
   return { details, staff };
 }
 
-export async function capturePagedTable(context, label, definition, signal) {
+export async function capturePagedTable(
+  context,
+  label,
+  definition,
+  signal,
+  options = {}
+) {
   const { vision, adb, ui, report } = context;
   const byName = new Map();
   let stagnantPages = 0;
@@ -294,6 +318,15 @@ export async function capturePagedTable(context, label, definition, signal) {
         !definition.headerPattern.some((value) => row.name.includes(value))
     );
     rows = reconcilePageRows(previousRows, rows);
+    let reachedActivityBoundary = false;
+    if (Number.isFinite(Number(options.minimumInactiveDays))) {
+      const selection = selectActivityWarningRows(
+        rows,
+        Number(options.minimumInactiveDays)
+      );
+      rows = selection.rows;
+      reachedActivityBoundary = selection.reachedBoundary;
+    }
     const fingerprint = rows.map((row) => row.name).join("|");
     let added = 0;
     for (const row of rows) {
@@ -307,6 +340,18 @@ export async function capturePagedTable(context, label, definition, signal) {
       `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${byName.size} 名成员`,
       { screenshot: frame.path }
     );
+    if (reachedActivityBoundary) {
+      await report(
+        "info",
+        "activity_threshold_reached",
+        `已读到离线时间小于 ${options.minimumInactiveDays} 天的成员，斩杀预警读取提前结束`,
+        {
+          minimumInactiveDays: Number(options.minimumInactiveDays),
+          warningMembers: byName.size
+        }
+      );
+      break;
+    }
     stagnantPages =
       added === 0 || fingerprint === previousFingerprint ? stagnantPages + 1 : 0;
     if (stagnantPages >= definition.pagination.stopAfterStagnantPages) break;
@@ -321,6 +366,28 @@ export async function capturePagedTable(context, label, definition, signal) {
     await ui.afterAction(signal);
   }
   return [...byName.values()];
+}
+
+export function selectActivityWarningRows(rows, minimumInactiveDays) {
+  const minimum = Math.max(1, Number(minimumInactiveDays) || 1);
+  const inspected = rows.map((row) => ({
+    row,
+    normalized: normalizeActivity([row])[0] || null
+  }));
+  return {
+    rows: inspected
+      .filter(
+        ({ normalized }) =>
+          Number.isFinite(normalized?.inactiveDays) &&
+          normalized.inactiveDays >= minimum
+      )
+      .map(({ row }) => row),
+    reachedBoundary: inspected.some(
+      ({ normalized }) =>
+        Number.isFinite(normalized?.inactiveDays) &&
+        normalized.inactiveDays < minimum
+    )
+  };
 }
 
 export function reconcilePageRows(previousRows, currentRows) {

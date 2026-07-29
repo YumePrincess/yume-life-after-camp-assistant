@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { GameUi } from "../src/ui.mjs";
 
 test("camp page is recognized by two stable, region-bound anchors", () => {
@@ -92,7 +93,7 @@ test("map preparation closes the camp page, collapses chat, then confirms HUD", 
   );
   assert.equal(result, "hud");
   assert.deepEqual(fixture.taps, [
-    { x: 1750, y: 145 },
+    { x: 1850, y: 70 },
     { x: 1700, y: 1040 }
   ]);
   assert.deepEqual(fixture.keys, []);
@@ -122,7 +123,7 @@ test("1920x1200 map flow closes every overlay and opens the verified map button"
     mapOpenPollMs: 1
   });
   assert.deepEqual(fixture.taps, [
-    { x: 1750, y: 145 },
+    { x: 1850, y: 70 },
     { x: 1710, y: 1050 },
     { x: 1780, y: 120 }
   ]);
@@ -191,18 +192,23 @@ test("map preparation permits only a high-confidence AI safe close control", asy
       control: "close_x",
       confidence: 0.97,
       evidence: "右上角关闭X"
+    },
+    generalAdvice: {
+      state: "panel",
+      confidence: 0.99,
+      evidence: "功能窗口"
     }
   });
   const result = await fixture.ui.closePagesBeforeMap(
     { mapPreparationMaxClosures: 2, mapReadyTexts: ["标志查看"] }
   );
   assert.equal(result, "hud");
-  assert.deepEqual(fixture.taps, [{ x: 1750, y: 145 }]);
+  assert.deepEqual(fixture.taps, [{ x: 1850, y: 70 }]);
 });
 
 test("overlay AI keeps a 0.95 safety floor when the general model threshold is lower", async () => {
   const fixture = createUi({
-    fastFrames: [[], [observation("背包", 120, 900)]],
+    fastFrames: [[]],
     overlayAdvice: {
       control: "close_x",
       confidence: 0.9,
@@ -213,9 +219,142 @@ test("overlay AI keeps a 0.95 safety floor when the general model threshold is l
   const result = await fixture.ui.closePagesBeforeMap(
     { mapPreparationMaxClosures: 2, mapReadyTexts: ["标志查看"] }
   );
-  assert.equal(result, "hud");
+  assert.equal(result, "unverified");
   assert.deepEqual(fixture.taps, []);
-  assert.deepEqual(fixture.keys, [4]);
+  assert.deepEqual(fixture.keys, []);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("未识别到需要关闭的窗口")
+    )
+  );
+});
+
+test("unknown HUD never triggers blind back clicks before opening the map", async () => {
+  const fixture = createUi({
+    fastFrames: [[]],
+    generalAdvice: {
+      state: "unknown",
+      confidence: 0.99,
+      evidence: "OCR 未读到 HUD 字样"
+    }
+  });
+  const result = await fixture.ui.closePagesBeforeMap(
+    { mapPreparationMaxClosures: 6, mapReadyTexts: ["标志查看"] }
+  );
+  assert.equal(result, "unverified");
+  assert.deepEqual(fixture.taps, []);
+  assert.deepEqual(fixture.keys, []);
+});
+
+test("an accurately recognized open map is never mistaken for an X overlay", async () => {
+  const fixture = createUi({
+    fastFrames: [[]],
+    accurateFrames: [[observation("标志查看", 260, 150)]],
+    overlayAdvice: {
+      control: "close_x",
+      confidence: 0.99,
+      evidence: "右上角存在 X"
+    },
+    generalAdvice: {
+      state: "panel",
+      confidence: 0.99,
+      evidence: "疑似窗口"
+    }
+  });
+  const result = await fixture.ui.closePagesBeforeMap(
+    { mapPreparationMaxClosures: 6, mapReadyTexts: ["标志查看"] }
+  );
+  assert.equal(result, "map");
+  assert.deepEqual(fixture.taps, []);
+  assert.deepEqual(fixture.keys, []);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("地图原本就已打开")
+    )
+  );
+});
+
+test("an activity page found only by accurate OCR is closed with the calibrated back button", async () => {
+  const fixture = createUi({
+    fastFrames: [[], [observation("背包", 120, 900)]],
+    accurateFrames: [
+      [observation("在线情况", 1560, 230)],
+      []
+    ]
+  });
+  const result = await fixture.ui.closePagesBeforeMap(
+    { mapPreparationMaxClosures: 2, mapReadyTexts: ["标志查看"] }
+  );
+  assert.equal(result, "hud");
+  assert.deepEqual(fixture.taps, [{ x: 80, y: 1080 }]);
+});
+
+test("destination verification walks forward only until the interaction text appears", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [],
+      [observation("营地管理", 1370, 715)]
+    ]
+  });
+  const verified = await fixture.ui.verifyDestination(
+    {
+      name: "市政厅",
+      approachUntilReady: true,
+      approachMaxSteps: 8,
+      readyTexts: ["营地数据中心", "营地管理"],
+      readyRegion: { left: 1180, top: 540, right: 1580, bottom: 820 }
+    }
+  );
+  assert.equal(verified, true);
+  assert.deepEqual(fixture.keys, ["KEYCODE_W"]);
+  assert.deepEqual(fixture.taps, []);
+});
+
+test("waitAnyText accepts accurate OCR before asking the model again", async () => {
+  const fixture = createUi({
+    fastFrames: [[]],
+    accurateFrames: [[observation("在线情况", 1560, 230)]]
+  });
+  const found = await fixture.ui.waitAnyText(
+    ["在线情况", "所在场景"],
+    { timeoutSeconds: 1 }
+  );
+  assert.equal(found.text, "在线情况");
+  assert.equal(found.accurateOcr, true);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("高精度 OCR 确认界面文字")
+    )
+  );
+});
+
+test("both city-hall data tasks enter the sand table with F, never a HUD mouse click", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    assert.deepEqual(config.flows.navigateToSandTable[0], {
+      op: "key",
+      code: "KEYCODE_W",
+      longPress: true,
+      repeat: 3
+    });
+    assert.deepEqual(config.flows.navigateToSandTable[1], {
+      op: "waitAnyText",
+      texts: ["营地管理", "营地数据中心"],
+      region: { left: 1180, top: 540, right: 1580, bottom: 820 },
+      timeoutSeconds: 12
+    });
+    assert.deepEqual(config.flows.navigateToSandTable[2], {
+      op: "key",
+      code: "KEYCODE_F",
+      longPress: false
+    });
+    assert.equal(
+      config.flows.navigateToSandTable.some((action) => action.op === "tap"),
+      false
+    );
+  }
 });
 
 function createUi({
@@ -241,6 +380,12 @@ function createUi({
         }
       : undefined,
     async captureTransient() {
+      return {
+        observations:
+          fastFrames[Math.min(fastIndex++, fastFrames.length - 1)] || []
+      };
+    },
+    async capture() {
       return {
         observations:
           fastFrames[Math.min(fastIndex++, fastFrames.length - 1)] || []
