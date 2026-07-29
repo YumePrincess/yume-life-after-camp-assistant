@@ -32,7 +32,11 @@
     technologyDate: "",
     technologyDraft: null,
     activeView: "overview",
-    accessAllowed: false
+    accessAllowed: false,
+    activeEventRunId: null,
+    eventRefreshTimer: null,
+    eventRefreshInFlight: false,
+    eventSignature: ""
   };
 
   function byId(id) {
@@ -44,6 +48,29 @@
     if (className) element.className = className;
     if (text !== undefined) element.textContent = text;
     return element;
+  }
+
+  function createRunActionButton(label, className, icon) {
+    const button = create(
+      "button",
+      `button run-action-button ${className}`.trim()
+    );
+    button.type = "button";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute(
+      "d",
+      icon === "stop"
+        ? "M7.5 7.5h9v9h-9z M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18z"
+        : "M5 5h14v14H5z M8 9h8 M8 12h8 M8 15h5"
+    );
+    svg.append(path);
+    button.append(svg, create("span", "run-action-label", label));
+    return button;
   }
 
   function input(name) {
@@ -462,28 +489,28 @@
         create("td", "", run.message || "—"),
         create("td", "", formatDate(run.finished_at || run.created_at))
       );
-      const actions = create("td");
-      const detail = create("button", "button button-quiet", "事件");
-      detail.type = "button";
+      const actions = create("td", "run-actions");
+      const actionInner = create("div", "run-actions-inner");
+      const detail = createRunActionButton("事件", "button-quiet", "events");
       detail.addEventListener("click", () => showEvents(run.id));
-      actions.append(detail);
+      actionInner.append(detail);
       if (ACTIVE_STATES.has(run.state)) {
         const cancellationPending = run.state === "cancelling";
-        const cancel = create(
-          "button",
-          "button button-danger",
+        const cancel = createRunActionButton(
           cancellationPending
             ? "终止已提交"
             : run.state === "queued"
               ? "取消排队"
-              : "终止任务"
+              : "终止任务",
+          "button-danger",
+          "stop"
         );
-        cancel.type = "button";
         cancel.disabled =
           cancellationPending || !hasPermission("task:interrupt");
         cancel.addEventListener("click", () => interruptRun(run.id, cancel));
-        actions.append(cancel);
+        actionInner.append(cancel);
       }
+      actions.append(actionInner);
       row.append(actions);
       root.append(row);
     }
@@ -795,11 +822,44 @@
   }
 
   async function showEvents(runId) {
+    stopEventRefresh();
+    state.activeEventRunId = runId;
+    state.eventSignature = "";
     const root = byId("run-events");
     root.replaceChildren(create("p", "empty-state", "正在加载…"));
     byId("run-dialog").showModal();
+    await refreshRunEvents(runId);
+    if (state.activeEventRunId === runId && byId("run-dialog").open) {
+      state.eventRefreshTimer = window.setInterval(
+        () => refreshRunEvents(runId),
+        2_000
+      );
+    }
+  }
+
+  async function refreshRunEvents(runId) {
+    if (
+      state.activeEventRunId !== runId ||
+      state.eventRefreshInFlight
+    ) {
+      return;
+    }
+    state.eventRefreshInFlight = true;
+    const root = byId("run-events");
     try {
       const payload = await request(`/api/admin/runs/${encodeURIComponent(runId)}/events`);
+      if (state.activeEventRunId !== runId) return;
+      const signature = JSON.stringify(
+        payload.events.map((event) => [
+          event.id,
+          event.level,
+          event.step,
+          event.message,
+          event.created_at
+        ])
+      );
+      if (signature === state.eventSignature) return;
+      state.eventSignature = signature;
       root.replaceChildren();
       if (!payload.events.length) {
         root.append(create("p", "empty-state", "暂无步骤事件。"));
@@ -814,8 +874,21 @@
         root.append(row);
       }
     } catch (error) {
-      root.replaceChildren(create("p", "error-text", error.message));
+      if (state.activeEventRunId === runId) {
+        root.replaceChildren(create("p", "error-text", error.message));
+      }
+    } finally {
+      state.eventRefreshInFlight = false;
     }
+  }
+
+  function stopEventRefresh() {
+    if (state.eventRefreshTimer) {
+      window.clearInterval(state.eventRefreshTimer);
+      state.eventRefreshTimer = null;
+    }
+    state.activeEventRunId = null;
+    state.eventSignature = "";
   }
 
   function collectConfig(section) {
@@ -1028,6 +1101,7 @@
   byId("refresh-admin").addEventListener("click", () => refresh(false));
   byId("logout").addEventListener("click", logout);
   byId("temporary-key-form").addEventListener("submit", generateTemporaryKey);
+  byId("run-dialog").addEventListener("close", stopEventRefresh);
   byId("copy-temporary-key").addEventListener("click", async () => {
     await navigator.clipboard.writeText(byId("temporary-key-value").textContent);
     byId("save-state").textContent = "临时 Key 已复制";

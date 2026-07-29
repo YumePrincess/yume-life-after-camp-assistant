@@ -149,6 +149,7 @@
         "Enable next-day technologies from fixed choices and vote results",
       "立即执行": "Run now",
       "更新科技": "Update technologies",
+      "操作": "Actions",
       "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单":
         "Update profession, manor, roommate and officer data, then refresh the current roster from the complete member page",
       "取消排队": "Cancel queued task",
@@ -467,6 +468,7 @@
         "Activer les technologies du lendemain selon les choix fixes et les votes",
       "立即执行": "Exécuter",
       "更新科技": "Mettre à jour les technologies",
+      "操作": "Actions",
       "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单":
         "Mettre à jour profession, manoir, cohabitant et responsables, puis actualiser la liste depuis la page complète",
       "取消排队": "Annuler la tâche en attente",
@@ -789,6 +791,7 @@
         "固定技術と投票結果から翌日の技術を有効化",
       "立即执行": "今すぐ実行",
       "更新科技": "技術を更新",
+      "操作": "操作",
       "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单":
         "職業・荘園・同居人・役職を更新し、完全なメンバーページから現在の名簿を更新",
       "取消排队": "待機タスクを取り消す",
@@ -1103,6 +1106,7 @@
         "按固定科技與投票結果開啟次日科技",
       "立即执行": "立即執行",
       "更新科技": "更新科技",
+      "操作": "操作",
       "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单":
         "更新職業、莊園、同居與公職，並以完整成員頁重新整理目前名單",
       "取消排队": "取消排隊",

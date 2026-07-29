@@ -121,47 +121,82 @@ export class Vision {
 
   async readMemberExpectedTotal(signal) {
     const frame = await this.capture("member-count-header", signal);
-    let observations = [];
-    let lastError = null;
+    const countRegions = {
+      members: { left: 345, top: 225, right: 430, bottom: 295 },
+      citizens: { left: 470, top: 225, right: 535, bottom: 295 }
+    };
+    let memberObservations = [];
+    let citizenObservations = [];
+    let lastError;
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
-        observations = await this.ocrRegion(
-          frame.path,
-          { left: 100, top: 220, right: 680, bottom: 320 },
-          `member-count-header-${attempt}`,
-          signal,
-          "accurate",
-          0.25
-        );
-        if (observations.length) break;
+        [memberObservations, citizenObservations] = await Promise.all([
+          this.ocrRegion(
+            frame.path,
+            countRegions.members,
+            `member-count-${attempt}`,
+            signal,
+            "accurate",
+            0.2,
+            5
+          ),
+          this.ocrRegion(
+            frame.path,
+            countRegions.citizens,
+            `citizen-count-${attempt}`,
+            signal,
+            "accurate",
+            0.2,
+            5
+          )
+        ]);
+        if (
+          parsePopulationCount(memberObservations, 110) !== null &&
+          parsePopulationCount(citizenObservations, 10) !== null
+        ) {
+          break;
+        }
       } catch (error) {
         lastError = error;
         if (signal?.aborted) throw error;
       }
     }
-    if (!observations.length && lastError) throw lastError;
-    const totals = observations
-      .flatMap((item) =>
-        [...String(item.text || "").matchAll(/\d+\s*\/\s*(\d+)/g)].map(
-          (match) => ({
-            x: item.x,
-            digits: match[1],
-            value: Number.parseInt(match[1], 10)
-          })
-        )
-      )
-      .sort((left, right) => left.x - right.x);
-    const memberTotal = totals.find(
-      (item) => item.x < 440 && item.value > 0 && item.value <= 110
-    )?.value;
-    const citizenCandidate = totals.find((item) => item.x >= 440);
-    const citizenTotal = normalizeCitizenTotal(citizenCandidate);
-    if (!memberTotal || !citizenTotal) {
+    const memberCount = parsePopulationCount(memberObservations, 110);
+    const citizenCount = parsePopulationCount(citizenObservations, 10);
+    let fallbackObservations = [];
+    if (memberCount === null || citizenCount === null) {
+      try {
+        fallbackObservations = await this.ocrRegion(
+          frame.path,
+          { left: 100, top: 220, right: 680, bottom: 320 },
+          "member-count-header-fallback",
+          signal,
+          "accurate",
+          0.2
+        );
+      } catch (error) {
+        lastError = error;
+        if (signal?.aborted) throw error;
+      }
+    }
+    if (memberCount === null || citizenCount === null) {
+      if (
+        lastError &&
+        !memberObservations.length &&
+        !citizenObservations.length &&
+        !fallbackObservations.length
+      ) {
+        throw lastError;
+      }
       throw new Error(
-        `MEMBER_COUNT_UNREADABLE: expected member and citizen totals, OCR=${JSON.stringify(observations.map((item) => item.text))}`
+        `MEMBER_COUNT_UNREADABLE: expected member and citizen current counts, OCR=${JSON.stringify({
+          members: memberObservations.map((item) => item.text),
+          citizens: citizenObservations.map((item) => item.text),
+          fallback: fallbackObservations.map((item) => item.text)
+        })}`
       );
     }
-    return memberTotal + citizenTotal;
+    return memberCount + citizenCount;
   }
 
   async #extractContributionRows(imagePath, definition, label, signal) {
@@ -391,7 +426,8 @@ export class Vision {
     label,
     signal,
     mode = "accurate",
-    minimumConfidence = this.config.vision.minimumConfidence
+    minimumConfidence = this.config.vision.minimumConfidence,
+    scale = 1
   ) {
     const width = Math.max(1, Math.round(region.right - region.left));
     const height = Math.max(1, Math.round(region.bottom - region.top));
@@ -400,6 +436,8 @@ export class Vision {
       `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-ocr-crop.png`
     );
     this.taskPaths.add(cropPath);
+    let inputPath = cropPath;
+    let scaledPath = null;
     try {
       await runFile(
         "/usr/bin/sips",
@@ -416,9 +454,29 @@ export class Vision {
         ],
         { timeoutMs: 30_000, signal }
       );
+      const safeScale = Math.max(1, Math.min(8, Number(scale) || 1));
+      if (safeScale > 1) {
+        scaledPath = resolve(
+          this.snapshotDir,
+          `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-ocr-scaled.png`
+        );
+        this.taskPaths.add(scaledPath);
+        await runFile(
+          "/usr/bin/sips",
+          [
+            "--resampleWidth",
+            String(Math.round(width * safeScale)),
+            cropPath,
+            "--out",
+            scaledPath
+          ],
+          { timeoutMs: 30_000, signal }
+        );
+        inputPath = scaledPath;
+      }
       const result = await runFile(
         this.config.vision.binary,
-        [cropPath, mode],
+        [inputPath, mode],
         {
           timeoutMs:
             Math.max(
@@ -435,12 +493,18 @@ export class Vision {
         )
         .map((item) => ({
           ...item,
-          x: item.x + Math.round(region.left),
-          y: item.y + Math.round(region.top)
+          x: item.x / safeScale + Math.round(region.left),
+          y: item.y / safeScale + Math.round(region.top),
+          width: item.width / safeScale,
+          height: item.height / safeScale
         }));
     } finally {
       this.taskPaths.delete(cropPath);
       await rm(cropPath, { force: true });
+      if (scaledPath) {
+        this.taskPaths.delete(scaledPath);
+        await rm(scaledPath, { force: true });
+      }
     }
   }
 
@@ -585,17 +649,33 @@ function medianNumber(values) {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-function normalizeCitizenTotal(candidate) {
-  if (!candidate) return 0;
-  if (candidate.value > 0 && candidate.value <= 10) return candidate.value;
-  if (
-    candidate.digits.length > 1 &&
-    new Set(candidate.digits).size === 1
-  ) {
-    const repeated = Number.parseInt(candidate.digits[0], 10);
-    return repeated > 0 && repeated <= 10 ? repeated : 0;
-  }
-  return 0;
+export function parsePopulationCount(observations, maximumCapacity) {
+  const candidates = parsePopulationCounts(observations).filter(
+    (item) => item.capacity > 0 && item.capacity <= maximumCapacity
+  );
+  return candidates[0]?.current ?? null;
+}
+
+function parsePopulationCounts(observations) {
+  const joined = [...(observations || [])]
+    .sort((left, right) => left.x - right.x)
+    .map((item) => String(item.text || ""))
+    .join("")
+    .replace(/\s+/g, "")
+    .replace(/[OoＯｏ]/g, "0")
+    .replace(/[／]/g, "/");
+  return [...joined.matchAll(/(\d{1,3})\/(\d{1,3})/g)]
+    .map((match) => ({
+      current: Number.parseInt(match[1], 10),
+      capacity: Number.parseInt(match[2], 10)
+    }))
+    .filter(
+      (item) =>
+        Number.isFinite(item.current) &&
+        Number.isFinite(item.capacity) &&
+        item.current >= 0 &&
+        item.current <= item.capacity
+    );
 }
 
 function centerX(item) {
