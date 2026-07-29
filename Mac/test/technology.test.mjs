@@ -1,10 +1,38 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   clearAllConfiguredSlots,
   selectTechnology,
   verifyFinalConfiguredSlots
 } from "../src/workflows/technology.mjs";
+
+test("1920x1200 technology hitboxes keep the live-device calibration", async () => {
+  const config = JSON.parse(
+    await readFile(new URL("../config.json", import.meta.url), "utf8")
+  );
+  assert.deepEqual(config.technology.slots, {
+    core: [
+      { x: 768, y: 425 },
+      { x: 899, y: 425 },
+      { x: 1030, y: 425 },
+      { x: 1161, y: 425 },
+      { x: 1292, y: 425 },
+      { x: 1423, y: 425 }
+    ],
+    general: [
+      { x: 704, y: 554 },
+      { x: 834, y: 554 },
+      { x: 965, y: 554 },
+      { x: 1096, y: 554 },
+      { x: 1227, y: 554 },
+      { x: 1358, y: 554 }
+    ]
+  });
+  assert.deepEqual(config.technology.unloadSelected, { x: 744, y: 612 });
+  assert.deepEqual(config.technology.configureSelected, { x: 744, y: 612 });
+  assert.equal(config.technology.selectorItemTapX, 178);
+});
 
 test("technology slots unload core 1-6 then general 1-6 without re-clicking", async () => {
   const actions = [];
@@ -58,6 +86,7 @@ test("technology slots unload core 1-6 then general 1-6 without re-clicking", as
   ]) {
     slots.forEach((slot, index) => {
       expected.push(["tap", { ...slot, lane, index }]);
+      expected.push(["wait", 1200]);
       expected.push(["tap", { x: 745, y: 638 }]);
       expected.push(["wait", 3000]);
     });
@@ -100,7 +129,9 @@ test("cropped detail OCR detects and unloads the first general slot", async () =
 
   assert.deepEqual(actions, [
     ["tap", { x: 800, y: 400, lane: "core", index: 0 }],
+    ["wait", 1200],
     ["tap", { x: 800, y: 550, lane: "general", index: 0 }],
+    ["wait", 1200],
     ["tap", { x: 745, y: 638 }],
     ["wait", 3000]
   ]);
@@ -108,6 +139,7 @@ test("cropped detail OCR detects and unloads the first general slot", async () =
 
 test("technology selection configures the exact target without re-clicking its slot", async () => {
   const taps = [];
+  const waits = [];
   const reports = [];
   const context = {
     config: technologyConfig(),
@@ -126,6 +158,12 @@ test("technology selection configures the exact target without re-clicking its s
       async capture(label) {
         if (label.startsWith("technology-selector-open-check")) {
           return { path: `${label}.png`, observations: [] };
+        }
+        if (label.startsWith("technology-configure-check")) {
+          return {
+            path: `${label}.png`,
+            observations: [observation("配置", 700, 600)]
+          };
         }
         if (label.startsWith("technology-selector")) {
           return {
@@ -155,7 +193,7 @@ test("technology selection configures the exact target without re-clicking its s
       }
     },
     async sleep(ms) {
-      assert.equal(ms, 3000);
+      waits.push(ms);
     },
     async report(_level, step, message) {
       reports.push({ step, message });
@@ -164,9 +202,10 @@ test("technology selection configures the exact target without re-clicking its s
   await selectTechnology(context, "core", 0, "温室大棚");
   assert.deepEqual(taps, [
     { x: 800, y: 400 },
-    { x: 300, y: 470 },
+    { x: 178, y: 470 },
     { x: 745, y: 638 }
   ]);
+  assert.deepEqual(waits, [1200, 1200, 3000]);
   assert.ok(
     reports.some(
       (item) =>
@@ -206,12 +245,19 @@ test("two technologies follow slot-select-configure-wait before the next slot", 
     vision: {
       async capture(label) {
         const target = label.includes("种豆得豆") ? "种豆得豆" : "大丰收";
-        return label.startsWith("technology-selector-open-check")
-          ? { path: `${label}.png`, observations: [] }
-          : {
-              path: `${label}.png`,
-              observations: [observation(target, 240, 450)]
-            };
+        if (label.startsWith("technology-selector-open-check")) {
+          return { path: `${label}.png`, observations: [] };
+        }
+        if (label.startsWith("technology-configure-check")) {
+          return {
+            path: `${label}.png`,
+            observations: [observation("配置", 700, 600)]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: [observation(target, 240, 450)]
+        };
       },
       find(observations, query, mode) {
         return findObservation(observations, query, mode);
@@ -228,11 +274,15 @@ test("two technologies follow slot-select-configure-wait before the next slot", 
 
   assert.deepEqual(actions, [
     ["tap", { x: 800, y: 400 }],
-    ["tap", { x: 280, y: 465 }],
+    ["wait", 1200],
+    ["tap", { x: 178, y: 465 }],
+    ["wait", 1200],
     ["tap", { x: 745, y: 638 }],
     ["wait", 3000],
     ["tap", { x: 1000, y: 400 }],
-    ["tap", { x: 280, y: 465 }],
+    ["wait", 1200],
+    ["tap", { x: 178, y: 465 }],
+    ["wait", 1200],
     ["tap", { x: 745, y: 638 }],
     ["wait", 3000]
   ]);
@@ -256,7 +306,12 @@ test("technology selection uses cropped OCR and a unique one-character OCR corre
     },
     vision: {
       async capture(label) {
-        return { path: `${label}.png`, observations: [] };
+        return {
+          path: `${label}.png`,
+          observations: label.startsWith("technology-configure-check")
+            ? [observation("配置", 700, 600)]
+            : []
+        };
       },
       async ocrRegion(_path, region, _label, _signal, mode, confidence, scale) {
         assert.deepEqual(region, technologyConfig().technology.selectorRegion);
@@ -279,7 +334,7 @@ test("technology selection uses cropped OCR and a unique one-character OCR corre
 
   assert.deepEqual(taps, [
     { x: 800, y: 400 },
-    { x: 280, y: 665 },
+    { x: 178, y: 665 },
     { x: 745, y: 638 }
   ]);
   assert.equal(
@@ -336,7 +391,7 @@ test("technology selection stops after the list content remains unchanged at the
   assert.ok(reports.includes("tech_selector_bottom_reached"));
 });
 
-test("technology selection reopens a list that was toggled closed", async () => {
+test("technology selection never double-clicks a slot when the list is closed", async () => {
   const taps = [];
   const reports = [];
   const context = {
@@ -383,12 +438,12 @@ test("technology selection reopens a list that was toggled closed", async () => 
       reports.push(step);
     }
   };
-  await selectTechnology(context, "core", 0, "温室大棚");
-  assert.deepEqual(taps.slice(0, 2), [
-    { x: 800, y: 400 },
-    { x: 800, y: 400 }
-  ]);
-  assert.ok(reports.includes("tech_selector_reopen"));
+  await assert.rejects(
+    selectTechnology(context, "core", 0, "温室大棚"),
+    /禁止重复点击同一格/
+  );
+  assert.deepEqual(taps, [{ x: 800, y: 400 }]);
+  assert.ok(!reports.includes("tech_selector_reopen"));
 });
 
 test("formal technology workflow verifies every expected filled and empty slot", async () => {
@@ -454,6 +509,11 @@ function technologyConfig() {
         general: [{ x: 800, y: 550 }]
       },
       unloadSelected: { x: 745, y: 638 },
+      slotOpenSettleMs: 1200,
+      detailOpenSettleMs: 1200,
+      selectorItemTapX: 178,
+      selectionBorderOffsetY: -73,
+      selectionBorderProbeRadius: 4,
       unloadSettleMs: 3000,
       configureSelected: { x: 745, y: 638 },
       detailsRegion: {

@@ -122,13 +122,25 @@ export async function clearAllConfiguredSlots(context, signal) {
       .map((point, index) => ({ ...point, lane, index }))
       .sort((a, b) => a.index - b.index);
     for (const slot of laneSlots) {
+      await report(
+        "info",
+        "tech_slot_check",
+        `按顺序检查${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格`
+      );
       const before = await readTechnologySlotState(
         context,
         slot,
         `technology-clear-check-${lane}-${slot.index + 1}`,
         signal
       );
-      if (!before.occupied) continue;
+      if (!before.occupied) {
+        await report(
+          "info",
+          "tech_slot_empty",
+          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格为空，继续下一格`
+        );
+        continue;
+      }
       configuredCount += 1;
       await ui.tap(config.technology.unloadSelected, signal);
       const settleMs = Math.max(
@@ -146,6 +158,13 @@ export async function clearAllConfiguredSlots(context, signal) {
           `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格等待 ${Math.round(settleMs / 1000)} 秒后仍显示“卸下”`
         );
       }
+      await assertTechnologySlotEmpty(
+        context,
+        slot,
+        lane,
+        slot.index,
+        signal
+      );
       await report(
         "info",
         "tech_slot_unloaded",
@@ -186,8 +205,20 @@ export async function selectTechnology(
   const slot = config.technology.slots[lane][slotIndex];
   if (!slot) throw new Error(`${lane} lane has no slot ${slotIndex + 1}`);
   await ui.tap(slot, signal);
+  await (context.sleep || delay)(
+    Math.max(1_000, Number(config.technology.slotOpenSettleMs) || 1_200),
+    signal
+  );
   let openCheck = await vision.capture(
     `technology-selector-open-check-${lane}-${slotIndex + 1}`,
+    signal
+  );
+  await assertTechnologySlotSelected(
+    context,
+    slot,
+    openCheck,
+    lane,
+    slotIndex,
     signal
   );
   let selectorClosed =
@@ -207,24 +238,9 @@ export async function selectTechnology(
     openCheck = accurateOpenCheck;
   }
   if (selectorClosed) {
-    await report(
-      "info",
-      "tech_selector_reopen",
-      `目标槽位的科技列表处于折叠状态，正在再次点击${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格`
+    throw new Error(
+      `科技列表未打开：${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格点击后仍显示“点击槽位”；禁止重复点击同一格以免折叠面板`
     );
-    await ui.tap(slot, signal);
-    const reopened = await vision.capture(
-      `technology-selector-reopened-${lane}-${slotIndex + 1}`,
-      signal
-    );
-    if (
-      vision.find(reopened.observations, "点击槽位") ||
-      vision.find(reopened.observations, "可在此处选择科技")
-    ) {
-      throw new Error(
-        `科技列表未打开：${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格再次点击后仍显示“点击槽位”`
-      );
-    }
   }
   const swipe = config.technology.selectorSwipe;
   for (
@@ -293,15 +309,40 @@ export async function selectTechnology(
       );
     }
     if (match) {
-      const x = match.x + match.width / 2;
+      const matchedTextX = match.x + match.width / 2;
       const y = match.y + match.height / 2;
+      const x = Number(config.technology.selectorItemTapX) || 178;
       await report(
         "info",
         "tech_target_found",
         `已在左侧列表第 ${page + 1} 页匹配到科技“${label}”`,
-        { lane, slotIndex, point: { x, y }, matchedText: match.text }
+        {
+          lane,
+          slotIndex,
+          point: { x, y },
+          matchedText: match.text,
+          matchedTextX
+        }
       );
       await ui.tap({ x, y }, signal);
+      await (context.sleep || delay)(
+        Math.max(
+          1_000,
+          Number(config.technology.detailOpenSettleMs) || 1_200
+        ),
+        signal
+      );
+      const detail = await readTechnologyDetailAction(
+        context,
+        "配置",
+        `technology-configure-check-${lane}-${slotIndex + 1}`,
+        signal
+      );
+      if (!detail.action) {
+        throw new Error(
+          `科技“${label}”的配置详情未打开；已停止，禁止盲点固定按钮`
+        );
+      }
       await report(
         "info",
         "tech_configure_selected",
@@ -435,23 +476,47 @@ function technologyTextDistance(left, right) {
 }
 
 async function readTechnologySlotState(context, slot, label, signal) {
-  const { ui } = context;
+  const { config, ui } = context;
   await ui.tap(slot, signal);
+  await (context.sleep || delay)(
+    Math.max(1_000, Number(config.technology.slotOpenSettleMs) || 1_200),
+    signal
+  );
   return readTechnologyCurrentDetailState(context, label, signal);
 }
 
 async function readTechnologyCurrentDetailState(context, label, signal) {
+  const result = await readTechnologyDetailAction(
+    context,
+    "卸下",
+    label,
+    signal
+  );
+  return {
+    occupied: Boolean(result.action),
+    unload: result.action,
+    observations: result.observations,
+    frame: result.frame
+  };
+}
+
+async function readTechnologyDetailAction(
+  context,
+  actionText,
+  label,
+  signal
+) {
   const { config, vision } = context;
   let frame = await vision.capture(label, signal);
   let observations = frame.observations;
-  let unload = findTechnologyText(
+  let action = findTechnologyText(
     vision,
     observations,
-    "卸下",
+    actionText,
     config.technology.detailsRegion
   );
   if (
-    !unload &&
+    !action &&
     frame.path &&
     typeof vision.ocrRegion === "function"
   ) {
@@ -466,36 +531,106 @@ async function readTechnologyCurrentDetailState(context, label, signal) {
         2
       );
       observations = regional;
-      unload = findTechnologyText(
+      action = findTechnologyText(
         vision,
         observations,
-        "卸下",
+        actionText,
         config.technology.detailsRegion
       );
     } catch (error) {
       if (signal?.aborted) throw error;
     }
   }
-  if (!unload && typeof vision.captureAccurateTransient === "function") {
+  if (!action && typeof vision.captureAccurateTransient === "function") {
     const accurate = await vision.captureAccurateTransient(
       `${label}-accurate`,
       signal
     );
     observations = accurate.observations;
     frame = accurate;
-    unload = findTechnologyText(
+    action = findTechnologyText(
       vision,
       observations,
-      "卸下",
+      actionText,
       config.technology.detailsRegion
     );
   }
   return {
-    occupied: Boolean(unload),
-    unload,
+    action,
     observations,
     frame
   };
+}
+
+async function assertTechnologySlotSelected(
+  context,
+  slot,
+  frame,
+  lane,
+  slotIndex,
+  signal
+) {
+  const { config, vision } = context;
+  if (!frame?.path || typeof vision.probe !== "function") return;
+  const offsetY =
+    Number(config.technology.selectionBorderOffsetY) || -73;
+  const [probe] = await vision.probe(
+    frame.path,
+    [{ x: slot.x, y: slot.y + offsetY }],
+    Math.max(
+      2,
+      Number(config.technology.selectionBorderProbeRadius) || 4
+    ),
+    signal
+  );
+  const orange =
+    probe &&
+    probe.meanRed > probe.meanGreen + 0.08 &&
+    probe.meanGreen > probe.meanBlue + 0.08;
+  if (!orange) {
+    throw new Error(
+      `科技槽位选中校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格未出现橙色边框；禁止继续选择或配置科技`
+    );
+  }
+}
+
+async function assertTechnologySlotEmpty(
+  context,
+  slot,
+  lane,
+  slotIndex,
+  signal
+) {
+  const { config, vision } = context;
+  const reference = config.technology.emptyReference?.[lane];
+  if (!reference || typeof vision.probe !== "function") return;
+  const frame = await vision.capture(
+    `technology-empty-check-${lane}-${slotIndex + 1}`,
+    signal
+  );
+  if (!frame?.path) {
+    throw new Error(
+      `科技卸下校验失败：无法截取${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格`
+    );
+  }
+  const [probe] = await vision.probe(
+    frame.path,
+    [slot],
+    config.technology.filledSlotDetection.sampleRadius,
+    signal
+  );
+  const distance = featureDistance(probe, reference);
+  const threshold = Math.max(
+    0.02,
+    Number(
+      config.technology.filledSlotDetection.maximumEmptyFeatureDistance
+    ) || 0.08
+  );
+  if (distance > threshold) {
+    throw new Error(
+      `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格在无点击像素校验中仍为占用状态`
+    );
+  }
 }
 
 function featureDistance(observed, reference) {

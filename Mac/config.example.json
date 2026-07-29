@@ -125,20 +125,20 @@
     },
     "slots": {
       "core": [
-        { "x": 770, "y": 428 },
-        { "x": 900, "y": 428 },
-        { "x": 1030, "y": 428 },
-        { "x": 1160, "y": 428 },
-        { "x": 1290, "y": 428 },
-        { "x": 1425, "y": 428 }
+        { "x": 768, "y": 425 },
+        { "x": 899, "y": 425 },
+        { "x": 1030, "y": 425 },
+        { "x": 1161, "y": 425 },
+        { "x": 1292, "y": 425 },
+        { "x": 1423, "y": 425 }
       ],
       "general": [
-        { "x": 700, "y": 550 },
-        { "x": 835, "y": 550 },
-        { "x": 965, "y": 550 },
-        { "x": 1095, "y": 550 },
-        { "x": 1225, "y": 550 },
-        { "x": 1360, "y": 550 }
+        { "x": 704, "y": 554 },
+        { "x": 834, "y": 554 },
+        { "x": 965, "y": 554 },
+        { "x": 1096, "y": 554 },
+        { "x": 1227, "y": 554 },
+        { "x": 1358, "y": 554 }
       ]
     },
     "selectorSwipe": {
@@ -154,32 +154,37 @@
       }
     },
     "selectorRegion": { "left": 60, "top": 110, "right": 560, "bottom": 1050 },
-      "unloadSelected": { "x": 745, "y": 638 },
+      "selectorItemTapX": 178,
+      "slotOpenSettleMs": 1200,
+      "detailOpenSettleMs": 1200,
+      "selectionBorderOffsetY": -73,
+      "selectionBorderProbeRadius": 4,
+      "unloadSelected": { "x": 744, "y": 612 },
       "unloadSettleMs": 3000,
-      "configureSelected": { "x": 745, "y": 638 },
+      "configureSelected": { "x": 744, "y": 612 },
       "configureSettleMs": 3000,
       "detailsRegion": { "left": 520, "top": 250, "right": 1050, "bottom": 850 },
       "filledSlotDetection": {
         "sampleRadius": 24,
         "maximumEmptyFeatureDistance": 0.08,
-        "minimumInstalledFeatureDistance": 0.08,
+        "minimumInstalledFeatureDistance": 0.08
+      },
       "emptyReference": {
         "core": {
-          "meanRed": 0.3712,
-          "meanGreen": 0.4662,
-          "meanBlue": 0.3523,
-          "meanSaturation": 0.2419,
-          "luminanceDeviation": 0.0692
+          "meanRed": 0.3356,
+          "meanGreen": 0.4304,
+          "meanBlue": 0.3168,
+          "meanSaturation": 0.2614,
+          "luminanceDeviation": 0.0673
         },
         "general": {
-          "meanRed": 0.2205,
-          "meanGreen": 0.2211,
-          "meanBlue": 0.2239,
-          "meanSaturation": 0.0158,
-          "luminanceDeviation": 0.1345
+          "meanRed": 0.3356,
+          "meanGreen": 0.3373,
+          "meanBlue": 0.3405,
+          "meanSaturation": 0.0171,
+          "luminanceDeviation": 0.1541
         }
       }
-    }
   },
   "tables": {
     "contribution": {
