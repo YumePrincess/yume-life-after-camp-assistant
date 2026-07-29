@@ -1,4 +1,4 @@
-import { getConfigBundle } from "./db";
+import { expireUnclaimedRuns, getConfigBundle } from "./db";
 import type { ConfigBundle } from "./domain";
 import { enqueueTask } from "./tasks";
 import {
@@ -13,6 +13,7 @@ interface SchedulerResult {
   timezone: string;
   enqueued: string[];
   skipped: string[];
+  timedOut: string[];
 }
 
 export async function runScheduler(
@@ -27,8 +28,14 @@ export async function runScheduler(
     checkedAt: now.toISOString(),
     timezone,
     enqueued: [],
-    skipped: []
+    skipped: [],
+    timedOut: []
   };
+  result.timedOut = await expireUnclaimedRuns(
+    env,
+    bundle.automationConfig.agentPolling.claimTimeoutMinutes,
+    now
+  );
 
   await maybeEnqueueDaily(env, bundle, now, localDate, "tech_switch", result, {
     targetDate: targetDateForTechnologyRun(

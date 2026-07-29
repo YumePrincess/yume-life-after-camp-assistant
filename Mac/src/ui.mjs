@@ -577,15 +577,28 @@ export class GameUi {
 
   async openCampPanelViaChat(action, signal) {
     const attempts = Math.max(1, Math.min(5, Number(action.attempts) || 3));
-    const readyTexts = action.readyTexts || ["首页", "玩法", "科技", "成员"];
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       if (signal?.aborted) throw signal.reason || new Error("Interrupted");
       const before = await this.vision.captureTransient(
         `camp-panel-before-${attempt}`,
         signal
       );
-      if (readyTexts.some((text) => this.vision.find(before.observations, text))) {
+      if (this.isCampPanel(before.observations, action)) {
         return;
+      }
+      if (typeof this.vision.captureAccurateTransient === "function") {
+        const accurateBefore = await this.vision.captureAccurateTransient(
+          `camp-panel-before-accurate-${attempt}`,
+          signal
+        );
+        if (this.isCampPanel(accurateBefore.observations, action)) {
+          await this.report(
+            "info",
+            "camp_panel_already_open",
+            "已通过高精度中文 OCR 确认营地页面原本就已打开"
+          );
+          return;
+        }
       }
       await this.report(
         "info",
@@ -600,14 +613,33 @@ export class GameUi {
 
       const verifyDeadline =
         Date.now() + Math.max(1_500, Number(action.verifySeconds || 5) * 1000);
+      let accurateChecked = false;
       while (Date.now() < verifyDeadline) {
         if (signal?.aborted) throw signal.reason || new Error("Interrupted");
         const frame = await this.vision.captureTransient(
           `camp-panel-verify-${attempt}`,
           signal
         );
-        if (readyTexts.some((text) => this.vision.find(frame.observations, text))) {
+        if (this.isCampPanel(frame.observations, action)) {
           return;
+        }
+        if (
+          !accurateChecked &&
+          typeof this.vision.captureAccurateTransient === "function"
+        ) {
+          accurateChecked = true;
+          const accurate = await this.vision.captureAccurateTransient(
+            `camp-panel-verify-accurate-${attempt}`,
+            signal
+          );
+          if (this.isCampPanel(accurate.observations, action)) {
+            await this.report(
+              "info",
+              "camp_panel_verified_accurate",
+              "已通过高精度中文 OCR 确认营地页面"
+            );
+            return;
+          }
         }
         await delay(350, signal);
       }
@@ -617,6 +649,63 @@ export class GameUi {
     throw new Error(
       "CAMP_PANEL_DID_NOT_OPEN: 已重试聊天→营地频道→市政厅图标，但未识别到营地首页"
     );
+  }
+
+  isCampPanel(observations, action = {}) {
+    const constantAnchors =
+      action.readyConstantAnchors || [
+        {
+          text: "营地",
+          region: { left: 90, top: 90, right: 340, bottom: 200 }
+        },
+        {
+          text: "量子时代",
+          region: { left: 250, top: 240, right: 650, bottom: 400 }
+        },
+        {
+          text: "市长",
+          region: { left: 140, top: 360, right: 700, bottom: 560 }
+        },
+        {
+          text: "营地周活跃",
+          region: { left: 600, top: 250, right: 1150, bottom: 430 }
+        }
+      ];
+    const constantMatches = constantAnchors.filter((anchor) =>
+      this.findInRegion(observations, anchor.text, anchor.region)
+    );
+    const minimumConstants = Math.max(
+      2,
+      Math.min(
+        constantAnchors.length,
+        Number(action.readyMinimumConstants) || 2
+      )
+    );
+    if (constantMatches.length >= minimumConstants) return true;
+
+    const tabTexts =
+      action.readyTabTexts || action.readyTexts ||
+      ["首页", "玩法", "科技", "成员", "相册"];
+    const bodyTexts =
+      action.readyBodyTexts ||
+      ["营地周活跃", "参与活动", "收到通知", "市长"];
+    const tabRegion =
+      action.readyTabRegion ||
+      { left: 350, top: 150, right: 1550, bottom: 270 };
+    const bodyRegion =
+      action.readyBodyRegion ||
+      { left: 120, top: 250, right: 1820, bottom: 1000 };
+    const tabs = tabTexts.filter((text) =>
+      this.findInRegion(observations, text, tabRegion)
+    );
+    const bodies = bodyTexts.filter((text) =>
+      this.findInRegion(observations, text, bodyRegion)
+    );
+    const minimumTabs = Math.max(
+      2,
+      Math.min(tabTexts.length, Number(action.readyMinimumTabs) || 2)
+    );
+    return tabs.length >= minimumTabs || (tabs.length >= 1 && bodies.length >= 1);
   }
 
   async closePagesBeforeMap(action, signal) {

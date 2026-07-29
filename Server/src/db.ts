@@ -627,6 +627,100 @@ export async function listRecentRuns(env: Env, limit = 50): Promise<TaskRun[]> {
   return result.results;
 }
 
+export async function expireUnclaimedRuns(
+  env: Env,
+  claimTimeoutMinutes: number,
+  now = new Date()
+): Promise<string[]> {
+  const timeoutMinutes = Math.max(
+    1,
+    Math.min(10_080, Math.trunc(claimTimeoutMinutes))
+  );
+  const finishedAt = now.toISOString();
+  const cutoff = new Date(
+    now.getTime() - timeoutMinutes * 60_000
+  ).toISOString();
+  const candidates = await env.DB.prepare(
+    `SELECT id
+     FROM task_runs
+     WHERE state = 'queued' AND created_at <= ?
+     ORDER BY created_at ASC
+     LIMIT 200`
+  )
+    .bind(cutoff)
+    .all<{ id: string }>();
+  const ids = candidates.results.map((row) => row.id);
+  if (!ids.length) return [];
+
+  const placeholders = ids.map(() => "?").join(",");
+  const commandMessage = `等待 Agent 接取超过 ${timeoutMinutes} 分钟，队列命令已取消`;
+  await env.DB.prepare(
+    `UPDATE command_queue
+     SET state = 'cancelled',
+         message = ?,
+         finished_at = ?,
+         lease_expires_at = NULL
+     WHERE type = 'run_task'
+       AND state = 'queued'
+       AND run_id IN (${placeholders})`
+  )
+    .bind(commandMessage, finishedAt, ...ids)
+    .run();
+
+  const runMessage = `等待 Agent 接取超过 ${timeoutMinutes} 分钟，任务已超时取消`;
+  const expired = await env.DB.prepare(
+    `UPDATE task_runs
+     SET state = 'timed_out',
+         message = ?,
+         current_step = NULL,
+         cancel_requested = 1,
+         finished_at = ?,
+         updated_at = ?
+     WHERE state = 'queued'
+       AND created_at <= ?
+       AND id IN (${placeholders})
+       AND (
+         EXISTS (
+           SELECT 1 FROM command_queue
+           WHERE command_queue.run_id = task_runs.id
+             AND command_queue.type = 'run_task'
+             AND command_queue.state = 'cancelled'
+             AND command_queue.message = ?
+         )
+         OR NOT EXISTS (
+           SELECT 1 FROM command_queue
+           WHERE command_queue.run_id = task_runs.id
+             AND command_queue.type = 'run_task'
+         )
+       )
+     RETURNING id`
+  )
+    .bind(
+      runMessage,
+      finishedAt,
+      finishedAt,
+      cutoff,
+      ...ids,
+      commandMessage
+    )
+    .all<{ id: string }>();
+  const expiredIds = expired.results.map((row) => row.id);
+  if (!expiredIds.length) return [];
+  await env.DB.batch(
+    expiredIds.map((runId) =>
+      env.DB.prepare(
+        "INSERT INTO task_events(run_id, level, step, message, detail_json, created_at) VALUES(?, 'warning', NULL, ?, ?, ?)"
+      ).bind(
+        runId,
+        runMessage,
+        JSON.stringify({ claimTimeoutMinutes: timeoutMinutes }),
+        finishedAt
+      )
+    )
+  );
+  return expiredIds;
+}
+
 export async function listRunEvents(
   env: Env,
   runId: string,
@@ -657,7 +751,13 @@ export async function updateRun(
   const now = isoNow();
   const startedAt =
     current.started_at ?? (state === "running" || state === "claimed" ? now : null);
-  const terminal = ["interrupted", "succeeded", "failed", "skipped"].includes(state);
+  const terminal = [
+    "interrupted",
+    "succeeded",
+    "failed",
+    "timed_out",
+    "skipped"
+  ].includes(state);
   return env.DB.prepare(
     `UPDATE task_runs SET
        state = ?,

@@ -20,6 +20,7 @@ export type RunState =
   | "interrupted"
   | "succeeded"
   | "failed"
+  | "timed_out"
   | "skipped";
 
 export type TechnologyCategory = "military" | "agriculture" | "industry";
@@ -85,6 +86,7 @@ export interface AutomationConfig {
   agentPolling: {
     activeSeconds: number;
     idleSeconds: number;
+    claimTimeoutMinutes: number;
     windows: PollingWindow[];
   };
   gameWatchdog: {

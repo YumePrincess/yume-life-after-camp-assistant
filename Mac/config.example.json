@@ -275,7 +275,18 @@
         "chatButton": { "x": 250, "y": 1060 },
         "campChannelButton": { "x": 1740, "y": 355 },
         "campIconButton": { "x": 980, "y": 65 },
-        "readyTexts": ["首页", "玩法", "科技", "成员"],
+        "readyConstantAnchors": [
+          { "text": "营地", "region": { "left": 90, "top": 90, "right": 340, "bottom": 200 } },
+          { "text": "量子时代", "region": { "left": 250, "top": 240, "right": 650, "bottom": 400 } },
+          { "text": "市长", "region": { "left": 140, "top": 360, "right": 700, "bottom": 560 } },
+          { "text": "营地周活跃", "region": { "left": 600, "top": 250, "right": 1150, "bottom": 430 } }
+        ],
+        "readyMinimumConstants": 2,
+        "readyTabTexts": ["首页", "玩法", "科技", "成员", "相册"],
+        "readyBodyTexts": ["营地周活跃", "参与活动", "收到通知", "市长"],
+        "readyTabRegion": { "left": 350, "top": 150, "right": 1550, "bottom": 270 },
+        "readyBodyRegion": { "left": 120, "top": 250, "right": 1820, "bottom": 1000 },
+        "readyMinimumTabs": 2,
         "attempts": 3,
         "verifySeconds": 5
       }

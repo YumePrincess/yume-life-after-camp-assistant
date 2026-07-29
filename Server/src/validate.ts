@@ -387,6 +387,15 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
               2,
               3600
             ),
+      claimTimeoutMinutes:
+        pollingSource.claimTimeoutMinutes === undefined
+          ? 45
+          : integer(
+              pollingSource.claimTimeoutMinutes,
+              "automationConfig.agentPolling.claimTimeoutMinutes",
+              1,
+              10_080
+            ),
       windows: pollingWindows
     },
     gameWatchdog: {

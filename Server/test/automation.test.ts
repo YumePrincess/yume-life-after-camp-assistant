@@ -50,5 +50,38 @@ describe("five-task automation configuration", () => {
     });
     expect(config.tasks).not.toHaveProperty("member_sync");
     expect(config.routines).toEqual([]);
+    expect(config.agentPolling.claimTimeoutMinutes).toBe(45);
+  });
+
+  it("accepts a custom Agent claim timeout", () => {
+    const config = validateAutomationConfig({
+      timezone: "Asia/Shanghai",
+      schedulerGraceMinutes: 5,
+      agentPolling: {
+        activeSeconds: 2,
+        idleSeconds: 15,
+        claimTimeoutMinutes: 90,
+        windows: []
+      },
+      gameWatchdog: {
+        enabled: true,
+        healthCheckSeconds: 10,
+        actionTimeoutSeconds: 180,
+        frozenScreenSeconds: 180,
+        maxRestarts: 3,
+        restartCooldownSeconds: 30
+      },
+      tasks: {
+        patrol: {
+          enabled: true,
+          time: "19:20",
+          teamReadyTime: "19:30",
+          shareIntervalMinutes: 10,
+          chatPollSeconds: 5,
+          deadline: "21:25"
+        }
+      }
+    });
+    expect(config.agentPolling.claimTimeoutMinutes).toBe(90);
   });
 });

@@ -20,6 +20,7 @@ import {
   claimNextCommand,
   completeCommand,
   createCommand,
+  expireUnclaimedRuns,
   getConfigBundle,
   getHeartbeat,
   getRun,
@@ -70,6 +71,7 @@ const TERMINAL_RUN_STATES = new Set<RunState>([
   "interrupted",
   "succeeded",
   "failed",
+  "timed_out",
   "skipped"
 ]);
 
@@ -501,11 +503,15 @@ async function handleAgentApi(
   }
   if (path === "/api/agent/next-command" && method === "POST") {
     const body = await readJsonObject(request, 16_000);
+    const bundle = await getConfigBundle(env);
+    await expireUnclaimedRuns(
+      env,
+      bundle.automationConfig.agentPolling.claimTimeoutMinutes
+    );
     const command = await claimNextCommand(env, {
       agentId: boundedText(body.agentId, "agentId", 80),
       busy: body.busy === true
     });
-    const bundle = await getConfigBundle(env);
     return json({
       command: command
         ? {
@@ -899,6 +905,7 @@ function isRunState(value: unknown): value is RunState {
       "interrupted",
       "succeeded",
       "failed",
+      "timed_out",
       "skipped"
     ].includes(value)
   );

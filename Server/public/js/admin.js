@@ -86,6 +86,7 @@
       interrupted: "已中断",
       succeeded: "成功",
       failed: "失败",
+      timed_out: "已超时",
       skipped: "已跳过"
     }[value] || value;
   }
@@ -223,6 +224,8 @@
       for (const [name, value] of Object.entries({
         pollActiveSeconds: automation.agentPolling.activeSeconds,
         pollIdleSeconds: automation.agentPolling.idleSeconds,
+        queueClaimTimeoutMinutes:
+          automation.agentPolling.claimTimeoutMinutes,
         watchdogEnabled: automation.gameWatchdog.enabled,
         watchdogHealthSeconds: automation.gameWatchdog.healthCheckSeconds,
         watchdogActionSeconds: automation.gameWatchdog.actionTimeoutSeconds,
@@ -884,6 +887,7 @@
       next.automationConfig.agentPolling = {
         activeSeconds: Number(getField("pollActiveSeconds")),
         idleSeconds: Number(getField("pollIdleSeconds")),
+        claimTimeoutMinutes: Number(getField("queueClaimTimeoutMinutes")),
         windows: pollingWindows
       };
       next.automationConfig.gameWatchdog = {

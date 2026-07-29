@@ -180,6 +180,7 @@
               <div class="form-grid">
                 <label class="field"><span>任务执行中轮询（秒）</span><input name="pollActiveSeconds" type="number" min="1" max="60" /></label>
                 <label class="field"><span>默认空闲轮询（秒）</span><input name="pollIdleSeconds" type="number" min="2" max="3600" /></label>
+                <label class="field"><span>等待 Agent 接取超时（分钟）</span><input name="queueClaimTimeoutMinutes" type="number" min="1" max="10080" /></label>
                 <label class="field field-checkbox"><input name="watchdogEnabled" type="checkbox" /><span>游戏无响应自动重启</span></label>
                 <label class="field"><span>健康检查（秒）</span><input name="watchdogHealthSeconds" type="number" min="2" max="120" /></label>
                 <label class="field"><span>动作超时（秒）</span><input name="watchdogActionSeconds" type="number" min="10" max="600" /></label>

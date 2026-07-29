@@ -136,6 +136,7 @@
       "已中断": "Interrupted",
       "成功": "Succeeded",
       "失败": "Failed",
+      "已超时": "Timed out",
       "已跳过": "Skipped",
       "共 {count} 人投票 · 截止 {closesAt}": "{count} voters · closes {closesAt}",
       "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
@@ -204,6 +205,7 @@
       "轮询、无响应恢复与任务例程": "Polling, recovery and task routines",
       "任务执行中轮询（秒）": "Active-task polling (seconds)",
       "默认空闲轮询（秒）": "Default idle polling (seconds)",
+      "等待 Agent 接取超时（分钟）": "Agent claim timeout (minutes)",
       "游戏无响应自动重启": "Restart the game when unresponsive",
       "营地成员完整信息": "Full camp member information",
       "按最新斩杀线执行": "Run against the latest threshold",
@@ -452,6 +454,7 @@
       "已中断": "Interrompue",
       "成功": "Réussie",
       "失败": "Échouée",
+      "已超时": "Expirée",
       "已跳过": "Ignorée",
       "共 {count} 人投票 · 截止 {closesAt}": "{count} votants · clôture {closesAt}",
       "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
@@ -520,6 +523,7 @@
       "轮询、无响应恢复与任务例程": "Interrogation, récupération et routines",
       "任务执行中轮询（秒）": "Interrogation en tâche (secondes)",
       "默认空闲轮询（秒）": "Interrogation au repos (secondes)",
+      "等待 Agent 接取超时（分钟）": "Délai d’attribution à l’agent (minutes)",
       "游戏无响应自动重启": "Redémarrer le jeu s’il ne répond plus",
       "营地成员完整信息": "Informations complètes des membres",
       "按最新斩杀线执行": "Exécuter selon le dernier seuil",
@@ -772,6 +776,7 @@
       "已中断": "中断済み",
       "成功": "成功",
       "失败": "失敗",
+      "已超时": "タイムアウト",
       "已跳过": "スキップ",
       "共 {count} 人投票 · 截止 {closesAt}": "{count}人が投票 · 締切 {closesAt}",
       "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
@@ -840,6 +845,7 @@
       "轮询、无响应恢复与任务例程": "ポーリング、無応答復旧、タスクルーチン",
       "任务执行中轮询（秒）": "タスク中のポーリング（秒）",
       "默认空闲轮询（秒）": "待機中のポーリング（秒）",
+      "等待 Agent 接取超时（分钟）": "エージェント取得待ちタイムアウト（分）",
       "游戏无响应自动重启": "ゲーム無応答時に自動再起動",
       "营地成员完整信息": "野営地メンバー詳細",
       "按最新斩杀线执行": "最新基準で実行",
@@ -1084,6 +1090,7 @@
       "已中断": "已中斷",
       "成功": "成功",
       "失败": "失敗",
+      "已超时": "已逾時",
       "已跳过": "已跳過",
       "共 {count} 人投票 · 截止 {closesAt}": "共 {count} 人投票 · 截止 {closesAt}",
       "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
@@ -1152,6 +1159,7 @@
       "轮询、无响应恢复与任务例程": "輪詢、無回應恢復與任務例程",
       "任务执行中轮询（秒）": "任務執行中輪詢（秒）",
       "默认空闲轮询（秒）": "預設閒置輪詢（秒）",
+      "等待 Agent 接取超时（分钟）": "等待 Agent 接取逾時（分鐘）",
       "游戏无响应自动重启": "遊戲無回應自動重啟",
       "营地成员完整信息": "營地成員完整資訊",
       "按最新斩杀线执行": "按最新斬殺線執行",
