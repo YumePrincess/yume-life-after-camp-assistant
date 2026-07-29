@@ -127,19 +127,46 @@ export async function clearAllConfiguredSlots(context, signal) {
         "tech_slot_check",
         `按顺序检查${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格`
       );
+      const pixelBefore = await probeTechnologySlotOccupancy(
+        context,
+        slot,
+        lane,
+        `technology-clear-pixel-${lane}-${slot.index + 1}`,
+        signal
+      );
       const before = await readTechnologySlotState(
         context,
         slot,
         `technology-clear-check-${lane}-${slot.index + 1}`,
         signal
       );
-      if (!before.occupied) {
+      const pixelFallbackOccupied =
+        pixelBefore?.occupied === true &&
+        pixelBefore.distance >= pixelBefore.fallbackThreshold;
+      if (!before.occupied && !pixelFallbackOccupied) {
         await report(
           "info",
           "tech_slot_empty",
-          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格为空，继续下一格`
+          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格经详情 OCR 与槽位像素双重检查为空，继续下一格`,
+          { pixel: pixelBefore }
         );
         continue;
+      }
+      if (!before.occupied && pixelFallbackOccupied) {
+        await assertTechnologySlotSelected(
+          context,
+          slot,
+          before.frame,
+          lane,
+          slot.index,
+          signal
+        );
+        await report(
+          "warning",
+          "tech_unload_pixel_fallback",
+          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格像素明确显示已安装科技，但 OCR 漏读“卸下”；已确认橙色选中框，使用校准后的卸下按钮`,
+          { pixel: pixelBefore }
+        );
       }
       configuredCount += 1;
       await ui.tap(config.technology.unloadSelected, signal);
@@ -158,13 +185,23 @@ export async function clearAllConfiguredSlots(context, signal) {
           `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格等待 ${Math.round(settleMs / 1000)} 秒后仍显示“卸下”`
         );
       }
-      await assertTechnologySlotEmpty(
-        context,
-        slot,
-        lane,
-        slot.index,
-        signal
-      );
+      try {
+        await assertTechnologySlotEmpty(
+          context,
+          slot,
+          lane,
+          slot.index,
+          signal
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        await report(
+          "warning",
+          "tech_slot_pixel_residual",
+          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已不再显示“卸下”，但选中高亮使静态空槽像素校验仍有差异；按已确认的卸下结果继续下一格`,
+          { message: error.message }
+        );
+      }
       await report(
         "info",
         "tech_slot_unloaded",
@@ -192,6 +229,48 @@ export async function clearAllConfiguredSlots(context, signal) {
     signal
   );
   context.technologyEmptySlotBaseline = { slots, probes };
+}
+
+async function probeTechnologySlotOccupancy(
+  context,
+  slot,
+  lane,
+  label,
+  signal
+) {
+  const { config, vision } = context;
+  const reference = config.technology.emptyReference?.[lane];
+  if (!reference || typeof vision.probe !== "function") return null;
+  const frame = await vision.capture(label, signal);
+  if (!frame?.path) return null;
+  const [probe] = await vision.probe(
+    frame.path,
+    [slot],
+    config.technology.filledSlotDetection.sampleRadius,
+    signal
+  );
+  const distance = featureDistance(probe, reference);
+  const threshold = Math.max(
+    0.02,
+    Number(
+      config.technology.filledSlotDetection.minimumInstalledFeatureDistance ??
+        config.technology.filledSlotDetection.maximumEmptyFeatureDistance
+    ) || 0.08
+  );
+  const fallbackThreshold = Math.max(
+    threshold,
+    Number(
+      config.technology.filledSlotDetection
+        .fallbackMinimumOccupiedFeatureDistance
+    ) || threshold * 1.25
+  );
+  return {
+    occupied: distance > threshold,
+    distance,
+    threshold,
+    fallbackThreshold,
+    probe
+  };
 }
 
 export async function selectTechnology(

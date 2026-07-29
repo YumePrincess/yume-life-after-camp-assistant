@@ -137,6 +137,64 @@ test("cropped detail OCR detects and unloads the first general slot", async () =
   ]);
 });
 
+test("installed-slot pixels recover an OCR-missed unload action", async () => {
+  const taps = [];
+  const reports = [];
+  const config = technologyConfig();
+  config.technology.emptyReference = {
+    core: feature(0),
+    general: feature(0)
+  };
+  config.technology.filledSlotDetection.fallbackMinimumOccupiedFeatureDistance =
+    0.1;
+  const context = {
+    config,
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      },
+      async probe(path, points) {
+        if (path.includes("clear-pixel-core-1")) {
+          return points.map(() => feature(0.25));
+        }
+        if (
+          path.includes("clear-check-core-1") &&
+          points[0].y < config.technology.slots.core[0].y
+        ) {
+          return points.map(() => ({
+            meanRed: 0.4,
+            meanGreen: 0.25,
+            meanBlue: 0.1,
+            meanSaturation: 0.5,
+            luminanceDeviation: 0.1
+          }));
+        }
+        return points.map(() => feature(0));
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await clearAllConfiguredSlots(context);
+
+  assert.deepEqual(taps.slice(0, 2), [
+    { x: 800, y: 400, lane: "core", index: 0 },
+    { x: 745, y: 638 }
+  ]);
+  assert.ok(reports.includes("tech_unload_pixel_fallback"));
+});
+
 test("technology selection configures the exact target without re-clicking its slot", async () => {
   const taps = [];
   const waits = [];

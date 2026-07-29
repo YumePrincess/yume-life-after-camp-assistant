@@ -167,7 +167,8 @@
       "filledSlotDetection": {
         "sampleRadius": 24,
         "maximumEmptyFeatureDistance": 0.08,
-        "minimumInstalledFeatureDistance": 0.08
+        "minimumInstalledFeatureDistance": 0.08,
+        "fallbackMinimumOccupiedFeatureDistance": 0.1
       },
       "emptyReference": {
         "core": {
@@ -334,9 +335,9 @@
     "teleportNoticeBoard": [
       {
         "op": "teleportWithFallback",
-        "mapButton": null,
+        "mapButton": { "x": 1780, "y": 120 },
         "mapKey": "KEYCODE_M",
-        "mapKeyFallbackDelayMs": 4000,
+        "mapKeyFallbackDelayMs": 0,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapModeText": "标志查看",
         "mapModeFallbackEnabled": false,
@@ -436,9 +437,9 @@
     "teleportCityHall": [
       {
         "op": "teleportWithFallback",
-        "mapButton": null,
+        "mapButton": { "x": 1780, "y": 120 },
         "mapKey": "KEYCODE_M",
-        "mapKeyFallbackDelayMs": 4000,
+        "mapKeyFallbackDelayMs": 0,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapModeText": "标志查看",
         "mapModeFallbackEnabled": false,
@@ -481,9 +482,9 @@
     "teleportCentralExit": [
       {
         "op": "teleportWithFallback",
-        "mapButton": null,
+        "mapButton": { "x": 1780, "y": 120 },
         "mapKey": "KEYCODE_M",
-        "mapKeyFallbackDelayMs": 4000,
+        "mapKeyFallbackDelayMs": 0,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapModeText": "标志查看",
         "mapModeFallbackEnabled": false,

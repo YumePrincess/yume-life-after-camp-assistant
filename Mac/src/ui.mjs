@@ -593,6 +593,21 @@ export class GameUi {
         );
         return;
       }
+      if (!mapKeyFallbackSent && Date.now() >= mapKeyFallbackAt) {
+        mapKeyFallbackSent = true;
+        await this.report(
+          "warning",
+          "map_open_key_fallback",
+          "地图按钮已用于取得游戏输入焦点，快速 OCR 尚未确认地图；立即发送一次 M 键备用，之后仍需地图固定文字确认",
+          { key: mapKey }
+        );
+        await this.adb.releaseMouseButton?.(
+          Math.round((this.config.adb?.screenWidth || 1920) / 2),
+          Math.round((this.config.adb?.screenHeight || 1200) / 2),
+          signal
+        ).catch(() => undefined);
+        await this.adb.key(mapKey, signal);
+      }
       if (
         typeof this.vision.captureAccurateTransient === "function" &&
         Date.now() - accurateCheckedAt >= 2_000
@@ -617,21 +632,6 @@ export class GameUi {
           );
           return;
         }
-      }
-      if (!mapKeyFallbackSent && Date.now() >= mapKeyFallbackAt) {
-        mapKeyFallbackSent = true;
-        await this.report(
-          "warning",
-          "map_open_key_fallback",
-          "右上角地图按钮点击后仍未识别到地图，正在发送一次 M 键备用；之后仍需地图文字确认",
-          { key: mapKey }
-        );
-        await this.adb.releaseMouseButton?.(
-          Math.round((this.config.adb?.screenWidth || 1920) / 2),
-          Math.round((this.config.adb?.screenHeight || 1200) / 2),
-          signal
-        ).catch(() => undefined);
-        await this.adb.key(mapKey, signal);
       }
       if (
         !advisorChecked &&

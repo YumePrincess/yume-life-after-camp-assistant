@@ -230,16 +230,10 @@ export class AdbClient {
     if (!Array.isArray(codes) || codes.length < 2) {
       throw new Error("ADB key combination requires at least two key codes");
     }
-    const holdMs = Math.max(
-      0,
-      Math.min(1_000, Number(options.holdMs) || 100)
-    );
     await this.shell(
       [
         "input",
         "keycombination",
-        "-t",
-        String(holdMs),
         ...codes.map(String)
       ],
       { signal, timeoutMs: 5_000 }
