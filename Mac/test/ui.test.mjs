@@ -74,7 +74,11 @@ test("an already-open camp page is confirmed before any click", async () => {
 test("map preparation closes the camp page, collapses chat, then confirms HUD", async () => {
   const fixture = createUi({
     fastFrames: [
-      [observation("全部成员", 180, 260)],
+      [
+        observation("首页", 450, 180),
+        observation("玩法", 700, 180),
+        observation("成员", 1150, 180)
+      ],
       [
         observation("营地", 1660, 360),
         observation("世界", 1660, 220),
@@ -94,13 +98,42 @@ test("map preparation closes the camp page, collapses chat, then confirms HUD", 
   assert.deepEqual(fixture.keys, []);
 });
 
-function createUi({ fastFrames = [[]], accurateFrames = [[]] } = {}) {
+test("map preparation permits only a high-confidence AI safe close control", async () => {
+  const fixture = createUi({
+    fastFrames: [[], [observation("背包", 120, 900)]],
+    overlayAdvice: {
+      control: "close_x",
+      confidence: 0.97,
+      evidence: "右上角关闭X"
+    }
+  });
+  const result = await fixture.ui.closePagesBeforeMap(
+    { mapPreparationMaxClosures: 2, mapReadyTexts: ["标志查看"] }
+  );
+  assert.equal(result, "hud");
+  assert.deepEqual(fixture.taps, [{ x: 1750, y: 145 }]);
+});
+
+function createUi({
+  fastFrames = [[]],
+  accurateFrames = [[]],
+  overlayAdvice = null
+} = {}) {
   const taps = [];
   const keys = [];
   const messages = [];
   let fastIndex = 0;
   let accurateIndex = 0;
   const vision = {
+    advisor: overlayAdvice
+      ? {
+          enabled: true,
+          config: {
+            mode: "guarded",
+            minimumActionConfidence: 0.95
+          }
+        }
+      : undefined,
     async captureTransient() {
       return {
         observations:
@@ -114,6 +147,12 @@ function createUi({ fastFrames = [[]], accurateFrames = [[]] } = {}) {
             Math.min(accurateIndex++, accurateFrames.length - 1)
           ] || []
       };
+    },
+    async adviseOverlayControlCurrent() {
+      return overlayAdvice;
+    },
+    async adviseCurrent() {
+      return null;
     },
     find(observations, query) {
       return observations.find((item) => item.text.includes(query));

@@ -203,24 +203,41 @@ async function executeCommand(command, signal) {
         message: "本地 Agent 已领取任务"
       }
     });
-    await withGameSession(
+    const sessionResult = await withGameSession(
       context,
       (attemptSignal) =>
         workflow(context, command, bootstrap.configBundle, attemptSignal),
       signal,
       bootstrap.configBundle.automationConfig.gameWatchdog
     );
-    await api.updateRun(command.runId, {
-      state: "succeeded",
-      message: "任务已成功完成，游戏与模拟器已停止",
-      currentStep: null,
-      progress: 1,
-      event: {
-        level: "info",
-        step: "finished",
-        message: "任务成功；已完成资源清理"
-      }
-    });
+    if (sessionResult?.cleanupCompleted === false) {
+      terminalState = "partially_succeeded";
+      terminalMessage = `核心数据已更新，但收尾未完全完成：${sessionResult.cleanupIssues.join("；")}`;
+      await api.updateRun(command.runId, {
+        state: terminalState,
+        message: terminalMessage,
+        currentStep: null,
+        progress: 1,
+        event: {
+          level: "warning",
+          step: "finished",
+          message: terminalMessage,
+          detail: { cleanupIssues: sessionResult.cleanupIssues }
+        }
+      });
+    } else {
+      await api.updateRun(command.runId, {
+        state: "succeeded",
+        message: "任务已成功完成，游戏与模拟器已停止",
+        currentStep: null,
+        progress: 1,
+        event: {
+          level: "info",
+          step: "finished",
+          message: "任务成功；已完成资源清理"
+        }
+      });
+    }
   } catch (error) {
     const interrupted = signal.aborted;
     terminalState = interrupted ? "interrupted" : "failed";
@@ -248,7 +265,7 @@ async function executeCommand(command, signal) {
     }
     await api.completeCommand(
       command,
-      terminalState === "succeeded"
+      ["succeeded", "partially_succeeded"].includes(terminalState)
         ? "completed"
         : terminalState === "interrupted"
           ? "cancelled"

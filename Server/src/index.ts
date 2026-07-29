@@ -70,6 +70,7 @@ import { validateConfigBundle } from "./validate";
 const TERMINAL_RUN_STATES = new Set<RunState>([
   "interrupted",
   "succeeded",
+  "partially_succeeded",
   "failed",
   "timed_out",
   "skipped"
@@ -904,6 +905,7 @@ function isRunState(value: unknown): value is RunState {
       "cancelling",
       "interrupted",
       "succeeded",
+      "partially_succeeded",
       "failed",
       "timed_out",
       "skipped"

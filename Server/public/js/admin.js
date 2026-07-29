@@ -112,6 +112,7 @@
       cancelling: "中断中",
       interrupted: "已中断",
       succeeded: "成功",
+      partially_succeeded: "部分完成",
       failed: "失败",
       timed_out: "已超时",
       skipped: "已跳过"

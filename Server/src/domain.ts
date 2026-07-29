@@ -19,6 +19,7 @@ export type RunState =
   | "cancelling"
   | "interrupted"
   | "succeeded"
+  | "partially_succeeded"
   | "failed"
   | "timed_out"
   | "skipped";

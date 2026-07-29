@@ -23,6 +23,7 @@ const STATES = new Set([
   "unknown"
 ]);
 const ACTIONS = new Set(["wait"]);
+const OVERLAY_CONTROLS = new Set(["close_x", "back", "collapse", "none"]);
 
 export class LocalVisionAdvisor {
   constructor(config = {}) {
@@ -302,6 +303,40 @@ export class LocalVisionAdvisor {
         campTitle: String(item?.campTitle || "").trim()
       }))
       .filter((item) => allowedSlots.has(item.slot) && item.name);
+  }
+
+  async identifyOverlayControl(imagePath, { ocrTexts = [] } = {}, signal) {
+    if (!this.enabled || this.config.transport !== "http") return null;
+    const prompt = [
+      "识别《明日之后》当前遮挡页面唯一适合关闭的控件。你只读、不能执行操作。",
+      "control只能是close_x、back、collapse、none。",
+      "右上角明确可见X/关闭图标=close_x；左下角明确可见“返回”按钮或返回箭头=back；完整聊天面板右下角明确可见“收起”=collapse；不清晰、没有遮挡或无法确定=none。",
+      "只判断这三种安全关闭控件，不得建议其他按钮、坐标、地图、攻击或任务操作。",
+      "按钮清晰且位置符合时confidence可为0.97；有轻微遮挡但仍明确时最高0.95；存在疑问不得超过0.85。",
+      `OCR=${JSON.stringify(ocrTexts.slice(0, 30))}。`,
+      '只返回一行JSON：{"control":"none","confidence":0.0,"evidence":"20字内依据"}'
+    ].join("\n");
+    const parsed = await requestHttp(
+      this.config,
+      imagePath,
+      prompt,
+      {
+        maxTokens: 64,
+        resizeShape: this.config.resizeShape
+      },
+      signal
+    );
+    if (
+      !OVERLAY_CONTROLS.has(parsed.control) ||
+      !Number.isFinite(Number(parsed.confidence))
+    ) {
+      throw new Error("Local vision model returned an invalid overlay control");
+    }
+    return {
+      control: parsed.control,
+      confidence: Math.max(0, Math.min(1, Number(parsed.confidence))),
+      evidence: String(parsed.evidence || "").slice(0, 120)
+    };
   }
 }
 

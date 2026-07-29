@@ -18,6 +18,10 @@ export async function withGameSession(
   let advisorStarted = false;
   let preserveSceneAfterError = false;
   let preservedError = null;
+  const cleanupResult = {
+    cleanupCompleted: true,
+    cleanupIssues: []
+  };
   try {
     if (vision?.advisor?.enabled) {
       await report(
@@ -45,7 +49,7 @@ export async function withGameSession(
         await startAndEnterGame(context, signal);
         gameReady = true;
         await runWithWatchdog(context, work, signal, watchdog);
-        return;
+        return cleanupResult;
       } catch (error) {
         if (signal.aborted) throw signal.reason || error;
         const deviceState = await adb.state();
@@ -112,17 +116,39 @@ export async function withGameSession(
         ).catch(() => undefined);
       } else {
         if (gameReady && config.mumu.returnToCenterAfterTask !== false) {
-          await returnToCenterExit(context);
+          const returnResult = await returnToCenterExit(context);
+          if (!returnResult.completed) {
+            cleanupResult.cleanupCompleted = false;
+            cleanupResult.cleanupIssues.push(returnResult.reason);
+          }
         }
         await report("info", "game_stop", "正在关闭游戏进程").catch(() => undefined);
-        await adb.stopGame();
+        await adb.stopGame().catch(async (error) => {
+          cleanupResult.cleanupCompleted = false;
+          cleanupResult.cleanupIssues.push(`关闭游戏失败：${error.message}`);
+          await report(
+            "warning",
+            "game_stop_failed",
+            "核心任务已完成，但关闭游戏进程失败",
+            { reason: error.message }
+          ).catch(() => undefined);
+        });
         if (config.mumu.stopEmulatorAfterTask) {
           await report(
             "info",
             "emulator_stop",
             "任务已结束，正在停止 MuMu 以节约资源和能耗"
           ).catch(() => undefined);
-          await mumu.stopAfterTask();
+          await mumu.stopAfterTask().catch(async (error) => {
+            cleanupResult.cleanupCompleted = false;
+            cleanupResult.cleanupIssues.push(`停止 MuMu 失败：${error.message}`);
+            await report(
+              "warning",
+              "emulator_stop_failed",
+              "核心任务已完成，但停止 MuMu 失败",
+              { reason: error.message }
+            ).catch(() => undefined);
+          });
         }
       }
       if (advisorStarted) {
@@ -153,7 +179,7 @@ async function returnToCenterExit(context) {
       "return_center_skipped",
       "角色已确认位于中心出入口，跳过重复打开地图与传送"
     ).catch(() => undefined);
-    return;
+    return { completed: true, reason: null };
   }
   const deviceState = await adb.state().catch(() => "offline");
   const health = await adb.gameHealth().catch(() => ({
@@ -167,7 +193,10 @@ async function returnToCenterExit(context) {
       "游戏或 ADB 已无响应，跳过中心出入口收尾传送并直接关停",
       { deviceState, health }
     ).catch(() => undefined);
-    return;
+    return {
+      completed: false,
+      reason: "游戏或 ADB 无响应，未能返回中心出入口"
+    };
   }
   const timeoutSeconds = Math.max(
     20,
@@ -194,6 +223,7 @@ async function returnToCenterExit(context) {
       "return_center_done",
       "角色已返回中心出入口"
     );
+    return { completed: true, reason: null };
   } catch (error) {
     await report(
       "warning",
@@ -201,6 +231,10 @@ async function returnToCenterExit(context) {
       "中心出入口收尾传送失败，将继续关闭游戏与模拟器",
       { reason: error.message }
     ).catch(() => undefined);
+    return {
+      completed: false,
+      reason: `返回中心出入口失败：${error.message}`
+    };
   } finally {
     clearTimeout(timer);
   }

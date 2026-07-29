@@ -1040,6 +1040,11 @@ td {
   border-color: rgba(117, 185, 156, 0.3);
 }
 
+.status-partially_succeeded {
+  color: #d9a968;
+  border-color: rgba(217, 169, 104, 0.34);
+}
+
 .status-failed,
 .status-timed_out,
 .status-interrupted {

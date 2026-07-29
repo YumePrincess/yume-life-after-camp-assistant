@@ -754,6 +754,7 @@ export async function updateRun(
   const terminal = [
     "interrupted",
     "succeeded",
+    "partially_succeeded",
     "failed",
     "timed_out",
     "skipped"

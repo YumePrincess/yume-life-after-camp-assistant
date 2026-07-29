@@ -778,6 +778,17 @@ export class GameUi {
       const visibleCampPanelText = campPanelTexts
         .map((text) => this.vision.find(frame.observations, text))
         .find(Boolean);
+      const campTabMarkers = ["首页", "玩法", "科技", "成员", "相册"]
+        .map((text) =>
+          this.findInRegion(
+            frame.observations,
+            text,
+            { left: 300, top: 120, right: 1550, bottom: 260 }
+          )
+        )
+        .filter(Boolean);
+      const campPanelOpen =
+        Boolean(visibleCampPanelText) || campTabMarkers.length >= 2;
       const chatCollapse = this.findInRegion(
         frame.observations,
         "收起",
@@ -801,12 +812,29 @@ export class GameUi {
         .find(Boolean);
 
       let advice = null;
+      let overlayAdvice = null;
+      const advisorEnabled =
+        this.vision.advisor?.enabled &&
+        this.vision.advisor.config.mode === "guarded";
+      if (
+        advisorEnabled &&
+        !campPanelOpen &&
+        !chatOpen &&
+        !closeText &&
+        !visibleInteractionPanelText &&
+        typeof this.vision.adviseOverlayControlCurrent === "function"
+      ) {
+        overlayAdvice = await this.vision.adviseOverlayControlCurrent(
+          `map-preparation-overlay-${attempt}`,
+          { ocrTexts: frame.observations.map((item) => item.text) },
+          signal
+        ).catch(() => null);
+      }
       if (
         !visiblePanelText &&
         !visibleInteractionPanelText &&
         !failureOverlay &&
-        this.vision.advisor?.enabled &&
-        this.vision.advisor.config.mode === "guarded"
+        advisorEnabled
       ) {
         advice = await this.vision.adviseCurrent(
           `map-preparation-advisor-${attempt}`,
@@ -822,12 +850,15 @@ export class GameUi {
       const minimum =
         Number(this.vision.advisor?.config.minimumActionConfidence) || 0.95;
       const confident = Number(advice?.confidence) >= minimum;
+      const overlayConfident =
+        Number(overlayAdvice?.confidence) >= minimum &&
+        ["close_x", "back", "collapse"].includes(overlayAdvice?.control);
       if (confident && advice.state === "map") return "map";
       if (
         visibleHudText &&
         !visiblePanelText &&
         !visibleInteractionPanelText &&
-        !visibleCampPanelText &&
+        !campPanelOpen &&
         !chatOpen &&
         !failureOverlay
       ) {
@@ -859,11 +890,14 @@ export class GameUi {
           visibleInteractionPanelText:
             visibleInteractionPanelText?.text || null,
           visibleCampPanelText: visibleCampPanelText?.text || null,
+          campTabMarkers: campTabMarkers.map((item) => item.text),
           chatOpen,
-          visibleHudText: visibleHudText?.text || null
+          visibleHudText: visibleHudText?.text || null,
+          overlayControl: overlayAdvice?.control || null,
+          overlayConfidence: overlayAdvice?.confidence || null
         }
       );
-      if (visibleCampPanelText) {
+      if (campPanelOpen) {
         await this.tap(topRightClose, signal);
       } else if (chatOpen) {
         if (chatCollapse) {
@@ -874,6 +908,23 @@ export class GameUi {
         }
       } else if (closeText) {
         await this.tap(center(closeText), signal);
+      } else if (overlayConfident) {
+        await this.report(
+          "info",
+          "map_overlay_ai_close",
+          `AI 已确认安全关闭控件：${overlayAdvice.control}`,
+          overlayAdvice
+        );
+        if (overlayAdvice.control === "close_x") {
+          await this.tap(topRightClose, signal);
+        } else if (overlayAdvice.control === "collapse") {
+          await this.tap(
+            action.chatCollapsePoint || { x: 1700, y: 1040 },
+            signal
+          );
+        } else {
+          await this.tap(bottomLeftBack, signal);
+        }
       } else if (visibleInteractionPanelText) {
         await this.adb.key(4, signal);
         await this.afterAction(signal);

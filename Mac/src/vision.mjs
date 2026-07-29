@@ -61,6 +61,24 @@ export class Vision {
     }
   }
 
+  async adviseOverlayControlCurrent(label, context = {}, signal) {
+    if (!this.advisor.enabled) return null;
+    await mkdir(this.snapshotDir, { recursive: true });
+    const stamp = new Date().toISOString().replaceAll(":", "-");
+    const path = resolve(
+      this.snapshotDir,
+      `${stamp}-${String(++this.sequence).padStart(4, "0")}-${safe(label)}-overlay-advisor.png`
+    );
+    await this.adb.screenshot(path);
+    this.taskPaths.add(path);
+    try {
+      return await this.advisor.identifyOverlayControl(path, context, signal);
+    } finally {
+      this.taskPaths.delete(path);
+      await rm(path, { force: true });
+    }
+  }
+
   async extractTableRows(imagePath, definition, label, signal) {
     if (!this.advisor.enabled) return [];
     const columnKeys = definition.columns.map((column) => column.key);
