@@ -98,6 +98,36 @@ test("map preparation closes the camp page, collapses chat, then confirms HUD", 
   assert.deepEqual(fixture.keys, []);
 });
 
+test("1920x1200 map flow closes every overlay before sending M", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("首页", 450, 180),
+        observation("玩法", 700, 180),
+        observation("成员", 1150, 180)
+      ],
+      [
+        observation("营地", 1660, 360),
+        observation("世界", 1660, 220),
+        observation("收起", 1700, 1040)
+      ],
+      [observation("背包", 120, 900)],
+      [observation("标志查看", 260, 150)]
+    ]
+  });
+  await fixture.ui.ensureMapOpen({
+    mapKey: "KEYCODE_M",
+    mapReadyTexts: ["标志查看"],
+    mapPreparationMaxClosures: 6,
+    mapOpenPollMs: 1
+  });
+  assert.deepEqual(fixture.taps, [
+    { x: 1750, y: 145 },
+    { x: 1710, y: 1050 }
+  ]);
+  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+});
+
 test("map preparation permits only a high-confidence AI safe close control", async () => {
   const fixture = createUi({
     fastFrames: [[], [observation("背包", 120, 900)]],
