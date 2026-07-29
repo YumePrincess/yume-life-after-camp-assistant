@@ -592,8 +592,18 @@ async function handleAgentApi(
     }
     if (type === "contribution") {
       const members = sanitizeContribution(body.payload);
-      await updateContributionSnapshot(env, { runId, capturedAt, members });
-      return json({ ok: true, count: members.length });
+      const reconciliation = await updateContributionSnapshot(env, {
+        runId,
+        capturedAt,
+        members
+      });
+      return json({
+        ok: true,
+        count: reconciliation.updates.length,
+        received: members.length,
+        ignored: reconciliation.ignored,
+        ambiguous: reconciliation.ambiguous
+      });
     }
     if (type === "activity") {
       const members = sanitizeActivity(body.payload);
@@ -988,7 +998,12 @@ function sanitizeProfiles(value: unknown) {
       profession: nullableText(item.profession, 80),
       manorLevel: nullableInteger(item.manorLevel, 0, 1000),
       roommateName: nullableText(item.roommateName, 80),
-      campTitle: nullableText(item.campTitle, 80)
+      campTitle: nullableText(item.campTitle, 80),
+      weeklyContribution: requiredInteger(
+        item.weeklyContribution,
+        0,
+        1_000_000_000
+      )
     };
   });
 }

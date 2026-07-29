@@ -1,3 +1,5 @@
+import { delay } from "../process.mjs";
+
 export async function runTechnology(context, command, bundle, signal) {
   const plan = command.payload?.detail?.technologyPlan;
   if (!plan) throw new Error("Technology task has no generated plan");
@@ -53,35 +55,44 @@ export async function runTechnology(context, command, bundle, signal) {
 
 export async function verifyFinalConfiguredSlots(context, plan, signal) {
   const { config, vision, report } = context;
-  const detection = config.technology.filledSlotDetection;
+  const baseline = context.technologyEmptySlotBaseline;
+  if (!baseline?.slots?.length || !baseline?.probes?.length) {
+    throw new Error("科技最终校验缺少本轮清空后的空槽基线");
+  }
   const slots = ["core", "general"].flatMap((lane) =>
     config.technology.slots[lane].map((point, index) => ({
       ...point,
       lane,
       index,
-      expectedFilled: index < (plan[lane]?.length ?? 0)
+      expectedTechnology: plan[lane]?.[index] ?? null
     }))
   );
   const frame = await vision.capture("technology-final-verification", signal);
   const probes = await vision.probe(
     frame.path,
     slots,
-    detection.sampleRadius,
+    config.technology.filledSlotDetection.sampleRadius,
     signal
   );
+  const threshold = Math.max(
+    0.02,
+    Number(
+      config.technology.filledSlotDetection.minimumInstalledFeatureDistance ??
+        config.technology.filledSlotDetection.maximumEmptyFeatureDistance
+    ) || 0.08
+  );
   const mismatches = slots.flatMap((slot, index) => {
-    const distance = featureDistance(
-      probes[index],
-      detection.emptyReference[slot.lane]
-    );
-    const filled = distance > detection.maximumEmptyFeatureDistance;
-    return filled === slot.expectedFilled
+    const expectedFilled = Boolean(slot.expectedTechnology);
+    const distance = featureDistance(probes[index], baseline.probes[index]);
+    const detectedFilled = distance > threshold;
+    return detectedFilled === expectedFilled
       ? []
       : [{
           lane: slot.lane,
           slot: slot.index + 1,
-          expectedFilled: slot.expectedFilled,
-          detectedFilled: filled,
+          expectedLabel: slot.expectedTechnology?.uiLabel || null,
+          expectedFilled,
+          detectedFilled,
           distance
         }];
   });
@@ -90,7 +101,7 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
       `科技最终槽位校验失败：${mismatches
         .map(
           (item) =>
-            `${item.lane === "core" ? "第一行" : "第二行"}第 ${item.slot} 格应为${item.expectedFilled ? "已安装" : "空"}`
+            `${item.lane === "core" ? "第一行" : "第二行"}第 ${item.slot} 格应为${item.expectedLabel ? `“${item.expectedLabel}”` : "空"}`
         )
         .join("、")}`
     );
@@ -98,96 +109,61 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
   await report(
     "info",
     "technology_final_verified",
-    `正式 Agent 已确认 12 个槽位：第一行 ${plan.core.length} 项、第二行 ${plan.general.length} 项，其余槽位为空`,
-    { probes, screenshot: frame.path }
+    `正式 Agent 已用本轮空槽基线无点击确认 12 个槽位：第一行 ${plan.core.length} 项、第二行 ${plan.general.length} 项，其余槽位为空`,
+    { probes, threshold, screenshot: frame.path }
   );
 }
 
 export async function clearAllConfiguredSlots(context, signal) {
   const { config, ui, vision, report } = context;
-  const allSlots = ["general", "core"].flatMap((lane) =>
-    config.technology.slots[lane].map((point, index) => ({ ...point, lane, index }))
-  );
-  const initial = await vision.capture("technology-before-clear", signal);
-  const detection = config.technology.filledSlotDetection;
-  const probes = await vision.probe(
-    initial.path,
-    allSlots,
-    detection.sampleRadius,
-    signal
-  );
-  const configured = allSlots.filter(
-    (slot, index) =>
-      featureDistance(probes[index], detection.emptyReference[slot.lane]) >
-      detection.maximumEmptyFeatureDistance
-  );
-  await report(
-    "info",
-    "tech_clear",
-    `识别到 ${configured.length} 个已配置槽位，将只点击这些槽位`,
-    { probes, screenshot: initial.path }
-  );
+  let configuredCount = 0;
   for (const lane of ["general", "core"]) {
-    const laneSlots = configured
-      .filter((slot) => slot.lane === lane)
-      .sort((a, b) => b.index - a.index);
+    const laneSlots = config.technology.slots[lane]
+      .map((point, index) => ({ ...point, lane, index }))
+      .sort((a, b) => a.index - b.index);
     for (const slot of laneSlots) {
-      await ui.tap(slot, signal);
+      const before = await readTechnologySlotState(
+        context,
+        slot,
+        `technology-clear-check-${lane}-${slot.index + 1}`,
+        signal
+      );
+      if (!before.occupied) continue;
+      configuredCount += 1;
       await ui.tap(config.technology.unloadSelected, signal);
-      const clearedFrame = await vision.capture(
+      const after = await readTechnologySlotState(
+        context,
+        slot,
         `technology-cleared-${lane}-${slot.index + 1}`,
         signal
       );
-      const [clearedProbe] = await vision.probe(
-        clearedFrame.path,
-        [slot],
-        detection.sampleRadius,
-        signal
-      );
-      if (
-        featureDistance(
-          clearedProbe,
-          detection.emptyReference[slot.lane]
-        ) > detection.maximumEmptyFeatureDistance
-      ) {
+      if (after.occupied) {
         throw new Error(
           `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 个槽位点击“卸下”后仍为占用状态`
         );
       }
     }
   }
-  const frame = await vision.capture("technology-after-clear", signal);
-  const afterProbes = await vision.probe(
+  await report(
+    "info",
+    "tech_clear",
+    `逐格识别“卸下”按钮并移除 ${configuredCount} 项；右侧两行 12 个槽位均已验证为空`
+  );
+  const slots = ["core", "general"].flatMap((lane) =>
+    config.technology.slots[lane].map((point, index) => ({
+      ...point,
+      lane,
+      index
+    }))
+  );
+  const frame = await vision.capture("technology-empty-baseline", signal);
+  const probes = await vision.probe(
     frame.path,
-    allSlots,
-    detection.sampleRadius,
+    slots,
+    config.technology.filledSlotDetection.sampleRadius,
     signal
   );
-  const remaining = allSlots.filter(
-    (slot, index) =>
-      featureDistance(afterProbes[index], detection.emptyReference[slot.lane]) >
-      detection.maximumEmptyFeatureDistance
-  );
-  if (remaining.length) {
-    throw new Error(
-      `科技清空校验失败：仍检测到 ${remaining.length} 个可能已配置槽位`
-    );
-  }
-  await report("info", "tech_clear", "右侧两行 12 个槽位均已验证为空", {
-    probes: afterProbes,
-    screenshot: frame.path
-  });
-}
-
-function featureDistance(observed, reference) {
-  if (!observed || !reference) return Number.POSITIVE_INFINITY;
-  return Math.hypot(
-    observed.meanRed - reference.meanRed,
-    observed.meanGreen - reference.meanGreen,
-    observed.meanBlue - reference.meanBlue,
-    observed.meanSaturation - reference.meanSaturation,
-    observed.luminanceDeviation - reference.luminanceDeviation
-  );
+  context.technologyEmptySlotBaseline = { slots, probes };
 }
 
 export async function selectTechnology(
@@ -201,6 +177,46 @@ export async function selectTechnology(
   const slot = config.technology.slots[lane][slotIndex];
   if (!slot) throw new Error(`${lane} lane has no slot ${slotIndex + 1}`);
   await ui.tap(slot, signal);
+  let openCheck = await vision.capture(
+    `technology-selector-open-check-${lane}-${slotIndex + 1}`,
+    signal
+  );
+  let selectorClosed =
+    vision.find(openCheck.observations, "点击槽位") ||
+    vision.find(openCheck.observations, "可在此处选择科技");
+  if (
+    !selectorClosed &&
+    typeof vision.captureAccurateTransient === "function"
+  ) {
+    const accurateOpenCheck = await vision.captureAccurateTransient(
+      `technology-selector-open-check-${lane}-${slotIndex + 1}-accurate`,
+      signal
+    );
+    selectorClosed =
+      vision.find(accurateOpenCheck.observations, "点击槽位") ||
+      vision.find(accurateOpenCheck.observations, "可在此处选择科技");
+    openCheck = accurateOpenCheck;
+  }
+  if (selectorClosed) {
+    await report(
+      "info",
+      "tech_selector_reopen",
+      `目标槽位的科技列表处于折叠状态，正在再次点击${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格`
+    );
+    await ui.tap(slot, signal);
+    const reopened = await vision.capture(
+      `technology-selector-reopened-${lane}-${slotIndex + 1}`,
+      signal
+    );
+    if (
+      vision.find(reopened.observations, "点击槽位") ||
+      vision.find(reopened.observations, "可在此处选择科技")
+    ) {
+      throw new Error(
+        `科技列表未打开：${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格再次点击后仍显示“点击槽位”`
+      );
+    }
+  }
   const swipe = config.technology.selectorSwipe;
   for (
     let reset = 0;
@@ -248,7 +264,26 @@ export async function selectTechnology(
         { lane, slotIndex, point: { x, y }, matchedText: match.text }
       );
       await ui.tap({ x, y }, signal);
-      await verifySlotFilled(context, lane, slotIndex, label, signal);
+      await report(
+        "info",
+        "tech_configure_selected",
+        `已选择“${label}”，正在点击详情弹窗中的“配置”完成安装`
+      );
+      await ui.tap(
+        config.technology.configureSelected ||
+          config.technology.unloadSelected,
+        signal
+      );
+      const settleMs = Math.max(
+        3_000,
+        Number(config.technology.configureSettleMs) || 3_000
+      );
+      await (context.sleep || delay)(settleMs, signal);
+      await report(
+        "info",
+        "tech_slot_configured",
+        `“${label}”已点击配置并等待 ${Math.round(settleMs / 1000)} 秒；继续下一个槽位`
+      );
       return;
     }
     if (page < swipe.maxPages) {
@@ -282,33 +317,69 @@ function findTechnologyMatch(vision, observations, label, region) {
   );
 }
 
-async function verifySlotFilled(context, lane, slotIndex, label, signal) {
-  const { config, vision, report } = context;
-  const slot = config.technology.slots[lane][slotIndex];
-  const detection = config.technology.filledSlotDetection;
-  const frame = await vision.capture(
-    `technology-installed-${lane}-${slotIndex + 1}`,
-    signal
+async function readTechnologySlotState(context, slot, label, signal) {
+  const { config, ui, vision } = context;
+  await ui.tap(slot, signal);
+  let frame = await vision.capture(label, signal);
+  let observations = frame.observations;
+  let unload = findTechnologyText(
+    vision,
+    observations,
+    "卸下",
+    config.technology.detailsRegion
   );
-  const [probe] = await vision.probe(
-    frame.path,
-    [slot],
-    detection.sampleRadius,
-    signal
-  );
-  const distance = featureDistance(
-    probe,
-    detection.emptyReference[lane]
-  );
-  if (distance <= detection.maximumEmptyFeatureDistance) {
-    throw new Error(
-      `科技安装校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 个槽位在选择“${label}”后仍为空`
+  if (!unload && typeof vision.captureAccurateTransient === "function") {
+    const accurate = await vision.captureAccurateTransient(
+      `${label}-accurate`,
+      signal
+    );
+    observations = accurate.observations;
+    frame = accurate;
+    unload = findTechnologyText(
+      vision,
+      observations,
+      "卸下",
+      config.technology.detailsRegion
     );
   }
-  await report(
-    "info",
-    "tech_slot_verified",
-    `已确认“${label}”安装到${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 个槽位`,
-    { distance, probe, screenshot: frame.path }
+  return {
+    occupied: Boolean(unload),
+    unload,
+    observations,
+    frame
+  };
+}
+
+function featureDistance(observed, reference) {
+  if (!observed || !reference) return Number.POSITIVE_INFINITY;
+  return Math.hypot(
+    observed.meanRed - reference.meanRed,
+    observed.meanGreen - reference.meanGreen,
+    observed.meanBlue - reference.meanBlue,
+    observed.meanSaturation - reference.meanSaturation,
+    observed.luminanceDeviation - reference.luminanceDeviation
+  );
+}
+
+function findTechnologyText(vision, observations, text, region) {
+  const bounds = region || {
+    left: 520,
+    top: 250,
+    right: 1050,
+    bottom: 850
+  };
+  const bounded = observations.filter((item) => {
+    const x = item.x + item.width / 2;
+    const y = item.y + item.height / 2;
+    return (
+      x >= bounds.left &&
+      x <= bounds.right &&
+      y >= bounds.top &&
+      y <= bounds.bottom
+    );
+  });
+  return (
+    vision.find(bounded, text, "exact") ||
+    vision.find(bounded, text, "includes")
   );
 }

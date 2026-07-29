@@ -6,31 +6,8 @@ import {
   verifyFinalConfiguredSlots
 } from "../src/workflows/technology.mjs";
 
-const emptyCore = {
-  meanRed: 0.3,
-  meanGreen: 0.4,
-  meanBlue: 0.3,
-  meanSaturation: 0.2,
-  luminanceDeviation: 0.07
-};
-const emptyGeneral = {
-  meanRed: 0.3,
-  meanGreen: 0.3,
-  meanBlue: 0.3,
-  meanSaturation: 0.02,
-  luminanceDeviation: 0.15
-};
-const filled = {
-  meanRed: 0.8,
-  meanGreen: 0.1,
-  meanBlue: 0.1,
-  meanSaturation: 0.9,
-  luminanceDeviation: 0.4
-};
-
 test("every occupied technology slot is selected and unloaded separately", async () => {
   const taps = [];
-  let probeCall = 0;
   const context = {
     config: technologyConfig(),
     ui: {
@@ -40,14 +17,18 @@ test("every occupied technology slot is selected and unloaded separately", async
     },
     vision: {
       async capture(label) {
-        return { path: `${label}.png` };
+        return {
+          path: `${label}.png`,
+          observations: label.includes("clear-check")
+            ? [observation("卸下", 700, 600)]
+            : []
+        };
       },
-      async probe(_path, points) {
-        probeCall += 1;
-        if (probeCall === 1) return points.map(() => filled);
-        return points.map((point) =>
-          point.y === 400 ? emptyCore : emptyGeneral
-        );
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      },
+      async probe(_path, slots) {
+        return slots.map(() => feature(0));
       }
     },
     async report() {}
@@ -56,12 +37,14 @@ test("every occupied technology slot is selected and unloaded separately", async
   assert.deepEqual(taps, [
     { x: 800, y: 550, lane: "general", index: 0 },
     { x: 745, y: 638 },
+    { x: 800, y: 550, lane: "general", index: 0 },
     { x: 800, y: 400, lane: "core", index: 0 },
-    { x: 745, y: 638 }
+    { x: 745, y: 638 },
+    { x: 800, y: 400, lane: "core", index: 0 }
   ]);
 });
 
-test("technology selection uses the exact left-list match and verifies the target slot", async () => {
+test("technology selection configures the exact target without re-clicking its slot", async () => {
   const taps = [];
   const reports = [];
   const context = {
@@ -79,6 +62,9 @@ test("technology selection uses the exact left-list match and verifies the targe
     },
     vision: {
       async capture(label) {
+        if (label.startsWith("technology-selector-open-check")) {
+          return { path: `${label}.png`, observations: [] };
+        }
         if (label.startsWith("technology-selector")) {
           return {
             path: `${label}.png`,
@@ -94,18 +80,20 @@ test("technology selection uses the exact left-list match and verifies the targe
             ]
           };
         }
-        return { path: `${label}.png`, observations: [] };
+        return {
+          path: `${label}.png`,
+          observations: [
+            observation("温室大棚", 620, 430),
+            observation("卸下", 700, 600)
+          ]
+        };
       },
       find(observations, query, mode) {
-        return observations.find((item) =>
-          mode === "exact"
-            ? item.text === query
-            : item.text.includes(query)
-        );
-      },
-      async probe() {
-        return [filled];
+        return findObservation(observations, query, mode);
       }
+    },
+    async sleep(ms) {
+      assert.equal(ms, 3000);
     },
     async report(_level, step, message) {
       reports.push({ step, message });
@@ -114,37 +102,155 @@ test("technology selection uses the exact left-list match and verifies the targe
   await selectTechnology(context, "core", 0, "温室大棚");
   assert.deepEqual(taps, [
     { x: 800, y: 400 },
-    { x: 300, y: 470 }
+    { x: 300, y: 470 },
+    { x: 745, y: 638 }
   ]);
   assert.ok(
     reports.some(
       (item) =>
-        item.step === "tech_slot_verified" &&
-        item.message.includes("第一行第 1 个槽位")
+        item.step === "tech_slot_configured" &&
+        item.message.includes("等待 3 秒")
     )
   );
+});
+
+test("two technologies follow slot-select-configure-wait before the next slot", async () => {
+  const actions = [];
+  const context = {
+    config: {
+      ...technologyConfig(),
+      technology: {
+        ...technologyConfig().technology,
+        slots: {
+          core: [
+            { x: 800, y: 400 },
+            { x: 1000, y: 400 }
+          ],
+          general: [{ x: 800, y: 550 }]
+        }
+      }
+    },
+    ui: {
+      async tap(point) {
+        actions.push(["tap", point]);
+      },
+      async afterAction() {}
+    },
+    adb: {
+      async mouseSwipe() {
+        throw new Error("unexpected swipe");
+      }
+    },
+    vision: {
+      async capture(label) {
+        const target = label.includes("种豆得豆") ? "种豆得豆" : "大丰收";
+        return label.startsWith("technology-selector-open-check")
+          ? { path: `${label}.png`, observations: [] }
+          : {
+              path: `${label}.png`,
+              observations: [observation(target, 240, 450)]
+            };
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      }
+    },
+    async sleep(ms) {
+      actions.push(["wait", ms]);
+    },
+    async report() {}
+  };
+
+  await selectTechnology(context, "core", 0, "大丰收");
+  await selectTechnology(context, "core", 1, "种豆得豆");
+
+  assert.deepEqual(actions, [
+    ["tap", { x: 800, y: 400 }],
+    ["tap", { x: 280, y: 465 }],
+    ["tap", { x: 745, y: 638 }],
+    ["wait", 3000],
+    ["tap", { x: 1000, y: 400 }],
+    ["tap", { x: 280, y: 465 }],
+    ["tap", { x: 745, y: 638 }],
+    ["wait", 3000]
+  ]);
+});
+
+test("technology selection reopens a list that was toggled closed", async () => {
+  const taps = [];
+  const reports = [];
+  const context = {
+    config: technologyConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async afterAction() {}
+    },
+    adb: {
+      async mouseSwipe() {
+        throw new Error("unexpected swipe");
+      }
+    },
+    vision: {
+      async capture(label) {
+        if (label.startsWith("technology-selector-open-check")) {
+          return {
+            path: `${label}.png`,
+            observations: [observation("点击槽位后可在此处选择科技", 120, 700)]
+          };
+        }
+        if (label.startsWith("technology-selector")) {
+          return {
+            path: `${label}.png`,
+            observations: [observation("温室大棚", 240, 450)]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: [
+            observation("温室大棚", 620, 430),
+            observation("卸下", 700, 600)
+          ]
+        };
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+  await selectTechnology(context, "core", 0, "温室大棚");
+  assert.deepEqual(taps.slice(0, 2), [
+    { x: 800, y: 400 },
+    { x: 800, y: 400 }
+  ]);
+  assert.ok(reports.includes("tech_selector_reopen"));
 });
 
 test("formal technology workflow verifies every expected filled and empty slot", async () => {
   const reports = [];
   const context = {
     config: technologyConfig(),
+    ui: { async tap() {} },
     vision: {
-      async capture() {
-        return { path: "final.png" };
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
       },
-      async probe(_path, points) {
-        return points.map((point) =>
-          point.lane === "core" ? filled : emptyGeneral
-        );
+      async probe(_path, slots) {
+        return slots.map((_slot, index) => feature(index === 0 ? 0.2 : 0));
       }
     },
+    technologyEmptySlotBaseline: baseline(),
     async report(_level, step, message) {
       reports.push({ step, message });
     }
   };
   await verifyFinalConfiguredSlots(context, {
-    core: [{ name: "温室大棚" }],
+    core: [{ name: "温室大棚", uiLabel: "温室大棚" }],
     general: []
   });
   assert.ok(
@@ -159,24 +265,24 @@ test("formal technology workflow verifies every expected filled and empty slot",
 test("formal technology workflow aborts when a final slot has the wrong state", async () => {
   const context = {
     config: technologyConfig(),
+    ui: { async tap() {} },
     vision: {
-      async capture() {
-        return { path: "final.png" };
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
       },
-      async probe(_path, points) {
-        return points.map((point) =>
-          point.lane === "core" ? emptyCore : emptyGeneral
-        );
+      async probe(_path, slots) {
+        return slots.map(() => feature(0));
       }
     },
+    technologyEmptySlotBaseline: baseline(),
     async report() {}
   };
   await assert.rejects(
     verifyFinalConfiguredSlots(context, {
-      core: [{ name: "温室大棚" }],
+      core: [{ name: "温室大棚", uiLabel: "温室大棚" }],
       general: []
     }),
-    /第一行第 1 格应为已安装/
+    /第一行第 1 格应为“温室大棚”/
   );
 });
 
@@ -188,6 +294,13 @@ function technologyConfig() {
         general: [{ x: 800, y: 550 }]
       },
       unloadSelected: { x: 745, y: 638 },
+      configureSelected: { x: 745, y: 638 },
+      detailsRegion: {
+        left: 520,
+        top: 250,
+        right: 1050,
+        bottom: 850
+      },
       selectorRegion: {
         left: 60,
         top: 180,
@@ -201,14 +314,48 @@ function technologyConfig() {
         maxPages: 0,
         resetToTop: { repeats: 0 }
       },
+      configureSettleMs: 3000,
       filledSlotDetection: {
-        sampleRadius: 24,
+        sampleRadius: 8,
         maximumEmptyFeatureDistance: 0.08,
-        emptyReference: {
-          core: emptyCore,
-          general: emptyGeneral
-        }
+        minimumInstalledFeatureDistance: 0.08
       }
     }
   };
+}
+
+function baseline() {
+  return {
+    slots: [{}, {}],
+    probes: [feature(0), feature(0)]
+  };
+}
+
+function feature(value) {
+  return {
+    meanRed: value,
+    meanGreen: 0,
+    meanBlue: 0,
+    meanSaturation: 0,
+    luminanceDeviation: 0
+  };
+}
+
+function observation(text, x, y) {
+  return {
+    text,
+    confidence: 1,
+    x,
+    y,
+    width: 80,
+    height: 30
+  };
+}
+
+function findObservation(observations, query, mode) {
+  return observations.find((item) =>
+    mode === "exact"
+      ? item.text === query
+      : item.text.includes(query)
+  );
 }

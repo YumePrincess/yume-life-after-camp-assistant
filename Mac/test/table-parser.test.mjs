@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeMembers } from "../src/table-parser.mjs";
+import {
+  normalizeMembers,
+  normalizeProfiles
+} from "../src/table-parser.mjs";
 
 test("similar member names are never fuzzy-merged", () => {
   const rows = normalizeMembers(
@@ -31,6 +34,28 @@ test("similar member names are never fuzzy-merged", () => {
         name: "星河踏月归✨",
         profession: "武道大师",
         materialContribution: 202
+      }
+    ]
+  );
+});
+
+test("member profiles retain weekly contribution for contribution cross-checking", () => {
+  assert.deepEqual(
+    normalizeProfiles([
+      {
+        name: "愿",
+        profession: "步枪兵",
+        weeklyContribution: "17,892,175"
+      }
+    ]),
+    [
+      {
+        name: "愿",
+        profession: "步枪兵",
+        manorLevel: null,
+        roommateName: null,
+        campTitle: null,
+        weeklyContribution: 17892175
       }
     ]
   );

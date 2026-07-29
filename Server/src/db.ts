@@ -404,34 +404,144 @@ export async function updateContributionSnapshot(
       materialContribution: number;
     }>;
   }
-): Promise<void> {
-  const statements: D1PreparedStatement[] = [];
-  for (const member of input.members) {
-    const memberId = await stableMemberId(member.name);
-    statements.push(
-      env.DB.prepare(
-        `INSERT INTO members(
-           id, name, weekly_contribution, technology_points_used,
-           material_contribution, last_seen_at, source_run_id
-         ) VALUES(?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET
-           weekly_contribution = excluded.weekly_contribution,
-           technology_points_used = excluded.technology_points_used,
-           material_contribution = excluded.material_contribution,
-           last_seen_at = excluded.last_seen_at,
-           source_run_id = excluded.source_run_id`
-      ).bind(
-        memberId,
-        member.name,
-        member.weeklyContribution,
-        member.technologyPointsUsed,
-        member.materialContribution,
-        input.capturedAt,
-        input.runId
-      )
-    );
-  }
+): Promise<ContributionReconciliation> {
+  const current = await env.DB.prepare(
+    "SELECT name, weekly_contribution FROM members ORDER BY name"
+  ).all<{ name: string; weekly_contribution: number }>();
+  const reconciliation = reconcileContributionMembers(
+    input.members,
+    current.results.map((member) => ({
+      name: member.name,
+      weeklyContribution: member.weekly_contribution
+    }))
+  );
+  const statements = reconciliation.updates.map((member) =>
+    env.DB.prepare(
+      `UPDATE members
+       SET weekly_contribution = ?,
+           technology_points_used = ?,
+           material_contribution = ?,
+           last_seen_at = ?
+       WHERE name = ?`
+    ).bind(
+      member.weeklyContribution,
+      member.technologyPointsUsed,
+      member.materialContribution,
+      input.capturedAt,
+      member.name
+    )
+  );
   if (statements.length) await env.DB.batch(statements);
+  return reconciliation;
+}
+
+type ContributionRow = {
+  name: string;
+  weeklyContribution: number;
+  technologyPointsUsed: number;
+  materialContribution: number;
+};
+
+type ContributionMaster = {
+  name: string;
+  weeklyContribution: number;
+};
+
+export type ContributionReconciliation = {
+  updates: ContributionRow[];
+  ignored: number;
+  ambiguous: number;
+};
+
+export function reconcileContributionMembers(
+  incoming: ContributionRow[],
+  masterMembers: ContributionMaster[]
+): ContributionReconciliation {
+  const available = new Set(masterMembers.map((member) => member.name));
+  const exactByName = new Map<string, ContributionMaster[]>();
+  for (const member of masterMembers) {
+    const key = comparableMemberName(member.name);
+    exactByName.set(key, [...(exactByName.get(key) ?? []), member]);
+  }
+
+  const updates: ContributionRow[] = [];
+  let ignored = 0;
+  let ambiguous = 0;
+  for (const row of incoming) {
+    const exactCandidates = (exactByName.get(comparableMemberName(row.name)) ?? [])
+      .filter((member) => available.has(member.name));
+    let candidate: ContributionMaster | null = null;
+    if (exactCandidates.length === 1) {
+      candidate = exactCandidates[0]!;
+    } else if (exactCandidates.length > 1) {
+      ambiguous += 1;
+      ignored += 1;
+      continue;
+    } else {
+      const sourceName = comparableMemberName(row.name);
+      const fuzzyCandidates = masterMembers.filter((member) => {
+        if (!available.has(member.name)) return false;
+        const targetName = comparableMemberName(member.name);
+        return (
+          sourceName.length >= 4 &&
+          targetName.length >= 4 &&
+          levenshteinDistance(sourceName, targetName) <= 1 &&
+          contributionsCorroborate(
+            row.weeklyContribution,
+            member.weeklyContribution
+          )
+        );
+      });
+      if (fuzzyCandidates.length === 1) {
+        candidate = fuzzyCandidates[0]!;
+      } else {
+        if (fuzzyCandidates.length > 1) ambiguous += 1;
+        ignored += 1;
+        continue;
+      }
+    }
+
+    available.delete(candidate.name);
+    updates.push({ ...row, name: candidate.name });
+  }
+  return { updates, ignored, ambiguous };
+}
+
+function comparableMemberName(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, "");
+}
+
+function contributionsCorroborate(left: number, right: number): boolean {
+  if (left === right) return true;
+  const a = String(Math.max(0, Math.trunc(left)));
+  const b = String(Math.max(0, Math.trunc(right)));
+  return a.length >= 2 && a.length === b.length && levenshteinDistance(a, b) <= 1;
+}
+
+function levenshteinDistance(left: string, right: string): number {
+  if (left === right) return 0;
+  if (Math.abs(left.length - right.length) > 1) return 2;
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    let minimum = current[0]!;
+    for (let column = 1; column <= right.length; column += 1) {
+      const value = Math.min(
+        current[column - 1]! + 1,
+        previous[column]! + 1,
+        previous[column - 1]! +
+          (left[row - 1] === right[column - 1] ? 0 : 1)
+      );
+      current.push(value);
+      minimum = Math.min(minimum, value);
+    }
+    if (minimum > 1) return 2;
+    previous = current;
+  }
+  return previous[right.length]!;
 }
 
 export async function updateActivitySnapshot(
@@ -486,6 +596,7 @@ export async function updateMemberProfiles(
       manorLevel: number | null;
       roommateName: string | null;
       campTitle: string | null;
+      weeklyContribution: number;
     }>;
   }
 ): Promise<void> {
@@ -496,13 +607,14 @@ export async function updateMemberProfiles(
       env.DB.prepare(
         `INSERT INTO members(
            id, name, profession, manor_level, roommate_name, camp_title,
-           last_seen_at, source_run_id
-         ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+           weekly_contribution, last_seen_at, source_run_id
+         ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(name) DO UPDATE SET
            profession = excluded.profession,
            manor_level = excluded.manor_level,
            roommate_name = excluded.roommate_name,
            camp_title = excluded.camp_title,
+           weekly_contribution = excluded.weekly_contribution,
            last_seen_at = excluded.last_seen_at,
            source_run_id = excluded.source_run_id`
       ).bind(
@@ -512,6 +624,7 @@ export async function updateMemberProfiles(
         member.manorLevel,
         member.roommateName,
         member.campTitle,
+        member.weeklyContribution,
         input.capturedAt,
         input.runId
       )

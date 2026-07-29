@@ -40,14 +40,31 @@ export async function runMemberSync(context, command, _bundle, signal) {
 export async function runContributionSync(context, command, _bundle, signal) {
   const rows = normalizeContribution(await captureContribution(context, signal));
   assertContributionComplete(rows, context.config.tables.contribution);
-  await context.api.snapshot(
+  const result = await context.api.snapshot(
     command.runId,
     "contribution",
     rows,
     new Date().toISOString(),
     signal
   );
-  await context.report("info", "contribution_done", `已更新 ${rows.length} 名成员贡献`);
+  const matched = Number(result?.count) || 0;
+  const ignored = Math.max(0, Number(result?.ignored) || rows.length - matched);
+  if (matched === 0) {
+    throw new Error(
+      "CONTRIBUTION_MASTER_LIST_MISSING: 贡献数据未能匹配成员资料主名单，请先执行“更新成员资料”"
+    );
+  }
+  await context.report(
+    ignored ? "warning" : "info",
+    "contribution_done",
+    `贡献页识别 ${rows.length} 行，已匹配更新 ${matched} 名成员，忽略 ${ignored} 行未确认 OCR 数据；成员总数未改变`,
+    {
+      recognized: rows.length,
+      matched,
+      ignored,
+      ambiguous: Number(result?.ambiguous) || 0
+    }
+  );
 }
 
 export async function runInactivitySync(context, command, bundle, signal) {
@@ -99,7 +116,7 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
   await context.report(
     "info",
     "profiles_done",
-    `已更新 ${profiles.length} 名成员资料和 ${staff.length} 项公职`
+    `已更新 ${profiles.length} 名成员资料（含周贡献交叉比对值）和 ${staff.length} 项公职`
   );
 }
 

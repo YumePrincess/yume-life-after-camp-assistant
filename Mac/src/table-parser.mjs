@@ -135,12 +135,20 @@ export function normalizeContribution(rows) {
 
 export function normalizeProfiles(rows) {
   return normalizeMembers([], rows).map(
-    ({ name, profession, manorLevel, roommateName, campTitle }) => ({
+    ({
       name,
       profession,
       manorLevel,
       roommateName,
-      campTitle
+      campTitle,
+      weeklyContribution
+    }) => ({
+      name,
+      profession,
+      manorLevel,
+      roommateName,
+      campTitle,
+      weeklyContribution
     })
   );
 }

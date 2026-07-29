@@ -154,10 +154,14 @@
       }
     },
     "selectorRegion": { "left": 60, "top": 180, "right": 520, "bottom": 940 },
-    "unloadSelected": { "x": 745, "y": 638 },
-    "filledSlotDetection": {
-      "sampleRadius": 24,
-      "maximumEmptyFeatureDistance": 0.08,
+      "unloadSelected": { "x": 745, "y": 638 },
+      "configureSelected": { "x": 745, "y": 638 },
+      "configureSettleMs": 3000,
+      "detailsRegion": { "left": 520, "top": 250, "right": 1050, "bottom": 850 },
+      "filledSlotDetection": {
+        "sampleRadius": 24,
+        "maximumEmptyFeatureDistance": 0.08,
+        "minimumInstalledFeatureDistance": 0.08,
       "emptyReference": {
         "core": {
           "meanRed": 0.3712,
