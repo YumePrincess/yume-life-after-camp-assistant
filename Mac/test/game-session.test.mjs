@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { waitForGameReady } from "../src/game-session.mjs";
 
-test("zero promotion pages reaches HUD after only the safe announcement close tap", async () => {
+test("zero promotion pages reaches HUD without blindly tapping the map area", async () => {
   const fixture = createFixture([["背包"]]);
   await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [{ x: 1742, y: 155 }]);
+  assert.deepEqual(fixture.taps, []);
   assert.match(fixture.messages.at(-1), /未出现活动宣传页/);
 });
 
@@ -13,7 +13,6 @@ test("the newspaper is recognized as a promotion page", async () => {
   const fixture = createFixture([["登录游戏"], ["明日希望报"], ["背包"]]);
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
-    { x: 1742, y: 155 },
     { x: 960, y: 945 },
     { x: 960, y: 1135 }
   ]);
@@ -28,7 +27,6 @@ test("resource update restart is handled before login and promotion dismissal", 
   ]);
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
-    { x: 1742, y: 155 },
     { x: 5, y: 5 },
     { x: 960, y: 945 }
   ]);
@@ -45,7 +43,6 @@ test("pre-login announcement closes by its top-right X before clicking login", a
   ]);
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
-    { x: 1742, y: 155 },
     { x: 1742, y: 155 },
     { x: 960, y: 945 }
   ]);
@@ -149,9 +146,34 @@ test("a transient HUD during loading does not start the task", async () => {
   assert.equal(fixture.captures, 5);
   assert.ok(
     fixture.messages.some((message) =>
-      message.includes("继续等待登录场景连续稳定")
+      message.includes("继续等待登录进度层消失")
     )
   );
+});
+
+test("login percentage blocks HUD readiness even when HUD anchors are visible", async () => {
+  const fixture = createFixture(
+    [
+      ["登录游戏"],
+      ["背包", "营地", "76.4％"],
+      ["背包", "营地", "100%"],
+      ["背包", "营地"],
+      ["背包", "营地"]
+    ],
+    null,
+    [],
+    "shadow",
+    {
+      readyMinimumTexts: 2,
+      readyStableFrames: 2,
+      readyStableMs: 0,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    }
+  );
+  await waitForGameReady(fixture.context);
+  assert.equal(fixture.captures, 5);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
 });
 
 function createFixture(
@@ -228,8 +250,11 @@ function createFixture(
         dismissPoint: { x: 960, y: 1135 },
         readyTexts: ["配方", "背包", "营地"],
         loadingTexts: ["加载中"],
+        readyMinimumTexts: 1,
         readyStableFrames: 1,
         readyStableMs: 0,
+        postLoginMinimumWaitMs: 0,
+        loadingQuietMs: 0,
         ...readyPolicy
       },
       preLoginAnnouncements: {
@@ -246,7 +271,8 @@ function createFixture(
       async gameHealth() {
         return { running: true, anr: false };
       },
-      async launchGame() {}
+      async launchGame() {},
+      async releaseMouseButton() {}
     },
     ui: {
       async tap(point) {

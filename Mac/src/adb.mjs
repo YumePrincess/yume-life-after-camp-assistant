@@ -155,7 +155,27 @@ export class AdbClient {
         retryError.cause = error;
         throw retryError;
       });
+    } finally {
+      await this.releaseMouseButton(x, y, signal).catch(() => undefined);
     }
+  }
+
+  async releaseMouseButton(
+    x = Math.round((this.config.adb.screenWidth || 1920) / 2),
+    y = Math.round((this.config.adb.screenHeight || 1200) / 2),
+    signal
+  ) {
+    await this.shell(
+      [
+        "input",
+        "mouse",
+        "motionevent",
+        "UP",
+        Math.round(x),
+        Math.round(y)
+      ],
+      { signal, timeoutMs: 5_000 }
+    );
   }
 
   async mouseSwipe(from, to, durationMs = 500, signal) {

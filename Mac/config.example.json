@@ -77,12 +77,16 @@
     "dismissPoint": { "x": 960, "y": 1135 },
     "readyTexts": ["配方", "背包", "营地"],
     "loadingTexts": ["场景加载中", "正在加载", "加载中", "网络连接中"],
-    "readyStableFrames": 3,
-    "readyStableMs": 3000
+    "readyMinimumTexts": 2,
+    "readyStableFrames": 5,
+    "readyStableMs": 12000,
+    "postLoginMinimumWaitMs": 15000,
+    "loadingQuietMs": 5000
   },
   "preLoginAnnouncements": {
     "enabled": true,
     "maxClosures": 2,
+    "maxFixedCloseAttempts": 2,
     "closePoint": { "x": 1742, "y": 155 },
     "fixedCloseIntervalSeconds": 3,
     "texts": ["系统公告", "更新公告", "游戏公告"]

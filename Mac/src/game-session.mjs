@@ -256,8 +256,11 @@ export async function waitForGameReady(context, signal) {
     dismissPoint: { x: 960, y: 1135 },
     readyTexts: ["配方", "背包", "营地"],
     loadingTexts: ["场景加载中", "正在加载", "加载中", "网络连接中"],
-    readyStableFrames: 3,
-    readyStableMs: 3_000,
+    readyMinimumTexts: 2,
+    readyStableFrames: 5,
+    readyStableMs: 12_000,
+    postLoginMinimumWaitMs: 15_000,
+    loadingQuietMs: 5_000,
     ...config.postLoginPromotions
   };
   const updates = {
@@ -283,6 +286,7 @@ export async function waitForGameReady(context, signal) {
   const announcements = {
     enabled: true,
     maxClosures: 2,
+    maxFixedCloseAttempts: 2,
     closePoint: { x: 1742, y: 155 },
     fixedCloseIntervalSeconds: 3,
     texts: ["系统公告", "更新公告", "游戏公告"],
@@ -292,6 +296,7 @@ export async function waitForGameReady(context, signal) {
   let dismissedPages = 0;
   let newspaperSeen = false;
   let loginClicked = false;
+  let loginClickedAt = 0;
   let lastLoginClickAt = 0;
   let updateObserved = false;
   let lastUpdateState = "";
@@ -316,34 +321,8 @@ export async function waitForGameReady(context, signal) {
   let readyStreak = 0;
   let readySince = 0;
   let readyStabilizingReported = false;
+  let lastLoadingEvidenceAt = 0;
   while (Date.now() < deadline) {
-    const fixedAnnouncementCloseIntervalMs =
-      Math.max(
-        0.5,
-        Number(announcements.fixedCloseIntervalSeconds) || 3
-      ) * 1000;
-    if (
-      announcements.enabled &&
-      !loginClicked &&
-      Date.now() - lastAnnouncementCloseAt >=
-        fixedAnnouncementCloseIntervalMs
-    ) {
-      announcementCloseAttempts += 1;
-      lastAnnouncementCloseAt = Date.now();
-      if (
-        announcementCloseAttempts === 1 ||
-        announcementCloseAttempts % 20 === 0
-      ) {
-        await report(
-          "info",
-          "prelogin_announcement_fixed_close",
-          "正在固定点击登录前更新公告右上角关闭位置；无公告时该点击不会影响登录流程",
-          { attempt: announcementCloseAttempts }
-        );
-      }
-      await ui.tap(announcements.closePoint, signal);
-      await ui.afterAction(signal);
-    }
     let frame = await vision.captureTransient("game-login-state", signal);
     const knownStateTexts = [
       ...promotions.readyTexts,
@@ -391,9 +370,19 @@ export async function waitForGameReady(context, signal) {
         }
       }
     }
-    const ready = promotions.readyTexts.find((text) =>
-      vision.find(frame.observations, text)
-    );
+    const readyMatches = promotions.readyTexts
+      .map((text) => ({ text, match: vision.find(frame.observations, text) }))
+      .filter((item) => item.match);
+    const ready = readyMatches[0]?.text || null;
+    const loadingProgressVisible = frame.observations.some((item) => {
+      const text = String(item.text || "").replace(/\s+/g, "");
+      return (
+        /^(?:100|[0-9]{1,2})(?:\.[0-9]+)?[%％]$/.test(text) ||
+        /(?:加载|登录|进入|场景|资源).{0,12}(?:100|[0-9]{1,2})(?:\.[0-9]+)?[%％]/.test(
+          text
+        )
+      );
+    });
     const blocksReady = [
       ...promotions.loadingTexts,
       ...updates.stateTexts,
@@ -403,8 +392,40 @@ export async function waitForGameReady(context, signal) {
       "登录游戏",
       "明日希望报",
       "加入队伍语音频道"
-    ].some((text) => vision.find(frame.observations, text));
-    if (ready && !blocksReady) {
+    ].some((text) => vision.find(frame.observations, text)) ||
+      loadingProgressVisible;
+    if (blocksReady) lastLoadingEvidenceAt = Date.now();
+    const readyMinimumTexts = Math.max(
+      1,
+      Number(promotions.readyMinimumTexts) || 2
+    );
+    const configuredPostLoginWaitMs = Number(
+      promotions.postLoginMinimumWaitMs
+    );
+    const postLoginWaitMs = Math.max(
+      0,
+      Number.isFinite(configuredPostLoginWaitMs)
+        ? configuredPostLoginWaitMs
+        : 15_000
+    );
+    const configuredLoadingQuietMs = Number(promotions.loadingQuietMs);
+    const loadingQuietMs = Math.max(
+      0,
+      Number.isFinite(configuredLoadingQuietMs)
+        ? configuredLoadingQuietMs
+        : 5_000
+    );
+    const postLoginWaitSatisfied =
+      !loginClicked || Date.now() - loginClickedAt >= postLoginWaitMs;
+    const loadingQuietSatisfied =
+      !lastLoadingEvidenceAt ||
+      Date.now() - lastLoadingEvidenceAt >= loadingQuietMs;
+    if (
+      readyMatches.length >= readyMinimumTexts &&
+      !blocksReady &&
+      postLoginWaitSatisfied &&
+      loadingQuietSatisfied
+    ) {
       readyStreak += 1;
       readySince ||= Date.now();
       const configuredStableFrames = Number(promotions.readyStableFrames);
@@ -423,8 +444,14 @@ export async function waitForGameReady(context, signal) {
           await report(
             "info",
             "game_ready_stabilizing",
-            "已看到 HUD，继续等待登录场景连续稳定后再开始任务点击",
-            { stableFrames, stableMs }
+            "已看到多个 HUD 锚点，继续等待登录进度层消失且场景连续稳定后再开始任务点击",
+            {
+              stableFrames,
+              stableMs,
+              readyTexts: readyMatches.map((item) => item.text),
+              postLoginWaitMs,
+              loadingQuietMs
+            }
           );
         }
       } else {
@@ -436,12 +463,46 @@ export async function waitForGameReady(context, signal) {
             : "游戏界面已就绪，未出现活动宣传页"
         );
         await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
+        await adb.releaseMouseButton?.(
+          Math.round((config.adb.screenWidth || 1920) / 2),
+          Math.round((config.adb.screenHeight || 1200) / 2),
+          signal
+        );
         return;
       }
     } else {
       readyStreak = 0;
       readySince = 0;
       readyStabilizingReported = false;
+    }
+    const fixedAnnouncementCloseIntervalMs =
+      Math.max(
+        0.5,
+        Number(announcements.fixedCloseIntervalSeconds) || 3
+      ) * 1000;
+    const maxFixedCloseAttempts = Math.max(
+      0,
+      Number(announcements.maxFixedCloseAttempts) || 2
+    );
+    if (
+      announcements.enabled &&
+      !loginClicked &&
+      !ready &&
+      !blocksReady &&
+      announcementCloseAttempts < maxFixedCloseAttempts &&
+      Date.now() - lastAnnouncementCloseAt >=
+        fixedAnnouncementCloseIntervalMs
+    ) {
+      announcementCloseAttempts += 1;
+      lastAnnouncementCloseAt = Date.now();
+      await report(
+        "info",
+        "prelogin_announcement_fixed_close",
+        "当前尚未识别到登录、加载或 HUD，正在尝试关闭登录前未知公告",
+        { attempt: announcementCloseAttempts, maxFixedCloseAttempts }
+      );
+      await ui.tap(announcements.closePoint, signal);
+      await ui.afterAction(signal);
     }
     const updateState = updates.enabled
       ? updates.stateTexts.find((text) =>
@@ -494,6 +555,7 @@ export async function waitForGameReady(context, signal) {
     if (login && Date.now() - lastLoginClickAt >= 5_000) {
       await ui.tap(config.adb.loginButton, signal);
       loginClicked = true;
+      loginClickedAt = Date.now();
       lastLoginClickAt = Date.now();
       dismissedPages = 0;
       newspaperSeen = false;
@@ -593,6 +655,7 @@ export async function waitForGameReady(context, signal) {
       );
       await ui.tap(config.adb.loginButton, signal);
       loginClicked = true;
+      loginClickedAt = Date.now();
       lastLoginClickAt = Date.now();
       dismissedPages = 0;
       newspaperSeen = false;
@@ -749,6 +812,7 @@ export async function waitForGameReady(context, signal) {
         await adb.launchGame();
         processMissingSince = null;
         loginClicked = false;
+        loginClickedAt = 0;
         dismissedPages = 0;
         newspaperSeen = false;
         continue;
