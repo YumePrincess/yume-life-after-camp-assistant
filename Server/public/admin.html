@@ -201,19 +201,20 @@
           </form>
 
           <form class="config-form" data-config-section="technology" data-admin-view="technology" hidden>
-            <section class="panel">
+            <section class="panel technology-panel">
               <div class="section-heading">
                 <div>
                   <p class="eyebrow">TECHNOLOGY</p>
                   <h1>科技目录、投票与固定科技</h1>
+                  <p class="section-intro">先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。</p>
                 </div>
                 <span id="next-tech-date" class="date-badge"></span>
               </div>
-              <p class="muted">
+              <p class="technology-help">
                 目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。
               </p>
               <div class="technology-editor-toolbar">
-                <div>
+                <div class="technology-date-picker">
                   <span class="field-label">固定科技适用日期</span>
                   <div id="technology-weekdays" class="weekday-tabs" role="tablist"></div>
                 </div>
@@ -222,9 +223,36 @@
                   <span id="technology-general-count">其他科技 0 / 6</span>
                 </div>
               </div>
+              <div id="technology-fixed-preview" class="technology-fixed-preview" aria-live="polite"></div>
+              <div class="technology-catalog-toolbar">
+                <div>
+                  <span class="field-label">科技目录</span>
+                  <strong id="technology-result-count">53 项科技</strong>
+                </div>
+                <label class="technology-search">
+                  <span class="sr-only">搜索科技</span>
+                  <input id="technology-search" data-ui-only type="search" placeholder="搜索科技名称或描述" />
+                </label>
+                <label class="technology-filter">
+                  <span class="sr-only">科技类别</span>
+                  <select id="technology-category-filter" data-ui-only>
+                    <option value="all">全部类别</option>
+                    <option value="agriculture">农业科技</option>
+                    <option value="industry">工业科技</option>
+                    <option value="military">军事科技</option>
+                  </select>
+                </label>
+              </div>
               <div id="technology-catalog-grid" class="technology-catalog-grid"></div>
               <p id="technology-empty" class="empty-state" hidden>内置科技目录未能载入，请检查当前部署版本。</p>
-              <div id="admin-vote-summary" class="vote-summary"></div>
+              <p id="technology-filter-empty" class="empty-state" hidden>没有符合筛选条件的科技。</p>
+              <section class="technology-vote-overview">
+                <div>
+                  <span class="field-label">投票概览</span>
+                  <strong>当前票数</strong>
+                </div>
+                <div id="admin-vote-summary" class="vote-summary"></div>
+              </section>
               <div class="section-savebar">
                 <span class="feedback" data-save-feedback>当前配置已同步</span>
                 <button class="button button-primary" type="submit">保存科技配置</button>

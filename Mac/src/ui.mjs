@@ -259,7 +259,7 @@ export class GameUi {
           .find((item) => item.match);
         if (found) return { ...found, frame };
       }
-      await this.adb.key(action.code, signal, {
+      await this.sendGameKey(action.code, signal, {
         longPress: action.longPress !== false,
         repeat: action.repeat || 1
       });
@@ -275,9 +275,13 @@ export class GameUi {
       .map((text) => ({ text, match: this.vision.find(frame.observations, text) }))
       .find((item) => item.match);
     if (!found) return null;
-    await this.adb.key(code, signal);
+    await this.sendGameKey(code, signal);
     await this.afterAction(signal);
     return { ...found, frame };
+  }
+
+  async sendGameKey(code, signal, options = {}) {
+    await this.adb.key(code, signal, options);
   }
 
   async tapIfAnyText(texts, point, signal) {
@@ -450,6 +454,23 @@ export class GameUi {
       action.resultTimeoutSeconds,
       signal
     );
+    if (result.state === "arrived_hud") {
+      if (
+        !destination.readyRegion ||
+        (await this.verifyDestination(destination, signal))
+      ) {
+        return {
+          state: "success",
+          text:
+            result.text ||
+            `传送进度已结束并回到 HUD，已确认${destination.name}交互按钮`
+        };
+      }
+      return {
+        state: "nearby",
+        text: `传送进度已结束并回到 HUD，但按 W 接近后仍未出现${destination.name}交互按钮`
+      };
+    }
     if (
       result.state === "success" &&
       destination.readyRegion &&
@@ -514,7 +535,7 @@ export class GameUi {
             }
           );
         }
-        await this.adb.key(
+        await this.sendGameKey(
           destination.approachKey || "KEYCODE_W",
           signal,
           { longPress: true }
@@ -558,7 +579,7 @@ export class GameUi {
         "正在发送 M 键打开地图；识别到地图固定文字后才会继续",
         { key: mapKey }
       );
-      await this.adb.key(mapKey, signal);
+      await this.sendGameKey(mapKey, signal);
     }
     const timeoutMs = Math.max(
       180,
@@ -601,12 +622,7 @@ export class GameUi {
           "地图按钮已用于取得游戏输入焦点，快速 OCR 尚未确认地图；立即发送一次 M 键备用，之后仍需地图固定文字确认",
           { key: mapKey }
         );
-        await this.adb.releaseMouseButton?.(
-          Math.round((this.config.adb?.screenWidth || 1920) / 2),
-          Math.round((this.config.adb?.screenHeight || 1200) / 2),
-          signal
-        ).catch(() => undefined);
-        await this.adb.key(mapKey, signal);
+        await this.sendGameKey(mapKey, signal);
       }
       if (
         typeof this.vision.captureAccurateTransient === "function" &&
@@ -828,7 +844,10 @@ export class GameUi {
         "camp_panel_map_closing",
         `打开营地面板前检测到地图遮挡（${match.text}），正在按 M 关闭地图`
       );
-      await this.adb.key(action.mapCloseKey || "KEYCODE_M", signal);
+      await this.sendGameKey(
+        action.mapCloseKey || "KEYCODE_M",
+        signal
+      );
       await this.afterAction(signal);
     }
     throw new Error(
@@ -1087,9 +1106,8 @@ export class GameUi {
         advice.state === "panel" &&
         ["close_x", "back", "collapse"].includes(overlayAdvice?.control);
       if (
-        visibleHudText &&
+        (visibleHudText || visibleInteractionPanelText) &&
         !visiblePanelText &&
-        !visibleInteractionPanelText &&
         !campPanelOpen &&
         !chatOpen &&
         !failureOverlay
@@ -1109,7 +1127,6 @@ export class GameUi {
         chatOpen ||
         Boolean(closeText) ||
         overlayConfident ||
-        Boolean(visibleInteractionPanelText) ||
         Boolean(visiblePanelText) ||
         Boolean(failureOverlay);
       if (!hasExplicitCloseAction) {
@@ -1183,9 +1200,6 @@ export class GameUi {
         } else {
           await this.tap(bottomLeftBack, signal);
         }
-      } else if (visibleInteractionPanelText) {
-        await this.adb.key(4, signal);
-        await this.afterAction(signal);
       }
     }
     return "hud";
@@ -1202,6 +1216,7 @@ export class GameUi {
     const startedAt = Date.now();
     let advisorChecks = 0;
     let accurateCheckedAt = 0;
+    let consecutiveHudFrames = 0;
     do {
       const frame = await this.vision.captureTransient(
         "teleport-result",
@@ -1226,12 +1241,35 @@ export class GameUi {
           text: failure.text
         };
       }
+      const fastHud = this.isStablePostTeleportHud(
+        frame.observations
+      );
+      consecutiveHudFrames = fastHud
+        ? consecutiveHudFrames + 1
+        : 0;
       if (
+        consecutiveHudFrames >= 2 &&
+        Date.now() - startedAt >= 1_200
+      ) {
+        await this.report(
+          "info",
+          "teleport_hud_arrival_detected",
+          "已用快速 OCR 连续确认传送进度结束并回到 HUD；若目标交互按钮未出现，将立即按 W 分段接近",
+          { consecutiveHudFrames }
+        );
+        return {
+          state: "arrived_hud",
+          text: "传送进度结束，HUD 已连续稳定"
+        };
+      }
+      let accurate = null;
+      if (
+        !fastHud &&
         typeof this.vision.captureAccurateTransient === "function" &&
         Date.now() - accurateCheckedAt >= 2_000
       ) {
         accurateCheckedAt = Date.now();
-        const accurate = await this.vision.captureAccurateTransient(
+        accurate = await this.vision.captureAccurateTransient(
           "teleport-result-accurate",
           signal
         ).catch(() => null);
@@ -1260,6 +1298,25 @@ export class GameUi {
             };
           }
         }
+      }
+      const accurateHud =
+        !fastHud &&
+        this.isStablePostTeleportHud(accurate?.observations || []);
+      if (accurateHud) consecutiveHudFrames += 1;
+      if (
+        consecutiveHudFrames >= 2 &&
+        Date.now() - startedAt >= 1_200
+      ) {
+        await this.report(
+          "info",
+          "teleport_hud_arrival_detected",
+          "已连续确认传送进度结束并回到 HUD；若目标交互按钮未出现，将立即按 W 分段接近",
+          { consecutiveHudFrames }
+        );
+        return {
+          state: "arrived_hud",
+          text: "传送进度结束，HUD 已连续稳定"
+        };
       }
       if (
         Date.now() - startedAt >= 1_500 &&
@@ -1293,6 +1350,18 @@ export class GameUi {
             modelWouldAccept: accepted
           }
         );
+        if (accepted && advice?.state === "hud") {
+          await this.report(
+            "info",
+            "teleport_hud_arrival_ai_confirmed",
+            "本地模型以高置信度确认传送进度已结束并回到 HUD；开始用 W 寻找目标交互按钮",
+            advice
+          );
+          return {
+            state: "arrived_hud",
+            text: "本地模型高置信度确认传送后 HUD"
+          };
+        }
       }
       await delay(600, signal);
       if (
@@ -1310,6 +1379,31 @@ export class GameUi {
       }
     } while (Date.now() < deadline);
     return { state: "timeout", text: null };
+  }
+
+  isStablePostTeleportHud(observations) {
+    const channelRegion = {
+      left: 0,
+      top: 965,
+      right: 760,
+      bottom: 1200
+    };
+    const channels = ["综合", "世界", "场景", "营地", "队伍"]
+      .map((text) =>
+        this.findInRegion(observations, text, channelRegion)
+      )
+      .filter(Boolean);
+    if (channels.length >= 2) return true;
+    const hudAnchors = [
+      "背包",
+      "配方",
+      "生存手册",
+      "任务",
+      "外观"
+    ]
+      .map((text) => this.vision.find(observations, text))
+      .filter(Boolean);
+    return hudAnchors.length >= 2;
   }
 
   async teleportByText(action, signal) {
@@ -1413,7 +1507,7 @@ export class GameUi {
           await this.waitAnyText(action.texts, action, signal);
           break;
         case "key":
-          await this.adb.key(action.code, signal, {
+          await this.sendGameKey(action.code, signal, {
             longPress: action.longPress,
             repeat: action.repeat
           });

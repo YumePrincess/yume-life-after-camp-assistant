@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPatrolTeam } from "../src/workflows/patrol.mjs";
+import {
+  createPatrolTeam,
+  sharePatrolTeam
+} from "../src/workflows/patrol.mjs";
 
 test("patrol team creation follows only region-verified live-device steps", async () => {
   const taps = [];
@@ -254,10 +257,164 @@ test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", a
   ]);
   assert.deepEqual(taps, [
     { x: 48, y: 327 },
+    { x: 48, y: 327 },
     { x: 211, y: 180 },
     { x: 470, y: 900 },
     { x: 900, y: 386 },
     { x: 1419, y: 891 }
+  ]);
+});
+
+test("patrol share uses calibrated recruit and camp-channel points and verifies success", async () => {
+  const taps = [];
+  const reports = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-share-team-page") {
+          return {
+            path: "team.png",
+            observations: [
+              observation("目标：营地事务>营地巡逻任务", 160, 20),
+              observation("招募", 300, 1100)
+            ]
+          };
+        }
+        if (label === "patrol-share-channel-menu-1") {
+          return {
+            path: "channels.png",
+            observations: [observation("营地频道", 350, 870)]
+          };
+        }
+        return {
+          path: "success.png",
+          observations: [
+            observation("成功分享至营地频道", 780, 210)
+          ]
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact"
+            ? item.text === query
+            : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await sharePatrolTeam(context);
+
+  assert.deepEqual(taps, [
+    { x: 343, y: 1128 },
+    { x: 416, y: 895 }
+  ]);
+  assert.ok(reports.includes("patrol_share_success"));
+});
+
+test("patrol share retries recruit once when the first click only acquires input", async () => {
+  const taps = [];
+  let channelAttempts = 0;
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-share-team-page") {
+          return {
+            path: "team.png",
+            observations: [observation("保卫古籍", 160, 20)]
+          };
+        }
+        if (label.startsWith("patrol-share-channel-menu")) {
+          channelAttempts += 1;
+          return {
+            path: "channels.png",
+            observations:
+              channelAttempts === 1
+                ? []
+                : [observation("营地频道", 350, 870)]
+          };
+        }
+        return {
+          path: "success.png",
+          observations: [
+            observation("成功分享至营地频道", 780, 210)
+          ]
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact"
+            ? item.text === query
+            : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await sharePatrolTeam(context);
+  assert.deepEqual(taps, [
+    { x: 343, y: 1128 },
+    { x: 343, y: 1128 },
+    { x: 416, y: 895 }
+  ]);
+});
+
+test("patrol share never clicks the channel point unless the selector is verified", async () => {
+  const taps = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    vision: {
+      async capture(label) {
+        return {
+          path: `${label}.png`,
+          observations:
+            label === "patrol-share-team-page"
+              ? [observation("营地巡逻任务", 160, 20)]
+              : []
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact"
+            ? item.text === query
+            : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await assert.rejects(
+    sharePatrolTeam(context),
+    /PATROL_SHARE_CHANNEL_MENU_UNVERIFIED/
+  );
+  assert.deepEqual(taps, [
+    { x: 343, y: 1128 },
+    { x: 343, y: 1128 }
   ]);
 });
 
@@ -295,6 +452,7 @@ function observationsFor(label) {
 function patrolUiConfig() {
   return {
     flagButton: { x: 48, y: 327 },
+    flagClickAttempts: 2,
     flagReadyTexts: ["CtrlQ", "Ctrl Q"],
     flagReadyRegion: { left: 0, top: 260, right: 130, bottom: 390 },
     teamMenuRegion: { left: 70, top: 115, right: 360, bottom: 365 },
@@ -307,7 +465,53 @@ function patrolUiConfig() {
     createButtonPoint: { x: 1419, y: 891 },
     createdTargetRegion: { left: 150, top: 0, right: 830, bottom: 100 },
     createdBodyRegion: { left: 0, top: 280, right: 1920, bottom: 1180 },
-    stepSettleMs: 1
+    focusAcquiredTexts: [
+      "创建队伍",
+      "自动匹配",
+      "暂无队员加入",
+      "调整",
+      "离开队伍"
+    ],
+    focusAcquiredRegion: {
+      left: 0,
+      top: 0,
+      right: 620,
+      bottom: 1180
+    },
+    comboFallbackAttempts: 1,
+    stepSettleMs: 1,
+    share: {
+      teamPageTexts: [
+        "营地巡逻任务",
+        "保卫古籍",
+        "招募",
+        "离开队伍"
+      ],
+      teamPageRegion: {
+        left: 0,
+        top: 0,
+        right: 830,
+        bottom: 1180
+      },
+      recruitPoint: { x: 343, y: 1128 },
+      recruitAttempts: 2,
+      channelMenuRegion: {
+        left: 280,
+        top: 760,
+        right: 550,
+        bottom: 1080
+      },
+      campChannelPoint: { x: 416, y: 895 },
+      channelAttempts: 2,
+      successTexts: ["成功分享至营地频道", "分享成功"],
+      successRegion: {
+        left: 650,
+        top: 150,
+        right: 1300,
+        bottom: 330
+      },
+      stepSettleMs: 1
+    }
   };
 }
 

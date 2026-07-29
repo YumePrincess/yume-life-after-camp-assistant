@@ -137,7 +137,7 @@ test("cropped detail OCR detects and unloads the first general slot", async () =
   ]);
 });
 
-test("installed-slot pixels recover an OCR-missed unload action", async () => {
+test("installed-slot pixels retry the slot click but never authorize a blind unload", async () => {
   const taps = [];
   const reports = [];
   const config = technologyConfig();
@@ -156,7 +156,14 @@ test("installed-slot pixels recover an OCR-missed unload action", async () => {
     },
     vision: {
       async capture(label) {
-        return { path: `${label}.png`, observations: [] };
+        return {
+          path: `${label}.png`,
+          observations: label.includes(
+            "clear-check-core-1-attempt-2"
+          )
+            ? [observation("卸下", 700, 600)]
+            : []
+        };
       },
       find(observations, query, mode) {
         return findObservation(observations, query, mode);
@@ -164,18 +171,6 @@ test("installed-slot pixels recover an OCR-missed unload action", async () => {
       async probe(path, points) {
         if (path.includes("clear-pixel-core-1")) {
           return points.map(() => feature(0.25));
-        }
-        if (
-          path.includes("clear-check-core-1") &&
-          points[0].y < config.technology.slots.core[0].y
-        ) {
-          return points.map(() => ({
-            meanRed: 0.4,
-            meanGreen: 0.25,
-            meanBlue: 0.1,
-            meanSaturation: 0.5,
-            luminanceDeviation: 0.1
-          }));
         }
         return points.map(() => feature(0));
       }
@@ -188,11 +183,12 @@ test("installed-slot pixels recover an OCR-missed unload action", async () => {
 
   await clearAllConfiguredSlots(context);
 
-  assert.deepEqual(taps.slice(0, 2), [
+  assert.deepEqual(taps.slice(0, 3), [
+    { x: 800, y: 400, lane: "core", index: 0 },
     { x: 800, y: 400, lane: "core", index: 0 },
     { x: 745, y: 638 }
   ]);
-  assert.ok(reports.includes("tech_unload_pixel_fallback"));
+  assert.ok(reports.includes("tech_slot_open_retry"));
 });
 
 test("technology selection configures the exact target without re-clicking its slot", async () => {
@@ -220,7 +216,10 @@ test("technology selection configures the exact target without re-clicking its s
         if (label.startsWith("technology-configure-check")) {
           return {
             path: `${label}.png`,
-            observations: [observation("配置", 700, 600)]
+            observations: [
+              observation("温室大棚", 620, 430),
+              observation("配置", 700, 600)
+            ]
           };
         }
         if (label.startsWith("technology-selector")) {
@@ -263,7 +262,7 @@ test("technology selection configures the exact target without re-clicking its s
     { x: 178, y: 470 },
     { x: 745, y: 638 }
   ]);
-  assert.deepEqual(waits, [1200, 1200, 3000]);
+  assert.deepEqual(waits, [1200, 800, 1200, 3000]);
   assert.ok(
     reports.some(
       (item) =>
@@ -271,6 +270,72 @@ test("technology selection configures the exact target without re-clicking its s
         item.message.includes("等待 3 秒")
     )
   );
+});
+
+test("a mismatched right-side technology name is reselected and never configured", async () => {
+  const taps = [];
+  const reports = [];
+  const context = {
+    config: technologyConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async afterAction() {}
+    },
+    adb: {
+      async mouseSwipe() {
+        throw new Error("unexpected swipe");
+      }
+    },
+    vision: {
+      async capture(label) {
+        if (label.startsWith("technology-selector-open-check")) {
+          return { path: `${label}.png`, observations: [] };
+        }
+        if (label.includes("technology-configure-check-core-1-1")) {
+          return {
+            path: `${label}.png`,
+            observations: [
+              observation("超强吸力", 620, 430),
+              observation("配置", 700, 600)
+            ]
+          };
+        }
+        if (label.includes("technology-configure-check-core-1-2")) {
+          return {
+            path: `${label}.png`,
+            observations: [
+              observation("生物多样性", 620, 430),
+              observation("配置", 700, 600)
+            ]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: [observation("生物多样性", 240, 450)]
+        };
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await selectTechnology(context, "core", 0, "生物多样性");
+
+  assert.deepEqual(taps, [
+    { x: 800, y: 400 },
+    { x: 178, y: 465 },
+    { x: 178, y: 465 },
+    { x: 745, y: 638 }
+  ]);
+  assert.ok(reports.includes("tech_selected_name_mismatch"));
+  assert.ok(reports.includes("tech_selected_name_verified"));
 });
 
 test("two technologies follow slot-select-configure-wait before the next slot", async () => {
@@ -302,14 +367,21 @@ test("two technologies follow slot-select-configure-wait before the next slot", 
     },
     vision: {
       async capture(label) {
-        const target = label.includes("种豆得豆") ? "种豆得豆" : "大丰收";
+        const target =
+          label.includes("种豆得豆") ||
+          label.includes("configure-check-core-2")
+            ? "种豆得豆"
+            : "大丰收";
         if (label.startsWith("technology-selector-open-check")) {
           return { path: `${label}.png`, observations: [] };
         }
         if (label.startsWith("technology-configure-check")) {
           return {
             path: `${label}.png`,
-            observations: [observation("配置", 700, 600)]
+            observations: [
+              observation(target, 620, 430),
+              observation("配置", 700, 600)
+            ]
           };
         }
         return {
@@ -333,12 +405,14 @@ test("two technologies follow slot-select-configure-wait before the next slot", 
   assert.deepEqual(actions, [
     ["tap", { x: 800, y: 400 }],
     ["wait", 1200],
+    ["wait", 800],
     ["tap", { x: 178, y: 465 }],
     ["wait", 1200],
     ["tap", { x: 745, y: 638 }],
     ["wait", 3000],
     ["tap", { x: 1000, y: 400 }],
     ["wait", 1200],
+    ["wait", 800],
     ["tap", { x: 178, y: 465 }],
     ["wait", 1200],
     ["tap", { x: 745, y: 638 }],
@@ -367,7 +441,10 @@ test("technology selection uses cropped OCR and a unique one-character OCR corre
         return {
           path: `${label}.png`,
           observations: label.startsWith("technology-configure-check")
-            ? [observation("配置", 700, 600)]
+            ? [
+                observation("永原青春", 620, 430),
+                observation("配置", 700, 600)
+              ]
             : []
         };
       },

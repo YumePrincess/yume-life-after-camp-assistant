@@ -14,7 +14,7 @@ export async function runPatrol(context, command, bundle, signal) {
   await ui.executeFlow("teleportNoticeBoard", {}, signal);
   await createPatrolTeam(context, signal);
   await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
-  await ui.executeFlow("shareTeam", {}, signal);
+  await sharePatrolTeam(context, signal);
   await report("info", "patrol_team", "巡逻队伍已创建并分享到营地频道");
 
   while (true) {
@@ -37,7 +37,7 @@ export async function runPatrol(context, command, bundle, signal) {
   await ui.executeFlow("startHardPatrol", {}, signal);
   await ui.executeFlow("exitPatrolPages", {}, signal);
   await ui.executeFlow("switchToBookDefense", {}, signal);
-  await ui.executeFlow("shareTeam", {}, signal);
+  await sharePatrolTeam(context, signal);
   await ui.executeFlow("openTeamPanel", {}, signal);
   const readyAt = new Date().toISOString();
   await report("info", "patrol_ready", "困难巡逻已确认，队伍已切换为保卫古籍并分享", {
@@ -48,7 +48,7 @@ export async function runPatrol(context, command, bundle, signal) {
 
   while (!reached(timezone, patrol.deadline)) {
     if (Date.now() >= nextShareAt) {
-      await ui.executeFlow("shareTeam", {}, signal);
+      await sharePatrolTeam(context, signal);
       await report("info", "patrol_share", "已再次分享到营地频道");
       nextShareAt = Date.now() + patrol.shareIntervalMinutes * 60_000;
     }
@@ -124,18 +124,72 @@ export async function createPatrolTeam(context, signal) {
         "PATROL_FLAG_NOT_VISIBLE: 未识别到 CtrlQ，且底部频道 HUD 锚点不足，禁止点击游戏世界"
       );
     }
-    await report(
-      "info",
-      "patrol_flag_click",
-      `已确认${flagReady ? "CtrlQ 旗帜" : `底部 ${channelReadyCount} 个频道 HUD`}锚点，点击旗帜按钮 (${controls.flagButton.x},${controls.flagButton.y})`
+    const flagClickAttempts = Math.max(
+      1,
+      Math.min(2, Number(controls.flagClickAttempts) || 2)
     );
-    await ui.tap(controls.flagButton, signal);
-    await sleep(settleMs, signal);
-    screen = await capturePatrolScreen(
-      vision,
-      "patrol-team-menu-open",
-      signal
-    );
+    for (
+      let attempt = 1;
+      attempt <= flagClickAttempts;
+      attempt += 1
+    ) {
+      await report(
+        "info",
+        attempt === 1
+          ? "patrol_flag_click"
+          : "patrol_flag_mouse_focus_retry",
+        attempt === 1
+          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点，点击旗帜按钮 (${controls.flagButton.x},${controls.flagButton.y})；点击后以队伍界面文字确认鼠标焦点`
+          : `第一次旗帜点击未出现任何队伍界面锚点，判定可能只取得了 MuMu 鼠标焦点；再次点击同一旗帜坐标 (${controls.flagButton.x},${controls.flagButton.y})`
+      );
+      await ui.tap(controls.flagButton, signal);
+      await sleep(settleMs, signal);
+      screen = await capturePatrolScreen(
+        vision,
+        attempt === 1
+          ? "patrol-team-menu-open"
+          : `patrol-team-menu-open-${attempt}`,
+        signal
+      );
+      if (patrolTeamCreated(vision, screen.observations, controls)) {
+        await report(
+          "info",
+          "patrol_team_already_created",
+          "旗帜入口已打开现有巡逻队，确认目标正确后跳过重复创建"
+        );
+        return;
+      }
+      menuOpen = hasTextInRegion(
+        vision,
+        screen.observations,
+        "创建队伍",
+        controls.teamMenuRegion
+      );
+      creatorOpen = hasTextInRegion(
+        vision,
+        screen.observations,
+        "队伍目标",
+        controls.creatorTitleRegion
+      );
+      const anyTeamPanel = (
+        controls.focusAcquiredTexts || [
+          "创建队伍",
+          "自动匹配",
+          "暂无队员加入",
+          "调整",
+          "离开队伍"
+        ]
+      ).some((text) =>
+        hasTextInRegion(
+          vision,
+          screen.observations,
+          text,
+          controls.focusAcquiredRegion ||
+            { left: 0, top: 0, right: 620, bottom: 1180 }
+        )
+      );
+      if (menuOpen || creatorOpen || anyTeamPanel) break;
+    }
     if (patrolTeamCreated(vision, screen.observations, controls)) {
       await report(
         "info",
@@ -144,20 +198,8 @@ export async function createPatrolTeam(context, signal) {
       );
       return;
     }
-    menuOpen = hasTextInRegion(
-      vision,
-      screen.observations,
-      "创建队伍",
-      controls.teamMenuRegion
-    );
-    creatorOpen = hasTextInRegion(
-      vision,
-      screen.observations,
-      "队伍目标",
-      controls.creatorTitleRegion
-    );
     const comboAttempts = Math.max(
-      1,
+      0,
       Math.min(2, Number(controls.comboFallbackAttempts) || 2)
     );
     for (
@@ -325,6 +367,125 @@ export async function createPatrolTeam(context, signal) {
     "info",
     "patrol_team_created_verified",
     "已确认巡逻队创建成功，目标为“营地事务>营地巡逻任务”"
+  );
+}
+
+export async function sharePatrolTeam(context, signal) {
+  const { config, ui, vision, report } = context;
+  const controls = config.patrolTeamUi?.share;
+  if (!controls) {
+    throw new Error("PATROL_SHARE_UI_NOT_CONFIGURED");
+  }
+  const sleep = context.sleep || delay;
+  const settleMs = Math.max(150, Number(controls.stepSettleMs) || 500);
+  let screen = await capturePatrolScreen(
+    vision,
+    "patrol-share-team-page",
+    signal
+  );
+  const teamPageVisible = (
+    controls.teamPageTexts || [
+      "营地巡逻任务",
+      "保卫古籍",
+      "招募",
+      "离开队伍"
+    ]
+  ).some((text) =>
+    hasTextInRegion(
+      vision,
+      screen.observations,
+      text,
+      controls.teamPageRegion
+    )
+  );
+  if (!teamPageVisible) {
+    throw new Error(
+      "PATROL_SHARE_TEAM_PAGE_UNVERIFIED: 未确认队伍页面，禁止点击游戏世界"
+    );
+  }
+
+  const recruitAttempts = Math.max(
+    1,
+    Math.min(2, Number(controls.recruitAttempts) || 2)
+  );
+  let channelMenuVisible = false;
+  for (let attempt = 1; attempt <= recruitAttempts; attempt += 1) {
+    await report(
+      "info",
+      attempt === 1
+        ? "patrol_share_recruit"
+        : "patrol_share_recruit_focus_retry",
+      attempt === 1
+        ? "已确认队伍页面，点击“招募”"
+        : "第一次点击可能只取得 MuMu 鼠标焦点；重新点击“招募”"
+    );
+    await ui.tap(controls.recruitPoint, signal);
+    await sleep(settleMs, signal);
+    screen = await capturePatrolScreen(
+      vision,
+      `patrol-share-channel-menu-${attempt}`,
+      signal
+    );
+    channelMenuVisible = hasTextInRegion(
+      vision,
+      screen.observations,
+      "营地频道",
+      controls.channelMenuRegion
+    );
+    if (channelMenuVisible) break;
+  }
+  if (!channelMenuVisible) {
+    throw new Error(
+      "PATROL_SHARE_CHANNEL_MENU_UNVERIFIED: 点击招募后未识别到“营地频道”，未执行盲点"
+    );
+  }
+
+  const channelAttempts = Math.max(
+    1,
+    Math.min(2, Number(controls.channelAttempts) || 2)
+  );
+  for (let attempt = 1; attempt <= channelAttempts; attempt += 1) {
+    await report(
+      "info",
+      "patrol_share_camp_channel",
+      `已确认分享频道列表，点击“营地频道”${attempt > 1 ? "（重试）" : ""}`
+    );
+    await ui.tap(controls.campChannelPoint, signal);
+    await sleep(settleMs, signal);
+    screen = await capturePatrolScreen(
+      vision,
+      `patrol-share-result-${attempt}`,
+      signal
+    );
+    const success = (controls.successTexts || [
+      "成功分享至营地频道",
+      "分享成功"
+    ]).some((text) =>
+      hasTextInRegion(
+        vision,
+        screen.observations,
+        text,
+        controls.successRegion
+      )
+    );
+    if (success) {
+      await report(
+        "info",
+        "patrol_share_success",
+        "已确认“成功分享至营地频道”"
+      );
+      return;
+    }
+    const menuStillOpen = hasTextInRegion(
+      vision,
+      screen.observations,
+      "营地频道",
+      controls.channelMenuRegion
+    );
+    if (!menuStillOpen) break;
+  }
+  throw new Error(
+    "PATROL_SHARE_UNVERIFIED: 未识别到“成功分享至营地频道”，不会虚报分享成功"
   );
 }
 

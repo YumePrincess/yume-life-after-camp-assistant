@@ -12,6 +12,21 @@ export async function runTechnology(context, command, bundle, signal) {
   await ui.waitAnyText(["待生效科技", "科技配置"], {}, signal);
   await ui.tap(config.technology.tabs.pending, signal);
   await ui.tap(config.technology.tabs.configure, signal);
+  const configurePageSettleMs = Math.max(
+    5_000,
+    Number(config.technology.configurePageSettleMs) || 5_000
+  );
+  await report(
+    "info",
+    "tech_config_page_settling",
+    `已进入科技配置，固定等待 ${Math.round(configurePageSettleMs / 1000)} 秒，页面稳定后才开始点击第一格`
+  );
+  await (context.sleep || delay)(configurePageSettleMs, signal);
+  await ui.waitAnyText(
+    ["科技配置中", "科技选择", "集体科技"],
+    { timeoutSeconds: 12 },
+    signal
+  );
   await report(
     "info",
     "tech_clear",
@@ -134,15 +149,27 @@ export async function clearAllConfiguredSlots(context, signal) {
         `technology-clear-pixel-${lane}-${slot.index + 1}`,
         signal
       );
+      const pixelFallbackOccupied =
+        pixelBefore?.occupied === true &&
+        pixelBefore.distance >= pixelBefore.fallbackThreshold;
       const before = await readTechnologySlotState(
         context,
         slot,
         `technology-clear-check-${lane}-${slot.index + 1}`,
-        signal
+        signal,
+        {
+          attempts: pixelFallbackOccupied
+            ? Math.max(
+                2,
+                Number(config.technology.slotOpenAttempts) || 3
+              )
+            : 1,
+          report,
+          lane,
+          slotIndex: slot.index,
+          retryBecauseOccupiedPixels: pixelFallbackOccupied
+        }
       );
-      const pixelFallbackOccupied =
-        pixelBefore?.occupied === true &&
-        pixelBefore.distance >= pixelBefore.fallbackThreshold;
       if (!before.occupied && !pixelFallbackOccupied) {
         await report(
           "info",
@@ -153,19 +180,8 @@ export async function clearAllConfiguredSlots(context, signal) {
         continue;
       }
       if (!before.occupied && pixelFallbackOccupied) {
-        await assertTechnologySlotSelected(
-          context,
-          slot,
-          before.frame,
-          lane,
-          slot.index,
-          signal
-        );
-        await report(
-          "warning",
-          "tech_unload_pixel_fallback",
-          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格像素明确显示已安装科技，但 OCR 漏读“卸下”；已确认橙色选中框，使用校准后的卸下按钮`,
-          { pixel: pixelBefore }
+        throw new Error(
+          `科技槽位未打开：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格像素显示已有科技，但连续点击后始终未出现“卸下”；已停止，未盲点卸下按钮`
         );
       }
       configuredCount += 1;
@@ -185,27 +201,10 @@ export async function clearAllConfiguredSlots(context, signal) {
           `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格等待 ${Math.round(settleMs / 1000)} 秒后仍显示“卸下”`
         );
       }
-      try {
-        await assertTechnologySlotEmpty(
-          context,
-          slot,
-          lane,
-          slot.index,
-          signal
-        );
-      } catch (error) {
-        if (signal?.aborted) throw error;
-        await report(
-          "warning",
-          "tech_slot_pixel_residual",
-          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已不再显示“卸下”，但选中高亮使静态空槽像素校验仍有差异；按已确认的卸下结果继续下一格`,
-          { message: error.message }
-        );
-      }
       await report(
         "info",
         "tech_slot_unloaded",
-        `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已点击卸下并等待 ${Math.round(settleMs / 1000)} 秒；继续下一个槽位`
+        `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已在详情明确显示“卸下”后点击，并等待 ${Math.round(settleMs / 1000)} 秒确认按钮消失；继续下一个槽位`
       );
     }
   }
@@ -334,7 +333,11 @@ export async function selectTechnology(
       signal
     );
   }
-  await ui.afterAction(signal);
+  const selectorSettleMs = Math.max(
+    600,
+    Number(config.technology.selectorSettleMs) || 800
+  );
+  await (context.sleep || delay)(selectorSettleMs, signal);
   let previousSelectorSignature = "";
   let unchangedPages = 0;
   for (let page = 0; page <= swipe.maxPages; page += 1) {
@@ -388,61 +391,141 @@ export async function selectTechnology(
       );
     }
     if (match) {
-      const matchedTextX = match.x + match.width / 2;
-      const y = match.y + match.height / 2;
-      const x = Number(config.technology.selectorItemTapX) || 178;
-      await report(
-        "info",
-        "tech_target_found",
-        `已在左侧列表第 ${page + 1} 页匹配到科技“${label}”`,
-        {
-          lane,
-          slotIndex,
-          point: { x, y },
-          matchedText: match.text,
-          matchedTextX
-        }
+      const selectionAttempts = Math.max(
+        2,
+        Math.min(
+          3,
+          Number(config.technology.selectionConfirmAttempts) || 3
+        )
       );
-      await ui.tap({ x, y }, signal);
-      await (context.sleep || delay)(
-        Math.max(
-          1_000,
-          Number(config.technology.detailOpenSettleMs) || 1_200
-        ),
-        signal
-      );
-      const detail = await readTechnologyDetailAction(
-        context,
-        "配置",
-        `technology-configure-check-${lane}-${slotIndex + 1}`,
-        signal
-      );
-      if (!detail.action) {
-        throw new Error(
-          `科技“${label}”的配置详情未打开；已停止，禁止盲点固定按钮`
+      for (
+        let selectionAttempt = 1;
+        selectionAttempt <= selectionAttempts;
+        selectionAttempt += 1
+      ) {
+        const restedFrame = await vision.capture(
+          `technology-selector-rested-${label}-${selectionAttempt}`,
+          signal
         );
+        let restedObservations = restedFrame.observations;
+        let restedMatch = findTechnologyMatch(
+          vision,
+          restedObservations,
+          label,
+          config.technology.selectorRegion
+        );
+        if (
+          !restedMatch &&
+          restedFrame.path &&
+          typeof vision.ocrRegion === "function"
+        ) {
+          const regional = await vision.ocrRegion(
+            restedFrame.path,
+            config.technology.selectorRegion,
+            `technology-selector-rested-${label}-${selectionAttempt}-regional`,
+            signal,
+            "accurate",
+            0.1,
+            2
+          ).catch(() => []);
+          restedObservations = regional;
+          restedMatch = findTechnologyMatch(
+            vision,
+            regional,
+            label,
+            config.technology.selectorRegion
+          );
+        }
+        if (!restedMatch) {
+          await report(
+            "warning",
+            "tech_target_moved_before_click",
+            `左侧列表停止滚动后，第 ${selectionAttempt} 次复核未找到“${label}”；本次不点击配置`,
+            { lane, slotIndex, page: page + 1 }
+          );
+          await (context.sleep || delay)(selectorSettleMs, signal);
+          continue;
+        }
+        const matchedTextX =
+          restedMatch.x + restedMatch.width / 2;
+        const y = restedMatch.y + restedMatch.height / 2;
+        const x =
+          Number(config.technology.selectorItemTapX) || 178;
+        await report(
+          "info",
+          "tech_target_found",
+          `已在左侧列表第 ${page + 1} 页稳定匹配到科技“${label}”（选择尝试 ${selectionAttempt}/${selectionAttempts}）`,
+          {
+            lane,
+            slotIndex,
+            point: { x, y },
+            matchedText: restedMatch.text,
+            matchedTextX
+          }
+        );
+        await ui.tap({ x, y }, signal);
+        await (context.sleep || delay)(
+          Math.max(
+            1_000,
+            Number(config.technology.detailOpenSettleMs) ||
+              1_200
+          ),
+          signal
+        );
+        const detail = await readSelectedTechnologyDetail(
+          context,
+          label,
+          `technology-configure-check-${lane}-${slotIndex + 1}-${selectionAttempt}`,
+          signal
+        );
+        if (!detail.action || !detail.nameMatches) {
+          await report(
+            "warning",
+            "tech_selected_name_mismatch",
+            `左侧准备选择“${label}”，但右侧详情顶部未确认同名科技；不会点击“配置”，正在从左侧重新选择`,
+            {
+              lane,
+              slotIndex,
+              expected: label,
+              observedRightDetailTexts: detail.observedNameTexts,
+              configureVisible: Boolean(detail.action),
+              selectionAttempt,
+              maximumAttempts: selectionAttempts
+            }
+          );
+          await (context.sleep || delay)(selectorSettleMs, signal);
+          continue;
+        }
+        await report(
+          "info",
+          "tech_selected_name_verified",
+          `已确认左侧目标与右侧详情顶部均为“${label}”`
+        );
+        await report(
+          "info",
+          "tech_configure_selected",
+          `左右名称一致，正在点击“配置”安装“${label}”`
+        );
+        await ui.tap(
+          config.technology.configureSelected ||
+            config.technology.unloadSelected,
+          signal
+        );
+        const settleMs = Math.max(
+          3_000,
+          Number(config.technology.configureSettleMs) || 3_000
+        );
+        await (context.sleep || delay)(settleMs, signal);
+        await report(
+          "info",
+          "tech_slot_configured",
+          `“${label}”已在左右名称一致后点击配置并等待 ${Math.round(settleMs / 1000)} 秒；继续下一个槽位`
+        );
+        return;
       }
-      await report(
-        "info",
-        "tech_configure_selected",
-        `已选择“${label}”，正在点击详情弹窗中的“配置”完成安装`
+      throw new Error(
+        `科技选择确认失败：左侧目标“${label}”与右侧详情顶部连续 ${selectionAttempts} 次未确认一致；未点击“配置”`
       );
-      await ui.tap(
-        config.technology.configureSelected ||
-          config.technology.unloadSelected,
-        signal
-      );
-      const settleMs = Math.max(
-        3_000,
-        Number(config.technology.configureSettleMs) || 3_000
-      );
-      await (context.sleep || delay)(settleMs, signal);
-      await report(
-        "info",
-        "tech_slot_configured",
-        `“${label}”已点击配置并等待 ${Math.round(settleMs / 1000)} 秒；继续下一个槽位`
-      );
-      return;
     }
     const signature = technologySelectorSignature(
       selectorObservations,
@@ -464,10 +547,119 @@ export async function selectTechnology(
     }
     if (page < swipe.maxPages) {
       await adb.mouseSwipe(swipe.from, swipe.to, swipe.durationMs, signal);
-      await ui.afterAction(signal);
+      await (context.sleep || delay)(selectorSettleMs, signal);
     }
   }
   throw new Error(`科技选择列表中找不到：${label}`);
+}
+
+async function readSelectedTechnologyDetail(
+  context,
+  expectedLabel,
+  label,
+  signal
+) {
+  const { config, vision } = context;
+  const nameRegion =
+    config.technology.selectedTechnologyNameRegion ||
+    config.technology.detailsRegion;
+  let frame = await vision.capture(label, signal);
+  let observations = frame.observations;
+  let action = findTechnologyText(
+    vision,
+    observations,
+    "配置",
+    config.technology.detailsRegion
+  );
+  let name = findTechnologyMatch(
+    vision,
+    observations,
+    expectedLabel,
+    nameRegion
+  );
+  if (
+    (!action || !name) &&
+    frame.path &&
+    typeof vision.ocrRegion === "function"
+  ) {
+    const regional = await vision.ocrRegion(
+      frame.path,
+      config.technology.detailsRegion,
+      `${label}-regional`,
+      signal,
+      "accurate",
+      0.1,
+      2
+    ).catch(() => []);
+    observations = regional;
+    action =
+      action ||
+      findTechnologyText(
+        vision,
+        regional,
+        "配置",
+        config.technology.detailsRegion
+      );
+    name =
+      name ||
+      findTechnologyMatch(
+        vision,
+        regional,
+        expectedLabel,
+        nameRegion
+      );
+  }
+  if (
+    (!action || !name) &&
+    typeof vision.captureAccurateTransient === "function"
+  ) {
+    const accurate = await vision
+      .captureAccurateTransient(`${label}-accurate`, signal)
+      .catch(() => null);
+    if (accurate?.observations?.length) {
+      observations = accurate.observations;
+      frame = accurate;
+      action =
+        action ||
+        findTechnologyText(
+          vision,
+          observations,
+          "配置",
+          config.technology.detailsRegion
+        );
+      name =
+        name ||
+        findTechnologyMatch(
+          vision,
+          observations,
+          expectedLabel,
+          nameRegion
+        );
+    }
+  }
+  return {
+    action,
+    nameMatches: Boolean(name),
+    matchedName: name,
+    observedNameTexts: observations
+      .filter((item) => observationCenterInRegion(item, nameRegion))
+      .map((item) => item.text)
+      .filter((text) => text && text !== "配置")
+      .slice(0, 12),
+    observations,
+    frame
+  };
+}
+
+function observationCenterInRegion(item, region) {
+  const x = item.x + item.width / 2;
+  const y = item.y + item.height / 2;
+  return (
+    x >= region.left &&
+    x <= region.right &&
+    y >= region.top &&
+    y <= region.bottom
+  );
 }
 
 function findTechnologyMatch(vision, observations, label, region) {
@@ -554,14 +746,54 @@ function technologyTextDistance(left, right) {
   return previous[right.length];
 }
 
-async function readTechnologySlotState(context, slot, label, signal) {
+async function readTechnologySlotState(
+  context,
+  slot,
+  label,
+  signal,
+  options = {}
+) {
   const { config, ui } = context;
-  await ui.tap(slot, signal);
-  await (context.sleep || delay)(
-    Math.max(1_000, Number(config.technology.slotOpenSettleMs) || 1_200),
-    signal
+  const attempts = Math.max(
+    1,
+    Math.min(3, Number(options.attempts) || 1)
   );
-  return readTechnologyCurrentDetailState(context, label, signal);
+  let state = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    await ui.tap(slot, signal);
+    await (context.sleep || delay)(
+      Math.max(
+        1_000,
+        Number(config.technology.slotOpenSettleMs) || 1_200
+      ),
+      signal
+    );
+    state = await readTechnologyCurrentDetailState(
+      context,
+      `${label}-attempt-${attempt}`,
+      signal
+    );
+    if (state.occupied) return state;
+    if (
+      attempt < attempts &&
+      options.retryBecauseOccupiedPixels
+    ) {
+      await options.report?.(
+        "warning",
+        "tech_slot_open_retry",
+        `${options.lane === "core" ? "第一行" : "第二行"}第 ${options.slotIndex + 1} 格像素显示已有科技，但第 ${attempt} 次点击后未出现“卸下”；等待后重试该格，不点击卸下按钮`,
+        { attempt, maximumAttempts: attempts }
+      );
+      await (context.sleep || delay)(
+        Math.max(
+          800,
+          Number(config.technology.slotRetrySettleMs) || 1_000
+        ),
+        signal
+      );
+    }
+  }
+  return state;
 }
 
 async function readTechnologyCurrentDetailState(context, label, signal) {
@@ -669,45 +901,6 @@ async function assertTechnologySlotSelected(
   if (!orange) {
     throw new Error(
       `科技槽位选中校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格未出现橙色边框；禁止继续选择或配置科技`
-    );
-  }
-}
-
-async function assertTechnologySlotEmpty(
-  context,
-  slot,
-  lane,
-  slotIndex,
-  signal
-) {
-  const { config, vision } = context;
-  const reference = config.technology.emptyReference?.[lane];
-  if (!reference || typeof vision.probe !== "function") return;
-  const frame = await vision.capture(
-    `technology-empty-check-${lane}-${slotIndex + 1}`,
-    signal
-  );
-  if (!frame?.path) {
-    throw new Error(
-      `科技卸下校验失败：无法截取${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格`
-    );
-  }
-  const [probe] = await vision.probe(
-    frame.path,
-    [slot],
-    config.technology.filledSlotDetection.sampleRadius,
-    signal
-  );
-  const distance = featureDistance(probe, reference);
-  const threshold = Math.max(
-    0.02,
-    Number(
-      config.technology.filledSlotDetection.maximumEmptyFeatureDistance
-    ) || 0.08
-  );
-  if (distance > threshold) {
-    throw new Error(
-      `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格在无点击像素校验中仍为占用状态`
     );
   }
 }

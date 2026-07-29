@@ -59,7 +59,10 @@
 
   function taskName(value) {
     const source = {
-      tech_switch: "科技切换",
+      tech_switch: "更新科技",
+      contribution_sync: "更新贡献",
+      inactivity_sync: "更新斩杀预警",
+      member_profile_sync: "更新成员资料",
       member_sync: "成员同步",
       patrol: "营地巡逻"
     }[value];
@@ -441,6 +444,15 @@
     );
     setText("announcement", data.publicOverview?.announcement || "");
     setText("timezone-label", data.campConfig?.timezone || "Asia/Shanghai");
+    setText("hero-member-count", String(data.members?.length || 0));
+    setText(
+      "hero-warning-count",
+      String(data.inactivityWarnings?.length || 0)
+    );
+    setText(
+      "hero-vote-count",
+      String(data.voteSummary?.ballotCount || 0)
+    );
     const memberSync = (data.recentRuns || []).find(
       (run) =>
         run.taskKey === "member_profile_sync" &&

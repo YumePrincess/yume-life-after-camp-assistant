@@ -131,6 +131,24 @@ test("map preparation closes the camp page, collapses chat, then confirms HUD", 
   assert.deepEqual(fixture.keys, []);
 });
 
+test("an NPC interaction menu is HUD context, not a map-blocking overlay", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("查看玩法", 1320, 690),
+        observation("营地巡逻", 1320, 750),
+        observation("营地竞赛", 1320, 810)
+      ]
+    ]
+  });
+  const result = await fixture.ui.closePagesBeforeMap(
+    { mapPreparationMaxClosures: 6, mapReadyTexts: ["标志查看"] }
+  );
+  assert.equal(result, "hud");
+  assert.deepEqual(fixture.taps, []);
+  assert.deepEqual(fixture.keys, []);
+});
+
 test("1920x1200 map flow closes every overlay and opens the verified map button", async () => {
   const fixture = createUi({
     fastFrames: [
@@ -365,6 +383,28 @@ test("destination verification walks forward only until the interaction text app
   assert.equal(verified, true);
   assert.deepEqual(fixture.keys, ["KEYCODE_W"]);
   assert.deepEqual(fixture.taps, []);
+});
+
+test("a stable post-teleport HUD advances to W-based destination verification", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("综合", 40, 1080),
+        observation("营地", 220, 1080)
+      ]
+    ]
+  });
+  const result = await fixture.ui.waitTeleportResult(
+    ["查看玩法", "营地巡逻"],
+    ["已在目标点附近"],
+    30
+  );
+  assert.equal(result.state, "arrived_hud");
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("立即按 W 分段接近")
+    )
+  );
 });
 
 test("waitAnyText accepts accurate OCR before asking the model again", async () => {

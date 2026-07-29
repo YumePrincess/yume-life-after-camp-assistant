@@ -44,8 +44,8 @@ describe("five-task automation configuration", () => {
     expect(config.tasks).toMatchObject({
       tech_switch: { enabled: true, time: "02:00" },
       contribution_sync: { enabled: true, time: "02:30" },
-      inactivity_sync: { enabled: true, time: "02:50" },
-      member_profile_sync: { enabled: true, time: "03:10" },
+      inactivity_sync: { enabled: true, time: "02:45" },
+      member_profile_sync: { enabled: true, time: "02:15" },
       patrol: { enabled: true, time: "19:20" }
     });
     expect(config.tasks).not.toHaveProperty("member_sync");

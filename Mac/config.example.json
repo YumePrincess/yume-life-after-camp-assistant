@@ -155,8 +155,13 @@
     },
     "selectorRegion": { "left": 60, "top": 110, "right": 560, "bottom": 1050 },
       "selectorItemTapX": 178,
+      "configurePageSettleMs": 5000,
       "slotOpenSettleMs": 1200,
+      "slotOpenAttempts": 3,
+      "slotRetrySettleMs": 1000,
       "detailOpenSettleMs": 1200,
+      "selectorSettleMs": 800,
+      "selectionConfirmAttempts": 3,
       "selectionBorderOffsetY": -73,
       "selectionBorderProbeRadius": 4,
       "unloadSelected": { "x": 744, "y": 612 },
@@ -164,6 +169,7 @@
       "configureSelected": { "x": 744, "y": 612 },
       "configureSettleMs": 3000,
       "detailsRegion": { "left": 520, "top": 250, "right": 1050, "bottom": 850 },
+      "selectedTechnologyNameRegion": { "left": 520, "top": 250, "right": 1050, "bottom": 570 },
       "filledSlotDetection": {
         "sampleRadius": 24,
         "maximumEmptyFeatureDistance": 0.08,
@@ -189,6 +195,7 @@
   },
   "patrolTeamUi": {
     "flagButton": { "x": 48, "y": 327 },
+    "flagClickAttempts": 2,
     "flagReadyTexts": ["CtrlQ", "Ctrl Q"],
     "flagReadyRegion": { "left": 0, "top": 260, "right": 130, "bottom": 390 },
     "teamMenuRegion": { "left": 70, "top": 115, "right": 360, "bottom": 365 },
@@ -201,9 +208,23 @@
     "createButtonPoint": { "x": 1419, "y": 891 },
     "createdTargetRegion": { "left": 150, "top": 0, "right": 830, "bottom": 100 },
     "createdBodyRegion": { "left": 0, "top": 280, "right": 1920, "bottom": 1180 },
-    "comboFallbackAttempts": 2,
+    "focusAcquiredTexts": ["创建队伍", "自动匹配", "暂无队员加入", "调整", "离开队伍"],
+    "focusAcquiredRegion": { "left": 0, "top": 0, "right": 620, "bottom": 1180 },
+    "comboFallbackAttempts": 1,
     "comboHoldMs": 120,
-    "stepSettleMs": 1200
+    "stepSettleMs": 1200,
+    "share": {
+      "teamPageTexts": ["营地巡逻任务", "保卫古籍", "招募", "离开队伍"],
+      "teamPageRegion": { "left": 0, "top": 0, "right": 830, "bottom": 1180 },
+      "recruitPoint": { "x": 343, "y": 1128 },
+      "recruitAttempts": 2,
+      "channelMenuRegion": { "left": 280, "top": 760, "right": 550, "bottom": 1080 },
+      "campChannelPoint": { "x": 416, "y": 895 },
+      "channelAttempts": 2,
+      "successTexts": ["成功分享至营地频道", "分享成功"],
+      "successRegion": { "left": 650, "top": 150, "right": 1300, "bottom": 330 },
+      "stepSettleMs": 500
+    }
   },
   "tables": {
     "contribution": {

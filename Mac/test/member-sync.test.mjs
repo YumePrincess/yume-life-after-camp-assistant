@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  capturePagedTable,
   reconcilePageRows,
   selectActivityWarningRows
 } from "../src/workflows/member-sync.mjs";
@@ -167,4 +168,70 @@ test("activity warning scan does not stop while every parsed member remains over
   );
   assert.equal(selection.rows.length, 2);
   assert.equal(selection.reachedBoundary, false);
+});
+
+test("member profile pagination stops exactly at the header count", async () => {
+  let swipes = 0;
+  const reports = [];
+  const pages = [
+    [
+      { name: "成员一" },
+      { name: "成员二" },
+      { name: "成员三" }
+    ],
+    [
+      { name: "成员三" },
+      { name: "成员四" },
+      { name: "成员五" },
+      { name: "末页误识别甲" },
+      { name: "末页误识别乙" }
+    ]
+  ];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, _definition, label) {
+        const page = Number(label.match(/-(\d+)(?:-retry|$)/)?.[1] || 1);
+        return pages[Math.min(page - 1, pages.length - 1)];
+      }
+    },
+    adb: {
+      async mouseSwipe() {
+        swipes += 1;
+      }
+    },
+    ui: { async afterAction() {} },
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      pagination: {
+        maxPages: 30,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 3,
+        from: { x: 1, y: 2 },
+        to: { x: 1, y: 1 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 5 }
+  );
+  assert.equal(rows.length, 5);
+  assert.deepEqual(
+    rows.map((row) => row.name),
+    ["成员一", "成员二", "成员三", "成员四", "成员五"]
+  );
+  assert.equal(swipes, 1);
+  assert.ok(
+    reports.includes("member-details_expected_count_reached")
+  );
 });

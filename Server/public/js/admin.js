@@ -31,6 +31,8 @@
     selectedMember: null,
     technologyDate: "",
     technologyDraft: null,
+    technologyQuery: "",
+    technologyCategory: "all",
     activeView: "overview",
     accessAllowed: false,
     activeEventRunId: null,
@@ -389,10 +391,79 @@
     byId("technology-general-count").textContent =
       `其他科技 ${generalCount} / ${config.limits.general}`;
 
+    const previewRoot = byId("technology-fixed-preview");
+    previewRoot.replaceChildren();
+    for (const lane of ["core", "general"]) {
+      const selected = config.catalog
+        .filter(
+          (item) => fixed.has(item.key) && effectiveLane(item) === lane
+        )
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      const laneRoot = create("section", "technology-fixed-lane");
+      const laneHeader = create("div", "technology-fixed-lane-header");
+      laneHeader.append(
+        create(
+          "strong",
+          "",
+          lane === "core" ? `${coreLabel}行` : "其他科技行"
+        ),
+        create(
+          "span",
+          "",
+          `${selected.length} / ${config.limits[lane]}`
+        )
+      );
+      const slots = create("div", "technology-fixed-slots");
+      for (let index = 0; index < config.limits[lane]; index += 1) {
+        const item = selected[index];
+        const slot = create("div", "technology-fixed-slot");
+        slot.dataset.filled = String(Boolean(item));
+        slot.title = item?.name || window.MrzhI18n.t("空位");
+        if (item?.iconUrl) {
+          const image = document.createElement("img");
+          image.src = item.iconUrl;
+          image.alt = item.name;
+          image.loading = "lazy";
+          slot.append(image);
+        } else if (item) {
+          slot.append(create("span", "", item.name.slice(0, 1)));
+        } else {
+          slot.append(create("span", "", "+"));
+        }
+        slots.append(slot);
+      }
+      laneRoot.append(laneHeader, slots);
+      previewRoot.append(laneRoot);
+    }
+
     const root = byId("technology-catalog-grid");
     root.replaceChildren();
     byId("technology-empty").hidden = Boolean(config.catalog.length);
-    for (const item of [...config.catalog].sort(
+    const normalizedQuery = state.technologyQuery.trim().toLocaleLowerCase();
+    const filteredCatalog = config.catalog.filter((item) => {
+      if (
+        state.technologyCategory !== "all" &&
+        item.category !== state.technologyCategory
+      ) {
+        return false;
+      }
+      if (!normalizedQuery) return true;
+      return [item.name, item.description, item.uiLabel]
+        .filter(Boolean)
+        .some((value) =>
+          String(value).toLocaleLowerCase().includes(normalizedQuery)
+        );
+    });
+    byId("technology-filter-empty").hidden =
+      !config.catalog.length || Boolean(filteredCatalog.length);
+    byId("technology-result-count").textContent = window.MrzhI18n.format(
+      "显示 {count} / {total} 项科技",
+      {
+        count: filteredCatalog.length,
+        total: config.catalog.length
+      }
+    );
+    for (const item of [...filteredCatalog].sort(
       (a, b) => a.sortOrder - b.sortOrder
     )) {
       const card = create("article", "technology-admin-card");
@@ -1128,7 +1199,8 @@
 
   renderTaskActions();
   for (const form of document.querySelectorAll(".config-form")) {
-    form.addEventListener("input", () => {
+    form.addEventListener("input", (event) => {
+      if (event.target.closest("[data-ui-only]")) return;
       const section = form.dataset.configSection;
       state.dirtySections.add(section);
       form.querySelector("[data-save-feedback]").textContent = "有未保存修改";
@@ -1153,6 +1225,14 @@
   byId("admin-member-search").addEventListener("input", (event) => {
     state.memberQuery = event.target.value || "";
     renderAdminMembers(state.bootstrap?.members || []);
+  });
+  byId("technology-search").addEventListener("input", (event) => {
+    state.technologyQuery = event.target.value || "";
+    renderTechnologyEditor();
+  });
+  byId("technology-category-filter").addEventListener("change", (event) => {
+    state.technologyCategory = event.target.value || "all";
+    renderTechnologyEditor();
   });
   byId("kick-member").addEventListener("click", kickSelectedMember);
   byId("auto-kick-evaluate").addEventListener("click", evaluateAutoKick);

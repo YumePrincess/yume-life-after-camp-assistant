@@ -260,7 +260,8 @@ export async function captureProfilesAndStaff(context, signal) {
     context,
     "member-details",
     context.config.tables.members,
-    signal
+    signal,
+    { expectedCount: expectedMembers }
   );
   if (details.length !== expectedMembers) {
     throw new Error(
@@ -316,6 +317,9 @@ export async function capturePagedTable(
   let stagnantPages = 0;
   let previousFingerprint = "";
   let previousRows = [];
+  const expectedCount = Number.isFinite(Number(options.expectedCount))
+    ? Math.max(1, Number(options.expectedCount))
+    : null;
   for (let page = 0; page < definition.pagination.maxPages; page += 1) {
     let frame;
     let rows = [];
@@ -392,8 +396,17 @@ export async function capturePagedTable(
     }
     const fingerprint = rows.map((row) => row.name).join("|");
     let added = 0;
+    let rejectedAfterExpectedCount = 0;
     for (const row of rows) {
       const current = byName.get(row.name) || {};
+      if (
+        !byName.has(row.name) &&
+        expectedCount !== null &&
+        byName.size >= expectedCount
+      ) {
+        rejectedAfterExpectedCount += 1;
+        continue;
+      }
       if (!byName.has(row.name)) added += 1;
       byName.set(row.name, { ...current, ...row });
     }
@@ -401,7 +414,11 @@ export async function capturePagedTable(
       "info",
       `${label}_page`,
       `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${byName.size} 名成员`,
-      { screenshot: frame.path }
+      {
+        screenshot: frame.path,
+        expectedCount,
+        rejectedAfterExpectedCount
+      }
     );
     if (reachedActivityBoundary) {
       await report(
@@ -411,6 +428,20 @@ export async function capturePagedTable(
         {
           minimumInactiveDays: Number(options.minimumInactiveDays),
           warningMembers: byName.size
+        }
+      );
+      break;
+    }
+    if (expectedCount !== null && byName.size >= expectedCount) {
+      await report(
+        "info",
+        `${label}_expected_count_reached`,
+        `已达到页面顶部报告的 ${expectedCount} 名成员，立即停止翻页；末页 OCR 变体不得继续新增成员`,
+        {
+          expectedCount,
+          recognized: byName.size,
+          page: page + 1,
+          rejectedAfterExpectedCount
         }
       );
       break;

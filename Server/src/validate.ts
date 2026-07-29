@@ -282,11 +282,11 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     "automationConfig.tasks.contribution_sync"
   );
   const inactivity = taskSchedule(
-    tasks.inactivity_sync ?? { enabled: true, time: "02:50" },
+    tasks.inactivity_sync ?? { enabled: true, time: "02:45" },
     "automationConfig.tasks.inactivity_sync"
   );
   const profile = taskSchedule(
-    tasks.member_profile_sync ?? { enabled: true, time: "03:10" },
+    tasks.member_profile_sync ?? { enabled: true, time: "02:15" },
     "automationConfig.tasks.member_profile_sync"
   );
   const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol");

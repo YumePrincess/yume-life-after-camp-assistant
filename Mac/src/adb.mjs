@@ -213,6 +213,11 @@ export class AdbClient {
   }
 
   async key(code, signal, options = {}) {
+    await this.releaseMouseButton(
+      Math.round((this.config.adb.screenWidth || 1920) / 2),
+      Math.round((this.config.adb.screenHeight || 1200) / 2),
+      signal
+    );
     const repeat = Math.max(1, Math.min(20, Number(options.repeat) || 1));
     const codes = Array.from({ length: repeat }, () => String(code));
     await this.shell(
@@ -230,6 +235,11 @@ export class AdbClient {
     if (!Array.isArray(codes) || codes.length < 2) {
       throw new Error("ADB key combination requires at least two key codes");
     }
+    await this.releaseMouseButton(
+      Math.round((this.config.adb.screenWidth || 1920) / 2),
+      Math.round((this.config.adb.screenHeight || 1200) / 2),
+      signal
+    );
     await this.shell(
       [
         "input",

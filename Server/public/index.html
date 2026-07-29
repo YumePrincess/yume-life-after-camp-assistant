@@ -23,12 +23,17 @@
           <small>LifeAfter “Wish” Camp Assistant</small>
         </span>
       </a>
+      <nav class="public-nav" aria-label="营地信息导航">
+        <a href="#vote">次日科技投票</a>
+        <a href="#warnings">斩杀预警</a>
+        <a href="#members">成员信息与贡献</a>
+      </nav>
       <a class="button button-quiet" href="/admin">管理后台</a>
     </header>
 
     <main class="shell">
-      <section class="hero panel">
-        <div>
+      <section class="hero panel" id="overview">
+        <div class="hero-content">
           <p class="eyebrow">CAMP OVERVIEW</p>
           <h1 id="camp-name">正在连接营地…</h1>
           <p id="announcement" class="hero-copy">正在读取最新公共信息。</p>
@@ -38,14 +43,32 @@
             <span class="chip" id="sync-state">数据同步中</span>
           </div>
         </div>
-        <div class="hero-orbit" aria-hidden="true">
-          <span>03</span>
-          <small>DAILY RESET</small>
+        <div class="hero-summary" aria-label="营地摘要">
+          <a class="overview-stat" href="#members">
+            <strong id="hero-member-count">—</strong>
+            <span>成员</span>
+          </a>
+          <a class="overview-stat" href="#warnings">
+            <strong id="hero-warning-count">—</strong>
+            <span>斩杀预警</span>
+          </a>
+          <a class="overview-stat" href="#vote">
+            <strong id="hero-vote-count">—</strong>
+            <span>次日科技投票</span>
+          </a>
         </div>
       </section>
 
       <section class="dashboard-grid">
-        <article class="panel vote-panel">
+        <aside class="panel highlights-panel">
+          <div class="highlights-heading">
+            <p class="eyebrow">CAMP NOTES</p>
+            <h2>营地公告</h2>
+          </div>
+          <div id="highlights" class="highlight-list"></div>
+        </aside>
+
+        <article class="panel vote-panel" id="vote">
           <div class="section-heading">
             <div>
               <p class="eyebrow">NEXT TECHNOLOGY</p>
@@ -66,39 +89,35 @@
             <span id="vote-feedback" class="feedback" role="status"></span>
           </div>
         </article>
-
-        <aside class="panel highlights-panel">
-          <p class="eyebrow">CAMP NOTES</p>
-          <h2>营地公告</h2>
-          <div id="highlights" class="highlight-list"></div>
-        </aside>
       </section>
 
-      <section class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">INACTIVITY WATCH</p>
-            <h2>斩杀预警</h2>
+      <div class="insight-grid">
+        <section class="panel" id="warnings">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">INACTIVITY WATCH</p>
+              <h2>斩杀预警</h2>
+            </div>
+            <span class="date-badge" id="warning-count">0</span>
           </div>
-          <span class="date-badge" id="warning-count">0</span>
-        </div>
-        <p id="warning-description" class="muted"></p>
-        <div id="warning-list" class="warning-list"></div>
-        <p id="warning-empty" class="empty-state" hidden>当前没有达到预警线的成员。</p>
-      </section>
+          <p id="warning-description" class="muted"></p>
+          <div id="warning-list" class="warning-list"></div>
+          <p id="warning-empty" class="empty-state" hidden>当前没有达到预警线的成员。</p>
+        </section>
 
-      <section class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">OFFICERS</p>
-            <h2>营地公职</h2>
+        <section class="panel" id="staff">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">OFFICERS</p>
+              <h2>营地公职</h2>
+            </div>
+            <span class="muted" id="staff-updated"></span>
           </div>
-          <span class="muted" id="staff-updated"></span>
-        </div>
-        <div id="staff-list" class="staff-grid"></div>
-      </section>
+          <div id="staff-list" class="staff-grid"></div>
+        </section>
+      </div>
 
-      <section class="panel">
+      <section class="panel" id="members">
         <div class="section-heading member-heading">
           <div>
             <p class="eyebrow">MEMBER CONTRIBUTION</p>
@@ -128,7 +147,7 @@
         <p id="member-empty" class="empty-state" hidden>暂时没有成员同步数据。</p>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="runs">
         <div class="section-heading">
           <div>
             <p class="eyebrow">AUTOMATION</p>
