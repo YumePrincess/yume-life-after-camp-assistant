@@ -483,11 +483,11 @@
     for (const run of runs || []) {
       const row = document.createElement("tr");
       row.append(
+        create("td", "run-time", formatDate(run.finished_at || run.created_at)),
         create("td", "", taskName(run.task_key)),
         create("td", `status-${run.state}`, stateName(run.state)),
         create("td", "numeric", `${Math.round((run.progress || 0) * 100)}%`),
-        create("td", "", run.message || "—"),
-        create("td", "", formatDate(run.finished_at || run.created_at))
+        create("td", "", run.message || "—")
       );
       const actions = create("td", "run-actions");
       const actionInner = create("div", "run-actions-inner");
