@@ -663,7 +663,8 @@ export async function waitForGameReady(context, signal) {
     if (
       unknownRecoveryRequested &&
       !unknownRecoveryAttempted &&
-      !context.positionIndependent
+      !context.positionIndependent &&
+      !context.skipUnknownRecovery
     ) {
       unknownRecoveryAttempted = true;
       unknownRecoveryRequested = false;

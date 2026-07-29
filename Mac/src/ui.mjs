@@ -539,7 +539,9 @@ export class GameUi {
   async ensureMapOpen(action, signal) {
     const prepared = await this.closePagesBeforeMap(action, signal);
     if (prepared === "map") return;
-    const mapButton = action.mapButton || { x: 1780, y: 120 };
+    const mapButton = Object.hasOwn(action, "mapButton")
+      ? action.mapButton
+      : { x: 1780, y: 120 };
     const mapKey = action.mapKey || "KEYCODE_M";
     if (mapButton) {
       await this.report(
@@ -550,6 +552,12 @@ export class GameUi {
       );
       await this.tap(mapButton, signal);
     } else {
+      await this.report(
+        "info",
+        "map_open_key",
+        "正在发送 M 键打开地图；识别到地图固定文字后才会继续",
+        { key: mapKey }
+      );
       await this.adb.key(mapKey, signal);
     }
     const timeoutMs = Math.max(

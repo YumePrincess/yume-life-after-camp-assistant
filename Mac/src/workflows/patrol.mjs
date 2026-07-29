@@ -6,7 +6,13 @@ export async function runPatrol(context, command, bundle, signal) {
   const patrol = bundle.automationConfig.tasks.patrol;
   const timezone = bundle.automationConfig.timezone;
 
-  await ui.executeFlow("createPatrolTeam", {}, signal);
+  await report(
+    "info",
+    "patrol_notice_board_first",
+    "巡逻任务登录完成后直接传送公告版，再创建营地巡逻队伍"
+  );
+  await ui.executeFlow("teleportNoticeBoard", {}, signal);
+  await createPatrolTeam(context, signal);
   await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
   await ui.executeFlow("shareTeam", {}, signal);
   await report("info", "patrol_team", "巡逻队伍已创建并分享到营地频道");
@@ -51,6 +57,335 @@ export async function runPatrol(context, command, bundle, signal) {
     await delay(Math.max(250, Math.min(deadlineDelay, shareDelay)), signal);
   }
   await report("info", "patrol_done", "已到巡逻任务结束时间");
+}
+
+export async function createPatrolTeam(context, signal) {
+  const { config, ui, adb, vision, report } = context;
+  const controls = config.patrolTeamUi;
+  if (!controls) {
+    throw new Error("PATROL_TEAM_UI_NOT_CONFIGURED");
+  }
+  const settleMs = Math.max(800, Number(controls.stepSettleMs) || 1_200);
+  const sleep = context.sleep || delay;
+  let screen = await capturePatrolScreen(
+    vision,
+    "patrol-team-entry",
+    signal
+  );
+  if (patrolTeamCreated(vision, screen.observations, controls)) {
+    await report(
+      "info",
+      "patrol_team_already_created",
+      "已确认当前队伍目标为“营地事务>营地巡逻任务”，跳过重复创建"
+    );
+    return;
+  }
+
+  let menuOpen = hasTextInRegion(
+    vision,
+    screen.observations,
+    "创建队伍",
+    controls.teamMenuRegion
+  );
+  let creatorOpen = hasTextInRegion(
+    vision,
+    screen.observations,
+    "队伍目标",
+    controls.creatorTitleRegion
+  );
+  if (!menuOpen && !creatorOpen) {
+    const flagReady = controls.flagReadyTexts.some((text) =>
+      hasTextInRegion(
+        vision,
+        screen.observations,
+        text,
+        controls.flagReadyRegion
+      )
+    );
+    const channelConfig = config.postLoginPromotions;
+    const channelReadyCount = (
+      channelConfig?.channelReadyTexts || []
+    ).filter((text) =>
+      hasTextInRegion(
+        vision,
+        screen.observations,
+        text,
+        channelConfig.channelReadyRegion
+      )
+    ).length;
+    const hudReady =
+      channelReadyCount >=
+      Math.max(
+        2,
+        Number(channelConfig?.channelReadyMinimumTexts) || 2
+      );
+    if (!flagReady && !hudReady) {
+      throw new Error(
+        "PATROL_FLAG_NOT_VISIBLE: 未识别到 CtrlQ，且底部频道 HUD 锚点不足，禁止点击游戏世界"
+      );
+    }
+    await report(
+      "info",
+      "patrol_flag_click",
+      `已确认${flagReady ? "CtrlQ 旗帜" : `底部 ${channelReadyCount} 个频道 HUD`}锚点，点击旗帜按钮 (${controls.flagButton.x},${controls.flagButton.y})`
+    );
+    await ui.tap(controls.flagButton, signal);
+    await sleep(settleMs, signal);
+    screen = await capturePatrolScreen(
+      vision,
+      "patrol-team-menu-open",
+      signal
+    );
+    if (patrolTeamCreated(vision, screen.observations, controls)) {
+      await report(
+        "info",
+        "patrol_team_already_created",
+        "旗帜入口已打开现有巡逻队，确认目标正确后跳过重复创建"
+      );
+      return;
+    }
+    menuOpen = hasTextInRegion(
+      vision,
+      screen.observations,
+      "创建队伍",
+      controls.teamMenuRegion
+    );
+    creatorOpen = hasTextInRegion(
+      vision,
+      screen.observations,
+      "队伍目标",
+      controls.creatorTitleRegion
+    );
+    const comboAttempts = Math.max(
+      1,
+      Math.min(2, Number(controls.comboFallbackAttempts) || 2)
+    );
+    for (
+      let attempt = 0;
+      !menuOpen && !creatorOpen && attempt < comboAttempts;
+      attempt += 1
+    ) {
+      await report(
+        "warning",
+        "patrol_flag_key_fallback",
+        `旗帜点击后未打开队伍入口，正在执行第 ${attempt + 1}/${comboAttempts} 次 Ctrl+Q 备用；每次按键后先识别，已打开时不再重复以免折叠`
+      );
+      await adb.keyCombination(
+        ["KEYCODE_CTRL_LEFT", "KEYCODE_Q"],
+        signal,
+        { holdMs: controls.comboHoldMs || 120 }
+      );
+      await sleep(settleMs, signal);
+      screen = await capturePatrolScreen(
+        vision,
+        `patrol-team-menu-key-fallback-${attempt + 1}`,
+        signal
+      );
+      if (patrolTeamCreated(vision, screen.observations, controls)) {
+        await report(
+          "info",
+          "patrol_team_already_created",
+          "Ctrl+Q 已打开现有巡逻队，确认目标正确后跳过重复创建"
+        );
+        return;
+      }
+      menuOpen = hasTextInRegion(
+        vision,
+        screen.observations,
+        "创建队伍",
+        controls.teamMenuRegion
+      );
+      creatorOpen = hasTextInRegion(
+        vision,
+        screen.observations,
+        "队伍目标",
+        controls.creatorTitleRegion
+      );
+    }
+    if (!menuOpen && !creatorOpen) {
+      throw new Error(
+        "PATROL_TEAM_MENU_DID_NOT_OPEN: 旗帜点击及两次 Ctrl+Q 备用后仍未识别到“创建队伍”，禁止继续点击"
+      );
+    }
+  }
+
+  if (!creatorOpen) {
+    await report(
+      "info",
+      "patrol_create_menu_click",
+      "已确认左侧队伍菜单打开，点击“创建队伍”"
+    );
+    await ui.tap(controls.createMenuPoint, signal);
+    await sleep(settleMs, signal);
+    screen = await capturePatrolScreen(
+      vision,
+      "patrol-team-creator-open",
+      signal
+    );
+    if (
+      !hasTextInRegion(
+        vision,
+        screen.observations,
+        "队伍目标",
+        controls.creatorTitleRegion
+      ) ||
+      !hasTextInRegion(
+        vision,
+        screen.observations,
+        "创建队伍",
+        controls.createButtonRegion
+      )
+    ) {
+      throw new Error(
+        "PATROL_TEAM_CREATOR_DID_NOT_OPEN: 未确认队伍目标创建页，禁止选择目标"
+      );
+    }
+  }
+
+  await ui.tap(controls.campAffairsPoint, signal);
+  await sleep(settleMs, signal);
+  screen = await capturePatrolScreen(
+    vision,
+    "patrol-camp-affairs-selected",
+    signal
+  );
+  if (
+    !hasTextInRegion(
+      vision,
+      screen.observations,
+      "营地巡逻任务",
+      controls.patrolTargetRegion
+    )
+  ) {
+    throw new Error(
+      "PATROL_TARGET_NOT_VISIBLE: 点击营地事务分类后未识别到“营地巡逻任务”"
+    );
+  }
+
+  await ui.tap(controls.patrolTargetPoint, signal);
+  await sleep(settleMs, signal);
+  screen = await capturePatrolScreen(
+    vision,
+    "patrol-target-selected",
+    signal
+  );
+  if (
+    !hasTextInRegion(
+      vision,
+      screen.observations,
+      "营地巡逻任务",
+      controls.patrolTargetRegion
+    ) ||
+    !hasTextInRegion(
+      vision,
+      screen.observations,
+      "创建队伍",
+      controls.createButtonRegion
+    )
+  ) {
+    throw new Error(
+      "PATROL_TARGET_SELECTION_UNVERIFIED: 未确认巡逻目标和创建按钮，禁止创建"
+    );
+  }
+
+  await report(
+    "info",
+    "patrol_create_submit",
+    "已确认“营地事务>营地巡逻任务”，点击创建队伍"
+  );
+  await ui.tap(controls.createButtonPoint, signal);
+  await sleep(settleMs, signal);
+  screen = await capturePatrolScreen(
+    vision,
+    "patrol-team-created",
+    signal
+  );
+  if (
+    hasTextInRegion(
+      vision,
+      screen.observations,
+      "加入队伍语音频道",
+      controls.createdBodyRegion
+    )
+  ) {
+    await adb.key(111, signal);
+    await sleep(settleMs, signal);
+    screen = await capturePatrolScreen(
+      vision,
+      "patrol-team-created-after-voice-dismiss",
+      signal
+    );
+  }
+  if (!patrolTeamCreated(vision, screen.observations, controls)) {
+    throw new Error(
+      "PATROL_TEAM_CREATE_UNVERIFIED: 创建后未确认“营地事务>营地巡逻任务”和队伍成员页"
+    );
+  }
+  await report(
+    "info",
+    "patrol_team_created_verified",
+    "已确认巡逻队创建成功，目标为“营地事务>营地巡逻任务”"
+  );
+}
+
+async function capturePatrolScreen(vision, label, signal) {
+  const frame = await vision.capture(label, signal);
+  let observations = frame.observations;
+  if (typeof vision.captureAccurateTransient === "function") {
+    const accurate = await vision
+      .captureAccurateTransient(`${label}-accurate`, signal)
+      .catch(() => null);
+    if (accurate?.observations?.length) {
+      observations = [...observations, ...accurate.observations];
+    }
+  }
+  return { frame, observations };
+}
+
+function patrolTeamCreated(vision, observations, controls) {
+  const target = hasTextInRegion(
+    vision,
+    observations,
+    "营地巡逻任务",
+    controls.createdTargetRegion
+  );
+  const body =
+    hasTextInRegion(
+      vision,
+      observations,
+      "等待队员加入",
+      controls.createdBodyRegion
+    ) ||
+    hasTextInRegion(
+      vision,
+      observations,
+      "招募",
+      controls.createdBodyRegion
+    ) ||
+    hasTextInRegion(
+      vision,
+      observations,
+      "离开队伍",
+      controls.createdBodyRegion
+    );
+  return Boolean(target && body);
+}
+
+function hasTextInRegion(vision, observations, text, region) {
+  const bounded = observations.filter((item) => {
+    const x = item.x + item.width / 2;
+    const y = item.y + item.height / 2;
+    return (
+      x >= region.left &&
+      x <= region.right &&
+      y >= region.top &&
+      y <= region.bottom
+    );
+  });
+  return Boolean(
+    vision.find(bounded, text, "exact") ||
+      vision.find(bounded, text, "includes")
+  );
 }
 
 async function patrolTeamIsFull(context, frame, signal) {
