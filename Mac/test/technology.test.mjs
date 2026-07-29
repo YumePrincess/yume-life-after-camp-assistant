@@ -6,13 +6,27 @@ import {
   verifyFinalConfiguredSlots
 } from "../src/workflows/technology.mjs";
 
-test("every occupied technology slot is selected and unloaded separately", async () => {
-  const taps = [];
+test("technology slots unload core 1-6 then general 1-6 without re-clicking", async () => {
+  const actions = [];
+  const coreSlots = Array.from({ length: 6 }, (_, index) => ({
+    x: 700 + index * 100,
+    y: 400
+  }));
+  const generalSlots = Array.from({ length: 6 }, (_, index) => ({
+    x: 650 + index * 100,
+    y: 550
+  }));
   const context = {
-    config: technologyConfig(),
+    config: {
+      ...technologyConfig(),
+      technology: {
+        ...technologyConfig().technology,
+        slots: { core: coreSlots, general: generalSlots }
+      }
+    },
     ui: {
       async tap(point) {
-        taps.push(point);
+        actions.push(["tap", point]);
       }
     },
     vision: {
@@ -31,16 +45,64 @@ test("every occupied technology slot is selected and unloaded separately", async
         return slots.map(() => feature(0));
       }
     },
+    async sleep(ms) {
+      actions.push(["wait", ms]);
+    },
     async report() {}
   };
   await clearAllConfiguredSlots(context);
-  assert.deepEqual(taps, [
-    { x: 800, y: 550, lane: "general", index: 0 },
-    { x: 745, y: 638 },
-    { x: 800, y: 550, lane: "general", index: 0 },
-    { x: 800, y: 400, lane: "core", index: 0 },
-    { x: 745, y: 638 },
-    { x: 800, y: 400, lane: "core", index: 0 }
+  const expected = [];
+  for (const [lane, slots] of [
+    ["core", coreSlots],
+    ["general", generalSlots]
+  ]) {
+    slots.forEach((slot, index) => {
+      expected.push(["tap", { ...slot, lane, index }]);
+      expected.push(["tap", { x: 745, y: 638 }]);
+      expected.push(["wait", 3000]);
+    });
+  }
+  assert.deepEqual(actions, expected);
+});
+
+test("cropped detail OCR detects and unloads the first general slot", async () => {
+  const actions = [];
+  const context = {
+    config: technologyConfig(),
+    ui: {
+      async tap(point) {
+        actions.push(["tap", point]);
+      }
+    },
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async ocrRegion(_path, _region, label) {
+        return label.includes("clear-check-general-1")
+          ? [observation("卸下", 700, 600)]
+          : [];
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      },
+      async probe(_path, slots) {
+        return slots.map(() => feature(0));
+      }
+    },
+    async sleep(ms) {
+      actions.push(["wait", ms]);
+    },
+    async report() {}
+  };
+
+  await clearAllConfiguredSlots(context);
+
+  assert.deepEqual(actions, [
+    ["tap", { x: 800, y: 400, lane: "core", index: 0 }],
+    ["tap", { x: 800, y: 550, lane: "general", index: 0 }],
+    ["tap", { x: 745, y: 638 }],
+    ["wait", 3000]
   ]);
 });
 
@@ -176,6 +238,104 @@ test("two technologies follow slot-select-configure-wait before the next slot", 
   ]);
 });
 
+test("technology selection uses cropped OCR and a unique one-character OCR correction", async () => {
+  const taps = [];
+  const reports = [];
+  const context = {
+    config: technologyConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async afterAction() {}
+    },
+    adb: {
+      async mouseSwipe() {
+        throw new Error("unexpected swipe");
+      }
+    },
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async ocrRegion(_path, region, _label, _signal, mode, confidence, scale) {
+        assert.deepEqual(region, technologyConfig().technology.selectorRegion);
+        assert.equal(mode, "accurate");
+        assert.equal(confidence, 0.1);
+        assert.equal(scale, 2);
+        return [observation("永原青春", 240, 650)];
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      }
+    },
+    async sleep() {},
+    async report(_level, step, _message, detail) {
+      reports.push({ step, detail });
+    }
+  };
+
+  await selectTechnology(context, "core", 0, "永葆青春");
+
+  assert.deepEqual(taps, [
+    { x: 800, y: 400 },
+    { x: 280, y: 665 },
+    { x: 745, y: 638 }
+  ]);
+  assert.equal(
+    reports.find((item) => item.step === "tech_target_found")?.detail
+      ?.matchedText,
+    "永原青春"
+  );
+});
+
+test("technology selection stops after the list content remains unchanged at the bottom", async () => {
+  let swipes = 0;
+  const reports = [];
+  const context = {
+    config: {
+      ...technologyConfig(),
+      technology: {
+        ...technologyConfig().technology,
+        selectorSwipe: {
+          ...technologyConfig().technology.selectorSwipe,
+          maxPages: 20
+        }
+      }
+    },
+    ui: {
+      async tap() {},
+      async afterAction() {}
+    },
+    adb: {
+      async mouseSwipe() {
+        swipes += 1;
+      }
+    },
+    vision: {
+      async capture(label) {
+        return {
+          path: `${label}.png`,
+          observations: [observation("列表最后一项", 240, 650)]
+        };
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      }
+    },
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await assert.rejects(
+    selectTechnology(context, "core", 0, "不存在科技"),
+    /科技选择列表中找不到/
+  );
+  assert.equal(swipes, 2);
+  assert.ok(reports.includes("tech_selector_bottom_reached"));
+});
+
 test("technology selection reopens a list that was toggled closed", async () => {
   const taps = [];
   const reports = [];
@@ -294,6 +454,7 @@ function technologyConfig() {
         general: [{ x: 800, y: 550 }]
       },
       unloadSelected: { x: 745, y: 638 },
+      unloadSettleMs: 3000,
       configureSelected: { x: 745, y: 638 },
       detailsRegion: {
         left: 520,

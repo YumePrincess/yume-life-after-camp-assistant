@@ -117,7 +117,7 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
 export async function clearAllConfiguredSlots(context, signal) {
   const { config, ui, vision, report } = context;
   let configuredCount = 0;
-  for (const lane of ["general", "core"]) {
+  for (const lane of ["core", "general"]) {
     const laneSlots = config.technology.slots[lane]
       .map((point, index) => ({ ...point, lane, index }))
       .sort((a, b) => a.index - b.index);
@@ -131,23 +131,32 @@ export async function clearAllConfiguredSlots(context, signal) {
       if (!before.occupied) continue;
       configuredCount += 1;
       await ui.tap(config.technology.unloadSelected, signal);
-      const after = await readTechnologySlotState(
+      const settleMs = Math.max(
+        3_000,
+        Number(config.technology.unloadSettleMs) || 3_000
+      );
+      await (context.sleep || delay)(settleMs, signal);
+      const after = await readTechnologyCurrentDetailState(
         context,
-        slot,
         `technology-cleared-${lane}-${slot.index + 1}`,
         signal
       );
       if (after.occupied) {
         throw new Error(
-          `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 个槽位点击“卸下”后仍为占用状态`
+          `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格等待 ${Math.round(settleMs / 1000)} 秒后仍显示“卸下”`
         );
       }
+      await report(
+        "info",
+        "tech_slot_unloaded",
+        `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已点击卸下并等待 ${Math.round(settleMs / 1000)} 秒；继续下一个槽位`
+      );
     }
   }
   await report(
     "info",
     "tech_clear",
-    `逐格识别“卸下”按钮并移除 ${configuredCount} 项；右侧两行 12 个槽位均已验证为空`
+    `已按第一行 1–6、第二行 1–6 的顺序逐格检查并卸下 ${configuredCount} 项；卸下后未重复点击原槽位`
   );
   const slots = ["core", "general"].flatMap((lane) =>
     config.technology.slots[lane].map((point, index) => ({
@@ -231,14 +240,43 @@ export async function selectTechnology(
     );
   }
   await ui.afterAction(signal);
+  let previousSelectorSignature = "";
+  let unchangedPages = 0;
   for (let page = 0; page <= swipe.maxPages; page += 1) {
     const frame = await vision.capture(`technology-selector-${label}`, signal);
+    let selectorObservations = frame.observations;
     let match = findTechnologyMatch(
       vision,
-      frame.observations,
+      selectorObservations,
       label,
       config.technology.selectorRegion
     );
+    if (
+      !match &&
+      frame.path &&
+      typeof vision.ocrRegion === "function"
+    ) {
+      try {
+        const regional = await vision.ocrRegion(
+          frame.path,
+          config.technology.selectorRegion,
+          `technology-selector-${label}-regional`,
+          signal,
+          "accurate",
+          0.1,
+          2
+        );
+        selectorObservations = regional;
+        match = findTechnologyMatch(
+          vision,
+          regional,
+          label,
+          config.technology.selectorRegion
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+      }
+    }
     if (
       !match &&
       typeof vision.captureAccurateTransient === "function"
@@ -260,7 +298,7 @@ export async function selectTechnology(
       await report(
         "info",
         "tech_target_found",
-        `已在左侧列表第 ${page + 1} 页精确找到科技“${label}”`,
+        `已在左侧列表第 ${page + 1} 页匹配到科技“${label}”`,
         { lane, slotIndex, point: { x, y }, matchedText: match.text }
       );
       await ui.tap({ x, y }, signal);
@@ -285,6 +323,24 @@ export async function selectTechnology(
         `“${label}”已点击配置并等待 ${Math.round(settleMs / 1000)} 秒；继续下一个槽位`
       );
       return;
+    }
+    const signature = technologySelectorSignature(
+      selectorObservations,
+      config.technology.selectorRegion
+    );
+    if (signature && signature === previousSelectorSignature) {
+      unchangedPages += 1;
+    } else {
+      unchangedPages = 0;
+      previousSelectorSignature = signature;
+    }
+    if (unchangedPages >= 2) {
+      await report(
+        "warning",
+        "tech_selector_bottom_reached",
+        `左侧科技列表连续 ${unchangedPages + 1} 次内容未变化，已到列表底部；停止继续滑动`
+      );
+      break;
     }
     if (page < swipe.maxPages) {
       await adb.mouseSwipe(swipe.from, swipe.to, swipe.durationMs, signal);
@@ -313,13 +369,79 @@ function findTechnologyMatch(vision, observations, label, region) {
   });
   return (
     vision.find(inSelector, label, "exact") ||
-    vision.find(inSelector, label, "includes")
+    vision.find(inSelector, label, "includes") ||
+    uniqueFuzzyTechnologyMatch(inSelector, label)
   );
 }
 
+function uniqueFuzzyTechnologyMatch(observations, label) {
+  const wanted = normalizeTechnologyText(label);
+  if (wanted.length < 4) return null;
+  const candidates = observations.filter((item) => {
+    const text = normalizeTechnologyText(item.text);
+    return (
+      text.length >= 4 &&
+      Math.abs(text.length - wanted.length) <= 1 &&
+      technologyTextDistance(text, wanted) <= 1
+    );
+  });
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function technologySelectorSignature(observations, region) {
+  return observations
+    .filter((item) => {
+      const x = item.x + item.width / 2;
+      const y = item.y + item.height / 2;
+      return (
+        x > region.left &&
+        x < region.right &&
+        y > region.top &&
+        y < region.bottom
+      );
+    })
+    .map((item) => normalizeTechnologyText(item.text))
+    .filter(Boolean)
+    .sort()
+    .join("|");
+}
+
+function normalizeTechnologyText(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+function technologyTextDistance(left, right) {
+  if (left === right) return 0;
+  if (Math.abs(left.length - right.length) > 1) return 2;
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current.push(
+        Math.min(
+          current[column - 1] + 1,
+          previous[column] + 1,
+          previous[column - 1] +
+            (left[row - 1] === right[column - 1] ? 0 : 1)
+        )
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length];
+}
+
 async function readTechnologySlotState(context, slot, label, signal) {
-  const { config, ui, vision } = context;
+  const { ui } = context;
   await ui.tap(slot, signal);
+  return readTechnologyCurrentDetailState(context, label, signal);
+}
+
+async function readTechnologyCurrentDetailState(context, label, signal) {
+  const { config, vision } = context;
   let frame = await vision.capture(label, signal);
   let observations = frame.observations;
   let unload = findTechnologyText(
@@ -328,6 +450,32 @@ async function readTechnologySlotState(context, slot, label, signal) {
     "卸下",
     config.technology.detailsRegion
   );
+  if (
+    !unload &&
+    frame.path &&
+    typeof vision.ocrRegion === "function"
+  ) {
+    try {
+      const regional = await vision.ocrRegion(
+        frame.path,
+        config.technology.detailsRegion,
+        `${label}-regional`,
+        signal,
+        "accurate",
+        0.1,
+        2
+      );
+      observations = regional;
+      unload = findTechnologyText(
+        vision,
+        observations,
+        "卸下",
+        config.technology.detailsRegion
+      );
+    } catch (error) {
+      if (signal?.aborted) throw error;
+    }
+  }
   if (!unload && typeof vision.captureAccurateTransient === "function") {
     const accurate = await vision.captureAccurateTransient(
       `${label}-accurate`,

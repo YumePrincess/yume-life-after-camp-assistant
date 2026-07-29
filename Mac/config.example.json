@@ -153,8 +153,9 @@
         "repeats": 12
       }
     },
-    "selectorRegion": { "left": 60, "top": 180, "right": 520, "bottom": 940 },
+    "selectorRegion": { "left": 60, "top": 110, "right": 560, "bottom": 1050 },
       "unloadSelected": { "x": 745, "y": 638 },
+      "unloadSettleMs": 3000,
       "configureSelected": { "x": 745, "y": 638 },
       "configureSettleMs": 3000,
       "detailsRegion": { "left": 520, "top": 250, "right": 1050, "bottom": 850 },
