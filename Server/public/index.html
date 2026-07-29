@@ -68,30 +68,20 @@
           <div id="highlights" class="highlight-list"></div>
         </aside>
 
-        <article class="panel vote-panel" id="vote">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">NEXT TECHNOLOGY</p>
-              <h2>次日科技投票</h2>
-            </div>
-            <div class="date-badge" id="poll-date">--</div>
-          </div>
-          <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
-          <label class="field">
-            <span>游戏昵称（可选）</span>
-            <input id="voter-name" maxlength="30" placeholder="便于营地成员识别" />
-          </label>
-          <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
-          <p class="vote-list-label">全部可选科技（每人最多 6 票）</p>
-          <div id="vote-options" class="vote-options" aria-live="polite"></div>
-          <div class="action-row">
-            <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
-            <span id="vote-feedback" class="feedback" role="status"></span>
-          </div>
-        </article>
       </section>
 
       <div class="insight-grid">
+        <section class="panel" id="staff">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">OFFICERS</p>
+              <h2>营地公职</h2>
+            </div>
+            <span class="muted" id="staff-updated"></span>
+          </div>
+          <div id="staff-list" class="staff-grid"></div>
+        </section>
+
         <section class="panel" id="warnings">
           <div class="section-heading">
             <div>
@@ -104,18 +94,29 @@
           <div id="warning-list" class="warning-list"></div>
           <p id="warning-empty" class="empty-state" hidden>当前没有达到预警线的成员。</p>
         </section>
-
-        <section class="panel" id="staff">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">OFFICERS</p>
-              <h2>营地公职</h2>
-            </div>
-            <span class="muted" id="staff-updated"></span>
-          </div>
-          <div id="staff-list" class="staff-grid"></div>
-        </section>
       </div>
+
+      <article class="panel vote-panel" id="vote">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">NEXT TECHNOLOGY</p>
+            <h2>次日科技投票</h2>
+          </div>
+          <div class="date-badge" id="poll-date">--</div>
+        </div>
+        <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
+        <label class="field">
+          <span>游戏昵称（可选）</span>
+          <input id="voter-name" maxlength="30" placeholder="便于营地成员识别" />
+        </label>
+        <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
+        <p class="vote-list-label">全部可选科技（每人最多 6 票）</p>
+        <div id="vote-options" class="vote-options" aria-live="polite"></div>
+        <div class="action-row">
+          <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
+          <span id="vote-feedback" class="feedback" role="status"></span>
+        </div>
+      </article>
 
       <section class="panel" id="members">
         <div class="section-heading member-heading">

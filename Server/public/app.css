@@ -651,7 +651,8 @@ h2 {
 
 .vote-selection-slots {
   display: grid;
-  grid-template-columns: repeat(6, minmax(34px, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 96px));
+  justify-content: start;
   gap: 7px;
 }
 

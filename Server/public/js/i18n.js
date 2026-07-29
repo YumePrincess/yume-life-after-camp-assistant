@@ -109,6 +109,9 @@
       "固定科技适用日期": "Fixed-technology day",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "Choose a date, then set its fixed technologies from the catalog. Filters only change what is shown and never alter saved settings.",
+      "目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
+        "The catalog contains 53 verified technologies and bundled icons. On each switch, both rows are cleared, fixed choices are restored first, and votes fill the remaining slots before confirmation. Row 1 is currently Agriculture; both rows allow up to 6.",
+      "53 项科技": "53 technologies",
       "科技目录": "Technology catalog",
       "搜索科技": "Search technologies",
       "搜索科技名称或描述": "Search by technology name or description",
@@ -441,6 +444,9 @@
       "固定科技适用日期": "Jour des technologies fixes",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "Choisissez une date, puis définissez ses technologies fixes depuis le catalogue. Les filtres modifient uniquement l’affichage.",
+      "目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
+        "Le catalogue contient 53 technologies vérifiées et leurs icônes. À chaque changement, les deux rangées sont vidées, les choix fixes sont restaurés, puis les votes complètent les places avant confirmation. La première rangée est agricole et chaque rangée accepte jusqu’à 6 choix.",
+      "53 项科技": "53 technologies",
       "科技目录": "Catalogue technologique",
       "搜索科技": "Rechercher des technologies",
       "搜索科技名称或描述": "Rechercher par nom ou description",
@@ -777,6 +783,9 @@
       "固定科技适用日期": "固定技術の曜日",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "日付を選び、一覧からその日の固定技術を設定します。絞り込みは表示だけに作用し、保存済み設定は変更しません。",
+      "目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
+        "一覧には確認済みの53技術と固定アイコンが含まれます。切替時は両行を空にし、固定技術を優先して復元した後、投票結果で残りを補って確定します。現在の1行目は農業で、各行の上限は6件です。",
+      "53 项科技": "53件の技術",
       "科技目录": "技術一覧",
       "搜索科技": "技術を検索",
       "搜索科技名称或描述": "技術名または説明で検索",
@@ -1105,6 +1114,9 @@
       "固定科技适用日期": "固定科技適用日期",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "先選擇日期，再從目錄設定當日固定科技；篩選只影響目前顯示，不會變更已儲存設定。",
+      "目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
+        "目錄內建 53 項已核對科技及固定圖示資產。實際切換時會先清空兩行既有科技，再依固定科技優先、投票結果補足的順序重建並點擊完成。目前第一行為農業科技，農業行與其他科技行上限皆為 6。",
+      "53 项科技": "53 項科技",
       "科技目录": "科技目錄",
       "搜索科技": "搜尋科技",
       "搜索科技名称或描述": "搜尋科技名稱或描述",
