@@ -98,7 +98,7 @@ test("map preparation closes the camp page, collapses chat, then confirms HUD", 
   assert.deepEqual(fixture.keys, []);
 });
 
-test("1920x1200 map flow closes every overlay before sending M", async () => {
+test("1920x1200 map flow closes every overlay and opens the verified map button", async () => {
   const fixture = createUi({
     fastFrames: [
       [
@@ -123,9 +123,65 @@ test("1920x1200 map flow closes every overlay before sending M", async () => {
   });
   assert.deepEqual(fixture.taps, [
     { x: 1750, y: 145 },
-    { x: 1710, y: 1050 }
+    { x: 1710, y: 1050 },
+    { x: 1780, y: 120 }
   ]);
+  assert.deepEqual(fixture.keys, []);
+});
+
+test("M is used only after the map button fails and still requires map OCR", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("背包", 120, 900)],
+      [],
+      [observation("标志查看", 260, 150)]
+    ]
+  });
+  await fixture.ui.ensureMapOpen({
+    mapButton: { x: 1780, y: 120 },
+    mapKey: "KEYCODE_M",
+    mapKeyFallbackDelayMs: 0,
+    mapReadyTexts: ["标志查看"],
+    mapPreparationMaxClosures: 2,
+    mapOpenPollMs: 1
+  });
+  assert.deepEqual(fixture.taps, [{ x: 1780, y: 120 }]);
   assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+});
+
+test("a model map prediction never unlocks destination clicks without map OCR", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("背包", 120, 900)],
+      [],
+      [observation("查看庄园", 260, 150)]
+    ],
+    generalAdvice: {
+      state: "map",
+      confidence: 0.99,
+      evidence: "模型误判地图"
+    }
+  });
+  await fixture.ui.ensureMapOpen({
+    mapButton: { x: 1780, y: 120 },
+    mapKey: "KEYCODE_M",
+    mapKeyFallbackDelayMs: 30_000,
+    mapReadyTexts: ["标志查看", "查看庄园"],
+    mapPreparationMaxClosures: 2,
+    mapOpenPollMs: 1
+  });
+  assert.deepEqual(fixture.taps, [{ x: 1780, y: 120 }]);
+  assert.deepEqual(fixture.keys, []);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("模型地图候选仅供记录")
+    )
+  );
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("已通过地图固定文字确认")
+    )
+  );
 });
 
 test("map preparation permits only a high-confidence AI safe close control", async () => {
@@ -166,6 +222,7 @@ function createUi({
   fastFrames = [[]],
   accurateFrames = [[]],
   overlayAdvice = null,
+  generalAdvice = null,
   minimumActionConfidence = 0.95
 } = {}) {
   const taps = [];
@@ -174,7 +231,7 @@ function createUi({
   let fastIndex = 0;
   let accurateIndex = 0;
   const vision = {
-    advisor: overlayAdvice
+    advisor: overlayAdvice || generalAdvice
       ? {
           enabled: true,
           config: {
@@ -201,7 +258,7 @@ function createUi({
       return overlayAdvice;
     },
     async adviseCurrent() {
-      return null;
+      return generalAdvice;
     },
     find(observations, query) {
       return observations.find((item) => item.text.includes(query));

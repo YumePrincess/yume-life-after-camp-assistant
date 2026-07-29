@@ -467,17 +467,18 @@ export class GameUi {
   async ensureMapOpen(action, signal) {
     const prepared = await this.closePagesBeforeMap(action, signal);
     if (prepared === "map") return;
+    const mapButton = action.mapButton || { x: 1780, y: 120 };
     const mapKey = action.mapKey || "KEYCODE_M";
-    if (mapKey) {
+    if (mapButton) {
       await this.report(
         "info",
-        "map_open_key",
-        "已发送 M 键打开地图；确认地图界面后才会继续选择传送点",
-        { key: mapKey }
+        "map_open_button",
+        "正在点击右上角地图按钮；识别到地图固定文字后才会继续",
+        { point: mapButton }
       );
-      await this.adb.key(mapKey, signal);
+      await this.tap(mapButton, signal);
     } else {
-      await this.tap(action.mapButton, signal);
+      await this.adb.key(mapKey, signal);
     }
     const timeoutMs = Math.max(
       180,
@@ -485,6 +486,16 @@ export class GameUi {
     ) * 1000;
     let deadline = Date.now() + timeoutMs;
     let advisorChecked = false;
+    let accurateCheckedAt = 0;
+    let mapKeyFallbackSent = !mapButton || !mapKey;
+    const configuredFallbackDelayMs = Number(action.mapKeyFallbackDelayMs);
+    const mapKeyFallbackDelayMs = Math.max(
+      0,
+      Number.isFinite(configuredFallbackDelayMs)
+        ? configuredFallbackDelayMs
+        : 4_000
+    );
+    const mapKeyFallbackAt = Date.now() + mapKeyFallbackDelayMs;
     do {
       await delay(action.mapOpenPollMs || 500, signal);
       const verification = await this.vision.captureTransient(
@@ -494,7 +505,54 @@ export class GameUi {
       const verified = (action.mapReadyTexts || [])
         .map((text) => this.vision.find(verification.observations, text))
         .find(Boolean);
-      if (verified) return;
+      if (verified) {
+        await this.report(
+          "info",
+          "map_open_verified",
+          `已通过地图固定文字确认页面打开：${verified.text}`
+        );
+        return;
+      }
+      if (
+        typeof this.vision.captureAccurateTransient === "function" &&
+        Date.now() - accurateCheckedAt >= 2_000
+      ) {
+        accurateCheckedAt = Date.now();
+        const accurate = await this.vision.captureAccurateTransient(
+          "teleport-map-verification-accurate",
+          signal
+        ).catch(() => null);
+        const accurateVerified = (action.mapReadyTexts || [])
+          .map((text) =>
+            accurate
+              ? this.vision.find(accurate.observations, text)
+              : null
+          )
+          .find(Boolean);
+        if (accurateVerified) {
+          await this.report(
+            "info",
+            "map_open_verified_accurate",
+            `已通过高精度 OCR 确认地图页面打开：${accurateVerified.text}`
+          );
+          return;
+        }
+      }
+      if (!mapKeyFallbackSent && Date.now() >= mapKeyFallbackAt) {
+        mapKeyFallbackSent = true;
+        await this.report(
+          "warning",
+          "map_open_key_fallback",
+          "右上角地图按钮点击后仍未识别到地图，正在发送一次 M 键备用；之后仍需地图文字确认",
+          { key: mapKey }
+        );
+        await this.adb.releaseMouseButton?.(
+          Math.round((this.config.adb?.screenWidth || 1920) / 2),
+          Math.round((this.config.adb?.screenHeight || 1200) / 2),
+          signal
+        ).catch(() => undefined);
+        await this.adb.key(mapKey, signal);
+      }
       if (
         !advisorChecked &&
         this.vision.advisor?.enabled &&
@@ -519,11 +577,14 @@ export class GameUi {
         await this.report(
           "info",
           "local_model_map_verification",
-          `本地模型地图确认结果：${advice?.state || "unavailable"}`,
-          { ...advice, accepted: advice?.state === "map" && advice.confidence >= minimum }
+          `本地模型地图候选仅供记录：${advice?.state || "unavailable"}；仍需 OCR 地图固定文字确认`,
+          {
+            ...advice,
+            accepted: false,
+            modelWouldAccept:
+              advice?.state === "map" && advice.confidence >= minimum
+          }
         );
-        if (advice?.state === "map" && advice.confidence >= minimum) return;
-        advisorChecked = false;
       }
       if (
         Date.now() >= deadline &&
@@ -532,9 +593,10 @@ export class GameUi {
         await this.report(
           "warning",
           "healthy_map_wait_extended",
-          "游戏进程健康，地图确认等待已延长，不重启游戏"
+          "游戏进程健康但地图尚未确认；不会点击地点或快速前往，继续等待"
         );
         advisorChecked = false;
+        accurateCheckedAt = 0;
         deadline = Date.now() + timeoutMs;
       }
     } while (Date.now() < deadline);
@@ -857,7 +919,6 @@ export class GameUi {
       const overlayConfident =
         Number(overlayAdvice?.confidence) >= overlayMinimum &&
         ["close_x", "back", "collapse"].includes(overlayAdvice?.control);
-      if (confident && advice.state === "map") return "map";
       if (
         visibleHudText &&
         !visiblePanelText &&
@@ -957,7 +1018,7 @@ export class GameUi {
     let deadline = Date.now() + timeoutMs;
     const startedAt = Date.now();
     let advisorChecks = 0;
-    let confirmedMapFrames = 0;
+    let accurateCheckedAt = 0;
     do {
       const frame = await this.vision.captureTransient(
         "teleport-result",
@@ -981,6 +1042,41 @@ export class GameUi {
           state: /冷却/.test(failure.text) ? "cooldown" : "nearby",
           text: failure.text
         };
+      }
+      if (
+        typeof this.vision.captureAccurateTransient === "function" &&
+        Date.now() - accurateCheckedAt >= 2_000
+      ) {
+        accurateCheckedAt = Date.now();
+        const accurate = await this.vision.captureAccurateTransient(
+          "teleport-result-accurate",
+          signal
+        ).catch(() => null);
+        if (accurate) {
+          const accurateReady = readyTexts
+            .map((text) => ({
+              text,
+              match: this.vision.find(accurate.observations, text)
+            }))
+            .find((item) => item.match);
+          if (accurateReady) {
+            return { state: "success", text: accurateReady.text };
+          }
+          const accurateFailure = failureTexts
+            .map((text) => ({
+              text,
+              match: this.vision.find(accurate.observations, text)
+            }))
+            .find((item) => item.match);
+          if (accurateFailure) {
+            return {
+              state: /冷却/.test(accurateFailure.text)
+                ? "cooldown"
+                : "nearby",
+              text: accurateFailure.text
+            };
+          }
+        }
       }
       if (
         Date.now() - startedAt >= 1_500 &&
@@ -1007,29 +1103,13 @@ export class GameUi {
         await this.report(
           "info",
           "local_model_teleport_verification",
-          `本地模型传送结果：${advice?.state || "unavailable"}`,
-          { ...advice, accepted }
-        );
-        if (accepted && advice.state === "hud") {
-          return { state: "success", text: advice.evidence };
-        }
-        if (accepted && advice.state === "teleport_error") {
-          return {
-            state: /冷却/.test(advice.evidence) ? "cooldown" : "nearby",
-            text: advice.evidence
-          };
-        }
-        if (accepted && advice.state === "map") {
-          confirmedMapFrames += 1;
-          if (confirmedMapFrames >= 2) {
-            return {
-              state: "nearby",
-              text: "点击快速前往后地图持续打开（目标点附近）"
-            };
+          `本地模型传送候选仅供记录：${advice?.state || "unavailable"}；仍需 OCR 到达或错误文字确认`,
+          {
+            ...advice,
+            accepted: false,
+            modelWouldAccept: accepted
           }
-        } else if (advice?.state && advice.state !== "loading") {
-          confirmedMapFrames = 0;
-        }
+        );
       }
       await delay(600, signal);
       if (
@@ -1042,6 +1122,7 @@ export class GameUi {
           "游戏进程健康，继续确认传送结果，不重启游戏"
         );
         advisorChecks = 0;
+        accurateCheckedAt = 0;
         deadline = Date.now() + timeoutMs;
       }
     } while (Date.now() < deadline);
