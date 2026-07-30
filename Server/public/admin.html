@@ -40,6 +40,9 @@
           <a class="admin-nav-item" href="#tasks" data-nav-target="tasks">任务计划</a>
           <a class="admin-nav-item" href="#agent" data-nav-target="agent">执行策略</a>
           <a class="admin-nav-item" href="#technology" data-nav-target="technology">科技管理</a>
+          <a class="admin-nav-item" href="#identity-applications" data-nav-target="identity-applications" hidden>识别码审批</a>
+          <a class="admin-nav-item" href="#identity-codes" data-nav-target="identity-codes" hidden>身份识别码</a>
+          <a class="admin-nav-item" href="#smtp" data-nav-target="smtp" hidden>SMTP 发信</a>
           <a class="admin-nav-item" href="#access" data-nav-target="access" hidden>访问密钥</a>
           <a class="admin-nav-item" href="#members" data-nav-target="members">成员管理</a>
           <a class="admin-nav-item" href="#history" data-nav-target="history">运行记录</a>
@@ -106,12 +109,22 @@
                 </label>
               </div>
               <label class="field">
+                <span>公告编辑语言</span>
+                <select id="public-content-locale" data-ui-only>
+                  <option value="zh-cn">简体中文</option>
+                  <option value="zh-tw">繁體中文</option>
+                  <option value="en">English</option>
+                  <option value="fr">Français</option>
+                  <option value="ja">日本語</option>
+                </select>
+              </label>
+              <label class="field">
                 <span>公共公告</span>
                 <textarea name="announcement" rows="3"></textarea>
               </label>
               <label class="field">
-                <span>营地亮点（每行一项）</span>
-                <textarea name="highlights" rows="4"></textarea>
+                <span>营地公告列表（公告之间空一行；公告内可换行）</span>
+                <textarea name="highlights" rows="8"></textarea>
               </label>
               <div class="section-savebar">
                 <span class="feedback" data-save-feedback>当前配置已同步</span>
@@ -119,6 +132,131 @@
               </div>
             </section>
           </form>
+
+          <section class="panel admin-view" data-admin-view="identity-applications" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">IDENTITY REVIEW</p>
+                <h1>身份识别码审批</h1>
+                <p class="section-intro">审批新申请及延期申请；每页显示10条。</p>
+              </div>
+              <button id="refresh-identity-applications" class="button button-quiet" type="button">刷新</button>
+            </div>
+            <div class="list-toolbar">
+              <label class="search-field">
+                <span class="sr-only">搜索申请编号、玩家或邮箱</span>
+                <input id="identity-application-search" type="search" placeholder="搜索申请编号、玩家或邮箱" />
+              </label>
+              <label class="field compact-field">
+                <span>审批状态</span>
+                <select id="identity-application-status">
+                  <option value="">全部</option>
+                  <option value="pending">待审批</option>
+                  <option value="approved">已通过</option>
+                  <option value="rejected">已拒绝</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table class="run-history-table identity-admin-table">
+                <thead>
+                  <tr><th>申请编号</th><th>类型</th><th>玩家</th><th>邮箱</th><th>语言</th><th>状态</th><th>提交时间</th><th class="run-actions-heading"><span>操作</span></th></tr>
+                </thead>
+                <tbody id="identity-application-table"></tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <button id="identity-app-prev" class="button button-quiet" type="button">上一页</button>
+              <span id="identity-app-page">1 / 1</span>
+              <label class="jump-field"><span>跳至</span><input id="identity-app-jump" type="number" min="1" value="1" /></label>
+              <button id="identity-app-jump-button" class="button button-quiet" type="button">跳页</button>
+              <button id="identity-app-next" class="button button-quiet" type="button">下一页</button>
+            </div>
+          </section>
+
+          <section class="panel admin-view" data-admin-view="identity-codes" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">IDENTITY CODES</p>
+                <h1>身份识别码</h1>
+                <p class="section-intro">查看、人工发行、禁用、修改有效期或重新发送识别码。</p>
+              </div>
+            </div>
+            <form id="manual-identity-code-form" class="identity-admin-form">
+              <div class="form-grid">
+                <label class="field"><span>玩家名称（可选）</span><input name="identityPlayerName" maxlength="80" /></label>
+                <label class="field"><span>接收邮箱（可选）</span><input name="identityEmail" type="email" maxlength="254" /></label>
+                <label class="field"><span>邮件语言</span>
+                  <select name="identityLocale">
+                    <option value="zh-cn">简体中文</option><option value="zh-tw">繁體中文</option>
+                    <option value="en">English</option><option value="fr">Français</option><option value="ja">日本語</option>
+                  </select>
+                </label>
+                <label class="field"><span>有效期至</span><input name="identityExpiresAt" type="datetime-local" /></label>
+                <label class="field field-checkbox"><input name="identityPermanent" type="checkbox" /><span>永久有效</span></label>
+              </div>
+              <button class="button button-primary" type="submit">人工生成识别码</button>
+              <span id="manual-identity-feedback" class="feedback"></span>
+            </form>
+            <div class="list-toolbar">
+              <label class="search-field"><span class="sr-only">搜索识别码、玩家或邮箱</span><input id="identity-code-search" type="search" placeholder="搜索识别码、玩家或邮箱" /></label>
+              <label class="field compact-field">
+                <span>识别码状态</span>
+                <select id="identity-code-status">
+                  <option value="">全部</option>
+                  <option value="active">有效</option>
+                  <option value="expired">过期</option>
+                  <option value="disabled">取消</option>
+                </select>
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table class="run-history-table identity-admin-table">
+                <thead><tr><th>识别码</th><th>玩家</th><th>邮箱</th><th>状态</th><th>有效期</th><th>最后发信</th><th class="run-actions-heading"><span>操作</span></th></tr></thead>
+                <tbody id="identity-code-table"></tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <button id="identity-code-prev" class="button button-quiet" type="button">上一页</button>
+              <span id="identity-code-page">1 / 1</span>
+              <label class="jump-field"><span>跳至</span><input id="identity-code-jump" type="number" min="1" value="1" /></label>
+              <button id="identity-code-jump-button" class="button button-quiet" type="button">跳页</button>
+              <button id="identity-code-next" class="button button-quiet" type="button">下一页</button>
+            </div>
+          </section>
+
+          <section class="panel admin-view" data-admin-view="smtp" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">SMTP</p>
+                <h1>SMTP 发信</h1>
+                <p class="section-intro">Workers 直连 SMTP；支持 465 TLS 与 587 STARTTLS，不支持端口25。</p>
+              </div>
+            </div>
+            <form id="smtp-config-form">
+              <div class="form-grid">
+                <label class="field field-checkbox"><input name="smtpEnabled" type="checkbox" /><span>启用 SMTP 发信</span></label>
+                <label class="field"><span>SMTP 服务器</span><input name="smtpHost" maxlength="253" /></label>
+                <label class="field"><span>端口</span><input name="smtpPort" type="number" min="1" max="65535" /></label>
+                <label class="field field-checkbox"><input name="smtpSecure" type="checkbox" /><span>连接即使用 TLS（通常465）</span></label>
+                <label class="field field-checkbox"><input name="smtpStartTls" type="checkbox" /><span>使用 STARTTLS（通常587）</span></label>
+                <label class="field"><span>认证方式</span><select name="smtpAuthType"><option value="login">LOGIN</option><option value="plain">PLAIN</option><option value="cram-md5">CRAM-MD5</option></select></label>
+                <label class="field"><span>用户名</span><input name="smtpUsername" autocomplete="username" /></label>
+                <label class="field"><span>密码</span><input name="smtpPassword" type="password" autocomplete="new-password" placeholder="留空则保留现有密码" /></label>
+                <label class="field"><span>发件邮箱</span><input name="smtpFromEmail" type="email" /></label>
+                <label class="field"><span>发件名称</span><input name="smtpFromName" /></label>
+                <label class="field"><span>回复邮箱（可选）</span><input name="smtpReplyTo" type="email" /></label>
+              </div>
+              <div class="section-savebar">
+                <span id="smtp-feedback" class="feedback"></span>
+                <button class="button button-primary" type="submit">保存 SMTP 配置</button>
+              </div>
+            </form>
+            <form id="smtp-test-form" class="inline-test-form">
+              <label class="field"><span>测试收件邮箱</span><input name="smtpTestTo" type="email" required /></label>
+              <button class="button button-quiet" type="submit">发送测试邮件</button>
+            </form>
+          </section>
 
           <form class="config-form" data-config-section="tasks" data-admin-view="tasks" hidden>
             <section class="panel">
@@ -279,11 +417,16 @@
               </label>
               <fieldset class="permission-fieldset">
                 <legend>权限（全部不选即为仅预览）</legend>
-                <label><input type="checkbox" name="keyPermission" value="config:write" /> 修改配置</label>
-                <label><input type="checkbox" name="keyPermission" value="task:run" /> 执行任务</label>
-                <label><input type="checkbox" name="keyPermission" value="task:interrupt" /> 中断任务</label>
-                <label><input type="checkbox" name="keyPermission" value="member:kick" /> 踢出成员</label>
-                <label><input type="checkbox" name="keyPermission" value="keys:manage" /> 管理 Key</label>
+                <div class="permission-options">
+                  <label><input type="checkbox" name="keyPermission" value="config:write" /><span>修改配置</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="task:run" /><span>执行任务</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="task:interrupt" /><span>中断任务</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="member:kick" /><span>踢出成员</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="keys:manage" /><span>管理 Key</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="identity:review" /><span>审批身份识别码</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="identity:manage" /><span>管理身份识别码</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="smtp:manage" /><span>管理 SMTP 配置</span></label>
+                </div>
               </fieldset>
               <button class="button button-primary" type="submit">生成 Key</button>
             </form>
@@ -369,6 +512,25 @@
         </div>
         <dl id="member-detail" class="member-detail"></dl>
         <button id="kick-member" class="button button-danger" type="button">踢出营地</button>
+      </form>
+    </dialog>
+    <dialog id="identity-review-dialog">
+      <form id="identity-review-form" class="dialog-card">
+        <div class="section-heading">
+          <div><p class="eyebrow">IDENTITY REVIEW</p><h2 id="identity-review-title">审批身份识别码</h2></div>
+          <button id="identity-review-close" class="button button-quiet" type="button">关闭</button>
+        </div>
+        <dl id="identity-review-detail" class="member-detail"></dl>
+        <div id="identity-approval-expiry" class="form-grid">
+          <label class="field"><span>发行有效期至</span><input id="identity-review-expiry" type="datetime-local" /></label>
+          <label class="field field-checkbox"><input id="identity-review-permanent" type="checkbox" /><span>永久有效</span></label>
+        </div>
+        <label id="identity-rejection-field" class="field" hidden><span>拒绝原因（可选）</span><textarea id="identity-rejection-reason" rows="3"></textarea></label>
+        <div class="action-row">
+          <button id="identity-review-approve" class="button button-primary" type="button">通过并发送邮件</button>
+          <button id="identity-review-reject" class="button button-danger" type="button">拒绝并发送通知</button>
+          <span id="identity-review-feedback" class="feedback"></span>
+        </div>
       </form>
     </dialog>
   </body>

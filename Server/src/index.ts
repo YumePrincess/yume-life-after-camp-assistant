@@ -66,6 +66,35 @@ import {
   zonedParts
 } from "./time";
 import { validateConfigBundle } from "./validate";
+import { localizeTechnology } from "./technology-localizations";
+import {
+  approveIdentityApplication,
+  createIdentityApplication,
+  createManualIdentityCode,
+  listIdentityApplications,
+  listIdentityCodes,
+  recoverIdentityCode,
+  rejectIdentityApplication,
+  renewalPreview,
+  resendIdentityCode,
+  submitRenewal,
+  updateIdentityCode,
+  verifyIdentityCode
+} from "./identity";
+import {
+  getSmtpConfig,
+  publicSmtpConfig,
+  sendMail,
+  updateSmtpConfig
+} from "./mailer";
+import { normalizeLocale } from "./locale";
+import {
+  checkRateLimit,
+  checkValueRateLimit,
+  recordRateLimitAttempt,
+  recordValueRateLimitAttempt,
+  type RateLimitPolicy
+} from "./rate-limit";
 
 const TERMINAL_RUN_STATES = new Set<RunState>([
   "interrupted",
@@ -75,6 +104,48 @@ const TERMINAL_RUN_STATES = new Set<RunState>([
   "timed_out",
   "skipped"
 ]);
+
+const IDENTITY_CHECK_LIMIT: RateLimitPolicy = {
+  scope: "identity-check",
+  maximum: 10,
+  windowSeconds: 15 * 60,
+  blockSeconds: 60 * 60
+};
+
+const IDENTITY_APPLICATION_LIMIT: RateLimitPolicy = {
+  scope: "identity-application",
+  maximum: 5,
+  windowSeconds: 60 * 60,
+  blockSeconds: 60 * 60
+};
+
+const IDENTITY_VALUE_CHECK_LIMIT: RateLimitPolicy = {
+  scope: "identity-code-value",
+  maximum: 6,
+  windowSeconds: 60 * 60,
+  blockSeconds: 6 * 60 * 60
+};
+
+const PUBLIC_TEST_VOTE_LIMIT: RateLimitPolicy = {
+  scope: "public-test-vote",
+  maximum: 5,
+  windowSeconds: 10 * 60,
+  blockSeconds: 30 * 60
+};
+
+const IDENTITY_RECOVERY_LIMIT: RateLimitPolicy = {
+  scope: "identity-recovery",
+  maximum: 3,
+  windowSeconds: 60 * 60,
+  blockSeconds: 60 * 60
+};
+
+const IDENTITY_RECOVERY_TARGET_LIMIT: RateLimitPolicy = {
+  scope: "identity-recovery-target",
+  maximum: 2,
+  windowSeconds: 6 * 60 * 60,
+  blockSeconds: 6 * 60 * 60
+};
 
 const handler = {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -209,21 +280,77 @@ async function handlePublicApi(
 ): Promise<Response> {
   const cors = publicCors(request);
   if (path === "/api/public/bootstrap" && method === "GET") {
-    const payload = await buildPublicBootstrap(env);
+    const payload = await buildPublicBootstrap(
+      env,
+      new URL(request.url).searchParams.get("locale")
+    );
     return json(payload, 200, cors);
   }
   if (path === "/api/public/tech-vote" && method === "GET") {
     const bundle = await getConfigBundle(env);
-    return json(await buildVoteSummary(env, bundle), 200, cors);
+    return json(
+      localizeVoteSummary(
+        await buildVoteSummary(env, bundle),
+        new URL(request.url).searchParams.get("locale")
+      ),
+      200,
+      cors
+    );
   }
   if (path === "/api/public/tech-vote" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
+    if (limited) return limited;
     const body = await readJsonObject(request, 32_000);
-    const voterId = boundedText(body.voterId, "voterId", 128);
-    if (!/^[A-Za-z0-9._:-]+$/.test(voterId)) {
-      return problem("Invalid voterId", 400, "invalid_voter_id");
+    const publicTestVote = String(body.identityCode ?? "").trim() === "00000000";
+    let identityRecord: Awaited<ReturnType<typeof verifyIdentityCode>> | null = null;
+    if (publicTestVote) {
+      const testLimited = await rejectIfRateLimited(
+        request,
+        env,
+        PUBLIC_TEST_VOTE_LIMIT,
+        cors
+      );
+      if (testLimited) return testLimited;
+      await recordRateLimitAttempt(request, env, PUBLIC_TEST_VOTE_LIMIT);
+    } else {
+      const valueLimited = await rejectIfValueRateLimited(
+        body.identityCode,
+        env,
+        IDENTITY_VALUE_CHECK_LIMIT,
+        cors
+      );
+      if (valueLimited) return valueLimited;
+      const verification = await verifyIdentityCode(env, body.identityCode);
+      identityRecord = verification;
+      if (!verification.ok) {
+        if (verification.reason === "invalid") {
+          await Promise.all([
+            recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
+            recordValueRateLimitAttempt(
+              body.identityCode,
+              env,
+              IDENTITY_VALUE_CHECK_LIMIT
+            )
+          ]);
+        }
+        const detail =
+          verification.reason === "expired"
+            ? "身份识别码已过期"
+            : verification.reason === "disabled"
+              ? "身份识别码已被禁用"
+              : "身份识别码无效";
+        return json(
+          {
+            title: detail,
+            code: `identity_code_${verification.reason}`,
+            canRenew: verification.canRenew,
+            applicationNumber: verification.applicationNumber ?? null
+          },
+          verification.reason === "expired" ? 409 : 403,
+          cors
+        );
+      }
     }
-    const voterName =
-      typeof body.voterName === "string" ? body.voterName.trim().slice(0, 30) : "";
     if (!Array.isArray(body.selections)) {
       return problem("selections must be an array", 400);
     }
@@ -269,13 +396,196 @@ async function handlePublicApi(
     if (selections.length > 6) {
       return problem("每人请选择 1 至 6 项开放投票的科技", 400, "invalid_selections");
     }
-    await saveBallot(env, {
-      pollDate: summary.pollDate,
-      voterId,
-      voterName,
-      selections
-    });
-    return json(await buildVoteSummary(env, bundle), 200, cors);
+    let renewalGraceUsed = false;
+    if (!publicTestVote && identityRecord?.ok) {
+      const consumed = identityRecord.grace
+        ? await verifyIdentityCode(env, body.identityCode, {
+            consumeRenewalGrace: true
+          })
+        : identityRecord;
+      if (!consumed.ok) {
+        return json(
+          {
+            title: "延期审批期间的一次过期投票机会已使用",
+            code: "identity_code_expired_grace_used",
+            canRenew: false
+          },
+          409,
+          cors
+        );
+      }
+      renewalGraceUsed = identityRecord.grace;
+      await saveBallot(env, {
+        pollDate: summary.pollDate,
+        voterId: identityRecord.code.id,
+        voterName: identityRecord.code.player_name ?? "",
+        selections
+      });
+    }
+    return json(
+      {
+        ...localizeVoteSummary(await buildVoteSummary(env, bundle), body.locale),
+        renewalGraceUsed,
+        identityCodeExpiresAt:
+          !publicTestVote && identityRecord?.ok
+            ? identityRecord.code.expires_at
+            : null,
+        publicTestVote
+      },
+      200,
+      cors
+    );
+  }
+  if (path === "/api/public/identity-code-applications" && method === "POST") {
+    const limited = await rejectIfRateLimited(
+      request,
+      env,
+      IDENTITY_APPLICATION_LIMIT,
+      cors
+    );
+    if (limited) return limited;
+    await recordRateLimitAttempt(request, env, IDENTITY_APPLICATION_LIMIT);
+    try {
+      const body = await readJsonObject(request, 16_000);
+      return json(
+        await createIdentityApplication(env, {
+          email: body.email,
+          playerName: body.playerName,
+          locale: body.locale
+        }),
+        201,
+        cors
+      );
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_application_invalid");
+    }
+  }
+  if (path === "/api/public/identity-code-recovery" && method === "POST") {
+    const limited = await rejectIfRateLimited(
+      request,
+      env,
+      IDENTITY_RECOVERY_LIMIT,
+      cors
+    );
+    if (limited) return limited;
+    let body: Record<string, unknown>;
+    try {
+      body = await readJsonObject(request, 16_000);
+    } catch (error) {
+      await recordRateLimitAttempt(request, env, IDENTITY_RECOVERY_LIMIT);
+      return json(
+        { error: errorMessage(error), code: "identity_recovery_invalid" },
+        400,
+        cors
+      );
+    }
+    const targetKey =
+      String(body.email ?? "").trim().toLowerCase() ||
+      String(body.applicationNumber ?? "").trim().toLowerCase() ||
+      String(body.playerName ?? "").trim().toLowerCase();
+    const targetLimited = await rejectIfValueRateLimited(
+      targetKey,
+      env,
+      IDENTITY_RECOVERY_TARGET_LIMIT,
+      cors
+    );
+    if (targetLimited) return targetLimited;
+    await Promise.all([
+      recordRateLimitAttempt(request, env, IDENTITY_RECOVERY_LIMIT),
+      recordValueRateLimitAttempt(
+        targetKey,
+        env,
+        IDENTITY_RECOVERY_TARGET_LIMIT
+      )
+    ]);
+    try {
+      return json(
+        await recoverIdentityCode(env, {
+          email: body.email,
+          playerName: body.playerName,
+          applicationNumber: body.applicationNumber
+        }),
+        200,
+        cors
+      );
+    } catch (error) {
+      return json(
+        { error: errorMessage(error), code: "identity_recovery_failed" },
+        400,
+        cors
+      );
+    }
+  }
+  if (path === "/api/public/identity-code-renewal-preview" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
+    if (limited) return limited;
+    let body: Record<string, unknown>;
+    try {
+      body = await readJsonObject(request, 8_000);
+    } catch (error) {
+      await recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT);
+      return problem(errorMessage(error), 400, "identity_renewal_unavailable");
+    }
+    const valueLimited = await rejectIfValueRateLimited(
+      body.identityCode,
+      env,
+      IDENTITY_VALUE_CHECK_LIMIT,
+      cors
+    );
+    if (valueLimited) return valueLimited;
+    try {
+      return json(await renewalPreview(env, body.identityCode), 200, cors);
+    } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
+        recordValueRateLimitAttempt(
+          body.identityCode,
+          env,
+          IDENTITY_VALUE_CHECK_LIMIT
+        )
+      ]);
+      return problem(errorMessage(error), 400, "identity_renewal_unavailable");
+    }
+  }
+  if (path === "/api/public/identity-code-renewal" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
+    if (limited) return limited;
+    let body: Record<string, unknown>;
+    try {
+      body = await readJsonObject(request, 16_000);
+    } catch (error) {
+      await recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT);
+      return problem(errorMessage(error), 400, "identity_renewal_invalid");
+    }
+    const valueLimited = await rejectIfValueRateLimited(
+      body.identityCode,
+      env,
+      IDENTITY_VALUE_CHECK_LIMIT,
+      cors
+    );
+    if (valueLimited) return valueLimited;
+    try {
+      return json(
+        await submitRenewal(env, {
+          identityCode: body.identityCode,
+          email: body.email,
+          playerName: body.playerName,
+          locale: body.locale
+        }),
+        200,
+        cors
+      );
+    } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
+        recordValueRateLimitAttempt(
+          body.identityCode,
+          env,
+          IDENTITY_VALUE_CHECK_LIMIT
+        )
+      ]);
+      return problem(errorMessage(error), 400, "identity_renewal_invalid");
+    }
   }
   return problem("Not found", 404, "not_found");
 }
@@ -288,7 +598,129 @@ async function handleAdminApi(
   session: SessionRow
 ): Promise<Response> {
   if (path === "/api/admin/bootstrap" && method === "GET") {
-    return json(await buildAdminBootstrap(env, session));
+    return json(
+      await buildAdminBootstrap(
+        env,
+        session,
+        new URL(request.url).searchParams.get("locale")
+      )
+    );
+  }
+  if (path === "/api/admin/smtp-config" && method === "GET") {
+    return json(publicSmtpConfig(await getSmtpConfig(env)));
+  }
+  if (path === "/api/admin/smtp-config" && method === "PUT") {
+    try {
+      return json(await updateSmtpConfig(env, await readJsonObject(request, 32_000)));
+    } catch (error) {
+      return problem(errorMessage(error), 400, "smtp_config_invalid");
+    }
+  }
+  if (path === "/api/admin/smtp-config/test" && method === "POST") {
+    try {
+      const body = await readJsonObject(request, 8_000);
+      const to = boundedText(body.to, "to", 254);
+      await sendMail(env, {
+        to,
+        subject: "明日之后营地助手 SMTP 测试",
+        text: "SMTP 配置测试成功。",
+        html: "<p>SMTP 配置测试成功。</p>"
+      });
+      return json({ sent: true });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "smtp_test_failed");
+    }
+  }
+  if (path === "/api/admin/identity-applications" && method === "GET") {
+    const url = new URL(request.url);
+    return json(
+      await listIdentityApplications(env, {
+        page: Number(url.searchParams.get("page") ?? 1),
+        search: url.searchParams.get("search")?.trim() ?? "",
+        status: url.searchParams.get("status")?.trim() ?? ""
+      })
+    );
+  }
+  const approvalMatch =
+    /^\/api\/admin\/identity-applications\/([^/]+)\/(approve|reject)$/.exec(path);
+  if (approvalMatch && method === "POST") {
+    const applicationId = approvalMatch[1];
+    const action = approvalMatch[2];
+    if (!applicationId || !action) return problem("申请不存在", 404);
+    const body = await readJsonObject(request, 16_000);
+    try {
+      const result = action === "approve"
+        ? await approveIdentityApplication(env, {
+          id: applicationId,
+          permanent: body.permanent,
+          expiresAt: body.expiresAt,
+          reviewedBy: session.email
+        })
+        : await rejectIdentityApplication(env, {
+          id: applicationId,
+          reason: typeof body.reason === "string" ? body.reason.trim() : "",
+          reviewedBy: session.email
+        });
+      return json({ ok: true, ...result });
+    } catch (error) {
+      return problem(errorMessage(error), 400, `identity_${action}_failed`);
+    }
+  }
+  if (path === "/api/admin/identity-codes" && method === "GET") {
+    const url = new URL(request.url);
+    return json(
+      await listIdentityCodes(env, {
+        page: Number(url.searchParams.get("page") ?? 1),
+        search: url.searchParams.get("search")?.trim() ?? "",
+        status: url.searchParams.get("status")?.trim() ?? ""
+      })
+    );
+  }
+  if (path === "/api/admin/identity-codes" && method === "POST") {
+    try {
+      const body = await readJsonObject(request, 16_000);
+      return json(
+        await createManualIdentityCode(env, {
+          playerName: body.playerName,
+          email: body.email,
+          locale: body.locale,
+          permanent: body.permanent,
+          expiresAt: body.expiresAt,
+          createdBy: session.email
+        }),
+        201
+      );
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_code_create_failed");
+    }
+  }
+  const identityCodeMatch =
+    /^\/api\/admin\/identity-codes\/([^/]+)(?:\/(resend))?$/.exec(path);
+  if (identityCodeMatch && method === "PATCH") {
+    const codeId = identityCodeMatch[1];
+    if (!codeId) return problem("识别码不存在", 404);
+    try {
+      const body = await readJsonObject(request, 16_000);
+      await updateIdentityCode(env, {
+        id: codeId,
+        status: body.status,
+        permanent: body.permanent,
+        expiresAt: body.expiresAt
+      });
+      return json({ ok: true });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_code_update_failed");
+    }
+  }
+  if (identityCodeMatch?.[2] === "resend" && method === "POST") {
+    const codeId = identityCodeMatch[1];
+    if (!codeId) return problem("识别码不存在", 404);
+    try {
+      await resendIdentityCode(env, codeId);
+      return json({ sent: true });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_code_resend_failed");
+    }
   }
   if (path === "/api/admin/temp-keys" && method === "POST") {
     const body = await readJsonObject(request, 32_000);
@@ -648,17 +1080,21 @@ async function handleAgentApi(
   return problem("Not found", 404, "not_found");
 }
 
-async function buildPublicBootstrap(env: Env): Promise<Record<string, unknown>> {
+async function buildPublicBootstrap(
+  env: Env,
+  locale: unknown
+): Promise<Record<string, unknown>> {
   const bundle = await getConfigBundle(env);
   const [voteSummary, staff, members, recentRuns] = await Promise.all([
     buildVoteSummary(env, bundle),
     listStaff(env),
     bundle.campConfig.publicMembersEnabled ? listMembers(env) : Promise.resolve([]),
-    listRecentRuns(env, 12)
+    listRecentRuns(env, 10)
   ]);
   return {
     siteName: bundle.campConfig.publicSiteName,
-    publicOverview: bundle.publicOverview,
+    publicOverview:
+      bundle.publicOverview.localized[normalizeLocale(locale)] ?? bundle.publicOverview,
     campConfig: {
       campName: bundle.campConfig.campName,
       serverName: bundle.campConfig.serverName,
@@ -680,7 +1116,7 @@ async function buildPublicBootstrap(env: Env): Promise<Record<string, unknown>> 
           Number(right.inactive_days) - Number(left.inactive_days) ||
           String(left.name).localeCompare(String(right.name))
       ),
-    voteSummary,
+    voteSummary: localizeVoteSummary(voteSummary, locale),
     staffAssignments: staff,
     members,
     recentRuns: recentRuns.filter(isCurrentFeatureRun).map(publicRun)
@@ -689,7 +1125,8 @@ async function buildPublicBootstrap(env: Env): Promise<Record<string, unknown>> 
 
 async function buildAdminBootstrap(
   env: Env,
-  session: NonNullable<Awaited<ReturnType<typeof getAuthenticatedSession>>>
+  session: NonNullable<Awaited<ReturnType<typeof getAuthenticatedSession>>>,
+  locale: unknown = "zh-cn"
 ): Promise<Record<string, unknown>> {
   const bundle = await getConfigBundle(env);
   const [voteSummary, heartbeats, recentRuns, staff, members] = await Promise.all([
@@ -708,8 +1145,16 @@ async function buildAdminBootstrap(
       permissions: sessionPermissions(session),
       expiresAt: session.expires_at
     },
-    configBundle: bundle,
-    voteSummary,
+    configBundle: {
+      ...bundle,
+      technologyConfig: {
+        ...bundle.technologyConfig,
+        catalog: bundle.technologyConfig.catalog.map((item) =>
+          localizeTechnology(item, locale)
+        )
+      }
+    },
+    voteSummary: localizeVoteSummary(voteSummary, locale),
     heartbeats,
     recentRuns: recentRuns.filter(isCurrentFeatureRun),
     staffAssignments: staff,
@@ -728,6 +1173,27 @@ async function buildAdminBootstrap(
       bundle.automationConfig.tasks.tech_switch.time,
       bundle.campConfig.gameResetTime
     )
+  };
+}
+
+function localizeVoteSummary<T extends {
+  options: Array<ReturnType<typeof localizeTechnology>>;
+  projectedPlan: {
+    core: Array<ReturnType<typeof localizeTechnology>>;
+    general: Array<ReturnType<typeof localizeTechnology>>;
+  };
+}>(summary: T, locale: unknown): T {
+  return {
+    ...summary,
+    options: summary.options.map((item) => localizeTechnology(item, locale)),
+    projectedPlan: {
+      core: summary.projectedPlan.core.map((item) =>
+        localizeTechnology(item, locale)
+      ),
+      general: summary.projectedPlan.general.map((item) =>
+        localizeTechnology(item, locale)
+      )
+    }
   };
 }
 
@@ -830,6 +1296,9 @@ function permissionForAdminRequest(
   ) {
     return "keys:manage";
   }
+  if (path.startsWith("/api/admin/identity-applications")) return "identity:review";
+  if (path.startsWith("/api/admin/identity-codes")) return "identity:manage";
+  if (path.startsWith("/api/admin/smtp-config")) return "smtp:manage";
   return null;
 }
 
@@ -838,8 +1307,6 @@ function publicRun(run: Awaited<ReturnType<typeof listRecentRuns>>[number]) {
     id: run.id,
     taskKey: run.task_key,
     state: run.state,
-    message: run.message,
-    progress: run.progress,
     createdAt: run.created_at,
     finishedAt: run.finished_at
   };
@@ -903,6 +1370,52 @@ function safeParseJson(value: string | null, fallback: unknown): unknown {
   } catch {
     return fallback;
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function rejectIfRateLimited(
+  request: Request,
+  env: Env,
+  policy: RateLimitPolicy,
+  headers: Headers
+): Promise<Response | null> {
+  const state = await checkRateLimit(request, env, policy);
+  if (state.allowed) return null;
+  const response = json(
+    {
+      error: `请求过于频繁，请在 ${state.retryAfterSeconds} 秒后重试`,
+      code: "rate_limited",
+      retryAfterSeconds: state.retryAfterSeconds
+    },
+    429,
+    headers
+  );
+  response.headers.set("Retry-After", String(state.retryAfterSeconds));
+  return response;
+}
+
+async function rejectIfValueRateLimited(
+  value: unknown,
+  env: Env,
+  policy: RateLimitPolicy,
+  headers: Headers
+): Promise<Response | null> {
+  const state = await checkValueRateLimit(value, env, policy);
+  if (state.allowed) return null;
+  const response = json(
+    {
+      error: `该识别码的尝试次数过多，请在 ${state.retryAfterSeconds} 秒后重试`,
+      code: "identity_code_rate_limited",
+      retryAfterSeconds: state.retryAfterSeconds
+    },
+    429,
+    headers
+  );
+  response.headers.set("Retry-After", String(state.retryAfterSeconds));
+  return response;
 }
 
 function isRunState(value: unknown): value is RunState {

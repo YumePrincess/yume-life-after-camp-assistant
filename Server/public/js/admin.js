@@ -39,7 +39,16 @@
     eventRefreshTimer: null,
     eventRefreshInFlight: false,
     eventSignature: "",
-    runActionMenu: null
+    runActionMenu: null,
+    identityApplications: { page: 1, total: 0, items: [] },
+    identityCodes: { page: 1, total: 0, items: [] },
+    identityApplicationSearch: "",
+    identityApplicationStatus: "",
+    identityCodeSearch: "",
+    identityCodeStatus: "",
+    selectedIdentityApplication: null,
+    publicContentLocale: "zh-cn",
+    publicContentDraft: null
   };
 
   function byId(id) {
@@ -102,6 +111,21 @@
 
   function taskName(value) {
     return TASK_NAMES[value] || value;
+  }
+
+  function permissionName(value) {
+    return (
+      {
+        "config:write": "修改配置",
+        "task:run": "执行任务",
+        "task:interrupt": "中断任务",
+        "member:kick": "踢出成员",
+        "keys:manage": "管理 Key",
+        "identity:review": "审批身份识别码",
+        "identity:manage": "管理身份识别码",
+        "smtp:manage": "管理 SMTP 配置"
+      }[value] || value
+    );
   }
 
   function hasPermission(permission) {
@@ -213,6 +237,15 @@
     const automation = bundle.automationConfig;
     const tasks = automation.tasks;
     if (sections.includes("general")) {
+      state.publicContentDraft = JSON.parse(
+        JSON.stringify(overview.localized || {
+          "zh-cn": { announcement: overview.announcement, highlights: overview.highlights },
+          "zh-tw": { announcement: overview.announcement, highlights: overview.highlights },
+          en: { announcement: overview.announcement, highlights: overview.highlights },
+          fr: { announcement: overview.announcement, highlights: overview.highlights },
+          ja: { announcement: overview.announcement, highlights: overview.highlights }
+        })
+      );
       for (const [name, value] of Object.entries({
         campName: camp.campName,
         serverName: camp.serverName,
@@ -227,8 +260,10 @@
         automaticKickEnabled: camp.automaticKickEnabled,
         automaticKickGraceDays: camp.automaticKickGraceDays,
         temporaryKeyLoginEnabled: bundle.authConfig.temporaryKeyLoginEnabled,
-        announcement: overview.announcement,
-        highlights: (overview.highlights || []).join("\n")
+        announcement:
+          state.publicContentDraft[state.publicContentLocale]?.announcement || "",
+        highlights:
+          (state.publicContentDraft[state.publicContentLocale]?.highlights || []).join("\n\n")
       })) {
         setField(name, value);
       }
@@ -592,6 +627,27 @@
   }
 
   function toggleRunActionMenu(run, trigger) {
+    const cancellationPending = run.state === "cancelling";
+    toggleActionMenu(trigger, [
+      {
+        label: "事件",
+        icon: "events",
+        onSelect: () => showEvents(run.id)
+      },
+      {
+        label: cancellationPending ? "终止已提交" : "终止任务",
+        icon: "stop",
+        danger: true,
+        disabled:
+          !ACTIVE_STATES.has(run.state) ||
+          cancellationPending ||
+          !hasPermission("task:interrupt"),
+        onSelect: (button) => interruptRun(run.id, button)
+      }
+    ]);
+  }
+
+  function toggleActionMenu(trigger, entries) {
     if (state.runActionMenu?.trigger === trigger) {
       closeRunActionMenu();
       return;
@@ -599,32 +655,20 @@
     closeRunActionMenu();
     const menu = create("div", "run-action-menu");
     menu.setAttribute("role", "menu");
-    const detail = createRunActionButton(
-      "事件",
-      "button-quiet run-action-menu-item",
-      "events"
-    );
-    detail.setAttribute("role", "menuitem");
-    detail.addEventListener("click", () => {
-      closeRunActionMenu();
-      showEvents(run.id);
-    });
-    const cancellationPending = run.state === "cancelling";
-    const cancel = createRunActionButton(
-      cancellationPending ? "终止已提交" : "终止任务",
-      "button-danger run-action-menu-item",
-      "stop"
-    );
-    cancel.setAttribute("role", "menuitem");
-    cancel.disabled =
-      !ACTIVE_STATES.has(run.state) ||
-      cancellationPending ||
-      !hasPermission("task:interrupt");
-    cancel.addEventListener("click", () => {
-      closeRunActionMenu();
-      interruptRun(run.id, cancel);
-    });
-    menu.append(detail, cancel);
+    for (const entry of entries) {
+      const button = createRunActionButton(
+        entry.label,
+        `${entry.danger ? "button-danger" : "button-quiet"} run-action-menu-item`,
+        entry.icon || "events"
+      );
+      button.setAttribute("role", "menuitem");
+      button.disabled = Boolean(entry.disabled);
+      button.addEventListener("click", () => {
+        closeRunActionMenu();
+        entry.onSelect(button);
+      });
+      menu.append(button);
+    }
     menu.addEventListener("click", (event) => event.stopPropagation());
     document.body.append(menu);
     trigger.setAttribute("aria-expanded", "true");
@@ -666,6 +710,15 @@
       if (active) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     }
+    if (resolved === "identity-applications" && hasPermission("identity:review")) {
+      loadIdentityApplications();
+    }
+    if (resolved === "identity-codes" && hasPermission("identity:manage")) {
+      loadIdentityCodes();
+    }
+    if (resolved === "smtp" && hasPermission("smtp:manage")) {
+      loadSmtpConfig();
+    }
   }
 
   function render(data, fillSections = []) {
@@ -679,7 +732,10 @@
         !hasPermission("task:run") &&
         !hasPermission("task:interrupt") &&
         !hasPermission("member:kick") &&
-        !hasPermission("keys:manage")
+        !hasPermission("keys:manage") &&
+        !hasPermission("identity:review") &&
+        !hasPermission("identity:manage") &&
+        !hasPermission("smtp:manage")
     );
     byId("next-tech-date").textContent = data.nextTechnologyTargetDate || "--";
     renderAgents(data.heartbeats);
@@ -691,6 +747,14 @@
     state.accessAllowed = hasPermission("keys:manage");
     document.querySelector('[data-nav-target="access"]').hidden =
       !state.accessAllowed;
+    for (const target of ["identity-applications", "identity-codes"]) {
+      document.querySelector(`[data-nav-target="${target}"]`).hidden =
+        !hasPermission(
+          target === "identity-applications" ? "identity:review" : "identity:manage"
+        );
+    }
+    document.querySelector('[data-nav-target="smtp"]').hidden =
+      !hasPermission("smtp:manage");
     if (fillSections.length) {
       fillConfig(data.configBundle, fillSections);
     }
@@ -737,7 +801,11 @@
         )
       );
       const suffix = [
-        permissions.length ? permissions.join(" · ") : window.MrzhI18n.t("仅预览"),
+        permissions.length
+          ? permissions
+              .map((permission) => window.MrzhI18n.t(permissionName(permission)))
+              .join(" · ")
+          : window.MrzhI18n.t("仅预览"),
         window.MrzhI18n.format("有效期 {date}", {
           date: formatDate(item.expires_at)
         }),
@@ -898,7 +966,9 @@
     if (state.refreshing || state.saving) return;
     state.refreshing = true;
     try {
-      const data = await request(`/api/admin/bootstrap?t=${Date.now()}`);
+      const data = await request(
+        `/api/admin/bootstrap?t=${Date.now()}&locale=${encodeURIComponent(window.MrzhI18n.language())}`
+      );
       const sections = forceAll
         ? CONFIG_SECTIONS
         : CONFIG_SECTIONS.filter(
@@ -1025,6 +1095,7 @@
       JSON.stringify(state.bootstrap.configBundle)
     );
     if (section === "general") {
+      capturePublicContentDraft();
       const timezone = String(getField("timezone")).trim();
       next.campConfig = {
         ...next.campConfig,
@@ -1045,11 +1116,9 @@
         temporaryKeyLoginEnabled: getField("temporaryKeyLoginEnabled")
       };
       next.publicOverview = {
-        announcement: String(getField("announcement")).trim(),
-        highlights: String(getField("highlights"))
-          .split("\n")
-          .map((value) => value.trim())
-          .filter(Boolean)
+        announcement: state.publicContentDraft["zh-cn"].announcement,
+        highlights: state.publicContentDraft["zh-cn"].highlights,
+        localized: state.publicContentDraft
       };
       next.automationConfig.timezone = timezone;
     } else if (section === "tasks") {
@@ -1109,6 +1178,28 @@
       throw new Error("未知配置分区");
     }
     return next;
+  }
+
+  function capturePublicContentDraft() {
+    if (!state.publicContentDraft) return;
+    state.publicContentDraft[state.publicContentLocale] = {
+      announcement: String(getField("announcement") || "").trim(),
+      highlights: String(getField("highlights") || "")
+        .split(/\n\s*\n/)
+        .map((value) => value.trim())
+        .filter(Boolean)
+    };
+  }
+
+  function switchPublicContentLocale(locale) {
+    capturePublicContentDraft();
+    state.publicContentLocale = locale;
+    const content = state.publicContentDraft?.[locale] || {
+      announcement: "",
+      highlights: []
+    };
+    setField("announcement", content.announcement);
+    setField("highlights", content.highlights.join("\n\n"));
   }
 
   async function saveConfig(event) {
@@ -1197,6 +1288,363 @@
       .slice(0, 16);
   }
 
+  function dateTimeLocal(value) {
+    const date = value ? new Date(value) : new Date(Date.now() + 30 * 24 * 60 * 60_000);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+      .toISOString()
+      .slice(0, 16);
+  }
+
+  async function loadIdentityApplications(page = state.identityApplications.page) {
+    if (!hasPermission("identity:review")) return;
+    const params = new URLSearchParams({
+      page: String(Math.max(1, page)),
+      search: state.identityApplicationSearch,
+      status: state.identityApplicationStatus
+    });
+    try {
+      state.identityApplications = await request(
+        `/api/admin/identity-applications?${params}`
+      );
+      renderIdentityApplications();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  function renderIdentityApplications() {
+    const payload = state.identityApplications;
+    const pages = Math.max(1, Math.ceil(payload.total / 10));
+    const root = byId("identity-application-table");
+    root.replaceChildren();
+    for (const item of payload.items) {
+      const row = document.createElement("tr");
+      for (const value of [
+        item.application_number,
+        item.request_type === "renewal" ? "延期" : "新申请",
+        item.player_name,
+        item.email,
+        item.locale,
+        item.status === "pending"
+          ? "待审批"
+          : item.status === "approved"
+            ? "已通过"
+            : "已拒绝",
+        formatDate(item.submitted_at)
+      ]) {
+        row.append(create("td", "", value));
+      }
+      const actionCell = create("td", "run-actions");
+      const operation = createRunActionButton(
+        "操作",
+        "button-quiet run-action-trigger",
+        "operation"
+      );
+      operation.setAttribute("aria-haspopup", "menu");
+      operation.setAttribute("aria-expanded", "false");
+      operation.disabled = item.status !== "pending";
+      operation.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleActionMenu(operation, [
+          {
+            label: "审批",
+            icon: "events",
+            onSelect: () => openIdentityReview(item)
+          }
+        ]);
+      });
+      actionCell.append(operation);
+      row.append(actionCell);
+      root.append(row);
+    }
+    if (!payload.items.length) {
+      const row = document.createElement("tr");
+      const cell = create("td", "empty-state", "没有符合条件的申请。");
+      cell.colSpan = 8;
+      row.append(cell);
+      root.append(row);
+    }
+    setText("identity-app-page", `${payload.page} / ${pages}`);
+    byId("identity-app-prev").disabled = payload.page <= 1;
+    byId("identity-app-next").disabled = payload.page >= pages;
+    byId("identity-app-jump").max = String(pages);
+    byId("identity-app-jump").value = String(payload.page);
+  }
+
+  function setText(id, value) {
+    const element = byId(id);
+    if (element) element.textContent = value ?? "";
+  }
+
+  function openIdentityReview(item) {
+    state.selectedIdentityApplication = item;
+    setText(
+      "identity-review-title",
+      item.request_type === "renewal" ? "审批延期申请" : "审批身份识别码"
+    );
+    const detail = byId("identity-review-detail");
+    detail.replaceChildren();
+    for (const [label, value] of [
+      ["申请编号", item.application_number],
+      ["玩家名称", item.player_name],
+      ["接收邮箱", item.email],
+      ["邮件语言", item.locale],
+      ["申请类型", item.request_type === "renewal" ? "延期" : "新申请"]
+    ]) {
+      detail.append(create("dt", "", label), create("dd", "", value));
+    }
+    byId("identity-review-expiry").value = dateTimeLocal();
+    byId("identity-review-permanent").checked = false;
+    byId("identity-rejection-reason").value = "";
+    setText("identity-review-feedback", "");
+    byId("identity-review-dialog").showModal();
+  }
+
+  async function reviewIdentity(action) {
+    const item = state.selectedIdentityApplication;
+    if (!item) return;
+    const feedback = byId("identity-review-feedback");
+    feedback.textContent = "正在处理并发送邮件…";
+    try {
+      const body =
+        action === "approve"
+          ? {
+              permanent: byId("identity-review-permanent").checked,
+              expiresAt: byId("identity-review-permanent").checked
+                ? null
+                : new Date(byId("identity-review-expiry").value).toISOString()
+            }
+          : { reason: byId("identity-rejection-reason").value.trim() };
+      const result = await request(
+        `/api/admin/identity-applications/${encodeURIComponent(item.id)}/${action}`,
+        { method: "POST", body: JSON.stringify(body) }
+      );
+      byId("identity-review-dialog").close();
+      byId("save-state").textContent =
+        result.emailSent
+          ? action === "approve"
+            ? "申请已通过并发送邮件"
+            : "申请已拒绝并发送通知"
+          : `申请已处理，但邮件发送失败：${result.emailError}`;
+      await loadIdentityApplications();
+      await loadIdentityCodes();
+    } catch (error) {
+      feedback.textContent = error.message;
+    }
+  }
+
+  async function loadIdentityCodes(page = state.identityCodes.page) {
+    if (!hasPermission("identity:manage")) return;
+    const params = new URLSearchParams({
+      page: String(Math.max(1, page)),
+      search: state.identityCodeSearch,
+      status: state.identityCodeStatus
+    });
+    try {
+      state.identityCodes = await request(`/api/admin/identity-codes?${params}`);
+      renderIdentityCodes();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  function renderIdentityCodes() {
+    const payload = state.identityCodes;
+    const pages = Math.max(1, Math.ceil(payload.total / 10));
+    const root = byId("identity-code-table");
+    root.replaceChildren();
+    for (const item of payload.items) {
+      const row = document.createElement("tr");
+      const expired =
+        item.status === "active" &&
+        item.expires_at &&
+        Date.parse(item.expires_at) <= Date.now();
+      for (const value of [
+        item.code,
+        item.player_name || "—",
+        item.email || "—",
+        item.status === "disabled" ? "取消" : expired ? "已过期" : "有效",
+        item.expires_at ? formatDate(item.expires_at) : "永久有效",
+        item.last_emailed_at ? formatDate(item.last_emailed_at) : "—"
+      ]) {
+        row.append(create("td", "", value));
+      }
+      const actions = create("td", "run-actions");
+      const operation = createRunActionButton(
+        "操作",
+        "button-quiet run-action-trigger",
+        "operation"
+      );
+      operation.setAttribute("aria-haspopup", "menu");
+      operation.setAttribute("aria-expanded", "false");
+      operation.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleActionMenu(operation, [
+          {
+            label: item.status === "active" ? "取消" : "恢复",
+            icon: item.status === "active" ? "stop" : "events",
+            danger: item.status === "active",
+            onSelect: () =>
+              updateIdentityCodeItem(item, {
+                status: item.status === "active" ? "disabled" : "active",
+                permanent: !item.expires_at,
+                expiresAt: item.expires_at
+              })
+          },
+          {
+            label: "修改有效期",
+            icon: "events",
+            onSelect: () => editIdentityExpiry(item)
+          },
+          {
+            label: "重新发送",
+            icon: "events",
+            disabled: !item.email || !item.player_name,
+            onSelect: (button) => resendIdentity(item.id, button)
+          }
+        ]);
+      });
+      actions.append(operation);
+      row.append(actions);
+      root.append(row);
+    }
+    setText("identity-code-page", `${payload.page} / ${pages}`);
+    byId("identity-code-prev").disabled = payload.page <= 1;
+    byId("identity-code-next").disabled = payload.page >= pages;
+    byId("identity-code-jump").max = String(pages);
+    byId("identity-code-jump").value = String(payload.page);
+  }
+
+  async function updateIdentityCodeItem(item, values) {
+    try {
+      await request(`/api/admin/identity-codes/${encodeURIComponent(item.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(values)
+      });
+      await loadIdentityCodes();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  function editIdentityExpiry(item) {
+    const value = window.prompt(
+      "输入新的有效期（ISO 日期时间），或输入 permanent 设置为永久有效：",
+      item.expires_at || "permanent"
+    );
+    if (!value) return;
+    updateIdentityCodeItem(item, {
+      status: item.status,
+      permanent: value.trim().toLowerCase() === "permanent",
+      expiresAt: value
+    });
+  }
+
+  async function resendIdentity(id, button) {
+    button.disabled = true;
+    try {
+      await request(`/api/admin/identity-codes/${encodeURIComponent(id)}/resend`, {
+        method: "POST",
+        body: "{}"
+      });
+      byId("save-state").textContent = "识别码邮件已重新发送";
+      await loadIdentityCodes();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+      button.disabled = false;
+    }
+  }
+
+  async function createManualIdentity(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const permanent = form.elements.identityPermanent.checked;
+    try {
+      const result = await request("/api/admin/identity-codes", {
+        method: "POST",
+        body: JSON.stringify({
+          playerName: form.elements.identityPlayerName.value.trim(),
+          email: form.elements.identityEmail.value.trim(),
+          locale: form.elements.identityLocale.value,
+          permanent,
+          expiresAt: permanent
+            ? null
+            : new Date(form.elements.identityExpiresAt.value).toISOString()
+        })
+      });
+      setText("manual-identity-feedback", `已生成：${result.code}`);
+      await loadIdentityCodes(1);
+    } catch (error) {
+      setText("manual-identity-feedback", error.message);
+    }
+  }
+
+  async function loadSmtpConfig() {
+    try {
+      const config = await request("/api/admin/smtp-config");
+      for (const [name, value] of Object.entries({
+        smtpEnabled: config.enabled,
+        smtpHost: config.host,
+        smtpPort: config.port,
+        smtpSecure: config.secure,
+        smtpStartTls: config.startTls,
+        smtpAuthType: config.authType,
+        smtpUsername: config.username,
+        smtpFromEmail: config.fromEmail,
+        smtpFromName: config.fromName,
+        smtpReplyTo: config.replyTo
+      })) {
+        setField(name, value);
+      }
+      input("smtpPassword").placeholder = config.passwordConfigured
+        ? "已配置；留空则保留现有密码"
+        : "尚未配置密码";
+    } catch (error) {
+      setText("smtp-feedback", error.message);
+    }
+  }
+
+  async function saveSmtpConfig(event) {
+    event.preventDefault();
+    try {
+      await request("/api/admin/smtp-config", {
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: getField("smtpEnabled"),
+          host: getField("smtpHost"),
+          port: Number(getField("smtpPort")),
+          secure: getField("smtpSecure"),
+          startTls: getField("smtpStartTls"),
+          authType: getField("smtpAuthType"),
+          username: getField("smtpUsername"),
+          password: getField("smtpPassword"),
+          fromEmail: getField("smtpFromEmail"),
+          fromName: getField("smtpFromName"),
+          replyTo: getField("smtpReplyTo")
+        })
+      });
+      input("smtpPassword").value = "";
+      setText("smtp-feedback", "SMTP 配置已保存");
+      await loadSmtpConfig();
+    } catch (error) {
+      setText("smtp-feedback", error.message);
+    }
+  }
+
+  async function sendSmtpTest(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      await request("/api/admin/smtp-config/test", {
+        method: "POST",
+        body: JSON.stringify({ to: form.elements.smtpTestTo.value.trim() })
+      });
+      setText("smtp-feedback", "测试邮件已发送");
+    } catch (error) {
+      setText("smtp-feedback", error.message);
+    }
+  }
+
   renderTaskActions();
   for (const form of document.querySelectorAll(".config-form")) {
     form.addEventListener("input", (event) => {
@@ -1234,6 +1682,9 @@
     state.technologyCategory = event.target.value || "all";
     renderTechnologyEditor();
   });
+  byId("public-content-locale").addEventListener("change", (event) => {
+    switchPublicContentLocale(event.target.value);
+  });
   byId("kick-member").addEventListener("click", kickSelectedMember);
   byId("auto-kick-evaluate").addEventListener("click", evaluateAutoKick);
   byId("refresh-admin").addEventListener("click", () => refresh(false));
@@ -1250,10 +1701,67 @@
     await navigator.clipboard.writeText(byId("temporary-key-value").textContent);
     byId("save-state").textContent = "临时 Key 已复制";
   });
+  byId("refresh-identity-applications").addEventListener("click", () =>
+    loadIdentityApplications()
+  );
+  byId("identity-application-search").addEventListener("input", (event) => {
+    state.identityApplicationSearch = event.target.value.trim();
+    loadIdentityApplications(1);
+  });
+  byId("identity-application-status").addEventListener("change", (event) => {
+    state.identityApplicationStatus = event.target.value;
+    loadIdentityApplications(1);
+  });
+  byId("identity-app-prev").addEventListener("click", () =>
+    loadIdentityApplications(state.identityApplications.page - 1)
+  );
+  byId("identity-app-next").addEventListener("click", () =>
+    loadIdentityApplications(state.identityApplications.page + 1)
+  );
+  byId("identity-app-jump-button").addEventListener("click", () =>
+    loadIdentityApplications(Number(byId("identity-app-jump").value))
+  );
+  byId("identity-review-close").addEventListener("click", () =>
+    byId("identity-review-dialog").close()
+  );
+  byId("identity-review-approve").addEventListener("click", () =>
+    reviewIdentity("approve")
+  );
+  byId("identity-review-reject").addEventListener("click", () =>
+    reviewIdentity("reject")
+  );
+  byId("manual-identity-code-form").addEventListener("submit", createManualIdentity);
+  byId("identity-code-search").addEventListener("input", (event) => {
+    state.identityCodeSearch = event.target.value.trim();
+    loadIdentityCodes(1);
+  });
+  byId("identity-code-status").addEventListener("change", (event) => {
+    state.identityCodeStatus = event.target.value;
+    loadIdentityCodes(1);
+  });
+  byId("identity-code-prev").addEventListener("click", () =>
+    loadIdentityCodes(state.identityCodes.page - 1)
+  );
+  byId("identity-code-next").addEventListener("click", () =>
+    loadIdentityCodes(state.identityCodes.page + 1)
+  );
+  byId("identity-code-jump-button").addEventListener("click", () =>
+    loadIdentityCodes(Number(byId("identity-code-jump").value))
+  );
+  byId("smtp-config-form").addEventListener("submit", saveSmtpConfig);
+  byId("smtp-test-form").addEventListener("submit", sendSmtpTest);
+  input("identityPermanent").addEventListener("change", (event) => {
+    input("identityExpiresAt").disabled = event.target.checked;
+  });
+  byId("identity-review-permanent").addEventListener("change", (event) => {
+    byId("identity-review-expiry").disabled = event.target.checked;
+  });
   document.addEventListener("mrzh:languagechange", () => {
     if (state.bootstrap) render(state.bootstrap, []);
+    refresh(false);
   });
   setDefaultKeyExpiry();
+  input("identityExpiresAt").value = dateTimeLocal();
   refresh(true);
   setInterval(() => refresh(false), 10_000);
 })();

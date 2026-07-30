@@ -556,7 +556,14 @@ export async function updateActivitySnapshot(
     }>;
   }
 ): Promise<void> {
-  const statements: D1PreparedStatement[] = [];
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `UPDATE members SET
+       last_active_text = NULL,
+       inactive_days = NULL,
+       activity_captured_at = NULL`
+    )
+  ];
   for (const member of input.members) {
     const memberId = await stableMemberId(member.name);
     statements.push(
@@ -582,7 +589,7 @@ export async function updateActivitySnapshot(
       )
     );
   }
-  if (statements.length) await env.DB.batch(statements);
+  await env.DB.batch(statements);
 }
 
 export async function updateMemberProfiles(
@@ -660,8 +667,10 @@ export async function replaceStaffSnapshot(
     staff: Array<{ roleKey: string; roleName: string; memberName: string | null }>;
   }
 ): Promise<void> {
-  const statements = input.staff.map((item) =>
-    env.DB.prepare(
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare("DELETE FROM staff_assignments"),
+    ...input.staff.map((item) =>
+      env.DB.prepare(
       `INSERT INTO staff_assignments(
          role_key, role_name, member_id, member_name, updated_at, source_run_id
        ) VALUES(?, ?, (SELECT id FROM members WHERE name = ?), ?, ?, ?)
@@ -671,16 +680,17 @@ export async function replaceStaffSnapshot(
          member_name = excluded.member_name,
          updated_at = excluded.updated_at,
          source_run_id = excluded.source_run_id`
-    ).bind(
-      item.roleKey,
-      item.roleName,
-      item.memberName,
-      item.memberName,
-      input.capturedAt,
-      input.runId
+      ).bind(
+        item.roleKey,
+        item.roleName,
+        item.memberName,
+        item.memberName,
+        input.capturedAt,
+        input.runId
+      )
     )
-  );
-  if (statements.length) await env.DB.batch(statements);
+  ];
+  await env.DB.batch(statements);
 }
 
 async function stableMemberId(name: string): Promise<string> {

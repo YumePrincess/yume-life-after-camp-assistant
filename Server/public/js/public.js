@@ -4,7 +4,9 @@
   const state = {
     data: null,
     selections: new Set(),
-    memberQuery: ""
+    memberQuery: "",
+    identityMode: "new",
+    renewalCode: ""
   };
 
   function byId(id) {
@@ -23,14 +25,14 @@
     return element;
   }
 
-  function voterId() {
-    const key = "mrzh-voter-id";
-    let value = localStorage.getItem(key);
-    if (!value) {
-      value = `web-${crypto.randomUUID()}`;
-      localStorage.setItem(key, value);
-    }
-    return value;
+  function identityExpiryLabel(value) {
+    const expiry = value
+      ? new Intl.DateTimeFormat(window.MrzhI18n.language(), {
+          dateStyle: "long",
+          timeStyle: "short"
+        }).format(new Date(value))
+      : window.MrzhI18n.t("永久有效");
+    return window.MrzhI18n.format("识别码有效期：{date}", { date: expiry });
   }
 
   async function request(path, options = {}) {
@@ -42,7 +44,11 @@
       }
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(payload.error || payload.title || `HTTP ${response.status}`);
+      Object.assign(error, payload, { status: response.status });
+      throw error;
+    }
     return payload;
   }
 
@@ -401,14 +407,13 @@
     for (const item of items) {
       const row = create("div", "run-item");
       row.append(
+        create("time", "muted", formatDate(item.finishedAt || item.createdAt)),
         create("strong", "", taskName(item.taskKey)),
         create(
           "span",
           `status-badge status-${item.state}`,
           stateName(item.state)
-        ),
-        create("span", "muted", item.message || "—"),
-        create("time", "muted", formatDate(item.finishedAt || item.createdAt))
+        )
       );
       root.append(row);
     }
@@ -479,7 +484,11 @@
 
   async function load() {
     try {
-      render(await request(`/api/public/bootstrap?t=${Date.now()}`));
+      render(
+        await request(
+          `/api/public/bootstrap?t=${Date.now()}&locale=${encodeURIComponent(window.MrzhI18n.language())}`
+        )
+      );
     } catch (error) {
       setText(
         "announcement",
@@ -493,7 +502,9 @@
   async function refreshVoteSummary() {
     if (document.hidden || !state.data) return;
     try {
-      const summary = await request(`/api/public/tech-vote?t=${Date.now()}`);
+      const summary = await request(
+        `/api/public/tech-vote?t=${Date.now()}&locale=${encodeURIComponent(window.MrzhI18n.language())}`
+      );
       state.data.voteSummary = summary;
       const available = new Set(
         (summary.options || []).map((option) => option.key)
@@ -522,14 +533,19 @@
       feedback.textContent = window.MrzhI18n.t("每人最多选择 6 项科技。");
       return;
     }
+    const identityCode = byId("identity-code").value.trim();
+    if (!/^\d{8}$/.test(identityCode)) {
+      feedback.textContent = window.MrzhI18n.t("请输入身份识别码。");
+      return;
+    }
     button.disabled = true;
     feedback.textContent = "正在提交…";
     try {
       const summary = await request("/api/public/tech-vote", {
         method: "POST",
         body: JSON.stringify({
-          voterId: voterId(),
-          voterName: byId("voter-name").value.trim(),
+          identityCode,
+          locale: window.MrzhI18n.language(),
           selections: [...state.selections]
         })
       });
@@ -537,20 +553,196 @@
       if (state.data) state.data.voteSummary = summary;
       renderVote(summary);
       feedback.textContent = "投票已保存，可在截止前再次修改。";
+      setText(
+        "vote-success-expiry",
+        summary.publicTestVote
+          ? window.MrzhI18n.t("测试成功，本次提交不计票。")
+          : identityExpiryLabel(summary.identityCodeExpiresAt)
+      );
+      byId("vote-success-dialog").showModal();
     } catch (error) {
-      feedback.textContent = error.message;
+      feedback.textContent =
+        error.code === "rate_limited" ||
+        error.code === "identity_code_rate_limited"
+          ? window.MrzhI18n.format("尝试次数过多，请在 {seconds} 秒后重试。", {
+              seconds: error.retryAfterSeconds || "—"
+            })
+          : error.message;
+      if (error.code === "identity_code_expired" && error.canRenew) {
+        const renewButton = create(
+          "button",
+          "button button-quiet inline-renew-button",
+          window.MrzhI18n.t("申请延长有效期")
+        );
+        renewButton.type = "button";
+        renewButton.addEventListener("click", () => openRenewal(identityCode));
+        feedback.append(" ", renewButton);
+      }
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function openNewApplication() {
+    state.identityMode = "new";
+    state.renewalCode = "";
+    setText("identity-dialog-title", window.MrzhI18n.t("申请身份识别码"));
+    byId("identity-renewal-number").hidden = true;
+    byId("identity-email").value = "";
+    byId("identity-player-name").value = "";
+    byId("identity-recovery-number-field").hidden = true;
+    byId("identity-rules").hidden = false;
+    byId("identity-recovery-rules").hidden = true;
+    setText("identity-email-label", window.MrzhI18n.t("接收识别码邮箱"));
+    setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
+    setText("submit-identity-application", window.MrzhI18n.t("提交申请"));
+    setText("identity-application-feedback", "");
+    byId("identity-application-dialog").showModal();
+  }
+
+  async function openRenewal(identityCode) {
+    const feedback = byId("vote-feedback");
+    try {
+      const preview = await request("/api/public/identity-code-renewal-preview", {
+        method: "POST",
+        body: JSON.stringify({ identityCode })
+      });
+      state.identityMode = "renewal";
+      state.renewalCode = identityCode;
+      setText("identity-dialog-title", window.MrzhI18n.t("申请延长识别码有效期"));
+      setText(
+        "identity-renewal-number",
+        window.MrzhI18n.format("申请编号：{number}", {
+          number: preview.applicationNumber
+        })
+      );
+      byId("identity-renewal-number").hidden = false;
+      byId("identity-recovery-number-field").hidden = true;
+      byId("identity-rules").hidden = false;
+      byId("identity-recovery-rules").hidden = true;
+      setText("identity-email-label", window.MrzhI18n.t("接收识别码邮箱"));
+      setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
+      setText("submit-identity-application", window.MrzhI18n.t("提交延期申请"));
+      byId("identity-email").value = preview.email;
+      byId("identity-player-name").value = preview.playerName;
+      setText("identity-application-feedback", "");
+      byId("identity-application-dialog").showModal();
+    } catch (error) {
+      feedback.textContent =
+        error.code === "rate_limited" ||
+        error.code === "identity_code_rate_limited"
+          ? window.MrzhI18n.format("尝试次数过多，请在 {seconds} 秒后重试。", {
+              seconds: error.retryAfterSeconds || "—"
+            })
+          : error.message;
+    }
+  }
+
+  function openIdentityRecovery() {
+    state.identityMode = "recovery";
+    state.renewalCode = "";
+    setText("identity-dialog-title", window.MrzhI18n.t("找回身份识别码"));
+    byId("identity-renewal-number").hidden = true;
+    byId("identity-recovery-number-field").hidden = false;
+    byId("identity-rules").hidden = true;
+    byId("identity-recovery-rules").hidden = false;
+    setText(
+      "identity-email-label",
+      window.MrzhI18n.t("申请时预留的邮箱")
+    );
+    setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
+    byId("identity-recovery-number").value = "";
+    byId("identity-email").value = "";
+    byId("identity-player-name").value = "";
+    setText("submit-identity-application", window.MrzhI18n.t("发送识别码到预留邮箱"));
+    setText("identity-application-feedback", "");
+    byId("identity-application-dialog").showModal();
+  }
+
+  async function submitIdentityApplication(event) {
+    event.preventDefault();
+    const button = byId("submit-identity-application");
+    const feedback = byId("identity-application-feedback");
+    button.disabled = true;
+    feedback.textContent = window.MrzhI18n.t("正在提交…");
+    try {
+      const common = {
+        email: byId("identity-email").value.trim(),
+        playerName: byId("identity-player-name").value.trim(),
+        locale: window.MrzhI18n.language()
+      };
+      const result =
+        state.identityMode === "renewal"
+          ? await request("/api/public/identity-code-renewal", {
+              method: "POST",
+              body: JSON.stringify({
+                ...common,
+                identityCode: state.renewalCode
+              })
+            })
+          : state.identityMode === "recovery"
+            ? await request("/api/public/identity-code-recovery", {
+                method: "POST",
+                body: JSON.stringify({
+                  ...common,
+                  applicationNumber: byId("identity-recovery-number").value.trim()
+                })
+              })
+            : await request("/api/public/identity-code-applications", {
+              method: "POST",
+              body: JSON.stringify(common)
+            });
+      feedback.textContent =
+        state.identityMode === "recovery"
+          ? window.MrzhI18n.t(
+              result.expired
+                ? "识别码已发送至预留邮箱；该识别码已过期，可以申请延期。"
+                : "识别码已发送至预留邮箱。"
+            )
+          : window.MrzhI18n.format(
+              state.identityMode === "renewal"
+                ? "延期申请已提交，申请编号：{number}。审批期间可使用旧码完成一次投票。"
+                : "申请已提交，申请编号：{number}。",
+              { number: result.applicationNumber }
+            );
+    } catch (error) {
+      feedback.textContent =
+        error.code === "rate_limited" ||
+        error.code === "identity_code_rate_limited"
+          ? window.MrzhI18n.format("尝试次数过多，请在 {seconds} 秒后重试。", {
+              seconds: error.retryAfterSeconds || "—"
+            })
+          : error.message;
     } finally {
       button.disabled = false;
     }
   }
 
   byId("submit-vote").addEventListener("click", submitVote);
+  byId("apply-identity-code").addEventListener("click", openNewApplication);
+  byId("recover-identity-code").addEventListener("click", openIdentityRecovery);
+  byId("renew-identity-code").addEventListener("click", () => {
+    const identityCode = byId("identity-code").value.trim();
+    if (!/^\d{8}$/.test(identityCode)) {
+      setText("vote-feedback", window.MrzhI18n.t("请输入身份识别码。"));
+      return;
+    }
+    openRenewal(identityCode);
+  });
+  byId("identity-application-form").addEventListener(
+    "submit",
+    submitIdentityApplication
+  );
+  byId("close-identity-dialog").addEventListener("click", () => {
+    byId("identity-application-dialog").close();
+  });
   byId("member-search").addEventListener("input", (event) => {
     state.memberQuery = event.target.value || "";
     renderMembers(state.data?.members || []);
   });
   document.addEventListener("mrzh:languagechange", () => {
     if (state.data) render(state.data);
+    load();
   });
   load();
   window.setInterval(refreshVoteSummary, 10_000);

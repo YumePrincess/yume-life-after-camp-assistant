@@ -105,10 +105,27 @@
           <div class="date-badge" id="poll-date">--</div>
         </div>
         <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
-        <label class="field">
-          <span>游戏昵称（可选）</span>
-          <input id="voter-name" maxlength="30" placeholder="便于营地成员识别" />
-        </label>
+        <div class="identity-vote-row">
+          <label class="field identity-code-field">
+            <span>身份识别码（必填）</span>
+            <input
+              id="identity-code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              placeholder="请输入身份识别码"
+              required
+            />
+          </label>
+          <button id="apply-identity-code" class="button button-quiet" type="button">
+            申请身份识别码
+          </button>
+          <button id="renew-identity-code" class="button button-quiet" type="button">
+            申请延长有效期
+          </button>
+          <button id="recover-identity-code" class="button button-quiet" type="button">
+            忘记识别码
+          </button>
+        </div>
         <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
         <p class="vote-list-label">全部可选科技（每人最多 6 票）</p>
         <div id="vote-options" class="vote-options" aria-live="polite"></div>
@@ -158,6 +175,59 @@
         <div id="run-list" class="run-list"></div>
       </section>
     </main>
+
+    <dialog id="identity-application-dialog">
+      <form id="identity-application-form" class="dialog-card identity-application-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">IDENTITY CODE</p>
+            <h2 id="identity-dialog-title">申请身份识别码</h2>
+          </div>
+          <button id="close-identity-dialog" class="button button-quiet" type="button">关闭</button>
+        </div>
+        <p id="identity-renewal-number" class="application-number" hidden></p>
+        <div class="form-grid">
+          <label id="identity-recovery-number-field" class="field" hidden>
+            <span>申请编号</span>
+            <input id="identity-recovery-number" maxlength="40" />
+          </label>
+          <label class="field">
+            <span id="identity-email-label">接收识别码邮箱</span>
+            <input id="identity-email" type="email" maxlength="254" />
+          </label>
+          <label class="field">
+            <span id="identity-player-name-label">玩家名称</span>
+            <input id="identity-player-name" maxlength="80" />
+          </label>
+        </div>
+        <ol id="identity-rules" class="identity-rules">
+          <li>小号及非本营地成员不得申请，否则申请将被审批拒绝。</li>
+          <li>忘记玩家名称请查询后再来申请，填写不实信息将被审批拒绝。</li>
+          <li>玩家名称中的符号可以省略填写。</li>
+          <li>玩家名称只有符号的，请联系市长人工申请。</li>
+        </ol>
+        <ol id="identity-recovery-rules" class="identity-rules" hidden>
+          <li>请输入申请时预留的信息（至少一条）。</li>
+          <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
+          <li>找回的识别码将发送到申请时预留的邮箱，如果您更换了邮箱，请联系市长人工处理。</li>
+        </ol>
+        <div class="action-row">
+          <button id="submit-identity-application" class="button button-primary" type="submit">
+            提交申请
+          </button>
+          <span id="identity-application-feedback" class="feedback" role="status"></span>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="vote-success-dialog">
+      <form method="dialog" class="dialog-card vote-success-card">
+        <p class="eyebrow">TECHNOLOGY VOTE</p>
+        <h2>投票成功</h2>
+        <p id="vote-success-expiry" class="application-number"></p>
+        <button class="button button-primary" value="close">关闭</button>
+      </form>
+    </dialog>
 
     <footer class="site-footer">
       <div class="power" data-footer-copy>

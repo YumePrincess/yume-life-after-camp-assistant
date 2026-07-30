@@ -46,6 +46,10 @@ export interface CampConfig {
 export interface PublicOverview {
   announcement: string;
   highlights: string[];
+  localized: Record<
+    "zh-cn" | "zh-tw" | "en" | "fr" | "ja",
+    { announcement: string; highlights: string[] }
+  >;
 }
 
 export interface AuthConfig {

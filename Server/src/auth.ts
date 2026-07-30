@@ -24,7 +24,10 @@ export const ADMIN_PERMISSIONS = [
   "task:run",
   "task:interrupt",
   "member:kick",
-  "keys:manage"
+  "keys:manage",
+  "identity:review",
+  "identity:manage",
+  "smtp:manage"
 ] as const;
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
 type OidcMode = "login" | "silent" | "check";

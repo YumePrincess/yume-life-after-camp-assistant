@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { BUILT_IN_TECHNOLOGY_CATALOG } from "../src/built-in-technology-catalog";
+import {
+  isIdentityRenewalWindowOpen,
+  isSequentialIdentityCode
+} from "../src/identity-code-utils";
+import {
+  localizeTechnology,
+  TECHNOLOGY_LOCALIZATIONS
+} from "../src/technology-localizations";
+import { validatePublicOverview } from "../src/validate";
+
+describe("identity code rules", () => {
+  it("rejects ascending and descending eight-digit sequences", () => {
+    expect(isSequentialIdentityCode("12345678")).toBe(true);
+    expect(isSequentialIdentityCode("87654321")).toBe(true);
+    expect(isSequentialIdentityCode("90123456")).toBe(true);
+    expect(isSequentialIdentityCode("48302715")).toBe(false);
+  });
+
+  it("opens renewal exactly seven days before expiry and rejects permanent codes", () => {
+    const current = Date.parse("2026-07-30T00:00:00.000Z");
+    expect(
+      isIdentityRenewalWindowOpen("2026-08-06T00:00:00.000Z", current)
+    ).toBe(true);
+    expect(
+      isIdentityRenewalWindowOpen("2026-08-06T00:00:00.001Z", current)
+    ).toBe(false);
+    expect(isIdentityRenewalWindowOpen(null, current)).toBe(false);
+  });
+});
+
+describe("five-language public content", () => {
+  it("provides a translated name and description for every built-in technology", () => {
+    expect(Object.keys(TECHNOLOGY_LOCALIZATIONS)).toHaveLength(
+      BUILT_IN_TECHNOLOGY_CATALOG.length
+    );
+    for (const technology of BUILT_IN_TECHNOLOGY_CATALOG) {
+      for (const locale of ["zh-tw", "en", "fr", "ja"] as const) {
+        const localized = localizeTechnology(technology, locale);
+        expect(localized.name.length).toBeGreaterThan(0);
+        expect(localized.description?.length).toBeGreaterThan(0);
+        if (locale !== "zh-tw") {
+          expect(localized.name).not.toBe(technology.name);
+        }
+      }
+    }
+  });
+
+  it("copies legacy announcements to all languages by default", () => {
+    const overview = validatePublicOverview({
+      announcement: "公告",
+      highlights: ["第一条"]
+    });
+    expect(overview.localized.en).toEqual({
+      announcement: "公告",
+      highlights: ["第一条"]
+    });
+    expect(overview.localized.ja).toEqual(overview.localized["zh-cn"]);
+  });
+});

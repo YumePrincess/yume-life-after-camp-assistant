@@ -154,16 +154,53 @@ export function validatePublicOverview(value: unknown): PublicOverview {
   if (!Array.isArray(source.highlights)) {
     throw new Error("publicOverview.highlights must be an array");
   }
-  return {
-    announcement: text(source.announcement, "publicOverview.announcement", {
+  const announcement = text(source.announcement, "publicOverview.announcement", {
       max: 1000,
       allowEmpty: true
-    }),
-    highlights: source.highlights
+    });
+  const highlights = source.highlights
       .slice(0, 12)
       .map((item, index) =>
         text(item, `publicOverview.highlights[${index}]`, { max: 240 })
-      )
+      );
+  const localizedSource =
+    source.localized && typeof source.localized === "object" && !Array.isArray(source.localized)
+      ? (source.localized as Record<string, unknown>)
+      : {};
+  const localized = Object.fromEntries(
+    ["zh-cn", "zh-tw", "en", "fr", "ja"].map((locale) => {
+      const raw =
+        localizedSource[locale] &&
+        typeof localizedSource[locale] === "object" &&
+        !Array.isArray(localizedSource[locale])
+          ? (localizedSource[locale] as Record<string, unknown>)
+          : {};
+      const rawHighlights = Array.isArray(raw.highlights) ? raw.highlights : highlights;
+      return [
+        locale,
+        {
+          announcement:
+            typeof raw.announcement === "string"
+              ? text(raw.announcement, `publicOverview.localized.${locale}.announcement`, {
+                  max: 1000,
+                  allowEmpty: true
+                })
+              : announcement,
+          highlights: rawHighlights.slice(0, 12).map((item, index) =>
+            text(
+              item,
+              `publicOverview.localized.${locale}.highlights[${index}]`,
+              { max: 240 }
+            )
+          )
+        }
+      ];
+    })
+  ) as PublicOverview["localized"];
+  return {
+    announcement,
+    highlights,
+    localized
   };
 }
 
