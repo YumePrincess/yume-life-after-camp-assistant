@@ -1095,8 +1095,18 @@ async function handleAgentApi(
     }
     if (type === "staff") {
       const staff = sanitizeStaff(body.payload);
-      await replaceStaffSnapshot(env, { runId, capturedAt, staff });
-      return json({ ok: true, count: staff.length });
+      const reconciliation = await replaceStaffSnapshot(env, {
+        runId,
+        capturedAt,
+        staff
+      });
+      return json({
+        ok: true,
+        count: reconciliation.staff.length,
+        received: staff.length,
+        ignored: reconciliation.ignored,
+        ambiguous: reconciliation.ambiguous
+      });
     }
     return problem("Unknown snapshot type", 400, "unknown_snapshot");
   }

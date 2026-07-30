@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { updateMemberProfiles } from "../src/db";
+import {
+  reconcileStaffAssignments,
+  updateMemberProfiles
+} from "../src/db";
 
 function createDatabaseRecorder() {
   const prepared: Array<{
@@ -82,5 +85,32 @@ describe("authoritative member profile snapshot", () => {
         statement.sql.includes("DELETE FROM members WHERE source_run_id")
       )
     ).toBe(false);
+  });
+});
+
+describe("staff assignments", () => {
+  it("accepts only current members and removes duplicate roles or players", () => {
+    const result = reconcileStaffAssignments(
+      [
+        { roleKey: "mayor", roleName: "市长", memberName: "雨梦" },
+        { roleKey: "mayor-copy", roleName: "市长", memberName: "雨梦" },
+        { roleKey: "staff-1", roleName: "#W月之歌", memberName: "萤萤空心菜" },
+        { roleKey: "staff-2", roleName: "#W圣之雪", memberName: "七晓白" },
+        { roleKey: "staff-3", roleName: "#P营地助手", memberName: "七晓白✨" },
+        { roleKey: "staff-4", roleName: "#G春之音", memberName: "不在营地的人" }
+      ],
+      [
+        { name: "雨梦" },
+        { name: "萤萤空心菜" },
+        { name: "七晓白" }
+      ]
+    );
+
+    expect(result.staff).toEqual([
+      { roleKey: "mayor", roleName: "市长", memberName: "雨梦" },
+      { roleKey: "staff-1", roleName: "#W月之歌", memberName: "萤萤空心菜" },
+      { roleKey: "staff-2", roleName: "#W圣之雪", memberName: "七晓白" }
+    ]);
+    expect(result.ignored).toBe(3);
   });
 });

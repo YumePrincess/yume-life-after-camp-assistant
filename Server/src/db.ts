@@ -759,10 +759,17 @@ export async function replaceStaffSnapshot(
     capturedAt: string;
     staff: Array<{ roleKey: string; roleName: string; memberName: string | null }>;
   }
-): Promise<void> {
+): Promise<StaffReconciliation> {
+  const current = await env.DB.prepare(
+    "SELECT name FROM members ORDER BY name"
+  ).all<{ name: string }>();
+  const reconciliation = reconcileStaffAssignments(input.staff, current.results);
+  if (input.staff.length > 0 && reconciliation.staff.length === 0) {
+    return reconciliation;
+  }
   const statements: D1PreparedStatement[] = [
     env.DB.prepare("DELETE FROM staff_assignments"),
-    ...input.staff.map((item) =>
+    ...reconciliation.staff.map((item) =>
       env.DB.prepare(
       `INSERT INTO staff_assignments(
          role_key, role_name, member_id, member_name, updated_at, source_run_id
@@ -784,6 +791,66 @@ export async function replaceStaffSnapshot(
     )
   ];
   await env.DB.batch(statements);
+  return reconciliation;
+}
+
+type StaffRow = {
+  roleKey: string;
+  roleName: string;
+  memberName: string | null;
+};
+
+export type StaffReconciliation = {
+  staff: StaffRow[];
+  ignored: number;
+  ambiguous: number;
+};
+
+export function reconcileStaffAssignments(
+  incoming: StaffRow[],
+  masterMembers: Array<{ name: string }>
+): StaffReconciliation {
+  const usedRoleKeys = new Set<string>();
+  const usedRoleNames = new Set<string>();
+  const usedMemberNames = new Set<string>();
+  const staff: StaffRow[] = [];
+  let ignored = 0;
+  let ambiguous = 0;
+
+  for (const row of incoming) {
+    const roleKey = comparableMemberName(row.roleKey);
+    const roleName = comparableMemberName(row.roleName);
+    if (
+      !row.memberName ||
+      !roleKey ||
+      !roleName ||
+      usedRoleKeys.has(roleKey) ||
+      usedRoleNames.has(roleName)
+    ) {
+      ignored += 1;
+      continue;
+    }
+    const memberMatch = reconcileActivityMembers(
+      [{ name: row.memberName, lastActiveText: null, inactiveDays: null }],
+      masterMembers
+    );
+    if (memberMatch.updates.length !== 1) {
+      ignored += 1;
+      ambiguous += memberMatch.ambiguous;
+      continue;
+    }
+    const memberName = memberMatch.updates[0]!.name;
+    if (usedMemberNames.has(memberName)) {
+      ignored += 1;
+      continue;
+    }
+    usedRoleKeys.add(roleKey);
+    usedRoleNames.add(roleName);
+    usedMemberNames.add(memberName);
+    staff.push({ ...row, memberName });
+  }
+
+  return { staff, ignored, ambiguous };
 }
 
 async function stableMemberId(name: string): Promise<string> {

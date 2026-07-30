@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   capturePagedTable,
+  dedupeStaffAssignments,
   reconcilePageRows,
   selectActivityWarningRows
 } from "../src/workflows/member-sync.mjs";
@@ -233,5 +234,22 @@ test("member profile pagination stops exactly at the header count", async () => 
   assert.equal(swipes, 1);
   assert.ok(
     reports.includes("member-details_expected_count_reached")
+  );
+});
+
+test("staff assignments keep every role and member name unique", () => {
+  assert.deepEqual(
+    dedupeStaffAssignments([
+      { roleKey: "mayor", roleName: "市长", memberName: "雨梦" },
+      { roleKey: "mayor-copy", roleName: "市长", memberName: "雨梦" },
+      { roleKey: "staff-1", roleName: "#W月之歌", memberName: "萤萤空心菜" },
+      { roleKey: "staff-2", roleName: "#W圣之雪", memberName: "七晓白" },
+      { roleKey: "staff-3", roleName: "#P营地助手", memberName: "七晓白✨" }
+    ]),
+    [
+      { roleKey: "mayor", roleName: "市长", memberName: "雨梦" },
+      { roleKey: "staff-1", roleName: "#W月之歌", memberName: "萤萤空心菜" },
+      { roleKey: "staff-2", roleName: "#W圣之雪", memberName: "七晓白" }
+    ]
   );
 });

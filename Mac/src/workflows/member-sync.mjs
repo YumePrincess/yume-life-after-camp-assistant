@@ -6,6 +6,7 @@ import {
   normalizeStaffGrid,
   parseTable
 } from "../table-parser.mjs";
+import { delay } from "../process.mjs";
 
 export async function runMemberSync(context, command, _bundle, signal) {
   const contribution = await captureContribution(context, signal);
@@ -23,17 +24,18 @@ export async function runMemberSync(context, command, _bundle, signal) {
     new Date().toISOString(),
     signal
   );
-  await context.api.snapshot(
+  const staffResult = await context.api.snapshot(
     command.runId,
     "staff",
     staff,
     new Date().toISOString(),
     signal
   );
+  const staffCount = checkedStaffCount(staff, staffResult);
   await context.report(
     "info",
     "member_sync_done",
-    `已用最新完整名单替换当前列表：${members.length} 名成员、${staff.length} 项公职`
+    `已用最新完整名单替换当前列表：${members.length} 名成员、${staffCount} 项公职`
   );
 }
 
@@ -120,17 +122,18 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
     new Date().toISOString(),
     signal
   );
-  await context.api.snapshot(
+  const staffResult = await context.api.snapshot(
     command.runId,
     "staff",
     staff,
     new Date().toISOString(),
     signal
   );
+  const staffCount = checkedStaffCount(staff, staffResult);
   await context.report(
     "info",
     "profiles_done",
-    `已更新 ${profiles.length} 名成员资料（含周贡献交叉比对值）和 ${staff.length} 项公职`
+    `已更新 ${profiles.length} 名成员资料（含周贡献交叉比对值）和 ${staffCount} 项最新公职`
   );
 }
 
@@ -283,6 +286,12 @@ export async function captureProfilesAndStaff(context, signal) {
     );
   }
   await context.ui.executeFlow("openStaffPanel", {}, signal);
+  await context.report(
+    "info",
+    "staff_panel_settling",
+    "已切换到公职人员卡片，等待 5 秒使名单完整稳定后再识别"
+  );
+  await delay(5_000, signal);
   const staffFrame = await context.vision.captureAccurate(
     "camp-staff",
     signal
@@ -310,6 +319,7 @@ export async function captureProfilesAndStaff(context, signal) {
       staff = advisedStaff;
     }
   }
+  staff = dedupeStaffAssignments(staff);
   if (!staff.length) throw new Error("No staff rows recognized; snapshot was not uploaded");
   if (staff.length > 11) {
     throw new Error(
@@ -317,6 +327,53 @@ export async function captureProfilesAndStaff(context, signal) {
     );
   }
   return { details, staff };
+}
+
+export function dedupeStaffAssignments(rows) {
+  const roleKeys = new Set();
+  const roleNames = new Set();
+  const memberNames = new Set();
+  const unique = [];
+  for (const row of rows) {
+    const roleKey = comparableStaffText(row?.roleKey);
+    const roleName = comparableStaffText(row?.roleName);
+    const memberName = comparableStaffText(row?.memberName, true);
+    if (
+      !roleKey ||
+      !roleName ||
+      !memberName ||
+      roleKeys.has(roleKey) ||
+      roleNames.has(roleName) ||
+      memberNames.has(memberName)
+    ) {
+      continue;
+    }
+    roleKeys.add(roleKey);
+    roleNames.add(roleName);
+    memberNames.add(memberName);
+    unique.push(row);
+  }
+  return unique;
+}
+
+function comparableStaffText(value, removeSymbols = false) {
+  const normalized = String(value || "")
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, "");
+  return removeSymbols
+    ? normalized.replace(/[^\p{L}\p{N}]/gu, "")
+    : normalized;
+}
+
+function checkedStaffCount(scannedStaff, result) {
+  const matched = Number(result?.count) || 0;
+  if (scannedStaff.length > 0 && matched === 0) {
+    throw new Error(
+      "STAFF_MASTER_LIST_MISSING: 公职识别结果未能匹配最新成员资料主名单，已保留上一份有效公职数据"
+    );
+  }
+  return matched;
 }
 
 export async function capturePagedTable(
