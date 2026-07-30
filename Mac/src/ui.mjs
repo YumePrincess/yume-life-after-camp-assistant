@@ -29,7 +29,12 @@ export class GameUi {
     let deadline = Date.now() + timeoutMs;
     do {
       const frame = await this.vision.capture(`find-${text}`, signal);
-      const match = this.vision.find(frame.observations, text, options.mode);
+      const match = this.findInRegion(
+        frame.observations,
+        text,
+        options.region,
+        options.mode
+      );
       if (match) {
         await this.tap(center(match), signal);
         return { frame, match };

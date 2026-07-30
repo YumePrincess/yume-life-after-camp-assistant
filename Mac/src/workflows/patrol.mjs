@@ -32,6 +32,12 @@ export async function runPatrol(context, command, bundle, signal) {
     await delay(Math.max(1, Number(patrol.chatPollSeconds) || 2) * 1000, signal);
   }
 
+  await report(
+    "info",
+    "patrol_team_full",
+    "已确认巡逻队伍四个位置均有人，正在收起队伍界面后接取任务"
+  );
+  await ui.executeFlow("closeTeamPanel", {}, signal);
   await ui.executeFlow("teleportNoticeBoard", {}, signal);
   await ui.executeFlow("openPatrol", {}, signal);
   await ui.executeFlow("startHardPatrol", {}, signal);

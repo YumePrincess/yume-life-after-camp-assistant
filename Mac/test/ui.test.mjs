@@ -482,6 +482,102 @@ test("open-patrol navigation clicks below the verified notice-board anchor when 
   );
 });
 
+test("open-patrol navigation can use the notice-board title as the patrol-button anchor", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("营地公告版", 1360, 620)],
+      [observation("困难巡逻路线", 1500, 250)]
+    ]
+  });
+  const result = await fixture.ui.clickTextsUntilAnyText({
+    clickTexts: ["营地巡逻", "交谈", "查看巡逻进度"],
+    targetTexts: ["简单巡逻路线", "普通巡逻路线", "困难巡逻路线"],
+    clickRegion: { left: 1200, top: 540, right: 1520, bottom: 1010 },
+    anchorClickFallbacks: [
+      {
+        anchorText: "营地公告版",
+        targetText: "营地巡逻",
+        offsetY: 140
+      }
+    ],
+    timeoutSeconds: 1,
+    intervalMs: 1
+  });
+  assert.equal(result.text, "困难巡逻路线");
+  assert.deepEqual(fixture.taps, [{ x: 1370, y: 770 }]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("点击其相邻的“营地巡逻”按钮")
+    )
+  );
+});
+
+test("NPC patrol navigation advances to progress instead of clicking talk repeatedly", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("交谈", 1360, 720)],
+      [
+        observation("交谈", 1360, 720),
+        observation("查看巡逻队当前进程", 1360, 810)
+      ],
+      [observation("困难巡逻路线", 1500, 250)]
+    ]
+  });
+  const result = await fixture.ui.clickTextsUntilAnyText({
+    clickTexts: [
+      "查看巡逻队当前进程",
+      "查看巡逻进度",
+      "营地巡逻",
+      "交谈"
+    ],
+    targetTexts: ["简单巡逻路线", "普通巡逻路线", "困难巡逻路线"],
+    clickRegion: { left: 1200, top: 540, right: 1520, bottom: 1010 },
+    timeoutSeconds: 1,
+    intervalMs: 1
+  });
+  assert.equal(result.text, "困难巡逻路线");
+  assert.deepEqual(fixture.taps, [
+    { x: 1370, y: 730 },
+    { x: 1370, y: 820 }
+  ]);
+});
+
+test("hard patrol flow selects the difficult route before clicking the verified accept button", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    const flow = config.flows.startHardPatrol;
+    assert.equal(flow[1].op, "clickText");
+    assert.equal(flow[1].text, "困难巡逻路线");
+    assert.equal(flow[3].op, "clickText");
+    assert.equal(flow[3].text, "接取");
+    assert.equal(
+      flow.some((action) =>
+        action.op === "tap" && action.x === 1770 && action.y === 995
+      ),
+      false
+    );
+  }
+});
+
+test("full patrol team closes through the calibrated flag only when the team UI is visible", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    assert.deepEqual(config.flows.closeTeamPanel, [
+      {
+        op: "tapIfAnyText",
+        texts: ["调整", "离开队伍"],
+        x: 48,
+        y: 327
+      },
+      { op: "sleep", ms: 500 }
+    ]);
+  }
+});
+
 test("both city-hall data tasks enter the sand table with F, never a HUD mouse click", async () => {
   for (const file of ["config.json", "config.example.json"]) {
     const config = JSON.parse(

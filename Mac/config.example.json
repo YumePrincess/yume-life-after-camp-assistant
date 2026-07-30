@@ -401,15 +401,20 @@
     "openPatrol": [
       {
         "op": "clickTextsUntilAnyText",
-        "clickTexts": ["营地巡逻", "交谈", "查看巡逻进度", "查看巡逻队当前进程"],
+        "clickTexts": ["查看巡逻队当前进程", "查看巡逻进度", "营地巡逻", "交谈"],
         "targetTexts": ["简单巡逻路线", "普通巡逻路线", "困难巡逻路线"],
-        "clickRegion": { "left": 1200, "top": 640, "right": 1520, "bottom": 1010 },
+        "clickRegion": { "left": 1200, "top": 540, "right": 1520, "bottom": 1010 },
         "regionOcrScale": 2,
         "anchorClickFallbacks": [
           {
             "anchorText": "查看玩法",
             "targetText": "营地巡逻",
             "offsetY": 75
+          },
+          {
+            "anchorText": "营地公告版",
+            "targetText": "营地巡逻",
+            "offsetY": 140
           }
         ],
         "timeoutSeconds": 45,
@@ -421,8 +426,27 @@
       { "op": "clickText", "text": "营地频道", "timeoutSeconds": 8 }
     ],
     "startHardPatrol": [
-      { "op": "waitAnyText", "texts": ["困难巡逻路线"], "timeoutSeconds": 12 },
-      { "op": "tap", "x": 1770, "y": 995 },
+      {
+        "op": "waitAnyText",
+        "texts": ["困难巡逻路线"],
+        "region": { "left": 850, "top": 150, "right": 1920, "bottom": 950 },
+        "timeoutSeconds": 12
+      },
+      {
+        "op": "clickText",
+        "text": "困难巡逻路线",
+        "mode": "exact",
+        "region": { "left": 850, "top": 150, "right": 1920, "bottom": 950 },
+        "timeoutSeconds": 12
+      },
+      { "op": "sleep", "ms": 500 },
+      {
+        "op": "clickText",
+        "text": "接取",
+        "mode": "exact",
+        "region": { "left": 1450, "top": 820, "right": 1920, "bottom": 1200 },
+        "timeoutSeconds": 12
+      },
       { "op": "sleep", "ms": 800 },
       { "op": "clickIfText", "text": "确定", "mode": "exact" },
       { "op": "sleep", "ms": 800 },
@@ -462,6 +486,15 @@
       { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150 },
       { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
       { "op": "tapIfAnyText", "texts": ["3D模式"], "x": 1655, "y": 55 },
+      { "op": "sleep", "ms": 500 }
+    ],
+    "closeTeamPanel": [
+      {
+        "op": "tapIfAnyText",
+        "texts": ["调整", "离开队伍"],
+        "x": 48,
+        "y": 327
+      },
       { "op": "sleep", "ms": 500 }
     ],
     "teleportCityHall": [
