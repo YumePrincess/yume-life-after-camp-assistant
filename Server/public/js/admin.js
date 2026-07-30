@@ -375,8 +375,7 @@
         })
       )
     );
-    const canInspectVoters =
-      state.bootstrap?.session?.permissions?.includes("identity:manage");
+    const canInspectVoters = hasPermission("identity:manage");
     const ballots = state.bootstrap?.voteBallots || [];
     for (const option of summary.options || []) {
       const item = create(
@@ -498,12 +497,33 @@
 
     const previewRoot = byId("technology-fixed-preview");
     previewRoot.replaceChildren();
+    const currentVoteSummary = state.bootstrap?.voteSummary;
+    const showsCurrentProjection =
+      state.technologyDate === currentVoteSummary?.pollDate;
+    const projectedOrderByLane = new Map(
+      ["core", "general"].map((lane) => [
+        lane,
+        showsCurrentProjection
+          ? (currentVoteSummary?.projectedPlan?.[lane] || []).map(
+              (item) => item.key
+            )
+          : []
+      ])
+    );
     for (const lane of ["core", "general"]) {
+      const projectedOrder = projectedOrderByLane.get(lane);
+      const projectedKeys = new Set(projectedOrder);
       const selected = config.catalog
-        .filter(
-          (item) => fixed.has(item.key) && effectiveLane(item) === lane
+        .filter((item) =>
+          showsCurrentProjection
+            ? projectedKeys.has(item.key)
+            : fixed.has(item.key) && effectiveLane(item) === lane
         )
-        .sort((a, b) => a.sortOrder - b.sortOrder);
+        .sort((a, b) =>
+          showsCurrentProjection
+            ? projectedOrder.indexOf(a.key) - projectedOrder.indexOf(b.key)
+            : a.sortOrder - b.sortOrder
+        );
       const laneRoot = create("section", "technology-fixed-lane");
       const laneHeader = create("div", "technology-fixed-lane-header");
       laneHeader.append(
@@ -523,7 +543,14 @@
         const item = selected[index];
         const slot = create("div", "technology-fixed-slot");
         slot.dataset.filled = String(Boolean(item));
-        slot.title = item?.name || window.MrzhI18n.t("空位");
+        slot.dataset.source = item
+          ? fixed.has(item.key)
+            ? "fixed"
+            : "vote"
+          : "empty";
+        slot.title = item
+          ? `${item.name} · ${fixed.has(item.key) ? "固定科技" : "投票科技"}`
+          : window.MrzhI18n.t("空位");
         if (item?.iconUrl) {
           const image = document.createElement("img");
           image.src = item.iconUrl;

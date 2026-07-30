@@ -42,6 +42,19 @@ test("a failed ADB mouse reset blocks the key instead of pretending it was focus
   );
 });
 
+test("ADB movement focus uses hover and release without a click", async () => {
+  const calls = [];
+  const adb = createAdb(calls);
+
+  await adb.focusGameInput(960, 600);
+
+  assert.deepEqual(calls, [
+    ["input", "mouse", "motionevent", "HOVER_MOVE", "960", "600"],
+    ["input", "mouse", "motionevent", "UP", "960", "600"]
+  ]);
+  assert.equal(calls.some((args) => args.includes("tap")), false);
+});
+
 function createAdb(calls, failReset = false) {
   const adb = new AdbClient({
     adb: {

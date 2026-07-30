@@ -17,14 +17,40 @@ export async function runPatrol(context, command, bundle, signal) {
   await sharePatrolTeam(context, signal);
   await report("info", "patrol_team", "巡逻队伍已创建并分享到营地频道");
 
+  let consecutiveFullTeamFrames = 0;
   while (true) {
     if (reached(timezone, patrol.deadline)) {
       throw new Error("巡逻截止前队伍人数仍未达到 4 人");
     }
-    await ui.executeFlow("openTeamPanel", {}, signal);
-    const frame = await vision.capture("patrol-team-size", signal);
+    let screen = await capturePatrolScreen(
+      vision,
+      "patrol-team-size",
+      signal
+    );
+    if (!patrolTeamPanelVisible(vision, screen.observations, context.config)) {
+      await report(
+        "info",
+        "patrol_team_panel_reopen",
+        "当前未识别到队伍卡片页，正在重新打开队伍界面"
+      );
+      await ui.executeFlow("openTeamPanel", {}, signal);
+      screen = await capturePatrolScreen(
+        vision,
+        "patrol-team-size-after-open",
+        signal
+      );
+    }
+    const full = await patrolTeamIsFull(
+      context,
+      screen.frame,
+      signal,
+      screen.observations
+    );
+    consecutiveFullTeamFrames = full
+      ? consecutiveFullTeamFrames + 1
+      : 0;
     if (
-      (await patrolTeamIsFull(context, frame, signal)) &&
+      consecutiveFullTeamFrames >= 2 &&
       reached(timezone, patrol.teamReadyTime)
     ) {
       break;
@@ -38,7 +64,20 @@ export async function runPatrol(context, command, bundle, signal) {
     "已确认巡逻队伍四个位置均有人，正在收起队伍界面后接取任务"
   );
   await ui.executeFlow("closeTeamPanel", {}, signal);
-  await ui.executeFlow("teleportNoticeBoard", {}, signal);
+  if (await noticeBoardInteractionVisible(context, signal)) {
+    await report(
+      "info",
+      "patrol_notice_board_reused",
+      "收起队伍后仍可见公告版交互选项，沿用初始传送位置，不再重复传送"
+    );
+  } else {
+    await report(
+      "info",
+      "patrol_notice_board_return",
+      "收起队伍后未识别到公告版交互选项，仅执行一次返回公告版传送"
+    );
+    await ui.executeFlow("teleportNoticeBoard", {}, signal);
+  }
   await ui.executeFlow("openPatrol", {}, signal);
   await ui.executeFlow("startHardPatrol", {}, signal);
   await ui.executeFlow("exitPatrolPages", {}, signal);
@@ -555,39 +594,164 @@ function hasTextInRegion(vision, observations, text, region) {
   );
 }
 
-async function patrolTeamIsFull(context, frame, signal) {
+export async function patrolTeamIsFull(
+  context,
+  frame,
+  signal,
+  initialObservations = null
+) {
   const { vision, report } = context;
-  const fourMembers =
-    vision.find(frame.observations, "4/4") ||
-    vision.find(frame.observations, "队伍人数4");
-  if (fourMembers) return true;
-  if (vision.find(frame.observations, "等待队员加入")) return false;
-  if (vision.find(frame.observations, "2D模式")) return true;
-  if (!vision.advisor?.enabled) return false;
-
-  const advice = await vision
-    .adviseCurrent(
-      "patrol-team-full-advisor",
-      {
-        expectedState: "patrol_team_full,patrol_team_waiting",
-        taskHint: "确认当前4人巡逻队是否四个位置都已有玩家",
-        ocrTexts: frame.observations.map((item) => item.text)
-      },
-      signal
-    )
-    .catch(() => null);
-  const minimum =
-    Number(vision.advisor.config.minimumActionConfidence) || 0.95;
-  const accepted =
-    advice?.state === "patrol_team_full" &&
-    Number(advice.confidence) >= minimum;
+  const controls = context.config?.patrolTeamUi || {};
+  const slotRegions = controls.teamMemberSlotRegions || [
+    { left: 560, top: 290, right: 955, bottom: 960 },
+    { left: 960, top: 290, right: 1355, bottom: 960 },
+    { left: 1360, top: 290, right: 1750, bottom: 960 }
+  ];
+  let observations = initialObservations || frame.observations || [];
+  const slotObservations = await Promise.all(
+    slotRegions.map(async (region, index) => {
+      if (typeof vision.ocrRegion !== "function" || !frame.path) {
+        return observationsInRegion(observations, region);
+      }
+      const regional = await vision
+        .ocrRegion(
+          frame.path,
+          region,
+          `patrol-team-member-slot-${index + 2}`,
+          signal,
+          "accurate",
+          0.28,
+          1.5
+        )
+        .catch(() => []);
+      return regional.length
+        ? regional
+        : observationsInRegion(observations, region);
+    })
+  );
+  const waitingIndexes = [];
+  const unverifiedIndexes = [];
+  for (let index = 0; index < slotObservations.length; index += 1) {
+    const items = slotObservations[index];
+    if (slotShowsWaiting(items)) {
+      waitingIndexes.push(index + 2);
+      continue;
+    }
+    if (!slotShowsMember(items)) {
+      unverifiedIndexes.push(index + 2);
+    }
+  }
+  if (waitingIndexes.length > 0) {
+    await report(
+      "info",
+      "patrol_team_waiting",
+      `第 ${waitingIndexes.join("、")} 号卡位仍显示“等待队员加入”，继续等待满员`,
+      { waitingSlots: waitingIndexes.length, waitingIndexes }
+    );
+    return false;
+  }
+  if (unverifiedIndexes.length > 0) {
+    await report(
+      "info",
+      "patrol_team_full_unverified",
+      `第 ${unverifiedIndexes.join("、")} 号卡位既未识别到等待文字，也没有足够的成员昵称/等级/数值证据；本轮不判定满员`,
+      { unverifiedIndexes }
+    );
+    return false;
+  }
   await report(
     "info",
-    "patrol_ai_team_decision",
-    `巡逻 AI 辅助判断：${advice?.state || "unavailable"}`,
-    { ...advice, accepted }
+    "patrol_team_full_verified",
+    "已逐卡确认第 2、3、4 号队员位均有人，且“等待队员加入”为 0"
   );
-  return accepted;
+  return true;
+}
+
+function patrolTeamPanelVisible(vision, observations, config) {
+  const controls = config?.patrolTeamUi || {};
+  const region = controls.createdBodyRegion || {
+    left: 0,
+    top: 0,
+    right: 1920,
+    bottom: 1180
+  };
+  return ["调整", "离开队伍", "招募", "等待队员加入"].some((text) =>
+    hasTextInRegion(vision, observations, text, region)
+  );
+}
+
+async function noticeBoardInteractionVisible(context, signal) {
+  const { config, vision } = context;
+  const teleportAction = config.flows?.teleportNoticeBoard?.find(
+    (action) => action.op === "teleportWithFallback"
+  );
+  const region = teleportAction?.target?.readyRegion || {
+    left: 1180,
+    top: 300,
+    right: 1920,
+    bottom: 1050
+  };
+  const readyTexts = [
+    "营地公告版",
+    ...(teleportAction?.target?.readyTexts || [
+      "查看玩法",
+      "营地巡逻",
+      "交谈"
+    ])
+  ];
+  const screen = await capturePatrolScreen(
+    vision,
+    "patrol-notice-board-before-return",
+    signal
+  );
+  return readyTexts.some((text) =>
+    hasTextInRegion(vision, screen.observations, text, region)
+  );
+}
+
+function observationsInRegion(observations, region) {
+  return (observations || []).filter((item) => {
+    const x = item.x + item.width / 2;
+    const y = item.y + item.height / 2;
+    return (
+      x >= region.left &&
+      x <= region.right &&
+      y >= region.top &&
+      y <= region.bottom
+    );
+  });
+}
+
+function normalizedSlotText(item) {
+  return String(item?.text || "")
+    .replace(/\s+/g, "")
+    .replace(/[|｜]/g, "");
+}
+
+function slotShowsWaiting(observations) {
+  const text = observations.map(normalizedSlotText).join("");
+  return (
+    text.includes("等待队员加入") ||
+    (text.includes("等待") && text.includes("队员") && text.includes("加入"))
+  );
+}
+
+function slotShowsMember(observations) {
+  const tokens = observations
+    .map(normalizedSlotText)
+    .filter((text) => text && text !== "+");
+  if (tokens.some((text) => text === "愿" || text.endsWith("愿"))) {
+    return true;
+  }
+  const numericTokens = tokens.filter((text) => /\d/.test(text));
+  const nameLikeTokens = tokens.filter(
+    (text) =>
+      /[\p{L}\p{Script=Han}]/u.test(text) &&
+      !text.includes("等待") &&
+      !text.includes("队员") &&
+      !text.includes("加入")
+  );
+  return numericTokens.length >= 1 && nameLikeTokens.length >= 1;
 }
 
 function millisecondsUntil(timezone, value) {

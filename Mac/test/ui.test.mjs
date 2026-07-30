@@ -382,6 +382,7 @@ test("destination verification walks forward only until the interaction text app
   );
   assert.equal(verified, true);
   assert.deepEqual(fixture.keys, ["KEYCODE_W"]);
+  assert.deepEqual(fixture.focusPoints, [{ x: 960, y: 600 }]);
   assert.deepEqual(fixture.taps, []);
 });
 
@@ -403,6 +404,10 @@ test("destination approach is capped at five one-second W segments", async () =>
   assert.deepEqual(
     fixture.keys,
     Array.from({ length: 5 }, () => "KEYCODE_W")
+  );
+  assert.deepEqual(
+    fixture.focusPoints,
+    Array.from({ length: 5 }, () => ({ x: 960, y: 600 }))
   );
   assert.ok(Date.now() - startedAt >= 5_000);
   assert.ok(
@@ -448,6 +453,28 @@ test("waitAnyText accepts accurate OCR before asking the model again", async () 
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("高精度 OCR 确认界面文字")
+    )
+  );
+});
+
+test("clickText uses accurate OCR before waiting indefinitely", async () => {
+  const fixture = createUi({
+    fastFrames: [[]],
+    accurateFrames: [[observation("接取", 1730, 940)]]
+  });
+  fixture.ui.config.timeouts.screenTransitionSeconds = 1;
+  fixture.ui.config.timeouts.neverAbortHealthyTaskOnTimeout = false;
+
+  await fixture.ui.clickText("接取", {
+    mode: "exact",
+    region: { left: 1450, top: 820, right: 1920, bottom: 1120 },
+    timeoutSeconds: 1
+  });
+
+  assert.deepEqual(fixture.taps, [{ x: 1740, y: 950 }]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("全屏高精度 OCR")
     )
   );
 });
@@ -542,16 +569,22 @@ test("NPC patrol navigation advances to progress instead of clicking talk repeat
   ]);
 });
 
-test("hard patrol flow selects the difficult route before clicking the verified accept button", async () => {
+test("hard patrol flow clicks the difficult-row accept button and confirms it", async () => {
   for (const file of ["config.json", "config.example.json"]) {
     const config = JSON.parse(
       await readFile(new URL(`../${file}`, import.meta.url), "utf8")
     );
     const flow = config.flows.startHardPatrol;
     assert.equal(flow[1].op, "clickText");
-    assert.equal(flow[1].text, "困难巡逻路线");
+    assert.equal(flow[1].text, "接取");
     assert.equal(flow[3].op, "clickText");
-    assert.equal(flow[3].text, "接取");
+    assert.equal(flow[3].text, "确定");
+    assert.deepEqual(flow[1].region, {
+      left: 1450,
+      top: 820,
+      right: 1920,
+      bottom: 1120
+    });
     assert.equal(
       flow.some((action) =>
         action.op === "tap" && action.x === 1770 && action.y === 995
@@ -630,6 +663,7 @@ function createUi({
 } = {}) {
   const taps = [];
   const keys = [];
+  const focusPoints = [];
   const messages = [];
   let fastIndex = 0;
   let accurateIndex = 0;
@@ -679,6 +713,9 @@ function createUi({
     },
     async key(code) {
       keys.push(code);
+    },
+    async focusGameInput(x, y) {
+      focusPoints.push({ x, y });
     }
   };
   const ui = new GameUi(
@@ -687,7 +724,7 @@ function createUi({
     vision,
     async (_level, _step, message) => messages.push(message)
   );
-  return { ui, taps, keys, messages };
+  return { ui, taps, keys, focusPoints, messages };
 }
 
 function observation(text, x, y) {

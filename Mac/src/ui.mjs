@@ -27,14 +27,72 @@ export class GameUi {
   async clickText(text, options = {}, signal) {
     const timeoutMs = this.timeoutMs(options);
     let deadline = Date.now() + timeoutMs;
+    let nextRegionOcrAt = 0;
+    let nextAccurateOcrAt = 0;
     do {
       const frame = await this.vision.capture(`find-${text}`, signal);
-      const match = this.findInRegion(
+      let match = this.findInRegion(
         frame.observations,
         text,
         options.region,
         options.mode
       );
+      if (
+        !match &&
+        options.region &&
+        frame.path &&
+        typeof this.vision.ocrRegion === "function" &&
+        Date.now() >= nextRegionOcrAt
+      ) {
+        nextRegionOcrAt = Date.now() + 2_000;
+        const regionalObservations = await this.vision
+          .ocrRegion(
+            frame.path,
+            options.region,
+            `click-${text}`,
+            signal,
+            "accurate",
+            Number(options.regionOcrMinimumConfidence) || 0.2,
+            Number(options.regionOcrScale) || 2
+          )
+          .catch(() => []);
+        match = this.findInRegion(
+          regionalObservations,
+          text,
+          options.region,
+          options.mode
+        );
+        if (match) {
+          await this.report(
+            "info",
+            "accurate_click_text_verified",
+            `快速 OCR 漏读后，已通过目标区域高精度 OCR 确认可点击文字：${text}`
+          );
+        }
+      }
+      if (
+        !match &&
+        typeof this.vision.captureAccurateTransient === "function" &&
+        Date.now() >= nextAccurateOcrAt
+      ) {
+        nextAccurateOcrAt = Date.now() + 2_000;
+        const accurate = await this.vision
+          .captureAccurateTransient(`click-${text}-accurate`, signal)
+          .catch(() => null);
+        match = this.findInRegion(
+          accurate?.observations || [],
+          text,
+          options.region,
+          options.mode
+        );
+        if (match) {
+          await this.report(
+            "info",
+            "accurate_click_text_verified",
+            `快速 OCR 漏读后，已通过全屏高精度 OCR 确认可点击文字：${text}`
+          );
+        }
+      }
       if (match) {
         await this.tap(center(match), signal);
         return { frame, match };
@@ -661,6 +719,24 @@ export class GameUi {
               pressDurationMs: approachPressMs
             }
           );
+        }
+        if (typeof this.adb.focusGameInput === "function") {
+          const focusPoint = destination.approachFocusPoint || {
+            x: Math.round((this.config.adb?.screenWidth || 1920) / 2),
+            y: Math.round((this.config.adb?.screenHeight || 1200) / 2)
+          };
+          await this.adb.focusGameInput(
+            focusPoint.x,
+            focusPoint.y,
+            signal
+          );
+          if (attempt === 0) {
+            await this.report(
+              "info",
+              "teleport_approach_adb_focus",
+              "已通过 ADB 鼠标悬停与按键释放复位 MuMu 设备输入焦点；不会切换 macOS 前台窗口"
+            );
+          }
         }
         await this.sendGameKey(
           destination.approachKey || "KEYCODE_W",

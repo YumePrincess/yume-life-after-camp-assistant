@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createPatrolTeam,
+  patrolTeamIsFull,
   sharePatrolTeam
 } from "../src/workflows/patrol.mjs";
 
@@ -418,6 +419,85 @@ test("patrol share never clicks the channel point unless the selector is verifie
   ]);
 });
 
+test("patrol team is not full when a member slot has no occupied evidence", async () => {
+  const reports = [];
+  const full = await patrolTeamIsFull(
+    {
+      config: { patrolTeamUi: patrolUiConfig() },
+      vision: {
+        find(observations, query) {
+          return observations.find((item) => item.text.includes(query));
+        },
+      },
+      async report(_level, step) {
+        reports.push(step);
+      }
+    },
+    {
+      observations: [observation("2D模式", 1650, 55)]
+    }
+  );
+  assert.equal(full, false);
+  assert.ok(reports.includes("patrol_team_full_unverified"));
+});
+
+test("any waiting member card prevents a full-team result", async () => {
+  const reports = [];
+  const full = await patrolTeamIsFull(
+    {
+      config: { patrolTeamUi: patrolUiConfig() },
+      vision: {
+        find(observations, query) {
+          return observations.find((item) => item.text.includes(query));
+        },
+      },
+      async report(_level, step) {
+        reports.push(step);
+      }
+    },
+    {
+      observations: [
+        observation("玩家甲", 620, 700),
+        observation("115", 620, 330),
+        observation("玩家乙", 1020, 700),
+        observation("130", 1020, 330),
+        observation("等待队员加入", 1420, 600)
+      ]
+    }
+  );
+  assert.equal(full, false);
+  assert.ok(reports.includes("patrol_team_waiting"));
+});
+
+test("patrol team becomes full when all three member cards are occupied", async () => {
+  const reports = [];
+  const full = await patrolTeamIsFull(
+    {
+      config: { patrolTeamUi: patrolUiConfig() },
+      vision: {
+        find(observations, query) {
+          return observations.find((item) => item.text.includes(query));
+        },
+      },
+      async report(_level, step) {
+        reports.push(step);
+      }
+    },
+    {
+      observations: [
+        observation("玩家甲", 620, 700),
+        observation("115", 620, 330),
+        observation("玩家乙", 1020, 700),
+        observation("130", 1020, 330),
+        observation("玩家丙", 1420, 700),
+        observation("115", 1420, 330)
+      ]
+    }
+  );
+  assert.equal(full, true);
+  assert.ok(reports.includes("patrol_team_full_verified"));
+});
+
 function observationsFor(label) {
   if (label === "patrol-team-entry") {
     return [observation("CtrlQ", 20, 300)];
@@ -465,6 +545,11 @@ function patrolUiConfig() {
     createButtonPoint: { x: 1419, y: 891 },
     createdTargetRegion: { left: 150, top: 0, right: 830, bottom: 100 },
     createdBodyRegion: { left: 0, top: 280, right: 1920, bottom: 1180 },
+    teamMemberSlotRegions: [
+      { left: 560, top: 290, right: 955, bottom: 960 },
+      { left: 960, top: 290, right: 1355, bottom: 960 },
+      { left: 1360, top: 290, right: 1750, bottom: 960 }
+    ],
     focusAcquiredTexts: [
       "创建队伍",
       "自动匹配",

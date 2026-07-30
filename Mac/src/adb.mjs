@@ -178,6 +178,25 @@ export class AdbClient {
     );
   }
 
+  async focusGameInput(
+    x = Math.round((this.config.adb.screenWidth || 1920) / 2),
+    y = Math.round((this.config.adb.screenHeight || 1200) / 2),
+    signal
+  ) {
+    await this.shell(
+      [
+        "input",
+        "mouse",
+        "motionevent",
+        "HOVER_MOVE",
+        Math.round(x),
+        Math.round(y)
+      ],
+      { signal, timeoutMs: 5_000 }
+    );
+    await this.releaseMouseButton(x, y, signal);
+  }
+
   async mouseSwipe(from, to, durationMs = 500, signal) {
     const args = [
       "input",

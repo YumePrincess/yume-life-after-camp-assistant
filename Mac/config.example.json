@@ -209,6 +209,11 @@
     "createButtonPoint": { "x": 1419, "y": 891 },
     "createdTargetRegion": { "left": 150, "top": 0, "right": 830, "bottom": 100 },
     "createdBodyRegion": { "left": 0, "top": 280, "right": 1920, "bottom": 1180 },
+    "teamMemberSlotRegions": [
+      { "left": 560, "top": 290, "right": 955, "bottom": 960 },
+      { "left": 960, "top": 290, "right": 1355, "bottom": 960 },
+      { "left": 1360, "top": 290, "right": 1750, "bottom": 960 }
+    ],
     "focusAcquiredTexts": ["创建队伍", "自动匹配", "暂无队员加入", "调整", "离开队伍"],
     "focusAcquiredRegion": { "left": 0, "top": 0, "right": 620, "bottom": 1180 },
     "comboFallbackAttempts": 1,
@@ -434,21 +439,21 @@
       },
       {
         "op": "clickText",
-        "text": "困难巡逻路线",
-        "mode": "exact",
-        "region": { "left": 850, "top": 150, "right": 1920, "bottom": 950 },
-        "timeoutSeconds": 12
-      },
-      { "op": "sleep", "ms": 500 },
-      {
-        "op": "clickText",
         "text": "接取",
         "mode": "exact",
-        "region": { "left": 1450, "top": 820, "right": 1920, "bottom": 1200 },
+        "region": { "left": 1450, "top": 820, "right": 1920, "bottom": 1120 },
+        "regionOcrScale": 2,
         "timeoutSeconds": 12
       },
-      { "op": "sleep", "ms": 800 },
-      { "op": "clickIfText", "text": "确定", "mode": "exact" },
+      { "op": "sleep", "ms": 600 },
+      {
+        "op": "clickText",
+        "text": "确定",
+        "mode": "exact",
+        "region": { "left": 850, "top": 500, "right": 1350, "bottom": 850 },
+        "regionOcrScale": 2,
+        "timeoutSeconds": 12
+      },
       { "op": "sleep", "ms": 800 },
       {
         "op": "tapIfAnyText",
