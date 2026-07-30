@@ -369,7 +369,53 @@ export class GameUi {
 
   async clickIfText(text, options, signal) {
     const frame = await this.vision.capture(`conditional-click-${text}`, signal);
-    const match = this.vision.find(frame.observations, text, options.mode);
+    let match = this.findInRegion(
+      frame.observations,
+      text,
+      options.region,
+      options.mode
+    );
+    if (
+      !match &&
+      options.region &&
+      frame.path &&
+      typeof this.vision.ocrRegion === "function"
+    ) {
+      const regional = await this.vision
+        .ocrRegion(
+          frame.path,
+          options.region,
+          `conditional-click-${text}`,
+          signal,
+          "accurate",
+          Number(options.regionOcrMinimumConfidence) || 0.2,
+          Number(options.regionOcrScale) || 2
+        )
+        .catch(() => []);
+      match = this.findInRegion(
+        regional,
+        text,
+        options.region,
+        options.mode
+      );
+    }
+    if (
+      !match &&
+      typeof this.vision.captureAccurateTransient === "function"
+    ) {
+      const accurate = await this.vision
+        .captureAccurateTransient(
+          `conditional-click-${text}-accurate`,
+          signal
+        )
+        .catch(() => null);
+      match = this.findInRegion(
+        accurate?.observations || [],
+        text,
+        options.region,
+        options.mode
+      );
+    }
     if (!match) return null;
     await this.tap(center(match), signal);
     return { frame, match };

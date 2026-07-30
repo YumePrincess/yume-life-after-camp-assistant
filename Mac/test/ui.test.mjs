@@ -579,6 +579,10 @@ test("hard patrol flow clicks the difficult-row accept button and confirms it", 
     assert.equal(flow[1].text, "接取");
     assert.equal(flow[3].op, "clickText");
     assert.equal(flow[3].text, "确定");
+    assert.equal(flow[3].mode, "includes");
+    assert.equal(flow[5].op, "clickIfText");
+    assert.equal(flow[5].text, "确定");
+    assert.equal(flow[5].mode, "includes");
     assert.deepEqual(flow[1].region, {
       left: 1450,
       top: 820,

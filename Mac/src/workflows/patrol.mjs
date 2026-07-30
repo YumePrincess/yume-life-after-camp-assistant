@@ -64,20 +64,11 @@ export async function runPatrol(context, command, bundle, signal) {
     "已确认巡逻队伍四个位置均有人，正在收起队伍界面后接取任务"
   );
   await ui.executeFlow("closeTeamPanel", {}, signal);
-  if (await noticeBoardInteractionVisible(context, signal)) {
-    await report(
-      "info",
-      "patrol_notice_board_reused",
-      "收起队伍后仍可见公告版交互选项，沿用初始传送位置，不再重复传送"
-    );
-  } else {
-    await report(
-      "info",
-      "patrol_notice_board_return",
-      "收起队伍后未识别到公告版交互选项，仅执行一次返回公告版传送"
-    );
-    await ui.executeFlow("teleportNoticeBoard", {}, signal);
-  }
+  await report(
+    "info",
+    "patrol_notice_board_reused",
+    "队伍等待期间角色没有移动；收起队伍后直接使用初始公告版位置，不再执行任何传送"
+  );
   await ui.executeFlow("openPatrol", {}, signal);
   await ui.executeFlow("startHardPatrol", {}, signal);
   await ui.executeFlow("exitPatrolPages", {}, signal);
@@ -677,35 +668,6 @@ function patrolTeamPanelVisible(vision, observations, config) {
   };
   return ["调整", "离开队伍", "招募", "等待队员加入"].some((text) =>
     hasTextInRegion(vision, observations, text, region)
-  );
-}
-
-async function noticeBoardInteractionVisible(context, signal) {
-  const { config, vision } = context;
-  const teleportAction = config.flows?.teleportNoticeBoard?.find(
-    (action) => action.op === "teleportWithFallback"
-  );
-  const region = teleportAction?.target?.readyRegion || {
-    left: 1180,
-    top: 300,
-    right: 1920,
-    bottom: 1050
-  };
-  const readyTexts = [
-    "营地公告版",
-    ...(teleportAction?.target?.readyTexts || [
-      "查看玩法",
-      "营地巡逻",
-      "交谈"
-    ])
-  ];
-  const screen = await capturePatrolScreen(
-    vision,
-    "patrol-notice-board-before-return",
-    signal
-  );
-  return readyTexts.some((text) =>
-    hasTextInRegion(vision, screen.observations, text, region)
   );
 }
 

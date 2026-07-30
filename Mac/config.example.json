@@ -449,10 +449,18 @@
       {
         "op": "clickText",
         "text": "确定",
-        "mode": "exact",
+        "mode": "includes",
         "region": { "left": 850, "top": 500, "right": 1350, "bottom": 850 },
         "regionOcrScale": 2,
         "timeoutSeconds": 12
+      },
+      { "op": "sleep", "ms": 800 },
+      {
+        "op": "clickIfText",
+        "text": "确定",
+        "mode": "includes",
+        "region": { "left": 850, "top": 500, "right": 1350, "bottom": 850 },
+        "regionOcrScale": 2
       },
       { "op": "sleep", "ms": 800 },
       {
