@@ -544,18 +544,117 @@ function levenshteinDistance(left: string, right: string): number {
   return previous[right.length]!;
 }
 
+type ActivityRow = {
+  name: string;
+  lastActiveText: string | null;
+  inactiveDays: number | null;
+};
+
+export type ActivityReconciliation = {
+  updates: ActivityRow[];
+  ignored: number;
+  ambiguous: number;
+};
+
+export function reconcileActivityMembers(
+  incoming: ActivityRow[],
+  masterMembers: Array<{ name: string }>
+): ActivityReconciliation {
+  const available = new Set(masterMembers.map((member) => member.name));
+  const updates: ActivityRow[] = [];
+  let ignored = 0;
+  let ambiguous = 0;
+
+  for (const row of incoming) {
+    const normalized = comparableMemberName(row.name);
+    const exactCandidates = masterMembers.filter(
+      (member) =>
+        available.has(member.name) &&
+        comparableMemberName(member.name) === normalized
+    );
+    let candidate: { name: string } | null = null;
+
+    if (exactCandidates.length === 1) {
+      candidate = exactCandidates[0]!;
+    } else if (exactCandidates.length > 1) {
+      ambiguous += 1;
+      ignored += 1;
+      continue;
+    } else {
+      const symbolInsensitive = symbolInsensitiveMemberName(row.name);
+      const symbolCandidates = symbolInsensitive
+        ? masterMembers.filter(
+            (member) =>
+              available.has(member.name) &&
+              symbolInsensitiveMemberName(member.name) === symbolInsensitive
+          )
+        : [];
+
+      if (symbolCandidates.length === 1) {
+        candidate = symbolCandidates[0]!;
+      } else if (symbolCandidates.length > 1) {
+        ambiguous += 1;
+        ignored += 1;
+        continue;
+      } else {
+        const source = symbolInsensitive || normalized;
+        const sourceLength = Array.from(source).length;
+        const fuzzyCandidates =
+          sourceLength >= 4
+            ? masterMembers.filter((member) => {
+                if (!available.has(member.name)) return false;
+                const target =
+                  symbolInsensitiveMemberName(member.name) ||
+                  comparableMemberName(member.name);
+                return (
+                  Array.from(target).length >= 4 &&
+                  levenshteinDistance(source, target) <= 1
+                );
+              })
+            : [];
+
+        if (fuzzyCandidates.length === 1) {
+          candidate = fuzzyCandidates[0]!;
+        } else {
+          if (fuzzyCandidates.length > 1) ambiguous += 1;
+          ignored += 1;
+          continue;
+        }
+      }
+    }
+
+    available.delete(candidate.name);
+    updates.push({ ...row, name: candidate.name });
+  }
+
+  return { updates, ignored, ambiguous };
+}
+
+function symbolInsensitiveMemberName(value: string): string {
+  return comparableMemberName(value).replace(/[^\p{L}\p{N}]/gu, "");
+}
+
 export async function updateActivitySnapshot(
   env: Env,
   input: {
     runId: string;
     capturedAt: string;
-    members: Array<{
-      name: string;
-      lastActiveText: string | null;
-      inactiveDays: number | null;
-    }>;
+    members: ActivityRow[];
   }
-): Promise<void> {
+): Promise<ActivityReconciliation> {
+  const current = await env.DB.prepare(
+    "SELECT name FROM members ORDER BY name"
+  ).all<{ name: string }>();
+  const reconciliation = reconcileActivityMembers(
+    input.members,
+    current.results
+  );
+  // A non-empty OCR result with no safe roster match is a recognition failure,
+  // not proof that the current warning list became empty. Preserve the last
+  // valid snapshot so a bad scan cannot erase it.
+  if (input.members.length > 0 && reconciliation.updates.length === 0) {
+    return reconciliation;
+  }
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
       `UPDATE members SET
@@ -564,32 +663,26 @@ export async function updateActivitySnapshot(
        activity_captured_at = NULL`
     )
   ];
-  for (const member of input.members) {
-    const memberId = await stableMemberId(member.name);
+  for (const member of reconciliation.updates) {
     statements.push(
       env.DB.prepare(
-        `INSERT INTO members(
-           id, name, last_active_text, inactive_days, activity_captured_at,
-           last_seen_at, source_run_id
-         ) VALUES(?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET
-           last_active_text = excluded.last_active_text,
-           inactive_days = excluded.inactive_days,
-           activity_captured_at = excluded.activity_captured_at,
-           last_seen_at = excluded.last_seen_at,
-           source_run_id = excluded.source_run_id`
+        `UPDATE members SET
+           last_active_text = ?,
+           inactive_days = ?,
+           activity_captured_at = ?,
+           last_seen_at = ?
+         WHERE name = ?`
       ).bind(
-        memberId,
-        member.name,
         member.lastActiveText,
         member.inactiveDays,
         input.capturedAt,
         input.capturedAt,
-        input.runId
+        member.name
       )
     );
   }
   await env.DB.batch(statements);
+  return reconciliation;
 }
 
 export async function updateMemberProfiles(

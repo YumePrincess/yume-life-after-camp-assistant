@@ -1062,10 +1062,26 @@ async function handleAgentApi(
     }
     if (type === "activity") {
       const members = sanitizeActivity(body.payload);
-      await updateActivitySnapshot(env, { runId, capturedAt, members });
+      const reconciliation = await updateActivitySnapshot(env, {
+        runId,
+        capturedAt,
+        members
+      });
       const bundle = await getConfigBundle(env);
-      await enqueueAutomaticKickIfNeeded(env, bundle, runId, capturedAt, members);
-      return json({ ok: true, count: members.length });
+      await enqueueAutomaticKickIfNeeded(
+        env,
+        bundle,
+        runId,
+        capturedAt,
+        reconciliation.updates
+      );
+      return json({
+        ok: true,
+        count: reconciliation.updates.length,
+        received: members.length,
+        ignored: reconciliation.ignored,
+        ambiguous: reconciliation.ambiguous
+      });
     }
     if (type === "profiles") {
       const members = sanitizeProfiles(body.payload);

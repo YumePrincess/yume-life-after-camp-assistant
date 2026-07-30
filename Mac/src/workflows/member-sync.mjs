@@ -81,17 +81,31 @@ export async function runInactivitySync(context, command, bundle, signal) {
       "INACTIVITY_SCAN_UNREADABLE: 未识别到成员行或阈值边界，已保留原有斩杀预警数据"
     );
   }
-  await context.api.snapshot(
+  const result = await context.api.snapshot(
     command.runId,
     "activity",
     rows,
     new Date().toISOString(),
     signal
   );
+  const matched = Number(result?.count) || 0;
+  const ignored = Math.max(0, Number(result?.ignored) || rows.length - matched);
+  const ambiguous = Number(result?.ambiguous) || 0;
+  if (rows.length > 0 && matched === 0) {
+    throw new Error(
+      "INACTIVITY_MASTER_LIST_MISSING: 斩杀预警扫描结果未能安全匹配成员资料主名单，已保留上一份有效预警；请先更新成员资料或检查 OCR"
+    );
+  }
   await context.report(
-    "info",
+    ignored ? "warning" : "info",
     "activity_done",
-    `已更新 ${rows.length} 名离线达到 ${minimumInactiveDays} 天的斩杀预警成员`
+    `斩杀页识别 ${rows.length} 行，已匹配更新 ${matched} 名离线达到 ${minimumInactiveDays} 天的现有成员，忽略 ${ignored} 行未确认 OCR 数据；成员总数未改变`,
+    {
+      recognized: rows.length,
+      matched,
+      ignored,
+      ambiguous
+    }
   );
 }
 
