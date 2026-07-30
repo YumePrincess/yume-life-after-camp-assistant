@@ -1428,6 +1428,7 @@
       "管理 SMTP 配置": "Manage SMTP settings",
       "搜索申请编号、玩家或邮箱": "Search application number, player or email",
       "搜索识别码、玩家或邮箱": "Search code, player or email",
+      "搜索": "Search",
       "识别码状态": "Code status",
       "过期": "Expired",
       "取消": "Cancelled",
@@ -1531,6 +1532,7 @@
       "管理 SMTP 配置": "Gérer la configuration SMTP",
       "搜索申请编号、玩家或邮箱": "Rechercher numéro, joueur ou e-mail",
       "搜索识别码、玩家或邮箱": "Rechercher code, joueur ou e-mail",
+      "搜索": "Rechercher",
       "识别码状态": "État du code",
       "过期": "Expiré",
       "取消": "Annulé",
@@ -1634,6 +1636,7 @@
       "管理 SMTP 配置": "SMTP設定を管理",
       "搜索申请编号、玩家或邮箱": "申請番号・プレイヤー・メールを検索",
       "搜索识别码、玩家或邮箱": "コード・プレイヤー・メールを検索",
+      "搜索": "検索",
       "识别码状态": "コードの状態",
       "过期": "期限切れ",
       "取消": "取消済み",
@@ -1737,6 +1740,7 @@
       "管理 SMTP 配置": "管理 SMTP 設定",
       "搜索申请编号、玩家或邮箱": "搜尋申請編號、玩家或信箱",
       "搜索识别码、玩家或邮箱": "搜尋識別碼、玩家或信箱",
+      "搜索": "搜尋",
       "识别码状态": "識別碼狀態",
       "过期": "過期",
       "取消": "取消",
@@ -1785,7 +1789,12 @@
   }
 
   function updateSiteFooter(language) {
-    const year = String(new Date().getFullYear());
+    const timezone =
+      document.documentElement.dataset.timezone || "Asia/Shanghai";
+    const year = new Intl.DateTimeFormat("en", {
+      timeZone: timezone,
+      year: "numeric"
+    }).format(new Date());
     const localized = {
       "zh-cn": {
         prefix: `版权所有 © ${year} `,

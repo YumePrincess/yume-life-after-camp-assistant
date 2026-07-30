@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   isWithinDailyClockWindow,
   nextTechnologyTargetDate,
-  targetDateForTechnologyRun
+  targetDateForTechnologyRun,
+  zonedDateTimeToIso
 } from "../src/time";
 
 describe("daily voting window", () => {
@@ -23,6 +24,15 @@ describe("daily voting window", () => {
         "24:00"
       )
     ).toBe(false);
+  });
+
+  it("converts a configured local expiry date and reset time to UTC", () => {
+    expect(
+      zonedDateTimeToIso("2026-07-31", "03:00", "Asia/Shanghai")
+    ).toBe("2026-07-30T19:00:00.000Z");
+    expect(
+      zonedDateTimeToIso("2026-07-31", "03:00", "America/New_York")
+    ).toBe("2026-07-31T07:00:00.000Z");
   });
 
   it("supports a voting window that crosses midnight", () => {

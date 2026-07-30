@@ -48,7 +48,11 @@
     identityCodeStatus: "",
     selectedIdentityApplication: null,
     publicContentLocale: "zh-cn",
-    publicContentDraft: null
+    publicContentDraft: null,
+    smtpConfigLoaded: false,
+    smtpConfigLoading: false,
+    smtpDraftRevision: 0,
+    smtpDirty: false
   };
 
   function byId(id) {
@@ -150,13 +154,45 @@
 
   function formatDate(value) {
     if (!value) return "—";
-    return new Intl.DateTimeFormat("zh-CN", {
+    const locale = {
+      "zh-cn": "zh-CN",
+      "zh-tw": "zh-TW",
+      en: "en",
+      fr: "fr",
+      ja: "ja"
+    }[window.MrzhI18n.language()] || "zh-CN";
+    return new Intl.DateTimeFormat(locale, {
+      timeZone: configuredTimezone(),
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit"
     }).format(new Date(value));
+  }
+
+  function configuredTimezone() {
+    return (
+      state.bootstrap?.configBundle?.campConfig?.timezone ||
+      "Asia/Shanghai"
+    );
+  }
+
+  function zonedInputParts(value) {
+    return Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: configuredTimezone(),
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+      })
+        .formatToParts(value)
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value])
+    );
   }
 
   function setField(name, value) {
@@ -382,7 +418,7 @@
     const firstDate =
       state.bootstrap?.voteSummary?.pollDate ||
       state.bootstrap?.nextTechnologyTargetDate ||
-      new Date().toISOString().slice(0, 10);
+      identityExpiryDate(new Date());
     const allowedDates = new Set(
       Array.from({ length: 7 }, (_, index) => datePlusDays(firstDate, index))
     );
@@ -673,20 +709,6 @@
     document.body.append(menu);
     trigger.setAttribute("aria-expanded", "true");
     state.runActionMenu = { menu, trigger };
-
-    const triggerRect = trigger.getBoundingClientRect();
-    const menuRect = menu.getBoundingClientRect();
-    const left = Math.min(
-      window.innerWidth - menuRect.width - 12,
-      Math.max(12, triggerRect.right - menuRect.width)
-    );
-    const roomBelow = window.innerHeight - triggerRect.bottom;
-    const top =
-      roomBelow >= menuRect.height + 12
-        ? triggerRect.bottom + 8
-        : Math.max(12, triggerRect.top - menuRect.height - 8);
-    menu.style.left = `${left}px`;
-    menu.style.top = `${top}px`;
   }
 
   function activateView(view) {
@@ -723,6 +745,8 @@
 
   function render(data, fillSections = []) {
     state.bootstrap = data;
+    document.documentElement.dataset.timezone =
+      data.configBundle?.campConfig?.timezone || "Asia/Shanghai";
     state.csrfToken = data.session.csrfToken;
     renderTaskActions();
     byId("session-email").textContent =
@@ -1251,7 +1275,7 @@
         method: "POST",
         body: JSON.stringify({
           name: form.elements.keyName.value.trim(),
-          expiresAt: new Date(form.elements.keyExpiresAt.value).toISOString(),
+          expiresLocal: form.elements.keyExpiresAt.value,
           permissions
         })
       });
@@ -1283,16 +1307,17 @@
     const field = input("keyExpiresAt");
     if (!field || field.value) return;
     const date = new Date(Date.now() + 24 * 60 * 60_000);
-    field.value = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-      .toISOString()
-      .slice(0, 16);
+    const parts = zonedInputParts(date);
+    field.value =
+      `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
   }
 
-  function dateTimeLocal(value) {
-    const date = value ? new Date(value) : new Date(Date.now() + 30 * 24 * 60 * 60_000);
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-      .toISOString()
-      .slice(0, 16);
+  function identityExpiryDate(value) {
+    const date = value
+      ? new Date(value)
+      : new Date(Date.now() + 30 * 24 * 60 * 60_000);
+    const parts = zonedInputParts(date);
+    return `${parts.year}-${parts.month}-${parts.day}`;
   }
 
   async function loadIdentityApplications(page = state.identityApplications.page) {
@@ -1393,7 +1418,7 @@
     ]) {
       detail.append(create("dt", "", label), create("dd", "", value));
     }
-    byId("identity-review-expiry").value = dateTimeLocal();
+    byId("identity-review-expiry").value = identityExpiryDate();
     byId("identity-review-permanent").checked = false;
     byId("identity-rejection-reason").value = "";
     setText("identity-review-feedback", "");
@@ -1410,9 +1435,9 @@
         action === "approve"
           ? {
               permanent: byId("identity-review-permanent").checked,
-              expiresAt: byId("identity-review-permanent").checked
+              expiresOn: byId("identity-review-permanent").checked
                 ? null
-                : new Date(byId("identity-review-expiry").value).toISOString()
+                : byId("identity-review-expiry").value
             }
           : { reason: byId("identity-rejection-reason").value.trim() };
       const result = await request(
@@ -1488,7 +1513,9 @@
               updateIdentityCodeItem(item, {
                 status: item.status === "active" ? "disabled" : "active",
                 permanent: !item.expires_at,
-                expiresAt: item.expires_at
+                expiresOn: item.expires_at
+                  ? identityExpiryDate(item.expires_at)
+                  : null
               })
           },
           {
@@ -1529,14 +1556,14 @@
 
   function editIdentityExpiry(item) {
     const value = window.prompt(
-      "输入新的有效期（ISO 日期时间），或输入 permanent 设置为永久有效：",
-      item.expires_at || "permanent"
+      "输入新的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效。当天将按基础设置中的每日刷新时间过期：",
+      item.expires_at ? identityExpiryDate(item.expires_at) : "permanent"
     );
     if (!value) return;
     updateIdentityCodeItem(item, {
       status: item.status,
       permanent: value.trim().toLowerCase() === "permanent",
-      expiresAt: value
+      expiresOn: value.trim()
     });
   }
 
@@ -1567,9 +1594,9 @@
           email: form.elements.identityEmail.value.trim(),
           locale: form.elements.identityLocale.value,
           permanent,
-          expiresAt: permanent
+          expiresOn: permanent
             ? null
-            : new Date(form.elements.identityExpiresAt.value).toISOString()
+            : form.elements.identityExpiresAt.value
         })
       });
       setText("manual-identity-feedback", `已生成：${result.code}`);
@@ -1579,9 +1606,21 @@
     }
   }
 
-  async function loadSmtpConfig() {
+  async function loadSmtpConfig(force = false) {
+    if (
+      state.smtpConfigLoading ||
+      (!force && (state.smtpConfigLoaded || state.smtpDirty))
+    ) {
+      return;
+    }
+    state.smtpConfigLoading = true;
+    const revision = state.smtpDraftRevision;
     try {
       const config = await request("/api/admin/smtp-config");
+      if (!force && revision !== state.smtpDraftRevision) {
+        state.smtpDirty = true;
+        return;
+      }
       for (const [name, value] of Object.entries({
         smtpEnabled: config.enabled,
         smtpHost: config.host,
@@ -1599,8 +1638,12 @@
       input("smtpPassword").placeholder = config.passwordConfigured
         ? "已配置；留空则保留现有密码"
         : "尚未配置密码";
+      state.smtpConfigLoaded = true;
+      state.smtpDirty = false;
     } catch (error) {
       setText("smtp-feedback", error.message);
+    } finally {
+      state.smtpConfigLoading = false;
     }
   }
 
@@ -1624,8 +1667,10 @@
         })
       });
       input("smtpPassword").value = "";
+      input("smtpPassword").placeholder = "已配置；留空则保留现有密码";
+      state.smtpConfigLoaded = true;
+      state.smtpDirty = false;
       setText("smtp-feedback", "SMTP 配置已保存");
-      await loadSmtpConfig();
     } catch (error) {
       setText("smtp-feedback", error.message);
     }
@@ -1704,8 +1749,9 @@
   byId("refresh-identity-applications").addEventListener("click", () =>
     loadIdentityApplications()
   );
-  byId("identity-application-search").addEventListener("input", (event) => {
-    state.identityApplicationSearch = event.target.value.trim();
+  byId("identity-application-search-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.identityApplicationSearch = byId("identity-application-search").value.trim();
     loadIdentityApplications(1);
   });
   byId("identity-application-status").addEventListener("change", (event) => {
@@ -1731,8 +1777,9 @@
     reviewIdentity("reject")
   );
   byId("manual-identity-code-form").addEventListener("submit", createManualIdentity);
-  byId("identity-code-search").addEventListener("input", (event) => {
-    state.identityCodeSearch = event.target.value.trim();
+  byId("identity-code-search-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.identityCodeSearch = byId("identity-code-search").value.trim();
     loadIdentityCodes(1);
   });
   byId("identity-code-status").addEventListener("change", (event) => {
@@ -1749,6 +1796,11 @@
     loadIdentityCodes(Number(byId("identity-code-jump").value))
   );
   byId("smtp-config-form").addEventListener("submit", saveSmtpConfig);
+  byId("smtp-config-form").addEventListener("input", () => {
+    state.smtpDraftRevision += 1;
+    state.smtpDirty = true;
+    setText("smtp-feedback", "有未保存修改");
+  });
   byId("smtp-test-form").addEventListener("submit", sendSmtpTest);
   input("identityPermanent").addEventListener("change", (event) => {
     input("identityExpiresAt").disabled = event.target.checked;
@@ -1761,7 +1813,7 @@
     refresh(false);
   });
   setDefaultKeyExpiry();
-  input("identityExpiresAt").value = dateTimeLocal();
+  input("identityExpiresAt").value = identityExpiryDate();
   refresh(true);
   setInterval(() => refresh(false), 10_000);
 })();

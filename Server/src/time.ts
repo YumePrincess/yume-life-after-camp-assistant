@@ -91,6 +91,57 @@ export function zonedDateKey(date: Date, timezone: string): string {
   return dateKey(zonedParts(date, timezone));
 }
 
+export function zonedDateTimeToIso(
+  localDate: string,
+  localClock: string,
+  timezone: string
+): string {
+  assertTimezone(timezone);
+  assertClock(localClock, "localClock");
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);
+  if (!match) throw new Error("localDate must use YYYY-MM-DD");
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const [hourText = "0", minuteText = "0"] = localClock.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const targetEpoch = Date.UTC(year, month - 1, day, hour, minute, 0);
+  const targetDate = new Date(Date.UTC(year, month - 1, day, 12));
+  if (
+    targetDate.getUTCFullYear() !== year ||
+    targetDate.getUTCMonth() !== month - 1 ||
+    targetDate.getUTCDate() !== day
+  ) {
+    throw new Error("localDate is not a valid calendar date");
+  }
+
+  let candidate = new Date(targetEpoch);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const actual = zonedParts(candidate, timezone);
+    const actualEpoch = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      actual.second
+    );
+    candidate = new Date(candidate.getTime() + targetEpoch - actualEpoch);
+  }
+  const verified = zonedParts(candidate, timezone);
+  if (
+    verified.year !== year ||
+    verified.month !== month ||
+    verified.day !== day ||
+    verified.hour !== hour ||
+    verified.minute !== minute
+  ) {
+    throw new Error("The selected local date and time does not exist in this timezone");
+  }
+  return candidate.toISOString();
+}
+
 export function addDaysToDateKey(value: string, days: number): string {
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) {

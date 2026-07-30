@@ -28,6 +28,7 @@
   function identityExpiryLabel(value) {
     const expiry = value
       ? new Intl.DateTimeFormat(window.MrzhI18n.language(), {
+          timeZone: configuredTimezone(),
           dateStyle: "long",
           timeStyle: "short"
         }).format(new Date(value))
@@ -429,6 +430,7 @@
       ja: "ja"
     }[window.MrzhI18n.language()] || "zh-CN";
     return new Intl.DateTimeFormat(locale, {
+      timeZone: configuredTimezone(),
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
@@ -436,8 +438,14 @@
     }).format(new Date(value));
   }
 
+  function configuredTimezone() {
+    return state.data?.campConfig?.timezone || "Asia/Shanghai";
+  }
+
   function render(data) {
     state.data = data;
+    document.documentElement.dataset.timezone =
+      data.campConfig?.timezone || "Asia/Shanghai";
     const siteName = data.siteName || "明日之后“愿”营地助手";
     document.title = window.MrzhI18n.t(siteName);
     setText("site-name", window.MrzhI18n.t(siteName));

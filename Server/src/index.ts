@@ -62,6 +62,7 @@ import { buildVoteSummary, enqueueTask } from "./tasks";
 import {
   nextTechnologyTargetDate,
   weekdayForDateKey,
+  zonedDateTimeToIso,
   zonedDateKey,
   zonedParts
 } from "./time";
@@ -649,11 +650,15 @@ async function handleAdminApi(
     if (!applicationId || !action) return problem("申请不存在", 404);
     const body = await readJsonObject(request, 16_000);
     try {
+      const expiry =
+        action === "approve"
+          ? await resolveIdentityExpiry(env, body.permanent, body.expiresOn)
+          : null;
       const result = action === "approve"
         ? await approveIdentityApplication(env, {
           id: applicationId,
-          permanent: body.permanent,
-          expiresAt: body.expiresAt,
+          permanent: expiry?.permanent,
+          expiresAt: expiry?.expiresAt,
           reviewedBy: session.email
         })
         : await rejectIdentityApplication(env, {
@@ -679,13 +684,18 @@ async function handleAdminApi(
   if (path === "/api/admin/identity-codes" && method === "POST") {
     try {
       const body = await readJsonObject(request, 16_000);
+      const expiry = await resolveIdentityExpiry(
+        env,
+        body.permanent,
+        body.expiresOn
+      );
       return json(
         await createManualIdentityCode(env, {
           playerName: body.playerName,
           email: body.email,
           locale: body.locale,
-          permanent: body.permanent,
-          expiresAt: body.expiresAt,
+          permanent: expiry.permanent,
+          expiresAt: expiry.expiresAt,
           createdBy: session.email
         }),
         201
@@ -701,11 +711,16 @@ async function handleAdminApi(
     if (!codeId) return problem("识别码不存在", 404);
     try {
       const body = await readJsonObject(request, 16_000);
+      const expiry = await resolveIdentityExpiry(
+        env,
+        body.permanent,
+        body.expiresOn
+      );
       await updateIdentityCode(env, {
         id: codeId,
         status: body.status,
-        permanent: body.permanent,
-        expiresAt: body.expiresAt
+        permanent: expiry.permanent,
+        expiresAt: expiry.expiresAt
       });
       return json({ ok: true });
     } catch (error) {
@@ -725,8 +740,16 @@ async function handleAdminApi(
   if (path === "/api/admin/temp-keys" && method === "POST") {
     const body = await readJsonObject(request, 32_000);
     const name = boundedText(body.name, "name", 80);
-    const expiresAt = boundedText(body.expiresAt, "expiresAt", 40);
-    const expiry = new Date(expiresAt);
+    const expiresLocal = boundedText(body.expiresLocal, "expiresLocal", 40);
+    const [expiresOn = "", expiresClock = ""] = expiresLocal.split("T");
+    const bundle = await getConfigBundle(env);
+    const expiry = new Date(
+      zonedDateTimeToIso(
+        expiresOn,
+        expiresClock,
+        bundle.campConfig.timezone
+      )
+    );
     const now = Date.now();
     if (
       Number.isNaN(expiry.getTime()) ||
@@ -1078,6 +1101,24 @@ async function handleAgentApi(
     return json({ ok: true });
   }
   return problem("Not found", 404, "not_found");
+}
+
+async function resolveIdentityExpiry(
+  env: Env,
+  permanent: unknown,
+  expiresOn: unknown
+): Promise<{ permanent: boolean; expiresAt: string | null }> {
+  if (permanent === true) return { permanent: true, expiresAt: null };
+  const date = boundedText(expiresOn, "expiresOn", 10);
+  const bundle = await getConfigBundle(env);
+  return {
+    permanent: false,
+    expiresAt: zonedDateTimeToIso(
+      date,
+      bundle.campConfig.gameResetTime,
+      bundle.campConfig.timezone
+    )
+  };
 }
 
 async function buildPublicBootstrap(

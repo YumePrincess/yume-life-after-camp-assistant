@@ -10,6 +10,7 @@ import {
   isIdentityRenewalWindowOpen,
   isSequentialIdentityCode
 } from "./identity-code-utils";
+import { getConfigBundle } from "./db";
 export { isSequentialIdentityCode } from "./identity-code-utils";
 
 export interface IdentityApplicationRow {
@@ -59,6 +60,29 @@ export type IdentityVerification =
 
 function now(): string {
   return new Date().toISOString();
+}
+
+async function localizedExpiry(
+  env: Env,
+  value: string | null | undefined,
+  locale: SupportedLocale
+): Promise<string | null> {
+  if (!value) return null;
+  const bundle = await getConfigBundle(env);
+  return new Intl.DateTimeFormat(
+    {
+      "zh-cn": "zh-CN",
+      "zh-tw": "zh-TW",
+      en: "en",
+      fr: "fr",
+      ja: "ja"
+    }[locale],
+    {
+      timeZone: bundle.campConfig.timezone,
+      dateStyle: "long",
+      timeStyle: "short"
+    }
+  ).format(new Date(value));
 }
 
 function uuid(): string {
@@ -333,7 +357,7 @@ export async function recoverIdentityCode(
     applicationNumber: code.application_number,
     playerName: code.player_name,
     code: await decryptSecret(env, "identity-code-value", code.code_encrypted),
-    expiresAt: code.expires_at,
+    expiresAt: await localizedExpiry(env, code.expires_at, code.locale),
     expired
   });
   await sendMail(env, { to: code.email, ...message });
@@ -411,7 +435,11 @@ async function sendApplicationMail(
     applicationNumber: application.application_number,
     playerName: application.player_name,
     ...(plaintext ? { code: plaintext } : {}),
-    expiresAt: input.expiresAt,
+    expiresAt: await localizedExpiry(
+      env,
+      input.expiresAt,
+      normalizeLocale(application.locale)
+    ),
     reason: input.reason
   });
   await sendMail(env, { to: application.email, ...message });
