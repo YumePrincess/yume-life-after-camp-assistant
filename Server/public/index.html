@@ -120,7 +120,10 @@
             申请身份识别码
           </button>
           <button id="renew-identity-code" class="button button-quiet" type="button">
-            申请延长有效期
+            申请延长识别码有效期
+          </button>
+          <button id="reissue-identity-code" class="button button-quiet" type="button">
+            申请重新发行识别码
           </button>
           <button id="recover-identity-code" class="button button-quiet" type="button">
             忘记识别码
@@ -191,11 +194,23 @@
             <span>申请编号</span>
             <input id="identity-recovery-number" maxlength="40" />
           </label>
-          <label class="field">
+          <label id="identity-reissue-code-field" class="field" hidden>
+            <span>旧身份识别码</span>
+            <input id="identity-reissue-code" inputmode="numeric" maxlength="8" />
+          </label>
+          <label id="identity-renewal-application-number-field" class="field" hidden>
+            <span>申请编号</span>
+            <input id="identity-renewal-application-number" maxlength="40" />
+          </label>
+          <label id="identity-renewal-code-field" class="field" hidden>
+            <span>身份识别码</span>
+            <input id="identity-renewal-code" inputmode="numeric" maxlength="8" />
+          </label>
+          <label id="identity-email-field" class="field">
             <span id="identity-email-label">接收识别码邮箱</span>
             <input id="identity-email" type="email" maxlength="254" />
           </label>
-          <label class="field">
+          <label id="identity-player-name-field" class="field">
             <span id="identity-player-name-label">玩家名称</span>
             <input id="identity-player-name" maxlength="80" />
           </label>
@@ -211,6 +226,16 @@
           <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
           <li>找回的识别码将发送到申请时预留的邮箱，如果您更换了邮箱，请联系市长人工处理。</li>
         </ol>
+        <ol id="identity-reissue-rules" class="identity-rules" hidden>
+          <li>申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。</li>
+          <li>在识别码被盗用等情况下建议立即申请重新发行识别码。</li>
+          <li>新发行的识别码的有效期以审批为准。</li>
+          <li>申请重新发行识别码请输入玩家名称、申请时预留的邮箱、旧识别码的其一。</li>
+          <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
+        </ol>
+        <ol id="identity-renewal-lookup-rules" class="identity-rules" hidden>
+          <li>填写申请编号或身份识别码任一项，然后核对原申请信息。</li>
+        </ol>
         <div class="action-row">
           <button id="submit-identity-application" class="button button-primary" type="submit">
             提交申请
@@ -225,6 +250,17 @@
         <p class="eyebrow">TECHNOLOGY VOTE</p>
         <h2>投票成功</h2>
         <p id="vote-success-expiry" class="application-number"></p>
+        <button class="button button-primary" value="close">关闭</button>
+      </form>
+    </dialog>
+    <dialog id="vote-error-dialog">
+      <form method="dialog" class="dialog-card vote-success-card">
+        <p class="eyebrow">TECHNOLOGY VOTE</p>
+        <h2 id="vote-error-title">投票未提交</h2>
+        <p id="vote-error-message" class="application-number"></p>
+        <button id="vote-error-renew" class="button button-quiet" type="button" hidden>
+          申请延长识别码有效期
+        </button>
         <button class="button button-primary" value="close">关闭</button>
       </form>
     </dialog>

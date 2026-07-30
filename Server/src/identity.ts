@@ -7,6 +7,8 @@ import {
   type SupportedLocale
 } from "./mailer";
 import {
+  canUseExpiredRenewalGrace,
+  isIdentityCodeExpired,
   isIdentityRenewalWindowOpen,
   isSequentialIdentityCode
 } from "./identity-code-utils";
@@ -16,7 +18,7 @@ export { isSequentialIdentityCode } from "./identity-code-utils";
 export interface IdentityApplicationRow {
   id: string;
   application_number: string;
-  request_type: "new" | "renewal";
+  request_type: "new" | "renewal" | "reissue";
   email: string;
   player_name: string;
   locale: SupportedLocale;
@@ -201,12 +203,18 @@ export async function verifyIdentityCode(
   if (code.status === "disabled") {
     return { ok: false, reason: "disabled", canRenew: false };
   }
-  const expired = Boolean(code.expires_at && Date.parse(code.expires_at) <= Date.now());
+  const expired = isIdentityCodeExpired(code.expires_at);
   if (!expired) return { ok: true, code, grace: false };
   const application = await applicationForCode(env, code);
   const pendingRenewal =
     application?.request_type === "renewal" && application.status === "pending";
-  if (pendingRenewal && !code.renewal_grace_vote_used_at) {
+  if (
+    canUseExpiredRenewalGrace({
+      expiresAt: code.expires_at,
+      pendingRenewal,
+      graceVoteUsedAt: code.renewal_grace_vote_used_at
+    })
+  ) {
     if (!options.consumeRenewalGrace) return { ok: true, code, grace: true };
     const result = await env.DB.prepare(
       `UPDATE identity_codes SET renewal_grace_vote_used_at = ?, updated_at = ?
@@ -224,9 +232,52 @@ export async function verifyIdentityCode(
   };
 }
 
+async function codeAndApplicationForRenewal(
+  env: Env,
+  input: { identityCode: unknown; applicationNumber: unknown }
+): Promise<{ code: IdentityCodeRow; application: IdentityApplicationRow }> {
+  const identityCode =
+    typeof input.identityCode === "string" ? input.identityCode.trim() : "";
+  const applicationNumber =
+    typeof input.applicationNumber === "string"
+      ? input.applicationNumber.trim().slice(0, 40)
+      : "";
+  if (!identityCode && !applicationNumber) {
+    throw new Error("请填写申请编号或身份识别码");
+  }
+  let code: IdentityCodeRow | null = null;
+  let application: IdentityApplicationRow | null = null;
+  if (identityCode) {
+    code = await codeByPlaintext(env, identityCode);
+    if (!code) throw new Error("身份识别码无效");
+    application = await applicationForCode(env, code);
+  } else {
+    application = await env.DB.prepare(
+      "SELECT * FROM identity_code_applications WHERE application_number = ?"
+    )
+      .bind(applicationNumber)
+      .first<IdentityApplicationRow>();
+    if (application?.identity_code_id) {
+      code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+        .bind(application.identity_code_id)
+        .first<IdentityCodeRow>();
+    }
+  }
+  if (!code || !application) {
+    throw new Error("没有找到可延期的识别码申请记录");
+  }
+  if (
+    applicationNumber &&
+    application.application_number !== applicationNumber
+  ) {
+    throw new Error("申请编号与身份识别码不匹配");
+  }
+  return { code, application };
+}
+
 export async function renewalPreview(
   env: Env,
-  plaintext: unknown
+  input: { identityCode: unknown; applicationNumber: unknown }
 ): Promise<{
   applicationNumber: string;
   email: string;
@@ -234,14 +285,11 @@ export async function renewalPreview(
   status: string;
   canSubmit: boolean;
 }> {
-  const code = await codeByPlaintext(env, plaintext);
-  if (!code) throw new Error("身份识别码无效");
+  const { code, application } = await codeAndApplicationForRenewal(env, input);
   if (code.status === "disabled") throw new Error("身份识别码已被禁用");
   if (!isIdentityRenewalWindowOpen(code.expires_at)) {
     throw new Error("仅可在识别码有效期届满前7天内申请延期");
   }
-  const application = await applicationForCode(env, code);
-  if (!application) throw new Error("该识别码没有可延期的申请记录");
   return {
     applicationNumber: application.application_number,
     email: application.email,
@@ -255,19 +303,20 @@ export async function submitRenewal(
   env: Env,
   input: {
     identityCode: unknown;
+    applicationNumber?: unknown;
     email: unknown;
     playerName: unknown;
     locale: unknown;
   }
 ): Promise<{ applicationNumber: string; status: string; graceVoteAvailable: boolean }> {
-  const code = await codeByPlaintext(env, input.identityCode);
-  if (!code) throw new Error("身份识别码无效");
+  const { code, application } = await codeAndApplicationForRenewal(env, {
+    identityCode: input.identityCode,
+    applicationNumber: input.applicationNumber
+  });
   if (code.status === "disabled") throw new Error("身份识别码已被禁用");
   if (!isIdentityRenewalWindowOpen(code.expires_at)) {
     throw new Error("仅可在识别码有效期届满前7天内申请延期");
   }
-  const application = await applicationForCode(env, code);
-  if (!application) throw new Error("该识别码没有可延期的申请记录");
   if (application.request_type === "renewal" && application.status === "rejected") {
     throw new Error("该延期申请已被拒绝，不能再次申请");
   }
@@ -302,6 +351,131 @@ export async function submitRenewal(
     applicationNumber: application.application_number,
     status: "pending",
     graceVoteAvailable: true
+  };
+}
+
+async function codeForReissue(
+  env: Env,
+  input: {
+    identityCode: unknown;
+    email: unknown;
+    playerName: unknown;
+  }
+): Promise<IdentityCodeRow> {
+  const identityCode =
+    typeof input.identityCode === "string" ? input.identityCode.trim() : "";
+  const email = cleanEmail(input.email, false);
+  const playerName = cleanPlayerName(input.playerName, false);
+  if (!identityCode && !email && !playerName) {
+    throw new Error("请至少填写玩家名称、申请时预留邮箱或旧识别码中的一项");
+  }
+  if (identityCode) {
+    const code = await codeByPlaintext(env, identityCode);
+    if (!code) throw new Error("旧身份识别码无效");
+    if (
+      (email && code.email?.toLowerCase() !== email) ||
+      (playerName && code.player_name !== playerName)
+    ) {
+      throw new Error("填写的信息未指向同一份识别码记录");
+    }
+    return code;
+  }
+  const clauses: string[] = [];
+  const bindings: string[] = [];
+  if (email) {
+    clauses.push("lower(email) = ?");
+    bindings.push(email);
+  }
+  if (playerName) {
+    clauses.push("player_name = ?");
+    bindings.push(playerName);
+  }
+  const rows = await env.DB.prepare(
+    `SELECT * FROM identity_codes
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY updated_at DESC
+     LIMIT 2`
+  )
+    .bind(...bindings)
+    .all<IdentityCodeRow>();
+  if (!rows.results.length) throw new Error("未找到匹配的身份识别码记录");
+  if (rows.results.length > 1) {
+    throw new Error("匹配到多个识别码，请再填写另一项信息缩小范围");
+  }
+  return rows.results[0]!;
+}
+
+export async function reissuePreview(
+  env: Env,
+  input: {
+    identityCode: unknown;
+    email: unknown;
+    playerName: unknown;
+  }
+): Promise<{
+  applicationNumber: string;
+  email: string;
+  playerName: string;
+  status: string;
+  canSubmit: boolean;
+}> {
+  const code = await codeForReissue(env, input);
+  const application = await applicationForCode(env, code);
+  if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
+  return {
+    applicationNumber: application.application_number,
+    email: application.email,
+    playerName: application.player_name,
+    status: application.status,
+    canSubmit:
+      application.request_type !== "reissue" ||
+      application.status !== "pending"
+  };
+}
+
+export async function submitReissue(
+  env: Env,
+  input: {
+    identityCode: unknown;
+    email: unknown;
+    playerName: unknown;
+    locale: unknown;
+  }
+): Promise<{ applicationNumber: string; status: "pending" }> {
+  const code = await codeForReissue(env, input);
+  const application = await applicationForCode(env, code);
+  if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
+  if (
+    application.request_type === "reissue" &&
+    application.status === "pending"
+  ) {
+    return {
+      applicationNumber: application.application_number,
+      status: "pending"
+    };
+  }
+  const submittedAt = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE identity_code_applications SET
+        request_type = 'reissue', status = 'pending', locale = ?, submitted_at = ?,
+        identity_code_id = ?, reviewed_at = NULL, reviewed_by = NULL,
+        rejection_reason = NULL, email_sent_at = NULL, last_email_error = NULL
+       WHERE id = ?`
+    ).bind(
+      normalizeLocale(input.locale),
+      submittedAt,
+      code.id,
+      application.id
+    ),
+    env.DB.prepare(
+      `UPDATE identity_codes SET status = 'disabled', disabled_at = ?,
+       updated_at = ? WHERE id = ?`
+    ).bind(submittedAt, submittedAt, code.id)
+  ]);
+  return {
+    applicationNumber: application.application_number,
+    status: "pending"
   };
 }
 
@@ -431,7 +605,7 @@ async function sendApplicationMail(
   const message = identityMail({
     locale: normalizeLocale(application.locale),
     approved: input.approved,
-    renewal: application.request_type === "renewal",
+    requestType: application.request_type,
     applicationNumber: application.application_number,
     playerName: application.player_name,
     ...(plaintext ? { code: plaintext } : {}),
@@ -469,6 +643,34 @@ export async function approveIdentityApplication(
       env.DB.prepare(
         `UPDATE identity_code_applications SET status = 'approved', reviewed_at = ?,
          reviewed_by = ?, rejection_reason = NULL WHERE id = ?`
+      ).bind(reviewedAt, input.reviewedBy, application.id)
+    ]);
+    code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+      .bind(application.identity_code_id)
+      .first<IdentityCodeRow>();
+  } else if (application.request_type === "reissue") {
+    if (!application.identity_code_id) throw new Error("重新发行申请未关联识别码");
+    const generated = await generateCode(env);
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE identity_codes SET
+           code_hash = ?, code_encrypted = ?, player_name = ?, email = ?,
+           locale = ?, status = 'active', expires_at = ?, disabled_at = NULL,
+           renewal_grace_vote_used_at = NULL, updated_at = ?
+         WHERE id = ?`
+      ).bind(
+        generated.hash,
+        await encryptSecret(env, "identity-code-value", generated.code),
+        application.player_name,
+        application.email,
+        application.locale,
+        expiresAt,
+        reviewedAt,
+        application.identity_code_id
+      ),
+      env.DB.prepare(
+        `UPDATE identity_code_applications SET status = 'approved',
+         reviewed_at = ?, reviewed_by = ?, rejection_reason = NULL WHERE id = ?`
       ).bind(reviewedAt, input.reviewedBy, application.id)
     ]);
     code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
@@ -642,6 +844,66 @@ export async function listIdentityCodes(
   };
 }
 
+export async function listVoteBallotDetails(
+  env: Env,
+  pollDate: string
+): Promise<
+  Array<{
+    voterId: string;
+    identityCode: string;
+    playerName: string;
+    selections: string[];
+    votedAt: string;
+  }>
+> {
+  const rows = await env.DB.prepare(
+    `SELECT b.voter_id, b.voter_name, b.selections_json, b.updated_at,
+            c.code_encrypted
+     FROM tech_ballots b
+     LEFT JOIN identity_codes c ON c.id = b.voter_id
+     WHERE b.poll_date = ?
+     ORDER BY b.updated_at DESC`
+  )
+    .bind(pollDate)
+    .all<{
+      voter_id: string;
+      voter_name: string | null;
+      selections_json: string;
+      updated_at: string;
+      code_encrypted: string | null;
+    }>();
+  return Promise.all(
+    rows.results.map(async (row) => {
+      let identityCode = "—";
+      if (row.code_encrypted) {
+        try {
+          identityCode = await decryptSecret(
+            env,
+            "identity-code-value",
+            row.code_encrypted
+          );
+        } catch {
+          identityCode = "—";
+        }
+      }
+      let selections: string[] = [];
+      try {
+        const parsed = JSON.parse(row.selections_json);
+        if (Array.isArray(parsed)) selections = parsed.map(String);
+      } catch {
+        selections = [];
+      }
+      return {
+        voterId: row.voter_id,
+        identityCode,
+        playerName: row.voter_name?.trim() || "—",
+        selections,
+        votedAt: row.updated_at
+      };
+    })
+  );
+}
+
 export async function createManualIdentityCode(
   env: Env,
   input: {
@@ -703,6 +965,113 @@ export async function updateIdentityCode(
   )
     .bind(status, expiresAt, status === "disabled" ? now() : null, now(), input.id)
     .run();
+}
+
+export async function updateIdentityCodeInformation(
+  env: Env,
+  input: { id: string; playerName: unknown; email: unknown }
+): Promise<void> {
+  const code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+    .bind(input.id)
+    .first<IdentityCodeRow>();
+  if (!code) throw new Error("识别码不存在");
+  const playerName = cleanPlayerName(input.playerName, false) || null;
+  const email = cleanEmail(input.email, false) || null;
+  const timestamp = now();
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `UPDATE identity_codes SET player_name = ?, email = ?, updated_at = ?
+       WHERE id = ?`
+    ).bind(playerName, email, timestamp, code.id)
+  ];
+  if (code.application_id) {
+    if (!playerName || !email) {
+      throw new Error("有关联申请的识别码必须保留玩家名称和邮箱");
+    }
+    statements.push(
+      env.DB.prepare(
+        `UPDATE identity_code_applications SET player_name = ?, email = ?
+         WHERE id = ?`
+      ).bind(playerName, email, code.application_id)
+    );
+  }
+  await env.DB.batch(statements);
+}
+
+export async function reissueIdentityCode(
+  env: Env,
+  input: {
+    id: string;
+    permanent: unknown;
+    expiresAt: unknown;
+    reissuedBy: string;
+  }
+): Promise<{ emailSent: boolean; emailError: string | null }> {
+  const code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+    .bind(input.id)
+    .first<IdentityCodeRow>();
+  if (!code) throw new Error("识别码不存在");
+  if (!code.email || !code.player_name) {
+    throw new Error("重新发行前必须先补全玩家名称和邮箱");
+  }
+  const generated = await generateCode(env);
+  const expiresAt = parseExpiry(input);
+  const timestamp = now();
+  await env.DB.prepare(
+    `UPDATE identity_codes SET
+       code_hash = ?, code_encrypted = ?, status = 'active', expires_at = ?,
+       disabled_at = NULL, renewal_grace_vote_used_at = NULL, updated_at = ?,
+       created_by = ?
+     WHERE id = ?`
+  )
+    .bind(
+      generated.hash,
+      await encryptSecret(env, "identity-code-value", generated.code),
+      expiresAt,
+      timestamp,
+      input.reissuedBy,
+      code.id
+    )
+    .run();
+  const updated = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+    .bind(code.id)
+    .first<IdentityCodeRow>();
+  if (!updated) throw new Error("重新发行识别码失败");
+  const application = code.application_id
+    ? await env.DB.prepare("SELECT * FROM identity_code_applications WHERE id = ?")
+        .bind(code.application_id)
+        .first<IdentityApplicationRow>()
+    : null;
+  const mailApplication: IdentityApplicationRow = {
+    id: application?.id ?? "",
+    application_number:
+      application?.application_number ?? `MANUAL-${code.id.slice(0, 8)}`,
+    request_type: "reissue",
+    email: code.email,
+    player_name: code.player_name,
+    locale: code.locale,
+    status: "approved",
+    identity_code_id: code.id,
+    submitted_at: application?.submitted_at ?? code.created_at,
+    reviewed_at: timestamp,
+    reviewed_by: input.reissuedBy,
+    rejection_reason: null,
+    email_sent_at: null,
+    last_email_error: null
+  };
+  try {
+    await sendApplicationMail(env, mailApplication, {
+      approved: true,
+      code: updated,
+      expiresAt
+    });
+    await recordMailResult(env, application?.id ?? null, code.id, null);
+    return { emailSent: true, emailError: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await recordMailResult(env, application?.id ?? null, code.id, message);
+    return { emailSent: false, emailError: message };
+  }
 }
 
 export async function resendIdentityCode(env: Env, id: string): Promise<void> {

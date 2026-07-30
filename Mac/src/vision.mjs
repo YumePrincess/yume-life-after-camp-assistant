@@ -79,7 +79,7 @@ export class Vision {
     }
   }
 
-  async extractTableRows(imagePath, definition, label, signal) {
+  async extractTableRows(imagePath, definition, label, signal, options = {}) {
     const columnKeys = definition.columns.map((column) => column.key);
     const isActivity =
       columnKeys.length === 2 &&
@@ -117,7 +117,13 @@ export class Vision {
       "roommateName"
     ].every((key) => columnKeys.includes(key));
     if (isMemberDetails) {
-      return this.#extractMemberRows(imagePath, definition, label, signal);
+      return this.#extractMemberRows(
+        imagePath,
+        definition,
+        label,
+        signal,
+        options
+      );
     }
     return [];
   }
@@ -284,7 +290,13 @@ export class Vision {
     }
   }
 
-  async #extractMemberRows(imagePath, definition, label, signal) {
+  async #extractMemberRows(
+    imagePath,
+    definition,
+    label,
+    signal,
+    options = {}
+  ) {
     let observations = await this.ocrRegion(
       imagePath,
       definition.region,
@@ -383,8 +395,21 @@ export class Vision {
         )
       };
     });
+    const nativeNameCounts = new Map();
+    for (const row of rowData) {
+      const key = comparableVisionName(row.identity.name);
+      if (key) nativeNameCounts.set(key, (nativeNameCounts.get(key) || 0) + 1);
+    }
+    const forceMemberAdvisor = Boolean(options.forceMemberAdvisor);
     let advisedByRow = new Map();
-    if (rowData.some((row) => !row.identity.name)) {
+    if (
+      forceMemberAdvisor ||
+      rowData.some(
+        (row) =>
+          !row.identity.name ||
+          nativeNameCounts.get(comparableVisionName(row.identity.name)) > 1
+      )
+    ) {
       const cropPath = resolve(
         this.snapshotDir,
         `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-member-crop.png`
@@ -428,8 +453,20 @@ export class Vision {
     return rowData
       .map(({ items, identity }, index) => {
         const ai = advisedByRow.get(index + 1) || {};
+        const nativeName = identity.name;
+        const nativeNameDuplicated =
+          nativeNameCounts.get(comparableVisionName(nativeName)) > 1;
+        const advisedName = cleanModelText(ai.name);
         return {
-          name: identity.name || cleanModelText(ai.name),
+          name:
+            (
+              forceMemberAdvisor ||
+              !nativeName ||
+              nativeNameDuplicated
+            ) &&
+            advisedName
+              ? advisedName
+              : nativeName,
           campTitle:
             identity.campTitle || cleanModelText(ai.campTitle),
           profession:
@@ -703,6 +740,15 @@ function inferMemberIdentity(items) {
 function cleanModelText(value) {
   const text = String(value || "").trim();
   return /^(?:0|null|none|无)$/i.test(text) ? "" : text;
+}
+
+function comparableVisionName(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^\p{L}\p{N}]/gu, "");
 }
 
 function medianNumber(values) {

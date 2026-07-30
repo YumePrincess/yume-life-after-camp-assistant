@@ -279,9 +279,24 @@ export async function listMembers(env: Env, limit = 200): Promise<Record<string,
   const result = await env.DB.prepare(
     `SELECT id, name, profession, manor_level, roommate_name, camp_title,
             weekly_contribution, technology_points_used, material_contribution,
-            last_active_text, inactive_days, activity_captured_at, last_seen_at
+            last_seen_at
      FROM members
      ORDER BY weekly_contribution DESC, name ASC
+     LIMIT ?`
+  )
+    .bind(limit)
+    .all<Record<string, unknown>>();
+  return result.results;
+}
+
+export async function listActivityWarnings(
+  env: Env,
+  limit = 200
+): Promise<Record<string, unknown>[]> {
+  const result = await env.DB.prepare(
+    `SELECT name, last_active_text, inactive_days, captured_at
+     FROM activity_warnings
+     ORDER BY inactive_days DESC, name ASC
      LIMIT ?`
   )
     .bind(limit)
@@ -557,77 +572,33 @@ export type ActivityReconciliation = {
 };
 
 export function reconcileActivityMembers(
-  incoming: ActivityRow[],
-  masterMembers: Array<{ name: string }>
+  incoming: ActivityRow[]
 ): ActivityReconciliation {
-  const available = new Set(masterMembers.map((member) => member.name));
-  const updates: ActivityRow[] = [];
+  const updatesByName = new Map<string, ActivityRow>();
   let ignored = 0;
-  let ambiguous = 0;
 
   for (const row of incoming) {
-    const normalized = comparableMemberName(row.name);
-    const exactCandidates = masterMembers.filter(
-      (member) =>
-        available.has(member.name) &&
-        comparableMemberName(member.name) === normalized
-    );
-    let candidate: { name: string } | null = null;
-
-    if (exactCandidates.length === 1) {
-      candidate = exactCandidates[0]!;
-    } else if (exactCandidates.length > 1) {
-      ambiguous += 1;
+    const key =
+      symbolInsensitiveMemberName(row.name) || comparableMemberName(row.name);
+    if (!key) {
       ignored += 1;
       continue;
-    } else {
-      const symbolInsensitive = symbolInsensitiveMemberName(row.name);
-      const symbolCandidates = symbolInsensitive
-        ? masterMembers.filter(
-            (member) =>
-              available.has(member.name) &&
-              symbolInsensitiveMemberName(member.name) === symbolInsensitive
-          )
-        : [];
-
-      if (symbolCandidates.length === 1) {
-        candidate = symbolCandidates[0]!;
-      } else if (symbolCandidates.length > 1) {
-        ambiguous += 1;
-        ignored += 1;
-        continue;
-      } else {
-        const source = symbolInsensitive || normalized;
-        const sourceLength = Array.from(source).length;
-        const fuzzyCandidates =
-          sourceLength >= 4
-            ? masterMembers.filter((member) => {
-                if (!available.has(member.name)) return false;
-                const target =
-                  symbolInsensitiveMemberName(member.name) ||
-                  comparableMemberName(member.name);
-                return (
-                  Array.from(target).length >= 4 &&
-                  levenshteinDistance(source, target) <= 1
-                );
-              })
-            : [];
-
-        if (fuzzyCandidates.length === 1) {
-          candidate = fuzzyCandidates[0]!;
-        } else {
-          if (fuzzyCandidates.length > 1) ambiguous += 1;
-          ignored += 1;
-          continue;
-        }
-      }
     }
-
-    available.delete(candidate.name);
-    updates.push({ ...row, name: candidate.name });
+    const existing = updatesByName.get(key);
+    if (existing) {
+      ignored += 1;
+      if (
+        Number(row.inactiveDays ?? -1) >
+        Number(existing.inactiveDays ?? -1)
+      ) {
+        updatesByName.set(key, row);
+      }
+      continue;
+    }
+    updatesByName.set(key, { ...row, name: row.name.trim() });
   }
 
-  return { updates, ignored, ambiguous };
+  return { updates: [...updatesByName.values()], ignored, ambiguous: 0 };
 }
 
 function symbolInsensitiveMemberName(value: string): string {
@@ -642,42 +613,32 @@ export async function updateActivitySnapshot(
     members: ActivityRow[];
   }
 ): Promise<ActivityReconciliation> {
-  const current = await env.DB.prepare(
-    "SELECT name FROM members ORDER BY name"
-  ).all<{ name: string }>();
-  const reconciliation = reconcileActivityMembers(
-    input.members,
-    current.results
-  );
-  // A non-empty OCR result with no safe roster match is a recognition failure,
-  // not proof that the current warning list became empty. Preserve the last
-  // valid snapshot so a bad scan cannot erase it.
+  const reconciliation = reconcileActivityMembers(input.members);
+  // Preserve the last valid warning snapshot when a non-empty OCR payload
+  // cannot produce even one self-contained warning row.
   if (input.members.length > 0 && reconciliation.updates.length === 0) {
     return reconciliation;
   }
   const statements: D1PreparedStatement[] = [
-    env.DB.prepare(
-      `UPDATE members SET
-       last_active_text = NULL,
-       inactive_days = NULL,
-       activity_captured_at = NULL`
-    )
+    env.DB.prepare("DELETE FROM activity_warnings")
   ];
   for (const member of reconciliation.updates) {
+    const nameKey =
+      symbolInsensitiveMemberName(member.name) ||
+      comparableMemberName(member.name);
     statements.push(
       env.DB.prepare(
-        `UPDATE members SET
-           last_active_text = ?,
-           inactive_days = ?,
-           activity_captured_at = ?,
-           last_seen_at = ?
-         WHERE name = ?`
+        `INSERT INTO activity_warnings(
+           name_key, name, last_active_text, inactive_days, captured_at,
+           source_run_id
+         ) VALUES(?, ?, ?, ?, ?, ?)`
       ).bind(
+        nameKey,
+        member.name,
         member.lastActiveText,
         member.inactiveDays,
         input.capturedAt,
-        input.capturedAt,
-        member.name
+        input.runId
       )
     );
   }
@@ -760,10 +721,7 @@ export async function replaceStaffSnapshot(
     staff: Array<{ roleKey: string; roleName: string; memberName: string | null }>;
   }
 ): Promise<StaffReconciliation> {
-  const current = await env.DB.prepare(
-    "SELECT name FROM members ORDER BY name"
-  ).all<{ name: string }>();
-  const reconciliation = reconcileStaffAssignments(input.staff, current.results);
+  const reconciliation = reconcileStaffAssignments(input.staff);
   if (input.staff.length > 0 && reconciliation.staff.length === 0) {
     return reconciliation;
   }
@@ -773,7 +731,7 @@ export async function replaceStaffSnapshot(
       env.DB.prepare(
       `INSERT INTO staff_assignments(
          role_key, role_name, member_id, member_name, updated_at, source_run_id
-       ) VALUES(?, ?, (SELECT id FROM members WHERE name = ?), ?, ?, ?)
+       ) VALUES(?, ?, NULL, ?, ?, ?)
        ON CONFLICT(role_key) DO UPDATE SET
          role_name = excluded.role_name,
          member_id = excluded.member_id,
@@ -783,7 +741,6 @@ export async function replaceStaffSnapshot(
       ).bind(
         item.roleKey,
         item.roleName,
-        item.memberName,
         item.memberName,
         input.capturedAt,
         input.runId
@@ -807,8 +764,7 @@ export type StaffReconciliation = {
 };
 
 export function reconcileStaffAssignments(
-  incoming: StaffRow[],
-  masterMembers: Array<{ name: string }>
+  incoming: StaffRow[]
 ): StaffReconciliation {
   const usedRoleKeys = new Set<string>();
   const usedRoleNames = new Set<string>();
@@ -830,24 +786,15 @@ export function reconcileStaffAssignments(
       ignored += 1;
       continue;
     }
-    const memberMatch = reconcileActivityMembers(
-      [{ name: row.memberName, lastActiveText: null, inactiveDays: null }],
-      masterMembers
-    );
-    if (memberMatch.updates.length !== 1) {
-      ignored += 1;
-      ambiguous += memberMatch.ambiguous;
-      continue;
-    }
-    const memberName = memberMatch.updates[0]!.name;
-    if (usedMemberNames.has(memberName)) {
+    const memberKey = symbolInsensitiveMemberName(row.memberName);
+    if (!memberKey || usedMemberNames.has(memberKey)) {
       ignored += 1;
       continue;
     }
     usedRoleKeys.add(roleKey);
     usedRoleNames.add(roleName);
-    usedMemberNames.add(memberName);
-    staff.push({ ...row, memberName });
+    usedMemberNames.add(memberKey);
+    staff.push({ ...row, memberName: row.memberName.trim() });
   }
 
   return { staff, ignored, ambiguous };

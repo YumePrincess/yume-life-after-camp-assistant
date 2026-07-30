@@ -158,6 +158,7 @@ const COPY = {
   "zh-cn": {
     approved: "身份识别码申请已通过",
     renewed: "身份识别码延期申请已通过",
+    reissued: "身份识别码重新发行申请已通过",
     rejected: "身份识别码申请未通过",
     application: "申请编号",
     player: "玩家名称",
@@ -172,6 +173,7 @@ const COPY = {
   "zh-tw": {
     approved: "身分識別碼申請已通過",
     renewed: "身分識別碼延期申請已通過",
+    reissued: "身分識別碼重新發行申請已通過",
     rejected: "身分識別碼申請未通過",
     application: "申請編號",
     player: "玩家名稱",
@@ -186,6 +188,7 @@ const COPY = {
   en: {
     approved: "Identity code application approved",
     renewed: "Identity code renewal approved",
+    reissued: "Identity code reissue approved",
     rejected: "Identity code application rejected",
     application: "Application number",
     player: "Player name",
@@ -200,6 +203,7 @@ const COPY = {
   fr: {
     approved: "Demande de code d’identité approuvée",
     renewed: "Prolongation du code d’identité approuvée",
+    reissued: "Réémission du code d’identité approuvée",
     rejected: "Demande de code d’identité refusée",
     application: "Numéro de demande",
     player: "Nom du joueur",
@@ -214,6 +218,7 @@ const COPY = {
   ja: {
     approved: "本人確認コード申請が承認されました",
     renewed: "本人確認コードの延長が承認されました",
+    reissued: "本人確認コードの再発行申請が承認されました",
     rejected: "本人確認コード申請が却下されました",
     application: "申請番号",
     player: "プレイヤー名",
@@ -230,7 +235,7 @@ const COPY = {
 export function identityMail(input: {
   locale: SupportedLocale;
   approved: boolean;
-  renewal: boolean;
+  requestType: "new" | "renewal" | "reissue";
   applicationNumber: string;
   playerName: string;
   code?: string;
@@ -239,9 +244,11 @@ export function identityMail(input: {
 }): { subject: string; text: string; html: string } {
   const copy = COPY[input.locale];
   const subject = input.approved
-    ? input.renewal
+    ? input.requestType === "renewal"
       ? copy.renewed
-      : copy.approved
+      : input.requestType === "reissue"
+        ? copy.reissued
+        : copy.approved
     : copy.rejected;
   const rows: Array<[string, string]> = [
     [copy.application, input.applicationNumber],

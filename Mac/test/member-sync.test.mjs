@@ -237,6 +237,104 @@ test("member profile pagination stops exactly at the header count", async () => 
   );
 });
 
+test("member profiles deduplicate names that differ only by decorative symbols", async () => {
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture(label) {
+          return { path: `${label}.png`, observations: [] };
+        },
+        async extractTableRows() {
+          return [
+            { name: "#愿✨", profession: "步枪兵", weeklyContribution: "100" },
+            { name: "愿", profession: "步枪兵", weeklyContribution: "100" },
+            { name: "成员二" },
+            { name: "成员三" },
+            { name: "成员四" }
+          ];
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        minimumRowsPerPage: 5,
+        stopAfterStagnantPages: 1,
+        from: { x: 1, y: 2 },
+        to: { x: 1, y: 1 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 4 }
+  );
+
+  assert.equal(rows.length, 4);
+  assert.equal(rows[0].name, "#愿✨");
+});
+
+test("conflicting data under the same OCR name triggers strengthened name recovery", async () => {
+  let recoveryCalls = 0;
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture(label) {
+          return { path: `${label}.png`, observations: [] };
+        },
+        async extractTableRows(_path, _definition, _label, _signal, options) {
+          if (options?.forceMemberAdvisor) {
+            recoveryCalls += 1;
+            return [
+              { name: "成员一", profession: "步枪兵", weeklyContribution: "100" },
+              { name: "成员壹", profession: "采集工", weeklyContribution: "200" },
+              { name: "成员二" },
+              { name: "成员三" },
+              { name: "成员四" }
+            ];
+          }
+          return [
+            { name: "成员一", profession: "步枪兵", weeklyContribution: "100" },
+            { name: "成员一", profession: "采集工", weeklyContribution: "200" },
+            { name: "成员二" },
+            { name: "成员三" },
+            { name: "成员四" }
+          ];
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        minimumRowsPerPage: 5,
+        stopAfterStagnantPages: 1,
+        from: { x: 1, y: 2 },
+        to: { x: 1, y: 1 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 5 }
+  );
+
+  assert.equal(recoveryCalls, 1);
+  assert.deepEqual(
+    rows.map((row) => row.name),
+    ["成员一", "成员壹", "成员二", "成员三", "成员四"]
+  );
+});
+
 test("staff assignments keep every role and member name unique", () => {
   assert.deepEqual(
     dedupeStaffAssignments([

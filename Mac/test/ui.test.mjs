@@ -385,6 +385,33 @@ test("destination verification walks forward only until the interaction text app
   assert.deepEqual(fixture.taps, []);
 });
 
+test("destination approach is capped at five one-second W segments", async () => {
+  const fixture = createUi({
+    fastFrames: Array.from({ length: 6 }, () => [])
+  });
+  const startedAt = Date.now();
+  const verified = await fixture.ui.verifyDestination(
+    {
+      name: "公告版",
+      approachUntilReady: true,
+      approachMaxSteps: 12,
+      readyTexts: ["查看玩法", "营地巡逻"],
+      readyRegion: { left: 1180, top: 540, right: 1580, bottom: 900 }
+    }
+  );
+  assert.equal(verified, false);
+  assert.deepEqual(
+    fixture.keys,
+    Array.from({ length: 5 }, () => "KEYCODE_W")
+  );
+  assert.ok(Date.now() - startedAt >= 5_000);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("每次 1 秒，最多 5 次")
+    )
+  );
+});
+
 test("a stable post-teleport HUD advances to W-based destination verification", async () => {
   const fixture = createUi({
     fastFrames: [
@@ -425,6 +452,36 @@ test("waitAnyText accepts accurate OCR before asking the model again", async () 
   );
 });
 
+test("open-patrol navigation clicks below the verified notice-board anchor when patrol OCR is missed", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("查看玩法", 1360, 720)],
+      [observation("困难巡逻路线", 1500, 250)]
+    ]
+  });
+  const result = await fixture.ui.clickTextsUntilAnyText({
+    clickTexts: ["营地巡逻", "交谈", "查看巡逻进度"],
+    targetTexts: ["简单巡逻路线", "普通巡逻路线", "困难巡逻路线"],
+    clickRegion: { left: 1200, top: 640, right: 1520, bottom: 1010 },
+    anchorClickFallbacks: [
+      {
+        anchorText: "查看玩法",
+        targetText: "营地巡逻",
+        offsetY: 75
+      }
+    ],
+    timeoutSeconds: 1,
+    intervalMs: 1
+  });
+  assert.equal(result.text, "困难巡逻路线");
+  assert.deepEqual(fixture.taps, [{ x: 1370, y: 805 }]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("点击其相邻的“营地巡逻”按钮")
+    )
+  );
+});
+
 test("both city-hall data tasks enter the sand table with F, never a HUD mouse click", async () => {
   for (const file of ["config.json", "config.example.json"]) {
     const config = JSON.parse(
@@ -449,6 +506,20 @@ test("both city-hall data tasks enter the sand table with F, never a HUD mouse c
     });
     assert.equal(
       config.flows.navigateToSandTable.some((action) => action.op === "tap"),
+      false
+    );
+  }
+});
+
+test("notice-board recovery accepts a stable fallback HUD without an impossible left-side text region", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    const [teleport] = config.flows.teleportNoticeBoard;
+    assert.equal(teleport.fallback.name, "中心出入口");
+    assert.equal(
+      Object.hasOwn(teleport.fallback, "readyRegion"),
       false
     );
   }

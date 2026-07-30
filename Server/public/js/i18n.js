@@ -1351,16 +1351,41 @@
       "请输入身份识别码": "Enter your identity code",
       "请输入身份识别码。": "Enter your identity code.",
       "申请身份识别码": "Apply for an identity code",
-      "申请延长有效期": "Request an extension",
       "申请延长识别码有效期": "Extend identity-code validity",
+      "填写申请编号或身份识别码任一项，然后核对原申请信息。":
+        "Enter either the application number or identity code, then verify the original application details.",
+      "下一步：核对信息": "Next: verify details",
+      "请填写申请编号或身份识别码":
+        "Enter an application number or identity code.",
+      "申请重新发行识别码": "Request code reissue",
+      "申请重新发行身份识别码": "Request identity-code reissue",
+      "请先在上方输入需要重新发行的身份识别码。":
+        "Enter the identity code to reissue in the field above first.",
+      "提交重新发行申请": "Submit reissue request",
+      "重新发行申请已提交，申请编号：{number}。旧识别码已作废。":
+        "Reissue request submitted under {number}. The old code is now invalid.",
+      "申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。":
+        "Requesting a reissue invalidates the old code and replaces it with a new one.",
+      "在识别码被盗用等情况下建议立即申请重新发行识别码。":
+        "Request a reissue immediately if the code may have been stolen.",
+      "新发行的识别码的有效期以审批为准。":
+        "The new code’s validity period is determined during approval.",
+      "申请重新发行识别码请输入玩家名称、申请时预留的邮箱、旧识别码的其一。":
+        "To request a reissue, enter at least one of: player name, email saved with the application, or old identity code.",
+      "旧身份识别码": "Old identity code",
+      "请至少填写玩家名称、申请时预留邮箱或旧识别码中的一项。":
+        "Enter at least a player name, the email saved with the application, or the old identity code.",
+      "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。":
+        "If your code was issued manually and its saved information is incomplete, contact the mayor for manual help.",
+      "投票未提交": "Vote not submitted",
       "接收识别码邮箱": "Email for receiving the code",
       "玩家名称": "Player name",
       "提交申请": "Submit application",
       "正在提交…": "Submitting…",
       "申请编号：{number}": "Application number: {number}",
       "申请已提交，申请编号：{number}。": "Application submitted. Application number: {number}.",
-      "延期申请已提交，申请编号：{number}。审批期间可使用旧码完成一次投票。":
-        "Extension submitted under {number}. You may cast one vote with the expired code while approval is pending.",
+      "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。":
+        "Extension submitted under {number}. Voting remains normal until the original expiry; after expiry, one extra vote is allowed while approval is pending.",
       "小号及非本营地成员不得申请，否则申请将被审批拒绝。":
         "Alternate accounts and non-camp members must not apply; such applications will be rejected.",
       "忘记玩家名称请查询后再来申请，填写不实信息将被审批拒绝。":
@@ -1462,16 +1487,41 @@
       "请输入身份识别码": "Saisissez votre code d’identité",
       "请输入身份识别码。": "Saisissez votre code d’identité.",
       "申请身份识别码": "Demander un code d’identité",
-      "申请延长有效期": "Demander une prolongation",
       "申请延长识别码有效期": "Prolonger la validité du code",
+      "填写申请编号或身份识别码任一项，然后核对原申请信息。":
+        "Saisissez le numéro de demande ou le code d’identité, puis vérifiez les informations de la demande d’origine.",
+      "下一步：核对信息": "Suivant : vérifier les informations",
+      "请填写申请编号或身份识别码":
+        "Saisissez un numéro de demande ou un code d’identité.",
+      "申请重新发行识别码": "Demander la réémission du code",
+      "申请重新发行身份识别码": "Demander la réémission du code d’identité",
+      "请先在上方输入需要重新发行的身份识别码。":
+        "Saisissez d’abord ci-dessus le code d’identité à réémettre.",
+      "提交重新发行申请": "Envoyer la demande de réémission",
+      "重新发行申请已提交，申请编号：{number}。旧识别码已作废。":
+        "Demande de réémission envoyée sous le numéro {number}. L’ancien code est désormais invalide.",
+      "申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。":
+        "Une demande de réémission invalide l’ancien code et le remplace par un nouveau.",
+      "在识别码被盗用等情况下建议立即申请重新发行识别码。":
+        "Demandez immédiatement une réémission si le code a pu être volé.",
+      "新发行的识别码的有效期以审批为准。":
+        "La validité du nouveau code est définie lors de l’approbation.",
+      "申请重新发行识别码请输入玩家名称、申请时预留的邮箱、旧识别码的其一。":
+        "Pour demander une réémission, saisissez au moins le nom du joueur, l’e-mail enregistré ou l’ancien code.",
+      "旧身份识别码": "Ancien code d’identité",
+      "请至少填写玩家名称、申请时预留邮箱或旧识别码中的一项。":
+        "Saisissez au moins le nom du joueur, l’e-mail enregistré ou l’ancien code.",
+      "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。":
+        "Si votre code a été émis manuellement et que les informations enregistrées sont incomplètes, contactez le maire.",
+      "投票未提交": "Vote non envoyé",
       "接收识别码邮箱": "E-mail de réception du code",
       "玩家名称": "Nom du joueur",
       "提交申请": "Envoyer la demande",
       "正在提交…": "Envoi…",
       "申请编号：{number}": "Numéro de demande : {number}",
       "申请已提交，申请编号：{number}。": "Demande envoyée. Numéro : {number}.",
-      "延期申请已提交，申请编号：{number}。审批期间可使用旧码完成一次投票。":
-        "Prolongation envoyée sous le numéro {number}. Un vote avec le code expiré est autorisé pendant l’examen.",
+      "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。":
+        "Prolongation envoyée sous le numéro {number}. Le vote reste normal jusqu’à l’expiration initiale ; après expiration, un vote supplémentaire est autorisé pendant l’examen.",
       "小号及非本营地成员不得申请，否则申请将被审批拒绝。":
         "Les comptes secondaires et les non-membres ne doivent pas postuler.",
       "忘记玩家名称请查询后再来申请，填写不实信息将被审批拒绝。":
@@ -1566,16 +1616,41 @@
       "请输入身份识别码": "本人確認コードを入力",
       "请输入身份识别码。": "本人確認コードを入力してください。",
       "申请身份识别码": "本人確認コードを申請",
-      "申请延长有效期": "有効期限を延長",
       "申请延长识别码有效期": "本人確認コードの有効期限延長",
+      "填写申请编号或身份识别码任一项，然后核对原申请信息。":
+        "申請番号または本人確認コードのいずれかを入力し、元の申請情報を確認してください。",
+      "下一步：核对信息": "次へ：情報を確認",
+      "请填写申请编号或身份识别码":
+        "申請番号または本人確認コードを入力してください。",
+      "申请重新发行识别码": "コードの再発行を申請",
+      "申请重新发行身份识别码": "本人確認コードの再発行を申請",
+      "请先在上方输入需要重新发行的身份识别码。":
+        "再発行する本人確認コードを上の欄に入力してください。",
+      "提交重新发行申请": "再発行申請を送信",
+      "重新发行申请已提交，申请编号：{number}。旧识别码已作废。":
+        "申請番号 {number} で再発行を申請しました。旧コードは無効になりました。",
+      "申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。":
+        "再発行を申請すると旧コードは無効になり、新しいコードに置き換わります。",
+      "在识别码被盗用等情况下建议立即申请重新发行识别码。":
+        "コードが盗用された可能性がある場合は、すぐに再発行を申請してください。",
+      "新发行的识别码的有效期以审批为准。":
+        "新しいコードの有効期限は審査時に決定されます。",
+      "申请重新发行识别码请输入玩家名称、申请时预留的邮箱、旧识别码的其一。":
+        "再発行申請では、プレイヤー名、登録メール、旧コードのいずれか1つ以上を入力してください。",
+      "旧身份识别码": "旧本人確認コード",
+      "请至少填写玩家名称、申请时预留邮箱或旧识别码中的一项。":
+        "プレイヤー名、登録メール、旧コードのいずれか1つ以上を入力してください。",
+      "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。":
+        "手動発行されたコードで登録情報が不十分な場合は、市長に手動対応を依頼してください。",
+      "投票未提交": "投票は送信されませんでした",
       "接收识别码邮箱": "コード受信用メールアドレス",
       "玩家名称": "プレイヤー名",
       "提交申请": "申請を送信",
       "正在提交…": "送信中…",
       "申请编号：{number}": "申請番号：{number}",
       "申请已提交，申请编号：{number}。": "申請しました。申請番号：{number}。",
-      "延期申请已提交，申请编号：{number}。审批期间可使用旧码完成一次投票。":
-        "申請番号 {number} で延長を申請しました。審査中は期限切れコードで1回だけ投票できます。",
+      "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。":
+        "申請番号 {number} で延長を申請しました。元の期限までは通常どおり投票でき、期限後は審査中に1回だけ追加投票できます。",
       "小号及非本营地成员不得申请，否则申请将被审批拒绝。":
         "サブアカウントおよび野営地外の方は申請できません。",
       "忘记玩家名称请查询后再来申请，填写不实信息将被审批拒绝。":
@@ -1670,16 +1745,41 @@
       "请输入身份识别码": "請輸入身分識別碼",
       "请输入身份识别码。": "請輸入身分識別碼。",
       "申请身份识别码": "申請身分識別碼",
-      "申请延长有效期": "申請延長有效期",
       "申请延长识别码有效期": "申請延長識別碼有效期",
+      "填写申请编号或身份识别码任一项，然后核对原申请信息。":
+        "請填寫申請編號或身分識別碼任一項，然後核對原申請資訊。",
+      "下一步：核对信息": "下一步：核對資訊",
+      "请填写申请编号或身份识别码":
+        "請填寫申請編號或身分識別碼。",
+      "申请重新发行识别码": "申請重新發行識別碼",
+      "申请重新发行身份识别码": "申請重新發行身分識別碼",
+      "请先在上方输入需要重新发行的身份识别码。":
+        "請先在上方輸入需要重新發行的身分識別碼。",
+      "提交重新发行申请": "提交重新發行申請",
+      "重新发行申请已提交，申请编号：{number}。旧识别码已作废。":
+        "重新發行申請已提交，申請編號：{number}。舊識別碼已作廢。",
+      "申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。":
+        "申請重新發行身分識別碼將作廢舊識別碼並更換新的識別碼。",
+      "在识别码被盗用等情况下建议立即申请重新发行识别码。":
+        "識別碼遭盜用等情況下，建議立即申請重新發行。",
+      "新发行的识别码的有效期以审批为准。":
+        "新發行識別碼的有效期以審批結果為準。",
+      "申请重新发行识别码请输入玩家名称、申请时预留的邮箱、旧识别码的其一。":
+        "申請重新發行識別碼，請輸入玩家名稱、申請時預留的信箱或舊識別碼其中一項。",
+      "旧身份识别码": "舊身分識別碼",
+      "请至少填写玩家名称、申请时预留邮箱或旧识别码中的一项。":
+        "請至少填寫玩家名稱、申請時預留的信箱或舊識別碼其中一項。",
+      "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。":
+        "如果您是透過人工申請的識別碼且預留資訊不詳細，請聯絡市長人工處理。",
+      "投票未提交": "投票未提交",
       "接收识别码邮箱": "接收識別碼信箱",
       "玩家名称": "玩家名稱",
       "提交申请": "提交申請",
       "正在提交…": "正在提交…",
       "申请编号：{number}": "申請編號：{number}",
       "申请已提交，申请编号：{number}。": "申請已提交，申請編號：{number}。",
-      "延期申请已提交，申请编号：{number}。审批期间可使用旧码完成一次投票。":
-        "延期申請已提交，申請編號：{number}。審批期間可使用舊碼完成一次投票。",
+      "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。":
+        "延期申請已提交，申請編號：{number}。原有效期內可正常投票；過期後審批期間可額外投票一次。",
       "小号及非本营地成员不得申请，否则申请将被审批拒绝。":
         "小號及非本營地成員不得申請，否則申請將被審批拒絕。",
       "忘记玩家名称请查询后再来申请，填写不实信息将被审批拒绝。":

@@ -19,3 +19,25 @@ export function isIdentityRenewalWindowOpen(
   const expiry = Date.parse(expiresAt);
   return Number.isFinite(expiry) && expiry <= currentTime + IDENTITY_RENEWAL_WINDOW_MS;
 }
+
+export function isIdentityCodeExpired(
+  expiresAt: string | null,
+  currentTime = Date.now()
+): boolean {
+  if (!expiresAt) return false;
+  const expiry = Date.parse(expiresAt);
+  return Number.isFinite(expiry) && expiry <= currentTime;
+}
+
+export function canUseExpiredRenewalGrace(input: {
+  expiresAt: string | null;
+  pendingRenewal: boolean;
+  graceVoteUsedAt: string | null;
+  currentTime?: number;
+}): boolean {
+  return (
+    isIdentityCodeExpired(input.expiresAt, input.currentTime) &&
+    input.pendingRenewal &&
+    !input.graceVoteUsedAt
+  );
+}

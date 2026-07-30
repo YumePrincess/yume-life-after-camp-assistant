@@ -24,6 +24,7 @@ import {
   getConfigBundle,
   getHeartbeat,
   getRun,
+  listActivityWarnings,
   listHeartbeats,
   listMembers,
   listRecentRuns,
@@ -74,12 +75,17 @@ import {
   createManualIdentityCode,
   listIdentityApplications,
   listIdentityCodes,
+  listVoteBallotDetails,
+  reissueIdentityCode,
+  reissuePreview,
   recoverIdentityCode,
   rejectIdentityApplication,
   renewalPreview,
   resendIdentityCode,
+  submitReissue,
   submitRenewal,
   updateIdentityCode,
+  updateIdentityCodeInformation,
   verifyIdentityCode
 } from "./identity";
 import {
@@ -527,20 +533,31 @@ async function handlePublicApi(
       await recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT);
       return problem(errorMessage(error), 400, "identity_renewal_unavailable");
     }
-    const valueLimited = await rejectIfValueRateLimited(
+    const renewalLookupValue = [
       body.identityCode,
+      body.applicationNumber
+    ].map((value) => String(value ?? "").trim()).join("|");
+    const valueLimited = await rejectIfValueRateLimited(
+      renewalLookupValue,
       env,
       IDENTITY_VALUE_CHECK_LIMIT,
       cors
     );
     if (valueLimited) return valueLimited;
     try {
-      return json(await renewalPreview(env, body.identityCode), 200, cors);
+      return json(
+        await renewalPreview(env, {
+          identityCode: body.identityCode,
+          applicationNumber: body.applicationNumber
+        }),
+        200,
+        cors
+      );
     } catch (error) {
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
         recordValueRateLimitAttempt(
-          body.identityCode,
+          renewalLookupValue,
           env,
           IDENTITY_VALUE_CHECK_LIMIT
         )
@@ -558,8 +575,12 @@ async function handlePublicApi(
       await recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT);
       return problem(errorMessage(error), 400, "identity_renewal_invalid");
     }
-    const valueLimited = await rejectIfValueRateLimited(
+    const renewalLookupValue = [
       body.identityCode,
+      body.applicationNumber
+    ].map((value) => String(value ?? "").trim()).join("|");
+    const valueLimited = await rejectIfValueRateLimited(
+      renewalLookupValue,
       env,
       IDENTITY_VALUE_CHECK_LIMIT,
       cors
@@ -568,6 +589,84 @@ async function handlePublicApi(
     try {
       return json(
         await submitRenewal(env, {
+          identityCode: body.identityCode,
+          applicationNumber: body.applicationNumber,
+          email: body.email,
+          playerName: body.playerName,
+          locale: body.locale
+        }),
+        200,
+        cors
+      );
+    } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
+        recordValueRateLimitAttempt(
+          renewalLookupValue,
+          env,
+          IDENTITY_VALUE_CHECK_LIMIT
+        )
+      ]);
+      return problem(errorMessage(error), 400, "identity_renewal_invalid");
+    }
+  }
+  if (path === "/api/public/identity-code-reissue-preview" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 8_000);
+    const reissueLookupValue = [
+      body.identityCode,
+      body.email,
+      body.playerName
+    ].map((value) => String(value ?? "").trim()).join("|");
+    const valueLimited = await rejectIfValueRateLimited(
+      reissueLookupValue,
+      env,
+      IDENTITY_VALUE_CHECK_LIMIT,
+      cors
+    );
+    if (valueLimited) return valueLimited;
+    try {
+      return json(
+        await reissuePreview(env, {
+          identityCode: body.identityCode,
+          email: body.email,
+          playerName: body.playerName
+        }),
+        200,
+        cors
+      );
+    } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
+        recordValueRateLimitAttempt(
+          reissueLookupValue,
+          env,
+          IDENTITY_VALUE_CHECK_LIMIT
+        )
+      ]);
+      return problem(errorMessage(error), 400, "identity_reissue_unavailable");
+    }
+  }
+  if (path === "/api/public/identity-code-reissue" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 16_000);
+    const reissueLookupValue = [
+      body.identityCode,
+      body.email,
+      body.playerName
+    ].map((value) => String(value ?? "").trim()).join("|");
+    const valueLimited = await rejectIfValueRateLimited(
+      reissueLookupValue,
+      env,
+      IDENTITY_VALUE_CHECK_LIMIT,
+      cors
+    );
+    if (valueLimited) return valueLimited;
+    try {
+      return json(
+        await submitReissue(env, {
           identityCode: body.identityCode,
           email: body.email,
           playerName: body.playerName,
@@ -580,12 +679,12 @@ async function handlePublicApi(
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
         recordValueRateLimitAttempt(
-          body.identityCode,
+          reissueLookupValue,
           env,
           IDENTITY_VALUE_CHECK_LIMIT
         )
       ]);
-      return problem(errorMessage(error), 400, "identity_renewal_invalid");
+      return problem(errorMessage(error), 400, "identity_reissue_invalid");
     }
   }
   return problem("Not found", 404, "not_found");
@@ -705,8 +804,8 @@ async function handleAdminApi(
     }
   }
   const identityCodeMatch =
-    /^\/api\/admin\/identity-codes\/([^/]+)(?:\/(resend))?$/.exec(path);
-  if (identityCodeMatch && method === "PATCH") {
+    /^\/api\/admin\/identity-codes\/([^/]+)(?:\/(resend|information|reissue))?$/.exec(path);
+  if (identityCodeMatch && !identityCodeMatch[2] && method === "PATCH") {
     const codeId = identityCodeMatch[1];
     if (!codeId) return problem("识别码不存在", 404);
     try {
@@ -727,6 +826,21 @@ async function handleAdminApi(
       return problem(errorMessage(error), 400, "identity_code_update_failed");
     }
   }
+  if (identityCodeMatch?.[2] === "information" && method === "PATCH") {
+    const codeId = identityCodeMatch[1];
+    if (!codeId) return problem("识别码不存在", 404);
+    try {
+      const body = await readJsonObject(request, 16_000);
+      await updateIdentityCodeInformation(env, {
+        id: codeId,
+        playerName: body.playerName,
+        email: body.email
+      });
+      return json({ ok: true });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_code_information_failed");
+    }
+  }
   if (identityCodeMatch?.[2] === "resend" && method === "POST") {
     const codeId = identityCodeMatch[1];
     if (!codeId) return problem("识别码不存在", 404);
@@ -735,6 +849,28 @@ async function handleAdminApi(
       return json({ sent: true });
     } catch (error) {
       return problem(errorMessage(error), 400, "identity_code_resend_failed");
+    }
+  }
+  if (identityCodeMatch?.[2] === "reissue" && method === "POST") {
+    const codeId = identityCodeMatch[1];
+    if (!codeId) return problem("识别码不存在", 404);
+    try {
+      const body = await readJsonObject(request, 16_000);
+      const expiry = await resolveIdentityExpiry(
+        env,
+        body.permanent,
+        body.expiresOn
+      );
+      return json(
+        await reissueIdentityCode(env, {
+          id: codeId,
+          permanent: expiry.permanent,
+          expiresAt: expiry.expiresAt,
+          reissuedBy: session.email
+        })
+      );
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_code_reissue_failed");
     }
   }
   if (path === "/api/admin/temp-keys" && method === "POST") {
@@ -857,8 +993,8 @@ async function handleAdminApi(
     if (!bundle.campConfig.automaticKickEnabled) {
       return problem("自动斩杀当前未开启", 409, "automatic_kick_disabled");
     }
-    const members = await listMembers(env);
-    const candidates = automaticKickCandidates(bundle, members);
+    const warnings = await listActivityWarnings(env);
+    const candidates = automaticKickCandidates(bundle, warnings);
     if (!candidates.length) return json({ run: null, candidates: [] });
     const result = await enqueueTask(env, {
       bundle,
@@ -1152,10 +1288,11 @@ async function buildPublicBootstrap(
   locale: unknown
 ): Promise<Record<string, unknown>> {
   const bundle = await getConfigBundle(env);
-  const [voteSummary, staff, members, recentRuns] = await Promise.all([
+  const [voteSummary, staff, members, warnings, recentRuns] = await Promise.all([
     buildVoteSummary(env, bundle),
     listStaff(env),
     bundle.campConfig.publicMembersEnabled ? listMembers(env) : Promise.resolve([]),
+    listActivityWarnings(env),
     listRecentRuns(env, 10)
   ]);
   return {
@@ -1172,7 +1309,7 @@ async function buildPublicBootstrap(
       voteWindowEnd: bundle.campConfig.voteWindowEnd,
       inactivityWarningDays: bundle.campConfig.inactivityWarningDays
     },
-    inactivityWarnings: members
+    inactivityWarnings: warnings
       .filter(
         (member) =>
           typeof member.inactive_days === "number" &&
@@ -1196,13 +1333,17 @@ async function buildAdminBootstrap(
   locale: unknown = "zh-cn"
 ): Promise<Record<string, unknown>> {
   const bundle = await getConfigBundle(env);
-  const [voteSummary, heartbeats, recentRuns, staff, members] = await Promise.all([
+  const [voteSummary, heartbeats, recentRuns, staff, members, warnings] = await Promise.all([
     buildVoteSummary(env, bundle),
     listHeartbeats(env),
     listRecentRuns(env, 100),
     listStaff(env),
-    listMembers(env)
+    listMembers(env),
+    listActivityWarnings(env)
   ]);
+  const voteBallots = hasPermission(session, "identity:manage")
+    ? await listVoteBallotDetails(env, voteSummary.pollDate)
+    : [];
   return {
     session: {
       email: session.email,
@@ -1222,11 +1363,12 @@ async function buildAdminBootstrap(
       }
     },
     voteSummary: localizeVoteSummary(voteSummary, locale),
+    voteBallots,
     heartbeats,
     recentRuns: recentRuns.filter(isCurrentFeatureRun),
     staffAssignments: staff,
     members,
-    autoKickCandidates: automaticKickCandidates(bundle, members),
+    autoKickCandidates: automaticKickCandidates(bundle, warnings),
     agentOnlineThresholdSeconds: Math.max(
       45,
       bundle.automationConfig.agentPolling.idleSeconds * 2 + 30

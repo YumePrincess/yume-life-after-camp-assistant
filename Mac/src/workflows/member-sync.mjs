@@ -6,7 +6,6 @@ import {
   normalizeStaffGrid,
   parseTable
 } from "../table-parser.mjs";
-import { delay } from "../process.mjs";
 
 export async function runMemberSync(context, command, _bundle, signal) {
   const contribution = await captureContribution(context, signal);
@@ -95,13 +94,13 @@ export async function runInactivitySync(context, command, bundle, signal) {
   const ambiguous = Number(result?.ambiguous) || 0;
   if (rows.length > 0 && matched === 0) {
     throw new Error(
-      "INACTIVITY_MASTER_LIST_MISSING: 斩杀预警扫描结果未能安全匹配成员资料主名单，已保留上一份有效预警；请先更新成员资料或检查 OCR"
+      "INACTIVITY_SCAN_UNREADABLE: 斩杀预警扫描结果在自身去重后为空，已保留上一份有效预警"
     );
   }
   await context.report(
     ignored ? "warning" : "info",
     "activity_done",
-    `斩杀页识别 ${rows.length} 行，已匹配更新 ${matched} 名离线达到 ${minimumInactiveDays} 天的现有成员，忽略 ${ignored} 行未确认 OCR 数据；成员总数未改变`,
+    `斩杀页识别 ${rows.length} 行，自身去重后更新 ${matched} 条离线达到 ${minimumInactiveDays} 天的独立预警，忽略 ${ignored} 条重复数据；不会写入或关联成员名单`,
     {
       recognized: rows.length,
       matched,
@@ -286,12 +285,6 @@ export async function captureProfilesAndStaff(context, signal) {
     );
   }
   await context.ui.executeFlow("openStaffPanel", {}, signal);
-  await context.report(
-    "info",
-    "staff_panel_settling",
-    "已切换到公职人员卡片，等待 5 秒使名单完整稳定后再识别"
-  );
-  await delay(5_000, signal);
   const staffFrame = await context.vision.captureAccurate(
     "camp-staff",
     signal
@@ -370,7 +363,7 @@ function checkedStaffCount(scannedStaff, result) {
   const matched = Number(result?.count) || 0;
   if (scannedStaff.length > 0 && matched === 0) {
     throw new Error(
-      "STAFF_MASTER_LIST_MISSING: 公职识别结果未能匹配最新成员资料主名单，已保留上一份有效公职数据"
+      "STAFF_SNAPSHOT_UNREADABLE: 公职识别结果在自身去重后为空，已保留上一份有效公职数据"
     );
   }
   return matched;
@@ -385,6 +378,7 @@ export async function capturePagedTable(
 ) {
   const { vision, adb, ui, report } = context;
   const byName = new Map();
+  const memberDetailsMode = label === "member-details";
   let stagnantPages = 0;
   let previousFingerprint = "";
   let previousRows = [];
@@ -450,7 +444,67 @@ export async function capturePagedTable(
         row.name &&
         !definition.headerPattern.some((value) => row.name.includes(value))
     );
-    rows = reconcilePageRows(previousRows, rows);
+    if (!memberDetailsMode) {
+      rows = reconcilePageRows(previousRows, rows);
+    }
+    if (
+      memberDetailsMode &&
+      frame?.path &&
+      hasSuspiciousMemberCollision(rows, byName)
+    ) {
+      const recoveredRows = await vision.extractTableRows(
+        frame.path,
+        definition,
+        `${label}-${page + 1}-duplicate-recovery`,
+        signal,
+        { forceMemberAdvisor: true }
+      ).catch(async (error) => {
+        await report(
+          "warning",
+          "member_details_duplicate_recovery_failed",
+          `第 ${page + 1} 页发现疑似姓名 OCR 合并，但模型强化重读失败`,
+          { reason: error.message }
+        );
+        return [];
+      });
+      const reconciledRecovery = recoveredRows.filter(
+        (row) =>
+          row.name &&
+          !definition.headerPattern.some((value) =>
+            row.name.includes(value)
+          )
+      );
+      const originalNovelty = pageNovelMemberCount(rows, byName);
+      const recoveredNovelty = pageNovelMemberCount(
+        reconciledRecovery,
+        byName
+      );
+      if (
+        reconciledRecovery.length >= rows.length &&
+        recoveredNovelty > originalNovelty
+      ) {
+        await report(
+          "info",
+          "member_details_duplicate_recovered",
+          `第 ${page + 1} 页强化重读已从疑似重名/特殊字符 OCR 合并中恢复 ${recoveredNovelty - originalNovelty} 名成员`,
+          {
+            beforeNames: rows.map((row) => row.name),
+            recoveredNames: reconciledRecovery.map((row) => row.name)
+          }
+        );
+        rows = reconciledRecovery;
+      } else {
+        await report(
+          "warning",
+          "member_details_duplicate_unresolved",
+          `第 ${page + 1} 页存在疑似重名或特殊字符姓名，强化重读未能安全增加唯一成员`,
+          {
+            names: rows.map((row) => row.name),
+            recoveredNames: reconciledRecovery.map((row) => row.name)
+          }
+        );
+      }
+    }
     options.observedParsedRows =
       (Number(options.observedParsedRows) || 0) + rows.length;
     let reachedActivityBoundary = false;
@@ -469,17 +523,26 @@ export async function capturePagedTable(
     let added = 0;
     let rejectedAfterExpectedCount = 0;
     for (const row of rows) {
-      const current = byName.get(row.name) || {};
+      const rowKey = memberDetailsMode
+        ? memberProfileNameKey(row.name)
+        : row.name;
+      if (!rowKey) continue;
+      const current = byName.get(rowKey) || {};
       if (
-        !byName.has(row.name) &&
+        !byName.has(rowKey) &&
         expectedCount !== null &&
         byName.size >= expectedCount
       ) {
         rejectedAfterExpectedCount += 1;
         continue;
       }
-      if (!byName.has(row.name)) added += 1;
-      byName.set(row.name, { ...current, ...row });
+      if (!byName.has(rowKey)) added += 1;
+      byName.set(
+        rowKey,
+        memberDetailsMode
+          ? mergeMemberProfileRows(current, row)
+          : { ...current, ...row }
+      );
     }
     await report(
       "info",
@@ -531,6 +594,83 @@ export async function capturePagedTable(
     await ui.afterAction(signal);
   }
   return [...byName.values()];
+}
+
+function hasSuspiciousMemberCollision(rows, byName) {
+  const pageRows = new Map();
+  for (const row of rows) {
+    const key = memberProfileNameKey(row.name);
+    if (!key) continue;
+    const samePage = pageRows.get(key);
+    if (samePage && memberProfileDataConflicts(samePage, row)) return true;
+    pageRows.set(key, samePage || row);
+    const existing = byName.get(key);
+    if (existing && memberProfileDataConflicts(existing, row)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function pageNovelMemberCount(rows, byName) {
+  const names = new Set(byName.keys());
+  let added = 0;
+  for (const row of rows) {
+    const key = memberProfileNameKey(row.name);
+    if (!key || names.has(key)) continue;
+    names.add(key);
+    added += 1;
+  }
+  return added;
+}
+
+function memberProfileNameKey(value) {
+  const normalized = String(value || "")
+    .trim()
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, "");
+  return normalized.replace(/[^\p{L}\p{N}]/gu, "") || normalized;
+}
+
+function memberProfileDataConflicts(left, right) {
+  return [
+    "profession",
+    "weeklyContribution",
+    "manorLevel",
+    "campTitle",
+    "roommateName"
+  ].some((key) => {
+    const leftValue = comparableMemberField(left?.[key]);
+    const rightValue = comparableMemberField(right?.[key]);
+    return leftValue && rightValue && leftValue !== rightValue;
+  });
+}
+
+function comparableMemberField(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[\s,，]/g, "");
+}
+
+function mergeMemberProfileRows(current, incoming) {
+  if (!Object.keys(current).length) return { ...incoming };
+  const currentName = String(current.name || "");
+  const incomingName = String(incoming.name || "");
+  const preferredName =
+    Array.from(incomingName).length > Array.from(currentName).length
+      ? incomingName
+      : currentName;
+  const merged = { ...current };
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value !== null && value !== undefined && String(value).trim()) {
+      merged[key] = value;
+    }
+  }
+  merged.name = preferredName || incomingName;
+  return merged;
 }
 
 export function selectActivityWarningRows(rows, minimumInactiveDays) {

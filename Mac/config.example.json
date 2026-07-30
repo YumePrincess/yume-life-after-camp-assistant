@@ -382,8 +382,8 @@
           "y": 577,
           "approachUntilReady": true,
           "approachKey": "KEYCODE_W",
-          "approachMaxSteps": 12,
-          "approachIntervalMs": 300,
+          "approachMaxSteps": 5,
+          "approachIntervalMs": 1000,
           "readyTexts": ["查看玩法", "营地巡逻", "交谈"],
           "readyRegion": { "left": 1180, "top": 300, "right": 1920, "bottom": 1050 }
         },
@@ -391,8 +391,7 @@
           "name": "中心出入口",
           "x": 280,
           "y": 337,
-          "readyTexts": ["中心出入口", "配方", "背包"],
-          "readyRegion": { "left": 0, "top": 300, "right": 650, "bottom": 1000 }
+          "readyTexts": ["配方", "背包"]
         },
         "failureTexts": ["已在目标点附近", "目标点附近", "无法传送", "传送冷却中"],
         "cooldownSeconds": 10,
@@ -404,6 +403,15 @@
         "op": "clickTextsUntilAnyText",
         "clickTexts": ["营地巡逻", "交谈", "查看巡逻进度", "查看巡逻队当前进程"],
         "targetTexts": ["简单巡逻路线", "普通巡逻路线", "困难巡逻路线"],
+        "clickRegion": { "left": 1200, "top": 640, "right": 1520, "bottom": 1010 },
+        "regionOcrScale": 2,
+        "anchorClickFallbacks": [
+          {
+            "anchorText": "查看玩法",
+            "targetText": "营地巡逻",
+            "offsetY": 75
+          }
+        ],
         "timeoutSeconds": 45,
         "intervalMs": 800
       }
@@ -484,8 +492,8 @@
           "y": 420,
           "approachUntilReady": true,
           "approachKey": "KEYCODE_W",
-          "approachMaxSteps": 12,
-          "approachIntervalMs": 300,
+          "approachMaxSteps": 5,
+          "approachIntervalMs": 1000,
           "readyTexts": ["营地数据中心", "营地管理"],
           "readyRegion": { "left": 1150, "top": 450, "right": 1650, "bottom": 900 }
         },

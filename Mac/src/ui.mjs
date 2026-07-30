@@ -314,19 +314,139 @@ export class GameUi {
 
   async clickTextsUntilAnyText(action, signal) {
     const deadline = Date.now() + this.timeoutMs(action);
+    let nextAccurateOcrAt = 0;
+    let nextRegionOcrAt = 0;
     do {
       const frame = await this.vision.capture("click-texts-until-target", signal);
-      const target = action.targetTexts
-        .map((text) => ({ text, match: this.vision.find(frame.observations, text) }))
+      let target = action.targetTexts
+        .map((text) => ({
+          text,
+          match: this.vision.find(frame.observations, text)
+        }))
         .find((item) => item.match);
       if (target) return { ...target, frame };
-      const candidate = action.clickTexts
-        .map((text) => ({ text, match: this.vision.find(frame.observations, text) }))
+      let clickObservations = frame.observations;
+      let candidate = action.clickTexts
+        .map((text) => ({
+          text,
+          match: this.findInRegion(
+            clickObservations,
+            text,
+            action.clickRegion
+          )
+        }))
         .find((item) => item.match);
+      if (
+        !candidate &&
+        action.clickRegion &&
+        frame.path &&
+        typeof this.vision.ocrRegion === "function" &&
+        Date.now() >= nextRegionOcrAt
+      ) {
+        nextRegionOcrAt = Date.now() + 2_000;
+        const regionalObservations = await this.vision.ocrRegion(
+          frame.path,
+          action.clickRegion,
+          "click-texts-until-target-region",
+          signal,
+          "accurate",
+          Number(action.regionOcrMinimumConfidence) || 0.2,
+          Number(action.regionOcrScale) || 2
+        ).catch(() => []);
+        clickObservations = [
+          ...frame.observations,
+          ...regionalObservations
+        ];
+        candidate = action.clickTexts
+          .map((text) => ({
+            text,
+            match: this.findInRegion(
+              clickObservations,
+              text,
+              action.clickRegion
+            )
+          }))
+          .find((item) => item.match);
+        if (candidate) {
+          await this.report(
+            "info",
+            "accurate_navigation_text_verified",
+            `快速 OCR 漏读后，已通过交互区域高精度 OCR 找到可点击文字：${candidate.text}`
+          );
+        }
+      }
+      if (
+        !candidate &&
+        typeof this.vision.captureAccurateTransient === "function" &&
+        Date.now() >= nextAccurateOcrAt
+      ) {
+        nextAccurateOcrAt = Date.now() + 2_000;
+        const accurate = await this.vision.captureAccurateTransient(
+          "click-texts-until-target-accurate",
+          signal
+        ).catch(() => null);
+        target = action.targetTexts
+          .map((text) => ({
+            text,
+            match: accurate
+              ? this.vision.find(accurate.observations, text)
+              : null
+          }))
+          .find((item) => item.match);
+        if (target) {
+          await this.report(
+            "info",
+            "accurate_navigation_target_verified",
+            `快速 OCR 漏读后，已通过高精度 OCR 确认目标页面：${target.text}`
+          );
+          return { ...target, frame, accurateOcr: true };
+        }
+        if (accurate) {
+          clickObservations = [
+            ...clickObservations,
+            ...accurate.observations
+          ];
+          candidate = action.clickTexts
+            .map((text) => ({
+              text,
+              match: this.findInRegion(
+                clickObservations,
+                text,
+                action.clickRegion
+              )
+            }))
+            .find((item) => item.match);
+        }
+      }
       if (candidate) {
         await this.tap(center(candidate.match), signal);
       } else {
-        await delay(action.intervalMs || 800, signal);
+        const anchoredClick = (action.anchorClickFallbacks || [])
+          .map((fallback) => ({
+            fallback,
+            anchor: this.findInRegion(
+              clickObservations,
+              fallback.anchorText,
+              action.clickRegion
+            )
+          }))
+          .find((item) => item.anchor);
+        if (anchoredClick) {
+          const anchorPoint = center(anchoredClick.anchor);
+          const point = {
+            x: anchorPoint.x + Number(anchoredClick.fallback.offsetX || 0),
+            y: anchorPoint.y + Number(anchoredClick.fallback.offsetY || 0)
+          };
+          await this.report(
+            "info",
+            "anchored_navigation_click",
+            `已确认交互菜单锚点“${anchoredClick.fallback.anchorText}”，点击其相邻的“${anchoredClick.fallback.targetText}”按钮`,
+            { point }
+          );
+          await this.tap(point, signal);
+        } else {
+          await delay(action.intervalMs || 800, signal);
+        }
       }
     } while (Date.now() < deadline);
     throw new Error(
@@ -488,9 +608,10 @@ export class GameUi {
     const approachSteps = destination.approachUntilReady
       ? Math.max(
           1,
-          Math.min(12, Number(destination.approachMaxSteps) || 8)
+          Math.min(5, Number(destination.approachMaxSteps) || 5)
         )
       : 0;
+    const approachPressMs = 1_000;
     for (let attempt = 0; attempt < Math.max(2, approachSteps + 1); attempt += 1) {
       const frame = await this.vision.capture(
         `verify-destination-${destination.name}-${attempt + 1}`,
@@ -528,10 +649,11 @@ export class GameUi {
           await this.report(
             "warning",
             "teleport_destination_approaching",
-            `已到达${destination.name}但暂未看到交互选项，正在按 W 分段前进，识别到目标文字后立即停止`,
+            `已到达${destination.name}但暂未看到交互选项，正在按 W 分段前进（每次 1 秒，最多 ${approachSteps} 次），识别到目标文字后立即停止`,
             {
               readyTexts: destination.readyTexts,
-              maximumSteps: approachSteps
+              maximumSteps: approachSteps,
+              pressDurationMs: approachPressMs
             }
           );
         }
@@ -540,7 +662,9 @@ export class GameUi {
           signal,
           { longPress: true }
         );
-        await delay(destination.approachIntervalMs || 250, signal);
+        // MuMu receives W through Android's long-press key event. Keep every
+        // movement segment at one second before re-reading the interaction UI.
+        await delay(approachPressMs, signal);
       } else {
         await delay(1_000, signal);
       }

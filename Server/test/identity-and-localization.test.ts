@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BUILT_IN_TECHNOLOGY_CATALOG } from "../src/built-in-technology-catalog";
 import {
+  canUseExpiredRenewalGrace,
+  isIdentityCodeExpired,
   isIdentityRenewalWindowOpen,
   isSequentialIdentityCode
 } from "../src/identity-code-utils";
@@ -27,6 +29,38 @@ describe("identity code rules", () => {
       isIdentityRenewalWindowOpen("2026-08-06T00:00:00.001Z", current)
     ).toBe(false);
     expect(isIdentityRenewalWindowOpen(null, current)).toBe(false);
+  });
+
+  it("uses renewal grace only after expiry, never before the original expiry", () => {
+    const current = Date.parse("2026-07-30T00:00:00.000Z");
+    const futureExpiry = "2026-07-31T00:00:00.000Z";
+    const expiredAt = "2026-07-29T23:59:59.000Z";
+
+    expect(isIdentityCodeExpired(futureExpiry, current)).toBe(false);
+    expect(
+      canUseExpiredRenewalGrace({
+        expiresAt: futureExpiry,
+        pendingRenewal: true,
+        graceVoteUsedAt: null,
+        currentTime: current
+      })
+    ).toBe(false);
+    expect(
+      canUseExpiredRenewalGrace({
+        expiresAt: expiredAt,
+        pendingRenewal: true,
+        graceVoteUsedAt: null,
+        currentTime: current
+      })
+    ).toBe(true);
+    expect(
+      canUseExpiredRenewalGrace({
+        expiresAt: expiredAt,
+        pendingRenewal: true,
+        graceVoteUsedAt: "2026-07-30T00:00:00.000Z",
+        currentTime: current
+      })
+    ).toBe(false);
   });
 });
 

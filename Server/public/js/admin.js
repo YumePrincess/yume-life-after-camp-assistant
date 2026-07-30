@@ -375,18 +375,52 @@
         })
       )
     );
+    const canInspectVoters =
+      state.bootstrap?.session?.permissions?.includes("identity:manage");
+    const ballots = state.bootstrap?.voteBallots || [];
     for (const option of summary.options || []) {
-      root.append(
-        create(
-          "span",
-          "vote-summary-item",
-          window.MrzhI18n.format("{name} · {votes} 票", {
-            name: option.name,
-            votes: option.votes
-          })
-        )
+      const item = create(
+        canInspectVoters ? "button" : "span",
+        `vote-summary-item${canInspectVoters ? " vote-summary-button" : ""}`,
+        window.MrzhI18n.format("{name} · {votes} 票", {
+          name: option.name,
+          votes: option.votes
+        })
       );
+      if (canInspectVoters) {
+        item.type = "button";
+        item.addEventListener("click", () =>
+          openVoteDetails(
+            option,
+            ballots.filter((ballot) =>
+              (ballot.selections || []).includes(option.key)
+            )
+          )
+        );
+      }
+      root.append(item);
     }
+  }
+
+  function openVoteDetails(option, ballots) {
+    byId("vote-detail-title").textContent = option.name;
+    byId("vote-detail-summary").textContent =
+      `共 ${ballots.length} 票；同一识别码重复投票时仅保留最后一次提交。`;
+    const root = byId("vote-detail-list");
+    root.replaceChildren();
+    if (!ballots.length) {
+      root.append(create("p", "empty-state", "暂无投票记录"));
+    } else {
+      for (const ballot of ballots) {
+        const item = create("article", "vote-detail-item");
+        const identity = create("code", "vote-detail-code", ballot.identityCode || "—");
+        const player = create("strong", "vote-detail-player", ballot.playerName || "—");
+        const time = create("time", "muted", formatDate(ballot.votedAt));
+        item.append(identity, player, time);
+        root.append(item);
+      }
+    }
+    byId("vote-detail-dialog").showModal();
   }
 
   function datePlusDays(dateKey, days) {
@@ -858,8 +892,7 @@
         item.name,
         item.profession,
         item.roommate_name,
-        item.camp_title,
-        item.last_active_text
+        item.camp_title
       ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(query))
@@ -876,8 +909,7 @@
         item.roommate_name || "—",
         item.weekly_contribution ?? 0,
         item.technology_points_used ?? 0,
-        item.material_contribution ?? 0,
-        item.last_active_text || "—"
+        item.material_contribution ?? 0
       ]) {
         row.append(create("td", "", String(value)));
       }
@@ -899,9 +931,6 @@
       ["本周贡献", member.weekly_contribution],
       ["使用科技点", member.technology_points_used],
       ["贡献物资", member.material_contribution],
-      ["在线情况", member.last_active_text],
-      ["离线折算天数", member.inactive_days],
-      ["活跃采集时间", formatDate(member.activity_captured_at)],
       ["资料采集时间", formatDate(member.last_seen_at)]
     ]) {
       detail.append(create("dt", "", label), create("dd", "", String(value ?? "—")));
@@ -1405,7 +1434,11 @@
     state.selectedIdentityApplication = item;
     setText(
       "identity-review-title",
-      item.request_type === "renewal" ? "审批延期申请" : "审批身份识别码"
+      item.request_type === "renewal"
+        ? "审批延期申请"
+        : item.request_type === "reissue"
+          ? "审批重新发行申请"
+          : "审批身份识别码"
     );
     const detail = byId("identity-review-detail");
     detail.replaceChildren();
@@ -1414,7 +1447,14 @@
       ["玩家名称", item.player_name],
       ["接收邮箱", item.email],
       ["邮件语言", item.locale],
-      ["申请类型", item.request_type === "renewal" ? "延期" : "新申请"]
+      [
+        "申请类型",
+        item.request_type === "renewal"
+          ? "延期"
+          : item.request_type === "reissue"
+            ? "重新发行"
+            : "新申请"
+      ]
     ]) {
       detail.append(create("dt", "", label), create("dd", "", value));
     }
@@ -1519,9 +1559,20 @@
               })
           },
           {
+            label: "修改信息",
+            icon: "events",
+            onSelect: () => editIdentityInformation(item)
+          },
+          {
             label: "修改有效期",
             icon: "events",
             onSelect: () => editIdentityExpiry(item)
+          },
+          {
+            label: "重新发行识别码",
+            icon: "events",
+            disabled: !item.email || !item.player_name,
+            onSelect: () => reissueIdentity(item)
           },
           {
             label: "重新发送",
@@ -1565,6 +1616,60 @@
       permanent: value.trim().toLowerCase() === "permanent",
       expiresOn: value.trim()
     });
+  }
+
+  async function editIdentityInformation(item) {
+    const playerName = window.prompt("输入玩家名称：", item.player_name || "");
+    if (playerName === null) return;
+    const email = window.prompt("输入接收邮箱：", item.email || "");
+    if (email === null) return;
+    try {
+      await request(
+        `/api/admin/identity-codes/${encodeURIComponent(item.id)}/information`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            playerName: playerName.trim(),
+            email: email.trim()
+          })
+        }
+      );
+      byId("save-state").textContent = "识别码资料已修改";
+      await loadIdentityCodes();
+      await loadIdentityApplications();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  async function reissueIdentity(item) {
+    const value = window.prompt(
+      "重新发行会立即作废旧识别码。请输入新识别码的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：",
+      item.expires_at ? identityExpiryDate(item.expires_at) : ""
+    );
+    if (!value) return;
+    if (!window.confirm("确认作废旧识别码、生成新识别码并发送邮件？")) return;
+    try {
+      const result = await request(
+        `/api/admin/identity-codes/${encodeURIComponent(item.id)}/reissue`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            permanent: value.trim().toLowerCase() === "permanent",
+            expiresOn:
+              value.trim().toLowerCase() === "permanent"
+                ? null
+                : value.trim()
+          })
+        }
+      );
+      byId("save-state").textContent = result.emailSent
+        ? "新识别码已发行并发送邮件"
+        : `新识别码已发行，但邮件发送失败：${result.emailError}`;
+      await loadIdentityCodes();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
   }
 
   async function resendIdentity(id, button) {

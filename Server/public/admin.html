@@ -180,7 +180,7 @@
               <div>
                 <p class="eyebrow">IDENTITY CODES</p>
                 <h1>身份识别码</h1>
-                <p class="section-intro">查看、人工发行、禁用、修改有效期或重新发送识别码。</p>
+                <p class="section-intro">查看、人工发行、修改资料、重新发行、禁用、修改有效期或重新发送识别码。</p>
               </div>
             </div>
             <form id="manual-identity-code-form" class="identity-admin-form">
@@ -451,12 +451,12 @@
             <p id="auto-kick-summary" class="muted"></p>
             <label class="search-field">
               <span class="sr-only">搜索成员</span>
-              <input id="admin-member-search" type="search" placeholder="搜索姓名、职业、同居、离线时间" />
+              <input id="admin-member-search" type="search" placeholder="搜索姓名、职业、同居" />
             </label>
             <div class="table-scroll">
               <table>
                 <thead>
-                  <tr><th>成员</th><th>职业</th><th>庄园</th><th>同居</th><th>本周贡献</th><th>科技点</th><th>物资</th><th>离线</th></tr>
+                  <tr><th>成员</th><th>职业</th><th>庄园</th><th>同居</th><th>本周贡献</th><th>科技点</th><th>物资</th></tr>
                 </thead>
                 <tbody id="admin-member-table"></tbody>
               </table>
@@ -514,6 +514,19 @@
         </div>
         <dl id="member-detail" class="member-detail"></dl>
         <button id="kick-member" class="button button-danger" type="button">踢出营地</button>
+      </form>
+    </dialog>
+    <dialog id="vote-detail-dialog">
+      <form method="dialog" class="dialog-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">VOTE DETAILS</p>
+            <h2 id="vote-detail-title">科技投票明细</h2>
+          </div>
+          <button class="button button-quiet" value="close">关闭</button>
+        </div>
+        <p id="vote-detail-summary" class="muted"></p>
+        <div id="vote-detail-list" class="vote-detail-list"></div>
       </form>
     </dialog>
     <dialog id="identity-review-dialog">

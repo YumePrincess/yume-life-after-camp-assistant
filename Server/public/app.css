@@ -59,6 +59,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   min-height: 100%;
   min-width: 320px;
@@ -1374,8 +1378,10 @@ td {
   min-width: 88px;
 }
 
-.glass-select {
+.glass-select,
+select {
   appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
   border-color: color-mix(in srgb, var(--line-strong) 82%, transparent);
   border-radius: 999px;
@@ -1405,9 +1411,30 @@ td {
   -webkit-backdrop-filter: blur(18px) saturate(145%);
 }
 
-.glass-select:hover {
+.glass-select:hover,
+select:hover {
   border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
   background-color: color-mix(in srgb, var(--panel-strong) 68%, transparent);
+}
+
+.glass-select:focus-visible,
+select:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 12px 30px color-mix(in srgb, black 14%, transparent);
+}
+
+.glass-select:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+select option {
+  color: var(--text);
+  background: var(--bg);
 }
 
 .pagination {
@@ -1784,11 +1811,63 @@ td {
 }
 
 .vote-summary-item {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
   padding: 8px 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
+  background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
   font-size: 12px;
+}
+
+.vote-summary-button {
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.vote-summary-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel-strong));
+  transform: translateY(-1px);
+}
+
+.vote-summary-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  outline-offset: 2px;
+}
+
+.vote-detail-list {
+  display: grid;
+  gap: 10px;
+}
+
+.vote-detail-item {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.5fr) minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--panel-strong) 82%, white 5%),
+      color-mix(in srgb, var(--panel) 82%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+}
+
+.vote-detail-code {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
 }
 
 .technology-editor-toolbar {
