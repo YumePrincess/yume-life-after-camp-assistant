@@ -383,6 +383,33 @@ a {
   margin-left: 0;
 }
 
+.admin-header-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-header-context .brand {
+  flex: 0 0 auto;
+}
+
+.admin-header-context #logout {
+  flex: 0 0 auto;
+}
+
+.admin-header-context #save-state {
+  min-width: 0;
+  max-width: min(34vw, 360px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-page .site-header .preference-controls {
+  margin-left: auto;
+}
+
 .public-nav {
   display: flex;
   min-width: 0;
@@ -2180,6 +2207,27 @@ dialog::backdrop {
   .site-header {
     gap: 8px;
     padding-block: 14px;
+  }
+
+  .admin-header-context {
+    flex: 1 1 calc(100% - 82px);
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .admin-header-context .brand {
+    flex: 1 1 170px;
+  }
+
+  .admin-header-context #logout {
+    min-height: 38px;
+    padding-inline: 12px;
+    font-size: 12px;
+  }
+
+  .admin-header-context #save-state {
+    flex: 1 1 100%;
+    max-width: none;
   }
 
   .brand {

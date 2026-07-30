@@ -257,7 +257,8 @@ export async function waitForGameReady(context, signal) {
     maxPages: 2,
     initialWaitMs: 7_000,
     betweenPagesMs: 1_800,
-    dismissPoint: { x: 960, y: 1135 },
+    dismissPoint: { x: 960, y: 1035 },
+    signatureTexts: ["立即前往", "前往查看", "前往活动", "活动时间"],
     readyTexts: ["配方", "背包", "营地"],
     channelReadyTexts: ["综合", "世界", "场景", "营地", "队伍"],
     channelReadyRegion: {
@@ -346,6 +347,7 @@ export async function waitForGameReady(context, signal) {
       "点击登录游戏",
       "登录游戏",
       "明日希望报",
+      ...promotions.signatureTexts,
       "加入队伍语音频道"
     ];
     const fastReadyCount = promotions.readyTexts.filter((text) =>
@@ -425,6 +427,7 @@ export async function waitForGameReady(context, signal) {
       "点击登录游戏",
       "登录游戏",
       "明日希望报",
+      ...promotions.signatureTexts,
       "加入队伍语音频道"
     ].some((text) => vision.find(frame.observations, text)) ||
       loadingProgressVisible;
@@ -652,6 +655,29 @@ export async function waitForGameReady(context, signal) {
       continue;
     }
 
+    const promotionSignature =
+      loginClicked &&
+      !ready &&
+      !channelHudReady &&
+      promotions.signatureTexts.find((text) =>
+        vision.find(frame.observations, text)
+      );
+    if (
+      promotionSignature &&
+      dismissedPages < promotions.maxPages
+    ) {
+      dismissedPages += 1;
+      await report(
+        "info",
+        "promotion_signature_dismiss",
+        `识别到登录后活动宣传页特征“${promotionSignature}”，正在点击已校准的底部安全区域关闭`,
+        { dismissedPages }
+      );
+      await ui.tap(promotions.dismissPoint, signal);
+      await ui.afterAction(signal);
+      continue;
+    }
+
     const voicePrompt = vision.find(frame.observations, "加入队伍语音频道");
     if (voicePrompt) {
       await adb.key(111, signal);
@@ -721,17 +747,25 @@ export async function waitForGameReady(context, signal) {
     if (
       loginClicked &&
       dismissedPages < promotions.maxPages &&
-      ["promotion", "promotion_newspaper"].includes(actionableAdvice?.state)
+      ["promotion", "promotion_newspaper", "prelogin_announcement"].includes(
+        actionableAdvice?.state
+      )
     ) {
-      const state = actionableAdvice.state;
+      const classifiedState = actionableAdvice.state;
+      const state =
+        classifiedState === "prelogin_announcement"
+          ? "promotion"
+          : classifiedState;
       guardedAdvice = null;
       dismissedPages += 1;
       newspaperSeen ||= state === "promotion_newspaper";
       await report(
         "info",
         "local_model_guarded_promotion",
-        "本地模型以高置信度确认登录后宣传页，正在点击已校准的底部关闭区域",
-        { state, dismissedPages }
+        classifiedState === "prelogin_announcement"
+          ? "本地模型在登录后高置信度识别到全屏公告式画面，已按活动宣传页处理并点击校准后的底部关闭区域"
+          : "本地模型以高置信度确认登录后宣传页，正在点击已校准的底部关闭区域",
+        { state, classifiedState, dismissedPages }
       );
       await ui.tap(promotions.dismissPoint, signal);
       await ui.afterAction(signal);
@@ -766,10 +800,19 @@ export async function waitForGameReady(context, signal) {
             : 1;
           lastAdviceSignature = signature;
           const guardedCandidate =
-            advisorConfig.mode === "guarded" &&
-            ["login", "promotion", "promotion_newspaper", "hud"].includes(
-              advice?.state
-            ) &&
+            (
+              advisorConfig.mode === "guarded" &&
+              ["login", "promotion", "promotion_newspaper", "hud"].includes(
+                advice?.state
+              )
+            ) ||
+            (
+              advisorConfig.mode === "guarded" &&
+              loginClicked &&
+              advice?.state === "prelogin_announcement"
+            );
+          const guardedCandidateAccepted =
+            guardedCandidate &&
             Number(advice?.confidence) >=
               Math.max(
                 0.9,
@@ -780,7 +823,7 @@ export async function waitForGameReady(context, signal) {
                 1,
                 Number(advisorConfig.consecutiveMatches) || 1
               );
-          if (guardedCandidate) {
+          if (guardedCandidateAccepted) {
             guardedAdvice = {
               ...advice,
               acceptedAt: Date.now()
@@ -820,7 +863,7 @@ export async function waitForGameReady(context, signal) {
             {
               ...advice,
               repeatedAdvice,
-              accepted: guardedCandidate,
+              accepted: guardedCandidateAccepted,
               executionMode: advisorConfig.mode
             }
           );

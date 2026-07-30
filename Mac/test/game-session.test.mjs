@@ -14,9 +14,51 @@ test("the newspaper is recognized as a promotion page", async () => {
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
     { x: 960, y: 945 },
-    { x: 960, y: 1135 }
+    { x: 960, y: 1035 }
   ]);
   assert.match(fixture.messages.at(-1), /已关闭 1 张/);
+});
+
+test("an activity call-to-action closes a post-login promotion at the calibrated safe point", async () => {
+  const fixture = createFixture([
+    ["登录游戏"],
+    ["立即前往", "活动时间"],
+    ["背包"]
+  ]);
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [
+    { x: 960, y: 945 },
+    { x: 960, y: 1035 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("活动宣传页特征")
+    )
+  );
+});
+
+test("guarded AI reclassifies a post-login announcement prediction as a promotion", async () => {
+  const fixture = createFixture(
+    [["登录游戏"], [], [], [], ["背包"]],
+    {
+      state: "prelogin_announcement",
+      action: "wait",
+      confidence: 0.97,
+      evidence: "全屏活动主视觉"
+    },
+    [],
+    "guarded"
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [
+    { x: 960, y: 945 },
+    { x: 960, y: 1035 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("全屏公告式画面")
+    )
+  );
 });
 
 test("resource update restart is handled before login and promotion dismissal", async () => {
@@ -293,7 +335,8 @@ function createFixture(
         maxPages: 2,
         initialWaitMs: 0,
         betweenPagesMs: 0,
-        dismissPoint: { x: 960, y: 1135 },
+        dismissPoint: { x: 960, y: 1035 },
+        signatureTexts: ["立即前往", "前往查看", "前往活动", "活动时间"],
         readyTexts: ["配方", "背包", "营地"],
         loadingTexts: ["加载中"],
         readyMinimumTexts: 1,

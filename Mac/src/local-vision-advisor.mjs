@@ -80,7 +80,7 @@ export class LocalVisionAdvisor {
       "分类《明日之后》中国大陆服画面。你只读、无操作权限。",
       focusRule,
       'state 只能是 "prelogin_announcement","login","resource_update","promotion","promotion_newspaper","panel","patrol_team_full","patrol_team_waiting","patrol_notice_board","patrol_route_selection","patrol_book_defense","map","hud","teleport_error","target_text_visible","loading","unknown"。',
-      "规则：底部有“点击登录游戏”=login；“希望谷地”只是服务器名。登录前覆盖中央且右上有X的大公告=prelogin_announcement，右侧小气泡不是公告。更新/下载/状态检测=resource_update。登录角色后的进度条、百分比或场景载入层即使已经透出小地图、血条、聊天或动作键，也必须判为loading，进度达到100%但进度层仍在时仍是loading；只有进度层完全消失才允许判hud。登录后时装全屏页=promotion，《明日希望报》=promotion_newspaper。4人巡逻队四个卡位均有成员=patrol_team_full，仍有“等待队员加入”空位=patrol_team_waiting；公告版/NPC的营地巡逻交互页=patrol_notice_board；简单/普通/困难巡逻路线选择页=patrol_route_selection；队伍目标明确显示“限时活动>保卫古籍”=patrol_book_defense。其他营地贡献表、成员页、队伍页、交谈页、确认框或覆盖3D场景的功能窗口=panel。右上小地图且有血条/聊天/动作键、没有进度条且没有大功能窗口遮挡=hud，左侧任务指引仍是hud。全屏地点列表或“标志查看/查看庄园”=map。明确显示目标点附近、无法传送或传送冷却=teleport_error。任务提示要求确认指定文字且画面中清晰可见任一指定文字=target_text_visible。不确定=unknown。",
+      "规则：底部有“点击登录游戏”=login；“希望谷地”只是服务器名。仅在 loginClicked=false 时，覆盖中央且右上有X的大公告=prelogin_announcement，右侧小气泡不是公告。loginClicked=true 后不得再判 prelogin_announcement：全屏活动海报、武器/时装/活动主视觉，尤其带“立即前往”“前往查看”“前往活动”、活动日期/活动时间或底部分页标记时=promotion；《明日希望报》=promotion_newspaper。更新/下载/状态检测=resource_update。登录角色后的进度条、百分比或场景载入层即使已经透出小地图、血条、聊天或动作键，也必须判为loading，进度达到100%但进度层仍在时仍是loading；只有进度层完全消失才允许判hud。4人巡逻队四个卡位均有成员=patrol_team_full，仍有“等待队员加入”空位=patrol_team_waiting；公告版/NPC的营地巡逻交互页=patrol_notice_board；简单/普通/困难巡逻路线选择页=patrol_route_selection；队伍目标明确显示“限时活动>保卫古籍”=patrol_book_defense。其他营地贡献表、成员页、队伍页、交谈页、确认框或覆盖3D场景的功能窗口=panel。右上小地图且有血条/聊天/动作键、没有进度条且没有大功能窗口遮挡=hud，左侧任务指引仍是hud。全屏地点列表或“标志查看/查看庄园”=map。明确显示目标点附近、无法传送或传送冷却=teleport_error。任务提示要求确认指定文字且画面中清晰可见任一指定文字=target_text_visible。不确定=unknown。",
       "对应特征清晰且无冲突时 confidence=0.97；基本明确但有轻微遮挡时 confidence=0.95；有明显疑问时 confidence 不得超过0.85。",
       "evidence 只写关键依据，不超过20个汉字。",
       `当前流程 loginClicked=${loginClicked}；期望状态=${expectedState || "未指定"}；任务提示=${String(taskHint).slice(0, 240) || "无"}；OCR=${JSON.stringify(ocrTexts.slice(0, 30))}。`,
@@ -408,6 +408,12 @@ function tableNumber(value) {
 
 function focusedRule(expectedState, taskHint) {
   const expected = String(expectedState || "");
+  if (
+    expected.includes("promotion") &&
+    expected.includes("hud")
+  ) {
+    return "本次重点区分登录后宣传页与HUD：全屏活动主视觉、武器/时装大图，带“立即前往”“前往查看”“前往活动”、活动日期/活动时间或底部分页标记时判promotion；报纸版式且标题为《明日希望报》时判promotion_newspaper；只有角色3D场景与小地图、血条、聊天、动作键明确可见且没有全屏海报时才判hud。";
+  }
   if (
     expected.includes("hud") &&
     expected.includes("map") &&
