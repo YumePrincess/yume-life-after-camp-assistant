@@ -19,6 +19,29 @@ test("the newspaper is recognized as a promotion page", async () => {
   assert.match(fixture.messages.at(-1), /已关闭 1 张/);
 });
 
+test("a newspaper remaining after the first tap is retried without consuming another page", async () => {
+  const fixture = createFixture([
+    ["登录游戏"],
+    ["立即前往", "活动时间"],
+    ["明日希望报"],
+    ["明日希望报"],
+    ["背包"]
+  ]);
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [
+    { x: 960, y: 945 },
+    { x: 960, y: 1035 },
+    { x: 960, y: 1035 },
+    { x: 960, y: 1035 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("第 2 次点击底部安全区域")
+    )
+  );
+  assert.match(fixture.messages.at(-1), /已关闭 2 张/);
+});
+
 test("an activity call-to-action closes a post-login promotion at the calibrated safe point", async () => {
   const fixture = createFixture([
     ["登录游戏"],
@@ -332,7 +355,8 @@ function createFixture(
       timeouts: { gameLaunchSeconds: 5 },
       adb: { loginButton: { x: 960, y: 945 } },
       postLoginPromotions: {
-        maxPages: 2,
+        maxDismissAttemptsPerPage: 4,
+        dismissRetryCooldownMs: 15_000,
         initialWaitMs: 0,
         betweenPagesMs: 0,
         dismissPoint: { x: 960, y: 1035 },

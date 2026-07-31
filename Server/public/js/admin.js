@@ -236,6 +236,23 @@
     }).format(new Date(value));
   }
 
+  function formatDateOnly(value) {
+    if (!value) return "—";
+    const locale = {
+      "zh-cn": "zh-CN",
+      "zh-tw": "zh-TW",
+      en: "en",
+      fr: "fr",
+      ja: "ja"
+    }[window.MrzhI18n.language()] || "zh-CN";
+    return new Intl.DateTimeFormat(locale, {
+      timeZone: configuredTimezone(),
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date(value));
+  }
+
   function configuredTimezone() {
     return (
       state.bootstrap?.configBundle?.campConfig?.timezone ||
@@ -1723,7 +1740,7 @@
         item.player_name || "—",
         item.email || "—",
         item.status === "disabled" ? "取消" : expired ? "已过期" : "有效",
-        item.expires_at ? formatDate(item.expires_at) : "永久有效",
+        item.expires_at ? formatDateOnly(item.expires_at) : "永久有效",
         item.last_emailed_at ? formatDate(item.last_emailed_at) : "—"
       ]) {
         row.append(create("td", "", value));
@@ -1741,7 +1758,7 @@
         event.stopPropagation();
         toggleActionMenu(operation, [
           {
-            label: item.status === "active" ? "取消" : "恢复",
+            label: item.status === "active" ? "取消识别码" : "恢复",
             icon: item.status === "active" ? "stop" : "events",
             danger: item.status === "active",
             onSelect: () =>
@@ -1759,13 +1776,13 @@
             onSelect: () => editIdentityInformation(item)
           },
           {
-            label: "重新发行识别码",
+            label: "更换识别码",
             icon: "events",
             disabled: !item.email || !item.player_name,
             onSelect: () => reissueIdentity(item)
           },
           {
-            label: "重新发送",
+            label: "重新发送识别码信息邮件",
             icon: "events",
             disabled: !item.email || !item.player_name,
             onSelect: (button) => resendIdentity(item.id, button)
@@ -1869,11 +1886,21 @@
 
   async function reissueIdentity(item) {
     const value = window.prompt(
-      "重新发行会立即作废旧识别码。请输入新识别码的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：",
+      window.MrzhI18n.t(
+        "更换会立即作废旧识别码。请输入更换后识别码的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效："
+      ),
       item.expires_at ? identityExpiryDate(item.expires_at) : ""
     );
     if (!value) return;
-    if (!window.confirm("确认作废旧识别码、生成新识别码并发送邮件？")) return;
+    if (
+      !window.confirm(
+        window.MrzhI18n.t(
+          "确认作废旧识别码、生成更换后的识别码并发送识别码信息邮件？"
+        )
+      )
+    ) {
+      return;
+    }
     try {
       const result = await request(
         `/api/admin/identity-codes/${encodeURIComponent(item.id)}/reissue`,
@@ -1889,8 +1916,11 @@
         }
       );
       byId("save-state").textContent = result.emailSent
-        ? "新识别码已发行并发送邮件"
-        : `新识别码已发行，但邮件发送失败：${result.emailError}`;
+        ? window.MrzhI18n.t("识别码已更换，并已发送识别码信息邮件")
+        : window.MrzhI18n.format(
+            "识别码已更换，但信息邮件发送失败：{error}",
+            { error: result.emailError }
+          );
       await loadIdentityCodes();
     } catch (error) {
       byId("save-state").textContent = error.message;
@@ -1904,7 +1934,9 @@
         method: "POST",
         body: "{}"
       });
-      byId("save-state").textContent = "识别码邮件已重新发送";
+      byId("save-state").textContent = window.MrzhI18n.t(
+        "识别码信息邮件已重新发送"
+      );
       await loadIdentityCodes();
     } catch (error) {
       byId("save-state").textContent = error.message;

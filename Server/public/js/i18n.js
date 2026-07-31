@@ -2114,6 +2114,79 @@
   for (const [language, additions] of Object.entries(adminKeyTranslations)) {
     Object.assign(translations[language], additions);
   }
+  const identityAdminActionTranslations = {
+    en: {
+      "取消识别码": "Cancel identity code",
+      "更换识别码": "Replace identity code",
+      "重新发送识别码信息邮件": "Resend identity-code information email",
+      "更换会立即作废旧识别码。请输入更换后识别码的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：":
+        "Replacing the code immediately invalidates the old one. Enter the replacement code’s expiry date (YYYY-MM-DD), or enter permanent for no expiry:",
+      "确认作废旧识别码、生成更换后的识别码并发送识别码信息邮件？":
+        "Invalidate the old code, generate its replacement, and send the identity-code information email?",
+      "识别码已更换，并已发送识别码信息邮件":
+        "The identity code was replaced and its information email was sent.",
+      "识别码已更换，但信息邮件发送失败：{error}":
+        "The identity code was replaced, but the information email failed: {error}",
+      "识别码信息邮件已重新发送":
+        "The identity-code information email was resent.",
+      "查看、人工发行、修改资料、更换、取消、修改有效期或重新发送识别码信息邮件。":
+        "View, manually issue, edit, replace, cancel, change expiry, or resend identity-code information emails."
+    },
+    fr: {
+      "取消识别码": "Annuler le code d’identité",
+      "更换识别码": "Remplacer le code d’identité",
+      "重新发送识别码信息邮件": "Renvoyer l’e-mail d’information du code",
+      "更换会立即作废旧识别码。请输入更换后识别码的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：":
+        "Le remplacement invalide immédiatement l’ancien code. Saisissez la date d’expiration du nouveau code (AAAA-MM-JJ), ou permanent pour une validité illimitée :",
+      "确认作废旧识别码、生成更换后的识别码并发送识别码信息邮件？":
+        "Invalider l’ancien code, générer son remplacement et envoyer l’e-mail d’information ?",
+      "识别码已更换，并已发送识别码信息邮件":
+        "Le code d’identité a été remplacé et l’e-mail d’information a été envoyé.",
+      "识别码已更换，但信息邮件发送失败：{error}":
+        "Le code a été remplacé, mais l’envoi de l’e-mail a échoué : {error}",
+      "识别码信息邮件已重新发送":
+        "L’e-mail d’information du code a été renvoyé.",
+      "查看、人工发行、修改资料、更换、取消、修改有效期或重新发送识别码信息邮件。":
+        "Consulter, émettre, modifier, remplacer, annuler, changer l’expiration ou renvoyer l’e-mail d’information du code."
+    },
+    ja: {
+      "取消识别码": "本人確認コードを取り消す",
+      "更换识别码": "本人確認コードを変更",
+      "重新发送识别码信息邮件": "本人確認コード情報メールを再送",
+      "更换会立即作废旧识别码。请输入更换后识别码的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：":
+        "変更すると旧コードは直ちに無効になります。変更後コードの有効期限（YYYY-MM-DD）を入力するか、無期限の場合は permanent と入力してください：",
+      "确认作废旧识别码、生成更换后的识别码并发送识别码信息邮件？":
+        "旧コードを無効にし、変更後コードを生成して情報メールを送信しますか？",
+      "识别码已更换，并已发送识别码信息邮件":
+        "本人確認コードを変更し、情報メールを送信しました。",
+      "识别码已更换，但信息邮件发送失败：{error}":
+        "コードは変更されましたが、情報メールの送信に失敗しました：{error}",
+      "识别码信息邮件已重新发送":
+        "本人確認コード情報メールを再送しました。",
+      "查看、人工发行、修改资料、更换、取消、修改有效期或重新发送识别码信息邮件。":
+        "本人確認コードの確認、手動発行、情報変更、変更、取消、有効期限変更、情報メール再送を行います。"
+    },
+    "zh-tw": {
+      "取消识别码": "取消身分識別碼",
+      "更换识别码": "更換身分識別碼",
+      "重新发送识别码信息邮件": "重新寄送身分識別碼資訊郵件",
+      "更换会立即作废旧识别码。请输入更换后识别码的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：":
+        "更換會立即作廢舊識別碼。請輸入更換後識別碼的有效日期（YYYY-MM-DD），或輸入 permanent 設為永久有效：",
+      "确认作废旧识别码、生成更换后的识别码并发送识别码信息邮件？":
+        "確認作廢舊識別碼、產生更換後的識別碼並寄送識別碼資訊郵件？",
+      "识别码已更换，并已发送识别码信息邮件":
+        "識別碼已更換，並已寄送識別碼資訊郵件。",
+      "识别码已更换，但信息邮件发送失败：{error}":
+        "識別碼已更換，但資訊郵件寄送失敗：{error}",
+      "识别码信息邮件已重新发送":
+        "識別碼資訊郵件已重新寄送。",
+      "查看、人工发行、修改资料、更换、取消、修改有效期或重新发送识别码信息邮件。":
+        "查看、人工發行、修改資料、更換、取消、修改有效期或重新寄送身分識別碼資訊郵件。"
+    }
+  };
+  for (const [language, additions] of Object.entries(identityAdminActionTranslations)) {
+    Object.assign(translations[language], additions);
+  }
   const identityLifecycleTranslations = {
     en: {
       "申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。":

@@ -14,6 +14,12 @@ import {
   isSequentialIdentityCode
 } from "./identity-code-utils";
 import { getConfigBundle } from "./db";
+import {
+  addDaysToDateKey,
+  nextTechnologyTargetDate,
+  zonedDateKey,
+  zonedDateTimeToIso
+} from "./time";
 export { isSequentialIdentityCode } from "./identity-code-utils";
 
 export interface IdentityApplicationRow {
@@ -63,6 +69,33 @@ export type IdentityVerification =
 
 function now(): string {
   return new Date().toISOString();
+}
+
+async function currentBallotInvalidation(
+  env: Env,
+  identityCodeId: string,
+  at = new Date()
+): Promise<D1PreparedStatement> {
+  const bundle = await getConfigBundle(env);
+  const timezone = bundle.automationConfig.timezone;
+  const pollDate = nextTechnologyTargetDate(
+    at,
+    timezone,
+    bundle.automationConfig.tasks.tech_switch.time,
+    bundle.campConfig.gameResetTime
+  );
+  const localDate = zonedDateKey(at, timezone);
+  const localDayStart = zonedDateTimeToIso(localDate, "00:00", timezone);
+  const localDayEnd = zonedDateTimeToIso(
+    addDaysToDateKey(localDate, 1),
+    "00:00",
+    timezone
+  );
+  return env.DB.prepare(
+    `DELETE FROM tech_ballots
+     WHERE voter_id = ?
+       AND (poll_date = ? OR (updated_at >= ? AND updated_at < ?))`
+  ).bind(identityCodeId, pollDate, localDayStart, localDayEnd);
 }
 
 async function localizedExpiry(
@@ -685,6 +718,11 @@ export async function submitReissue(
     excludeId: application.id
   });
   const submittedAt = now();
+  const invalidateCurrentBallot = await currentBallotInvalidation(
+    env,
+    code.id,
+    new Date(submittedAt)
+  );
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE identity_code_applications SET
@@ -701,7 +739,8 @@ export async function submitReissue(
     env.DB.prepare(
       `UPDATE identity_codes SET status = 'disabled', disabled_at = ?,
        updated_at = ? WHERE id = ?`
-    ).bind(submittedAt, submittedAt, code.id)
+    ).bind(submittedAt, submittedAt, code.id),
+    invalidateCurrentBallot
   ]);
   return {
     applicationNumber: application.application_number,
@@ -900,6 +939,11 @@ export async function approveIdentityApplication(
       excludeId: application.identity_code_id
     });
     const generated = await generateCode(env);
+    const invalidateCurrentBallot = await currentBallotInvalidation(
+      env,
+      application.identity_code_id,
+      new Date(reviewedAt)
+    );
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE identity_codes SET
@@ -920,7 +964,8 @@ export async function approveIdentityApplication(
       env.DB.prepare(
         `UPDATE identity_code_applications SET status = 'approved',
          reviewed_at = ?, reviewed_by = ?, rejection_reason = NULL WHERE id = ?`
-      ).bind(reviewedAt, input.reviewedBy, application.id)
+      ).bind(reviewedAt, input.reviewedBy, application.id),
+      invalidateCurrentBallot
     ]);
     code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
       .bind(application.identity_code_id)
@@ -1014,6 +1059,15 @@ export async function rejectIdentityApplication(
          updated_at = ? WHERE id = ?`
       ).bind(reviewedAt, reviewedAt, application.identity_code_id)
     );
+    if (application.request_type === "reissue") {
+      statements.push(
+        await currentBallotInvalidation(
+          env,
+          application.identity_code_id,
+          new Date(reviewedAt)
+        )
+      );
+    }
   }
   await env.DB.batch(statements);
   try {
@@ -1314,12 +1368,25 @@ export async function updateIdentityCode(
           if (!value || Number.isNaN(date.getTime())) throw new Error("有效期格式无效");
           return date.toISOString();
         })();
-  await env.DB.prepare(
-    `UPDATE identity_codes SET status = ?, expires_at = ?, disabled_at = ?,
-     updated_at = ? WHERE id = ?`
-  )
-    .bind(status, expiresAt, status === "disabled" ? now() : null, now(), input.id)
-    .run();
+  const timestamp = now();
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `UPDATE identity_codes SET status = ?, expires_at = ?, disabled_at = ?,
+       updated_at = ? WHERE id = ?`
+    ).bind(
+      status,
+      expiresAt,
+      status === "disabled" ? timestamp : null,
+      timestamp,
+      input.id
+    )
+  ];
+  if (status === "disabled") {
+    statements.push(
+      await currentBallotInvalidation(env, input.id, new Date(timestamp))
+    );
+  }
+  await env.DB.batch(statements);
 }
 
 export async function updateIdentityCodeInformation(
@@ -1405,22 +1472,23 @@ export async function reissueIdentityCode(
   const generated = await generateCode(env);
   const expiresAt = parseExpiry(input);
   const timestamp = now();
-  await env.DB.prepare(
-    `UPDATE identity_codes SET
-       code_hash = ?, code_encrypted = ?, status = 'active', expires_at = ?,
-       disabled_at = NULL, renewal_grace_vote_used_at = NULL, updated_at = ?,
-       created_by = ?
-     WHERE id = ?`
-  )
-    .bind(
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE identity_codes SET
+         code_hash = ?, code_encrypted = ?, status = 'active', expires_at = ?,
+         disabled_at = NULL, renewal_grace_vote_used_at = NULL, updated_at = ?,
+         created_by = ?
+       WHERE id = ?`
+    ).bind(
       generated.hash,
       await encryptSecret(env, "identity-code-value", generated.code),
       expiresAt,
       timestamp,
       input.reissuedBy,
       code.id
-    )
-    .run();
+    ),
+    await currentBallotInvalidation(env, code.id, new Date(timestamp))
+  ]);
   const updated = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
     .bind(code.id)
     .first<IdentityCodeRow>();

@@ -254,7 +254,8 @@ async function startAndEnterGame(context, signal) {
 export async function waitForGameReady(context, signal) {
   const { adb, ui, vision, report, config } = context;
   const promotions = {
-    maxPages: 2,
+    maxDismissAttemptsPerPage: 4,
+    dismissRetryCooldownMs: 15_000,
     initialWaitMs: 7_000,
     betweenPagesMs: 1_800,
     dismissPoint: { x: 960, y: 1035 },
@@ -309,6 +310,7 @@ export async function waitForGameReady(context, signal) {
   };
   let deadline = Date.now() + config.timeouts.gameLaunchSeconds * 1000;
   let dismissedPages = 0;
+  const promotionDismissAttempts = new Map();
   let newspaperSeen = false;
   let loginClicked = false;
   let loginClickedAt = 0;
@@ -337,6 +339,40 @@ export async function waitForGameReady(context, signal) {
   let readySince = 0;
   let readyStabilizingReported = false;
   let lastLoadingEvidenceAt = 0;
+  const reservePromotionDismissAttempt = (state) => {
+    const previous = promotionDismissAttempts.get(state);
+    const now = Date.now();
+    if (previous == null) {
+      dismissedPages += 1;
+      promotionDismissAttempts.set(state, {
+        attempts: 1,
+        lastAttemptAt: now
+      });
+      return 1;
+    }
+    const maxAttempts = Math.max(
+      1,
+      Number(promotions.maxDismissAttemptsPerPage) || 4
+    );
+    if (previous.attempts >= maxAttempts) {
+      const retryCooldownMs = Math.max(
+        1_000,
+        Number(promotions.dismissRetryCooldownMs) || 15_000
+      );
+      if (now - previous.lastAttemptAt < retryCooldownMs) return null;
+      promotionDismissAttempts.set(state, {
+        attempts: 1,
+        lastAttemptAt: now
+      });
+      return 1;
+    }
+    const nextAttempt = previous.attempts + 1;
+    promotionDismissAttempts.set(state, {
+      attempts: nextAttempt,
+      lastAttemptAt: now
+    });
+    return nextAttempt;
+  };
   while (Date.now() < deadline) {
     let frame = await vision.captureTransient("game-login-state", signal);
     const blockingStateTexts = [
@@ -613,6 +649,7 @@ export async function waitForGameReady(context, signal) {
       loginClickedAt = Date.now();
       lastLoginClickAt = Date.now();
       dismissedPages = 0;
+      promotionDismissAttempts.clear();
       newspaperSeen = false;
       continue;
     }
@@ -639,16 +676,23 @@ export async function waitForGameReady(context, signal) {
     const newspaper = loginClicked
       ? vision.find(frame.observations, "明日希望报")
       : null;
-    if (
-      newspaper &&
-      dismissedPages < promotions.maxPages
-    ) {
+    const newspaperDismissAttempt = newspaper
+      ? reservePromotionDismissAttempt("promotion_newspaper")
+      : null;
+    if (newspaper && newspaperDismissAttempt != null) {
       newspaperSeen = true;
-      dismissedPages += 1;
       await report(
         "info",
-        "promotion_newspaper_dismiss",
-        "识别到《明日希望报》宣传页，正在点击底部安全区域关闭"
+        newspaperDismissAttempt === 1
+          ? "promotion_newspaper_dismiss"
+          : "promotion_newspaper_dismiss_retry",
+        newspaperDismissAttempt === 1
+          ? "识别到《明日希望报》宣传页，正在点击底部安全区域关闭"
+          : `《明日希望报》仍在显示，正在第 ${newspaperDismissAttempt} 次点击底部安全区域关闭`,
+        {
+          attempt: newspaperDismissAttempt,
+          maxAttempts: promotions.maxDismissAttemptsPerPage
+        }
       );
       await ui.tap(promotions.dismissPoint, signal);
       await ui.afterAction(signal);
@@ -662,16 +706,23 @@ export async function waitForGameReady(context, signal) {
       promotions.signatureTexts.find((text) =>
         vision.find(frame.observations, text)
       );
-    if (
-      promotionSignature &&
-      dismissedPages < promotions.maxPages
-    ) {
-      dismissedPages += 1;
+    const signatureDismissAttempt = promotionSignature
+      ? reservePromotionDismissAttempt("promotion")
+      : null;
+    if (promotionSignature && signatureDismissAttempt != null) {
       await report(
         "info",
-        "promotion_signature_dismiss",
-        `识别到登录后活动宣传页特征“${promotionSignature}”，正在点击已校准的底部安全区域关闭`,
-        { dismissedPages }
+        signatureDismissAttempt === 1
+          ? "promotion_signature_dismiss"
+          : "promotion_signature_dismiss_retry",
+        signatureDismissAttempt === 1
+          ? `识别到登录后活动宣传页特征“${promotionSignature}”，正在点击已校准的底部安全区域关闭`
+          : `登录后活动宣传页仍在显示，正在第 ${signatureDismissAttempt} 次点击底部安全区域关闭`,
+        {
+          dismissedPages,
+          attempt: signatureDismissAttempt,
+          maxAttempts: promotions.maxDismissAttemptsPerPage
+        }
       );
       await ui.tap(promotions.dismissPoint, signal);
       await ui.afterAction(signal);
@@ -741,12 +792,12 @@ export async function waitForGameReady(context, signal) {
       loginClickedAt = Date.now();
       lastLoginClickAt = Date.now();
       dismissedPages = 0;
+      promotionDismissAttempts.clear();
       newspaperSeen = false;
       continue;
     }
     if (
       loginClicked &&
-      dismissedPages < promotions.maxPages &&
       ["promotion", "promotion_newspaper", "prelogin_announcement"].includes(
         actionableAdvice?.state
       )
@@ -756,20 +807,32 @@ export async function waitForGameReady(context, signal) {
         classifiedState === "prelogin_announcement"
           ? "promotion"
           : classifiedState;
-      guardedAdvice = null;
-      dismissedPages += 1;
-      newspaperSeen ||= state === "promotion_newspaper";
-      await report(
-        "info",
-        "local_model_guarded_promotion",
-        classifiedState === "prelogin_announcement"
-          ? "本地模型在登录后高置信度识别到全屏公告式画面，已按活动宣传页处理并点击校准后的底部关闭区域"
-          : "本地模型以高置信度确认登录后宣传页，正在点击已校准的底部关闭区域",
-        { state, classifiedState, dismissedPages }
-      );
-      await ui.tap(promotions.dismissPoint, signal);
-      await ui.afterAction(signal);
-      continue;
+      const dismissAttempt = reservePromotionDismissAttempt(state);
+      if (dismissAttempt != null) {
+        guardedAdvice = null;
+        newspaperSeen ||= state === "promotion_newspaper";
+        await report(
+          "info",
+          dismissAttempt === 1
+            ? "local_model_guarded_promotion"
+            : "local_model_guarded_promotion_retry",
+          dismissAttempt === 1
+            ? classifiedState === "prelogin_announcement"
+              ? "本地模型在登录后高置信度识别到全屏公告式画面，已按活动宣传页处理并点击校准后的底部关闭区域"
+              : "本地模型以高置信度确认登录后宣传页，正在点击已校准的底部关闭区域"
+            : `本地模型确认宣传页仍未关闭，正在第 ${dismissAttempt} 次点击校准后的底部关闭区域`,
+          {
+            state,
+            classifiedState,
+            dismissedPages,
+            attempt: dismissAttempt,
+            maxAttempts: promotions.maxDismissAttemptsPerPage
+          }
+        );
+        await ui.tap(promotions.dismissPoint, signal);
+        await ui.afterAction(signal);
+        continue;
+      }
     }
 
     if (
@@ -914,6 +977,7 @@ export async function waitForGameReady(context, signal) {
         loginClicked = false;
         loginClickedAt = 0;
         dismissedPages = 0;
+        promotionDismissAttempts.clear();
         newspaperSeen = false;
         continue;
       }

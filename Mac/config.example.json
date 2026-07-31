@@ -72,7 +72,8 @@
     "neverAbortHealthyTaskOnTimeout": true
   },
   "postLoginPromotions": {
-    "maxPages": 2,
+    "maxDismissAttemptsPerPage": 4,
+    "dismissRetryCooldownMs": 15000,
     "initialWaitMs": 7000,
     "betweenPagesMs": 4000,
     "dismissPoint": { "x": 960, "y": 1035 },
