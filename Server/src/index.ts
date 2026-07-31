@@ -97,6 +97,8 @@ import {
 } from "./mailer";
 import { normalizeLocale } from "./locale";
 import {
+  clearRateLimitAttempts,
+  clearValueRateLimitAttempts,
   checkRateLimit,
   checkValueRateLimit,
   recordRateLimitAttempt,
@@ -115,23 +117,23 @@ const TERMINAL_RUN_STATES = new Set<RunState>([
 
 const IDENTITY_CHECK_LIMIT: RateLimitPolicy = {
   scope: "identity-check",
-  maximum: 10,
+  maximum: 20,
   windowSeconds: 15 * 60,
-  blockSeconds: 60 * 60
+  blockSeconds: 15 * 60
 };
 
 const IDENTITY_APPLICATION_LIMIT: RateLimitPolicy = {
   scope: "identity-application",
-  maximum: 5,
-  windowSeconds: 60 * 60,
-  blockSeconds: 60 * 60
+  maximum: 10,
+  windowSeconds: 30 * 60,
+  blockSeconds: 30 * 60
 };
 
 const IDENTITY_VALUE_CHECK_LIMIT: RateLimitPolicy = {
   scope: "identity-code-value",
-  maximum: 6,
-  windowSeconds: 60 * 60,
-  blockSeconds: 6 * 60 * 60
+  maximum: 12,
+  windowSeconds: 30 * 60,
+  blockSeconds: 30 * 60
 };
 
 const PUBLIC_TEST_VOTE_LIMIT: RateLimitPolicy = {
@@ -143,17 +145,33 @@ const PUBLIC_TEST_VOTE_LIMIT: RateLimitPolicy = {
 
 const IDENTITY_RECOVERY_LIMIT: RateLimitPolicy = {
   scope: "identity-recovery",
-  maximum: 3,
-  windowSeconds: 60 * 60,
-  blockSeconds: 60 * 60
+  maximum: 10,
+  windowSeconds: 30 * 60,
+  blockSeconds: 30 * 60
 };
 
 const IDENTITY_RECOVERY_TARGET_LIMIT: RateLimitPolicy = {
   scope: "identity-recovery-target",
-  maximum: 2,
-  windowSeconds: 6 * 60 * 60,
-  blockSeconds: 6 * 60 * 60
+  maximum: 6,
+  windowSeconds: 30 * 60,
+  blockSeconds: 60 * 60
 };
+
+function identityLookupFingerprint(
+  input: Record<string, unknown>
+): string {
+  return (Object.entries(input)
+    .map(
+      ([key, value]): [string, string] => [
+        key,
+        String(value ?? "").normalize("NFKC").trim().toLowerCase()
+      ]
+    )
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .sort((left, right) => left[0].localeCompare(right[0])))
+    .map(([key, value]) => `${key}:${value}`)
+    .join("|");
+}
 
 const handler = {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -452,19 +470,17 @@ async function handlePublicApi(
       cors
     );
     if (limited) return limited;
-    await recordRateLimitAttempt(request, env, IDENTITY_APPLICATION_LIMIT);
     try {
       const body = await readJsonObject(request, 16_000);
-      return json(
-        await createIdentityApplication(env, {
+      const result = await createIdentityApplication(env, {
           email: body.email,
           playerName: body.playerName,
           locale: body.locale
-        }),
-        201,
-        cors
-      );
+        });
+      await clearRateLimitAttempts(request, env, IDENTITY_APPLICATION_LIMIT);
+      return json(result, 201, cors);
     } catch (error) {
+      await recordRateLimitAttempt(request, env, IDENTITY_APPLICATION_LIMIT);
       return problem(errorMessage(error), 400, "identity_application_invalid");
     }
   }
@@ -487,10 +503,11 @@ async function handlePublicApi(
         cors
       );
     }
-    const targetKey =
-      String(body.email ?? "").trim().toLowerCase() ||
-      String(body.applicationNumber ?? "").trim().toLowerCase() ||
-      String(body.playerName ?? "").trim().toLowerCase();
+    const targetKey = identityLookupFingerprint({
+      applicationNumber: body.applicationNumber,
+      email: body.email,
+      playerName: body.playerName
+    });
     const targetLimited = await rejectIfValueRateLimited(
       targetKey,
       env,
@@ -498,25 +515,30 @@ async function handlePublicApi(
       cors
     );
     if (targetLimited) return targetLimited;
-    await Promise.all([
-      recordRateLimitAttempt(request, env, IDENTITY_RECOVERY_LIMIT),
-      recordValueRateLimitAttempt(
-        targetKey,
-        env,
-        IDENTITY_RECOVERY_TARGET_LIMIT
-      )
-    ]);
     try {
-      return json(
-        await recoverIdentityCode(env, {
+      const result = await recoverIdentityCode(env, {
           email: body.email,
           playerName: body.playerName,
           applicationNumber: body.applicationNumber
-        }),
-        200,
-        cors
-      );
+        });
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_RECOVERY_LIMIT),
+        clearValueRateLimitAttempts(
+          targetKey,
+          env,
+          IDENTITY_RECOVERY_TARGET_LIMIT
+        )
+      ]);
+      return json(result, 200, cors);
     } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_RECOVERY_LIMIT),
+        recordValueRateLimitAttempt(
+          targetKey,
+          env,
+          IDENTITY_RECOVERY_TARGET_LIMIT
+        )
+      ]);
       return json(
         { error: errorMessage(error), code: "identity_recovery_failed" },
         400,
@@ -546,14 +568,19 @@ async function handlePublicApi(
     );
     if (valueLimited) return valueLimited;
     try {
-      return json(
-        await renewalPreview(env, {
+      const result = await renewalPreview(env, {
           identityCode: body.identityCode,
           applicationNumber: body.applicationNumber
-        }),
-        200,
-        cors
-      );
+        });
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_CHECK_LIMIT),
+        clearValueRateLimitAttempts(
+          renewalLookupValue,
+          env,
+          IDENTITY_VALUE_CHECK_LIMIT
+        )
+      ]);
+      return json(result, 200, cors);
     } catch (error) {
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
@@ -588,17 +615,22 @@ async function handlePublicApi(
     );
     if (valueLimited) return valueLimited;
     try {
-      return json(
-        await submitRenewal(env, {
+      const result = await submitRenewal(env, {
           identityCode: body.identityCode,
           applicationNumber: body.applicationNumber,
           email: body.email,
           playerName: body.playerName,
           locale: body.locale
-        }),
-        200,
-        cors
-      );
+        });
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_CHECK_LIMIT),
+        clearValueRateLimitAttempts(
+          renewalLookupValue,
+          env,
+          IDENTITY_VALUE_CHECK_LIMIT
+        )
+      ]);
+      return json(result, 200, cors);
     } catch (error) {
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
@@ -614,12 +646,18 @@ async function handlePublicApi(
   if (path === "/api/public/identity-code-reissue-preview" && method === "POST") {
     const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
     if (limited) return limited;
-    const body = await readJsonObject(request, 8_000);
-    const reissueLookupValue = [
-      body.identityCode,
-      body.email,
-      body.playerName
-    ].map((value) => String(value ?? "").trim()).join("|");
+    let body: Record<string, unknown>;
+    try {
+      body = await readJsonObject(request, 8_000);
+    } catch (error) {
+      await recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT);
+      return problem(errorMessage(error), 400, "identity_reissue_unavailable");
+    }
+    const reissueLookupValue = identityLookupFingerprint({
+      email: body.email,
+      identityCode: body.identityCode,
+      playerName: body.playerName
+    });
     const valueLimited = await rejectIfValueRateLimited(
       reissueLookupValue,
       env,
@@ -628,15 +666,20 @@ async function handlePublicApi(
     );
     if (valueLimited) return valueLimited;
     try {
-      return json(
-        await reissuePreview(env, {
+      const result = await reissuePreview(env, {
           identityCode: body.identityCode,
           email: body.email,
           playerName: body.playerName
-        }),
-        200,
-        cors
-      );
+        });
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_CHECK_LIMIT),
+        clearValueRateLimitAttempts(
+          reissueLookupValue,
+          env,
+          IDENTITY_VALUE_CHECK_LIMIT
+        )
+      ]);
+      return json(result, 200, cors);
     } catch (error) {
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
@@ -652,12 +695,18 @@ async function handlePublicApi(
   if (path === "/api/public/identity-code-reissue" && method === "POST") {
     const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
     if (limited) return limited;
-    const body = await readJsonObject(request, 16_000);
-    const reissueLookupValue = [
-      body.identityCode,
-      body.email,
-      body.playerName
-    ].map((value) => String(value ?? "").trim()).join("|");
+    let body: Record<string, unknown>;
+    try {
+      body = await readJsonObject(request, 16_000);
+    } catch (error) {
+      await recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT);
+      return problem(errorMessage(error), 400, "identity_reissue_invalid");
+    }
+    const reissueLookupValue = identityLookupFingerprint({
+      email: body.email,
+      identityCode: body.identityCode,
+      playerName: body.playerName
+    });
     const valueLimited = await rejectIfValueRateLimited(
       reissueLookupValue,
       env,
@@ -666,16 +715,21 @@ async function handlePublicApi(
     );
     if (valueLimited) return valueLimited;
     try {
-      return json(
-        await submitReissue(env, {
+      const result = await submitReissue(env, {
           identityCode: body.identityCode,
           email: body.email,
           playerName: body.playerName,
           locale: body.locale
-        }),
-        200,
-        cors
-      );
+        });
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_CHECK_LIMIT),
+        clearValueRateLimitAttempts(
+          reissueLookupValue,
+          env,
+          IDENTITY_VALUE_CHECK_LIMIT
+        )
+      ]);
+      return json(result, 200, cors);
     } catch (error) {
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),

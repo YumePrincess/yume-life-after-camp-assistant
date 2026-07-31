@@ -8,6 +8,7 @@ import {
 } from "./mailer";
 import {
   canUseExpiredRenewalGrace,
+  identityPlayerNameKey,
   isIdentityCodeExpired,
   isIdentityRenewalWindowOpen,
   isSequentialIdentityCode
@@ -109,17 +110,25 @@ async function assertNoPendingIdentityApplication(
   env: Env,
   input: { email: string; playerName: string; excludeId?: string }
 ): Promise<void> {
-  const bindings: string[] = [input.email.toLowerCase(), input.playerName];
-  const excluded = input.excludeId ? " AND id <> ?" : "";
-  if (input.excludeId) bindings.push(input.excludeId);
-  const pending = await env.DB.prepare(
-    `SELECT application_number FROM identity_code_applications
+  const pendingRows = await env.DB.prepare(
+    `SELECT id, application_number, email, player_name
+     FROM identity_code_applications
      WHERE status = 'pending'
-       AND (lower(email) = ? OR player_name = ?)${excluded}
-     ORDER BY submitted_at DESC LIMIT 1`
-  )
-    .bind(...bindings)
-    .first<{ application_number: string }>();
+     ORDER BY submitted_at DESC LIMIT 500`
+  ).all<{
+    id: string;
+    application_number: string;
+    email: string;
+    player_name: string;
+  }>();
+  const playerNameKey = identityPlayerNameKey(input.playerName);
+  const pending = pendingRows.results.find(
+    (row) =>
+      row.id !== input.excludeId &&
+      (row.email.toLowerCase() === input.email.toLowerCase() ||
+        (playerNameKey &&
+          identityPlayerNameKey(row.player_name) === playerNameKey))
+  );
   if (pending) {
     throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
   }
@@ -134,26 +143,25 @@ async function assertNoOtherActiveIdentityCode(
     conflictMessage?: string;
   }
 ): Promise<void> {
-  const matches: string[] = [];
-  const bindings: string[] = [];
-  if (input.email) {
-    matches.push("lower(email) = ?");
-    bindings.push(input.email.toLowerCase());
-  }
-  if (input.playerName) {
-    matches.push("player_name = ?");
-    bindings.push(input.playerName);
-  }
-  if (!matches.length) return;
-  const excluded = input.excludeId ? " AND id <> ?" : "";
-  if (input.excludeId) bindings.push(input.excludeId);
-  const active = await env.DB.prepare(
-    `SELECT id, expires_at FROM identity_codes
-     WHERE status = 'active' AND (${matches.join(" OR ")})${excluded}
-     LIMIT 1`
-  )
-    .bind(...bindings)
-    .first<{ id: string; expires_at: string | null }>();
+  if (!input.email && !input.playerName) return;
+  const activeRows = await env.DB.prepare(
+    `SELECT id, email, player_name, expires_at FROM identity_codes
+     WHERE status = 'active' ORDER BY updated_at DESC LIMIT 500`
+  ).all<{
+    id: string;
+    email: string | null;
+    player_name: string | null;
+    expires_at: string | null;
+  }>();
+  const playerNameKey = identityPlayerNameKey(input.playerName);
+  const active = activeRows.results.find(
+    (row) =>
+      row.id !== input.excludeId &&
+      ((input.email &&
+        row.email?.toLowerCase() === input.email.toLowerCase()) ||
+        (playerNameKey &&
+          identityPlayerNameKey(row.player_name) === playerNameKey))
+  );
   if (active) {
     if (isIdentityCodeExpired(active.expires_at)) {
       throw new Error(
@@ -436,7 +444,9 @@ async function codeForReissue(
     if (!code) throw new Error("旧身份识别码无效");
     if (
       (email && code.email?.toLowerCase() !== email) ||
-      (playerName && code.player_name !== playerName)
+      (playerName &&
+        identityPlayerNameKey(code.player_name) !==
+          identityPlayerNameKey(playerName))
     ) {
       throw new Error("填写的信息未指向同一份识别码记录");
     }
@@ -448,23 +458,25 @@ async function codeForReissue(
     clauses.push("lower(email) = ?");
     bindings.push(email);
   }
-  if (playerName) {
-    clauses.push("player_name = ?");
-    bindings.push(playerName);
-  }
   const rows = await env.DB.prepare(
     `SELECT * FROM identity_codes
-     WHERE ${clauses.join(" AND ")}
+     ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
      ORDER BY updated_at DESC
-     LIMIT 2`
+     LIMIT 500`
   )
     .bind(...bindings)
     .all<IdentityCodeRow>();
-  if (!rows.results.length) throw new Error("未找到匹配的身份识别码记录");
-  if (rows.results.length > 1) {
+  const playerNameKey = identityPlayerNameKey(playerName);
+  const matches = rows.results.filter(
+    (row) =>
+      !playerNameKey ||
+      identityPlayerNameKey(row.player_name) === playerNameKey
+  );
+  if (!matches.length) throw new Error("未找到匹配的身份识别码记录");
+  if (matches.length > 1) {
     throw new Error("匹配到多个识别码，请再填写另一项信息缩小范围");
   }
-  return rows.results[0]!;
+  return matches[0]!;
 }
 
 export async function reissuePreview(
@@ -572,10 +584,6 @@ export async function recoverIdentityCode(
     clauses.push("lower(c.email) = ?");
     bindings.push(email);
   }
-  if (playerName) {
-    clauses.push("c.player_name = ?");
-    bindings.push(playerName);
-  }
   if (applicationNumber) {
     clauses.push("a.application_number = ?");
     bindings.push(applicationNumber);
@@ -585,17 +593,23 @@ export async function recoverIdentityCode(
      FROM identity_codes c
      LEFT JOIN identity_code_applications a ON a.id = c.application_id
      WHERE ${clauses.join(" AND ")}
-     ORDER BY c.created_at DESC LIMIT 2`
+     ORDER BY c.created_at DESC LIMIT 500`
   )
     .bind(...bindings)
     .all<IdentityCodeRow & { application_number: string | null }>();
-  if (!result.results.length) {
+  const playerNameKey = identityPlayerNameKey(playerName);
+  const matches = result.results.filter(
+    (row) =>
+      !playerNameKey ||
+      identityPlayerNameKey(row.player_name) === playerNameKey
+  );
+  if (!matches.length) {
     throw new Error("没有找到符合条件的有效或过期识别码");
   }
-  if (result.results.length > 1) {
+  if (matches.length > 1) {
     throw new Error("匹配到多个识别码，请补充更多申请信息后重试");
   }
-  const code = result.results[0];
+  const code = matches[0];
   if (!code?.email) {
     throw new Error("申请预留信息不足，请联系市长处理");
   }

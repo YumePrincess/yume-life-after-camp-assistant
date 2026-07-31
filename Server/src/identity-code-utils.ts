@@ -9,6 +9,18 @@ export function isSequentialIdentityCode(code: string): boolean {
   return ascending || descending;
 }
 
+export function identityPlayerNameKey(value: unknown): string {
+  const normalized =
+    typeof value === "string"
+      ? value.normalize("NFKC").trim().toLocaleLowerCase()
+      : "";
+  const withoutDecorativeCharacters = normalized.replace(
+    /[\p{P}\p{S}\s]+/gu,
+    ""
+  );
+  return withoutDecorativeCharacters || normalized;
+}
+
 const IDENTITY_RENEWAL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function isIdentityRenewalWindowOpen(

@@ -1363,6 +1363,51 @@ td {
     rgba(255, 255, 255, 0.025);
 }
 
+#identity-information-dialog {
+  width: min(760px, calc(100% - 28px));
+}
+
+#identity-information-dialog .dialog-card {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.075), transparent 44%),
+    color-mix(in srgb, var(--panel-strong) 92%, transparent);
+}
+
+.identity-information-detail {
+  margin-block: 4px 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.identity-information-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.identity-information-grid .field:last-child {
+  grid-column: 1 / -1;
+}
+
+.identity-information-expiry {
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 0.52fr);
+}
+
+.identity-information-permanent {
+  align-self: end;
+  margin-bottom: 16px;
+  padding-inline: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.identity-information-actions {
+  margin-top: 4px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
 .inline-renew-button {
   min-height: 30px;
   padding: 4px 10px;

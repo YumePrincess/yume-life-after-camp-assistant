@@ -83,6 +83,7 @@
     temporaryKeySearch: "",
     temporaryKeyStatus: "",
     selectedIdentityApplication: null,
+    selectedIdentityCode: null,
     publicContentLocale: "zh-cn",
     publicContentDraft: null,
     smtpConfigLoaded: false,
@@ -1737,47 +1738,75 @@
     }
   }
 
-  async function editIdentityInformation(item) {
-    const playerName = window.prompt(
-      window.MrzhI18n.t("输入玩家名称："),
-      item.player_name || ""
-    );
-    if (playerName === null) return;
-    const email = window.prompt(
-      window.MrzhI18n.t("输入接收邮箱："),
-      item.email || ""
-    );
-    if (email === null) return;
-    const locale = window.prompt(
-      window.MrzhI18n.t("输入邮件语言（zh-cn、zh-tw、en、fr、ja）："),
-      item.locale || "zh-cn"
-    );
-    if (locale === null) return;
-    const expiresOn = window.prompt(
-      window.MrzhI18n.t("输入有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效："),
-      item.expires_at ? identityExpiryDate(item.expires_at) : "permanent"
-    );
-    if (expiresOn === null) return;
-    const permanent = expiresOn.trim().toLowerCase() === "permanent";
+  function editIdentityInformation(item) {
+    state.selectedIdentityCode = item;
+    const expired =
+      item.status === "active" &&
+      item.expires_at &&
+      Date.parse(item.expires_at) <= Date.now();
+    const detail = byId("identity-information-detail");
+    detail.replaceChildren();
+    for (const [label, value] of [
+      ["身份识别码", item.code],
+      [
+        "识别码状态",
+        item.status === "disabled" ? "取消" : expired ? "已过期" : "有效"
+      ]
+    ]) {
+      detail.append(
+        create("dt", "", window.MrzhI18n.t(label)),
+        create("dd", "", window.MrzhI18n.t(value))
+      );
+    }
+    byId("identity-information-player-name").value = item.player_name || "";
+    byId("identity-information-email").value = item.email || "";
+    byId("identity-information-locale").value = item.locale || "zh-cn";
+    const permanent = !item.expires_at;
+    byId("identity-information-permanent").checked = permanent;
+    byId("identity-information-expiry").value = item.expires_at
+      ? identityExpiryDate(item.expires_at)
+      : identityExpiryDate();
+    byId("identity-information-expiry").disabled = permanent;
+    byId("identity-information-expiry").required = !permanent;
+    setText("identity-information-feedback", "");
+    byId("identity-information-dialog").showModal();
+  }
+
+  async function saveIdentityInformation(event) {
+    event.preventDefault();
+    const item = state.selectedIdentityCode;
+    if (!item) return;
+    const button =
+      event.submitter ||
+      event.currentTarget.querySelector('button[type="submit"]');
+    const feedback = byId("identity-information-feedback");
+    const permanent = byId("identity-information-permanent").checked;
+    button.disabled = true;
+    feedback.textContent = window.MrzhI18n.t("正在保存…");
     try {
       await request(
         `/api/admin/identity-codes/${encodeURIComponent(item.id)}/information`,
         {
           method: "PATCH",
           body: JSON.stringify({
-            playerName: playerName.trim(),
-            email: email.trim(),
-            locale: locale.trim().toLowerCase(),
+            playerName: byId("identity-information-player-name").value.trim(),
+            email: byId("identity-information-email").value.trim(),
+            locale: byId("identity-information-locale").value,
             permanent,
-            expiresOn: permanent ? null : expiresOn.trim()
+            expiresOn: permanent
+              ? null
+              : byId("identity-information-expiry").value
           })
         }
       );
+      byId("identity-information-dialog").close();
       byId("save-state").textContent = window.MrzhI18n.t("识别码资料已修改");
       await loadIdentityCodes();
       await loadIdentityApplications();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      feedback.textContent = error.message;
+    } finally {
+      button.disabled = false;
     }
   }
 
@@ -2057,6 +2086,17 @@
   byId("identity-review-reject").addEventListener("click", () =>
     reviewIdentity("reject")
   );
+  byId("identity-information-close").addEventListener("click", () =>
+    byId("identity-information-dialog").close()
+  );
+  byId("identity-information-form").addEventListener(
+    "submit",
+    saveIdentityInformation
+  );
+  byId("identity-information-permanent").addEventListener("change", (event) => {
+    byId("identity-information-expiry").disabled = event.target.checked;
+    byId("identity-information-expiry").required = !event.target.checked;
+  });
   byId("manual-identity-code-form").addEventListener("submit", createManualIdentity);
   byId("identity-code-search-form").addEventListener("submit", (event) => {
     event.preventDefault();

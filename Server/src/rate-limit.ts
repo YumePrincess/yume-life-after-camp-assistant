@@ -117,6 +117,17 @@ async function recordIdentifierRateLimitAttempt(
     : { allowed: true, retryAfterSeconds: 0 };
 }
 
+async function clearIdentifierRateLimitAttempt(
+  key: string,
+  env: Env
+): Promise<void> {
+  await env.DB.prepare(
+    "DELETE FROM public_rate_limits WHERE identifier_hash = ?"
+  )
+    .bind(key)
+    .run();
+}
+
 export async function checkRateLimit(
   request: Request,
   env: Env,
@@ -141,6 +152,17 @@ export async function recordRateLimitAttempt(
   );
 }
 
+export async function clearRateLimitAttempts(
+  request: Request,
+  env: Env,
+  policy: RateLimitPolicy
+): Promise<void> {
+  return clearIdentifierRateLimitAttempt(
+    await requestIdentifier(request, env, policy.scope),
+    env
+  );
+}
+
 export async function checkValueRateLimit(
   value: unknown,
   env: Env,
@@ -162,5 +184,16 @@ export async function recordValueRateLimitAttempt(
     await valueIdentifier(env, policy.scope, value),
     env,
     policy
+  );
+}
+
+export async function clearValueRateLimitAttempts(
+  value: unknown,
+  env: Env,
+  policy: RateLimitPolicy
+): Promise<void> {
+  return clearIdentifierRateLimitAttempt(
+    await valueIdentifier(env, policy.scope, value),
+    env
   );
 }

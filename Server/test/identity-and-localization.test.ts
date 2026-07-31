@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BUILT_IN_TECHNOLOGY_CATALOG } from "../src/built-in-technology-catalog";
 import {
   canUseExpiredRenewalGrace,
+  identityPlayerNameKey,
   isIdentityCodeExpired,
   isIdentityRenewalWindowOpen,
   isSequentialIdentityCode
@@ -61,6 +62,18 @@ describe("identity code rules", () => {
         currentTime: current
       })
     ).toBe(false);
+  });
+
+  it("matches player names after Unicode normalization and decorative-symbol removal", () => {
+    expect(identityPlayerNameKey("  ＃W月之歌  ")).toBe(
+      identityPlayerNameKey("#W月之歌")
+    );
+    expect(identityPlayerNameKey("W・月 之歌")).toBe(
+      identityPlayerNameKey("W月之歌")
+    );
+    expect(identityPlayerNameKey("人间冷暖")).not.toBe(
+      identityPlayerNameKey("人间冷眼")
+    );
   });
 });
 
