@@ -1,6 +1,6 @@
 import { expireUnclaimedRuns, getConfigBundle } from "./db";
 import type { ConfigBundle } from "./domain";
-import { enqueueTask } from "./tasks";
+import { archiveTechnologyVoteHistoryAtDailyReset, enqueueTask } from "./tasks";
 import {
   dateKey,
   isWithinDueWindow,
@@ -36,6 +36,7 @@ export async function runScheduler(
     bundle.automationConfig.agentPolling.claimTimeoutMinutes,
     now
   );
+  await archiveTechnologyVoteHistoryAtDailyReset(env, bundle, now);
 
   await maybeEnqueueDaily(env, bundle, now, localDate, "tech_switch", result, {
     targetDate: targetDateForTechnologyRun(

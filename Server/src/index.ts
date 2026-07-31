@@ -47,7 +47,6 @@ import {
   requestRunCancellation,
   saveBallot,
   saveConfigBundle,
-  saveTechnologyVoteHistory,
   deleteTechnologyVoteHistory,
   touchHeartbeat,
   updateRun,
@@ -70,7 +69,12 @@ import {
   withSecurityHeaders
 } from "./response";
 import { runScheduler } from "./scheduler";
-import { buildVoteSummary, enqueueTask } from "./tasks";
+import {
+  archiveTechnologyVoteHistoryAtDailyReset,
+  buildVoteSummary,
+  enqueueTask,
+  snapshotTechnologyVoteHistory
+} from "./tasks";
 import {
   nextTechnologyTargetDate,
   weekdayForDateKey,
@@ -1555,6 +1559,9 @@ async function buildAdminBootstrap(
   locale: unknown = "zh-cn"
 ): Promise<Record<string, unknown>> {
   const bundle = await getConfigBundle(env);
+  // Deployment/backfill special case: the first admin bootstrap organizes every
+  // history entry whose technology effective day has already crossed daily reset.
+  await ensureTechnologyVoteHistory(env, bundle);
   const canOverview = canViewAdminModule(session, "admin:overview");
   const canTechnology = canViewAdminModule(session, "admin:technology");
   const canMembers = canViewAdminModule(session, "admin:members");
@@ -1660,34 +1667,31 @@ async function ensureTechnologyVoteHistory(
 ): Promise<
   Array<Pick<TechnologyVoteHistory, "pollDate" | "finalizedAt" | "ballotCount">>
 > {
+  const now = new Date();
+  const archivedAtDailyReset = await archiveTechnologyVoteHistoryAtDailyReset(
+    env,
+    bundle,
+    now
+  );
   const [ballotDates, recordedDates] = await Promise.all([
     listVotePollDates(env),
     listRecordedTechnologyVoteHistoryDates(env)
   ]);
   const knownDates = new Set(recordedDates);
-  const today = zonedDateKey(new Date(), bundle.automationConfig.timezone);
+  const nextEffectiveDate = nextTechnologyTargetDate(
+    now,
+    bundle.automationConfig.timezone,
+    bundle.automationConfig.tasks.tech_switch.time,
+    bundle.campConfig.gameResetTime
+  );
   for (const pollDate of ballotDates) {
-    if (!isDateKey(pollDate) || pollDate >= today || knownDates.has(pollDate)) {
+    const isEligibleForArchive = archivedAtDailyReset
+      ? pollDate <= archivedAtDailyReset
+      : pollDate < nextEffectiveDate;
+    if (!isDateKey(pollDate) || !isEligibleForArchive || knownDates.has(pollDate)) {
       continue;
     }
-    const summary = await buildVoteSummary(env, bundle, new Date(), pollDate);
-    const fixedKeys = new Set(
-      bundle.technologyConfig.fixedByDate[pollDate] ??
-        bundle.technologyConfig.fixedByWeekday[
-          String(weekdayForDateKey(pollDate))
-        ] ??
-        []
-    );
-    await saveTechnologyVoteHistory(env, {
-      pollDate,
-      finalizedAt: new Date().toISOString(),
-      ballotCount: summary.ballotCount,
-      options: summary.options,
-      projectedPlan: summary.projectedPlan,
-      fixedTechnologies: bundle.technologyConfig.catalog.filter((item) =>
-        fixedKeys.has(item.key)
-      )
-    });
+    await snapshotTechnologyVoteHistory(env, bundle, pollDate, now);
   }
   return listTechnologyVoteHistory(env);
 }

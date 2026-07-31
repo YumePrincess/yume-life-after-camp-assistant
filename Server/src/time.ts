@@ -201,6 +201,19 @@ export function nextTechnologyTargetDate(
     : addDaysToDateKey(nextRunDate, 1);
 }
 
+/** Returns the most recent technology effective date at the daily reset. */
+export function technologyEffectiveDateAtDailyReset(
+  now: Date,
+  timezone: string,
+  gameResetTime: string
+): string {
+  const parts = zonedParts(now, timezone);
+  const localDate = dateKey(parts);
+  return minuteOfDay(parts) >= clockToMinutes(gameResetTime)
+    ? localDate
+    : addDaysToDateKey(localDate, -1);
+}
+
 export function isWithinDailyClockWindow(
   now: Date,
   timezone: string,

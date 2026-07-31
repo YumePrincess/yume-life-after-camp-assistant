@@ -413,7 +413,7 @@
               <div>
                 <p class="eyebrow">VOTE ARCHIVE</p>
                 <h1 id="technology-history-title">科技投票历史</h1>
-                <p>按日期查询已锁定的两行科技方案、有效投票和当日固定科技。</p>
+                <p>按科技生效日查询已锁定的两行科技方案、有效投票和当日固定科技；归档时间以每日刷新为准。</p>
               </div>
               <div class="technology-history-actions">
                 <button id="delete-technology-history-date" class="button button-danger" type="button">删除所选日</button>
@@ -422,11 +422,11 @@
             </div>
             <div class="technology-history-toolbar">
               <div class="technology-history-recent">
-                <span class="field-label">最近 7 天记录</span>
+                <span class="field-label">最近 7 个科技生效日</span>
                 <div id="technology-history-recent-dates" class="technology-history-date-chips"></div>
               </div>
               <label class="field technology-history-date-field">
-                <span>查询更早日期</span>
+                <span>查询更早生效日</span>
                 <input id="technology-history-date" type="date" />
               </label>
               <button id="refresh-technology-history" class="button button-quiet" type="button">按日期查询</button>
@@ -438,13 +438,13 @@
                 <span id="technology-history-finalized"></span>
               </div>
               <div class="technology-history-plan-grid">
-                <section class="technology-history-plan">
+                <section class="technology-fixed-lane technology-history-plan">
                   <div class="technology-history-subheading"><span>第一行</span><strong>营地类型科技</strong></div>
-                  <div id="technology-history-core" class="technology-history-tech-list"></div>
+                  <div id="technology-history-core" class="technology-fixed-slots technology-history-result-slots"></div>
                 </section>
-                <section class="technology-history-plan">
+                <section class="technology-fixed-lane technology-history-plan">
                   <div class="technology-history-subheading"><span>第二行</span><strong>其他科技</strong></div>
-                  <div id="technology-history-general" class="technology-history-tech-list"></div>
+                  <div id="technology-history-general" class="technology-fixed-slots technology-history-result-slots"></div>
                 </section>
               </div>
               <div class="technology-history-detail-grid">

@@ -515,6 +515,33 @@
     for (const item of items) root.append(historyTechnologyItem(item));
   }
 
+  function renderHistoryResultSlots(root, items, fixedKeys) {
+    root.replaceChildren();
+    for (let index = 0; index < 6; index += 1) {
+      const item = items[index];
+      const slot = create("div", "technology-fixed-slot");
+      slot.dataset.filled = String(Boolean(item));
+      slot.dataset.source = item
+        ? fixedKeys.has(item.key)
+          ? "fixed"
+          : "vote"
+        : "empty";
+      slot.title = item
+        ? `${item.name} · ${fixedKeys.has(item.key) ? "固定科技" : "投票科技"}`
+        : "空位";
+      if (item?.iconUrl) {
+        const image = document.createElement("img");
+        image.src = item.iconUrl;
+        image.alt = item.name;
+        image.loading = "lazy";
+        slot.append(image);
+      } else {
+        slot.append(create("span", "", item ? item.name.slice(0, 1) : "+"));
+      }
+      root.append(slot);
+    }
+  }
+
   function renderTechnologyHistory(payload) {
     state.technologyHistory = payload || { dates: [], history: null, voteBallots: [] };
     const dates = state.technologyHistory.dates || [];
@@ -555,18 +582,21 @@
       { count: history.ballotCount || 0 }
     );
     byId("technology-history-finalized").textContent = window.MrzhI18n.format(
-      "归档于 {date}",
+      "按每日刷新归档于 {date}",
       { date: formatDate(history.finalizedAt) }
     );
-    renderHistoryTechnologyList(
+    const fixedKeys = new Set(
+      (history.fixedTechnologies || []).map((item) => item.key)
+    );
+    renderHistoryResultSlots(
       byId("technology-history-core"),
       history.projectedPlan?.core || [],
-      "该行当天没有开启科技"
+      fixedKeys
     );
-    renderHistoryTechnologyList(
+    renderHistoryResultSlots(
       byId("technology-history-general"),
       history.projectedPlan?.general || [],
-      "该行当天没有开启科技"
+      fixedKeys
     );
     renderHistoryTechnologyList(
       byId("technology-history-fixed"),

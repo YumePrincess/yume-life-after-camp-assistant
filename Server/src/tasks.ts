@@ -19,9 +19,11 @@ import {
 import {
   isWithinDailyClockWindow,
   nextTechnologyTargetDate,
+  technologyEffectiveDateAtDailyReset,
   targetDateForTechnologyRun,
   weekdayForDateKey,
-  zonedDateKey
+  zonedDateKey,
+  zonedDateTimeToIso
 } from "./time";
 
 export async function buildVoteSummary(
@@ -93,6 +95,50 @@ export async function buildVoteSummary(
   };
 }
 
+export async function snapshotTechnologyVoteHistory(
+  env: Env,
+  bundle: ConfigBundle,
+  pollDate: string,
+  now = new Date()
+): Promise<void> {
+  const summary = await buildVoteSummary(env, bundle, now, pollDate);
+  const fixedKeys = new Set(
+    bundle.technologyConfig.fixedByDate[pollDate] ??
+      bundle.technologyConfig.fixedByWeekday[
+        String(weekdayForDateKey(pollDate))
+      ] ??
+      []
+  );
+  await saveTechnologyVoteHistory(env, {
+    pollDate,
+    finalizedAt: zonedDateTimeToIso(
+      pollDate,
+      bundle.campConfig.gameResetTime,
+      bundle.automationConfig.timezone
+    ),
+    ballotCount: summary.ballotCount,
+    options: summary.options,
+    projectedPlan: summary.projectedPlan,
+    fixedTechnologies: bundle.technologyConfig.catalog.filter((item) =>
+      fixedKeys.has(item.key)
+    )
+  });
+}
+
+export async function archiveTechnologyVoteHistoryAtDailyReset(
+  env: Env,
+  bundle: ConfigBundle,
+  now = new Date()
+): Promise<string | null> {
+  const pollDate = technologyEffectiveDateAtDailyReset(
+    now,
+    bundle.automationConfig.timezone,
+    bundle.campConfig.gameResetTime
+  );
+  await snapshotTechnologyVoteHistory(env, bundle, pollDate, now);
+  return pollDate;
+}
+
 async function technologyPlanForRun(
   env: Env,
   bundle: ConfigBundle,
@@ -112,23 +158,6 @@ async function technologyPlanForRun(
     currentCampType: bundle.campConfig.currentCampType,
     technologyConfig: bundle.technologyConfig,
     voteOptions: voteSummary.options
-  });
-  const fixedKeys = new Set(
-    bundle.technologyConfig.fixedByDate[resolvedTarget] ??
-      bundle.technologyConfig.fixedByWeekday[
-        String(weekdayForDateKey(resolvedTarget))
-      ] ??
-      []
-  );
-  await saveTechnologyVoteHistory(env, {
-    pollDate: resolvedTarget,
-    finalizedAt: now.toISOString(),
-    ballotCount: voteSummary.ballotCount,
-    options: voteSummary.options,
-    projectedPlan: { core: plan.core, general: plan.general },
-    fixedTechnologies: bundle.technologyConfig.catalog.filter((item) =>
-      fixedKeys.has(item.key)
-    )
   });
   return plan;
 }

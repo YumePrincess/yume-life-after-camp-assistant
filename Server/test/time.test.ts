@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isWithinDailyClockWindow,
   nextTechnologyTargetDate,
+  technologyEffectiveDateAtDailyReset,
   targetDateForTechnologyRun,
   zonedDateTimeToIso
 } from "../src/time";
@@ -44,6 +45,23 @@ describe("daily voting window", () => {
         "02:00"
       )
     ).toBe(true);
+  });
+
+  it("uses the configured daily reset as the archive boundary", () => {
+    expect(
+      technologyEffectiveDateAtDailyReset(
+        new Date("2026-07-30T19:01:00.000Z"),
+        "Asia/Shanghai",
+        "03:00"
+      )
+    ).toBe("2026-07-31");
+    expect(
+      technologyEffectiveDateAtDailyReset(
+        new Date("2026-07-30T18:59:00.000Z"),
+        "Asia/Shanghai",
+        "03:00"
+      )
+    ).toBe("2026-07-30");
   });
 });
 

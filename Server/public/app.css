@@ -2444,6 +2444,10 @@ select option {
   min-height: 38px;
 }
 
+.technology-history-date-field input {
+  min-height: 38px;
+}
+
 .technology-history-meta {
   justify-content: flex-start;
   flex-wrap: wrap;
@@ -2473,6 +2477,18 @@ select option {
   border: 1px solid var(--line);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.025);
+}
+
+.technology-history-plan {
+  gap: 10px;
+}
+
+.technology-history-plan .technology-history-subheading {
+  margin-bottom: 0;
+}
+
+.technology-history-result-slots .technology-fixed-slot {
+  min-width: 0;
 }
 
 .technology-history-subheading {
@@ -2539,9 +2555,15 @@ select option {
 
 .technology-history-vote-button {
   width: 100%;
+  padding: 5px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  appearance: none;
+  -webkit-appearance: none;
   color: inherit;
   background: transparent;
   cursor: pointer;
+  font: inherit;
   text-align: left;
 }
 
@@ -2555,6 +2577,10 @@ select option {
 }
 
 .technology-history-vote:last-child {
+  border-bottom: 0;
+}
+
+.technology-history-vote-button:last-child {
   border-bottom: 0;
 }
 
