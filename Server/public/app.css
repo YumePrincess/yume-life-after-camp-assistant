@@ -1357,8 +1357,13 @@ td {
   display: none;
 }
 
-.maintenance-dialog-card {
+#maintenance-dialog {
   width: min(620px, calc(100vw - 32px));
+}
+
+.maintenance-dialog-card {
+  width: 100%;
+  box-sizing: border-box;
   display: grid;
   gap: 22px;
   padding: 30px;

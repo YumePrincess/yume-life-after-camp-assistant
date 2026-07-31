@@ -605,17 +605,20 @@ async function codeForReissue(
       identityPlayerNameKey(row.player_name) === playerNameKey
   );
   if (!matches.length) throw new Error("未找到匹配的身份识别码记录");
-  if (matches.length > 1) {
+  const eligibleMatches = matches.filter(
+    (row) => row.status === "active" && !isIdentityCodeExpired(row.expires_at)
+  );
+  if (eligibleMatches.length > 1) {
     throw new Error("匹配到多个识别码，请再填写另一项信息缩小范围");
   }
-  const matchedCode = matches[0]!;
-  if (matchedCode.status !== "active") {
-    throw new Error("只有状态为有效的身份识别码可以申请更换");
-  }
-  if (isIdentityCodeExpired(matchedCode.expires_at)) {
+  if (eligibleMatches.length === 1) return eligibleMatches[0]!;
+  if (matches.some((row) => row.status === "active")) {
     throw new Error("已过期的身份识别码不能申请更换，请申请延长有效期");
   }
-  return matchedCode;
+  if (matches.length) {
+    throw new Error("只有状态为有效的身份识别码可以申请更换");
+  }
+  throw new Error("未找到匹配的身份识别码记录");
 }
 
 export async function reissuePreview(
