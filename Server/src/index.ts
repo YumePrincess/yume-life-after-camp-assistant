@@ -14,7 +14,8 @@ import {
   requireAdmin,
   revokeTemporaryKey,
   sessionPermissions,
-  timingSafeEqual
+  timingSafeEqual,
+  updateTemporaryKeyPermissions
 } from "./auth";
 import {
   appendRunEvent,
@@ -27,12 +28,16 @@ import {
   getConfigBundle,
   getHeartbeat,
   getRun,
+  getTechnologyVoteHistory,
   listActivityWarnings,
   listHeartbeats,
   listMembers,
+  listRecordedTechnologyVoteHistoryDates,
   listRecentRuns,
   listRunEvents,
   listStaff,
+  listTechnologyVoteHistory,
+  listVotePollDates,
   replaceMemberSnapshot,
   replaceStaffSnapshot,
   removeCurrentMembers,
@@ -42,6 +47,8 @@ import {
   requestRunCancellation,
   saveBallot,
   saveConfigBundle,
+  saveTechnologyVoteHistory,
+  deleteTechnologyVoteHistory,
   touchHeartbeat,
   updateRun,
   type SessionRow
@@ -51,7 +58,8 @@ import {
   isTaskKey,
   type ConfigBundle,
   type RunState,
-  type TaskKey
+  type TaskKey,
+  type TechnologyVoteHistory
 } from "./domain";
 import {
   fetchAsset,
@@ -767,6 +775,36 @@ async function handleAdminApi(
       )
     );
   }
+  if (path === "/api/admin/technology-history" && method === "GET") {
+    const bundle = await getConfigBundle(env);
+    const dates = await ensureTechnologyVoteHistory(env, bundle);
+    const requestedDate = new URL(request.url).searchParams.get("date")?.trim();
+    if (requestedDate && !isDateKey(requestedDate)) {
+      return problem("日期格式必须为 YYYY-MM-DD", 400, "invalid_history_date");
+    }
+    const pollDate = requestedDate || dates[0]?.pollDate;
+    const history = pollDate ? await getTechnologyVoteHistory(env, pollDate) : null;
+    const voteBallots = history
+      ? await listVoteBallotDetails(env, history.pollDate)
+      : [];
+    return json({
+      dates,
+      history: history
+        ? localizeTechnologyVoteHistory(
+            history,
+            new URL(request.url).searchParams.get("locale")
+          )
+        : null,
+      voteBallots
+    });
+  }
+  if (path === "/api/admin/technology-history" && method === "DELETE") {
+    const pollDate = new URL(request.url).searchParams.get("date")?.trim();
+    if (pollDate && !isDateKey(pollDate)) {
+      return problem("日期格式必须为 YYYY-MM-DD", 400, "invalid_history_date");
+    }
+    return json({ ok: true, deleted: await deleteTechnologyVoteHistory(env, pollDate) });
+  }
   if (path === "/api/admin/maintenance/rate-limits" && method === "DELETE") {
     return json({ ok: true, deleted: await clearPublicRateLimits(env) });
   }
@@ -1036,6 +1074,34 @@ async function handleAdminApi(
     const body = await readJsonObject(request, 16_000);
     const id = boundedText(body.id, "id", 80);
     return json({ revoked: await revokeTemporaryKey(env, id) });
+  }
+  const temporaryKeyPermissionsMatch =
+    /^\/api\/admin\/temp-keys\/([^/]+)\/permissions$/.exec(path);
+  if (temporaryKeyPermissionsMatch && method === "PATCH") {
+    const id = temporaryKeyPermissionsMatch[1];
+    if (!id) return problem("临时 Key 不存在", 404, "temporary_key_not_found");
+    const body = await readJsonObject(request, 16_000);
+    if (!Array.isArray(body.permissions)) {
+      return problem("permissions must be an array", 400);
+    }
+    const allowed = new Set<string>(ADMIN_PERMISSIONS);
+    const permissions = [
+      ...new Set(body.permissions.map(String).filter((item) => allowed.has(item)))
+    ];
+    if (permissions.length !== body.permissions.length) {
+      return problem("包含未知权限", 400, "invalid_permission");
+    }
+    if (!permissions.length) {
+      return problem("请选择至少一项权限", 400, "permission_required");
+    }
+    if (permissions.includes("demo:preview") && permissions.length > 1) {
+      return problem("Demo 权限必须单独使用", 400, "demo_permission_exclusive");
+    }
+    const updated = await updateTemporaryKeyPermissions(env, { id, permissions });
+    if (!updated) {
+      return problem("临时 Key 不存在或已撤销", 404, "temporary_key_not_found");
+    }
+    return json({ ok: true, permissions });
   }
   if (path === "/api/admin/config" && method === "PUT") {
     const section = request.headers.get("X-Admin-Section") ?? "";
@@ -1572,6 +1638,60 @@ function localizeVoteSummary<T extends {
   };
 }
 
+function localizeTechnologyVoteHistory(
+  history: TechnologyVoteHistory,
+  locale: unknown
+): TechnologyVoteHistory {
+  return {
+    ...localizeVoteSummary(history, locale),
+    fixedTechnologies: history.fixedTechnologies.map((item) =>
+      localizeTechnology(item, locale)
+    )
+  };
+}
+
+function isDateKey(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+async function ensureTechnologyVoteHistory(
+  env: Env,
+  bundle: ConfigBundle
+): Promise<
+  Array<Pick<TechnologyVoteHistory, "pollDate" | "finalizedAt" | "ballotCount">>
+> {
+  const [ballotDates, recordedDates] = await Promise.all([
+    listVotePollDates(env),
+    listRecordedTechnologyVoteHistoryDates(env)
+  ]);
+  const knownDates = new Set(recordedDates);
+  const today = zonedDateKey(new Date(), bundle.automationConfig.timezone);
+  for (const pollDate of ballotDates) {
+    if (!isDateKey(pollDate) || pollDate >= today || knownDates.has(pollDate)) {
+      continue;
+    }
+    const summary = await buildVoteSummary(env, bundle, new Date(), pollDate);
+    const fixedKeys = new Set(
+      bundle.technologyConfig.fixedByDate[pollDate] ??
+        bundle.technologyConfig.fixedByWeekday[
+          String(weekdayForDateKey(pollDate))
+        ] ??
+        []
+    );
+    await saveTechnologyVoteHistory(env, {
+      pollDate,
+      finalizedAt: new Date().toISOString(),
+      ballotCount: summary.ballotCount,
+      options: summary.options,
+      projectedPlan: summary.projectedPlan,
+      fixedTechnologies: bundle.technologyConfig.catalog.filter((item) =>
+        fixedKeys.has(item.key)
+      )
+    });
+  }
+  return listTechnologyVoteHistory(env);
+}
+
 function isCurrentFeatureRun(run: { task_key: string }): boolean {
   return (
     run.task_key !== "brick_transport" &&
@@ -1658,6 +1778,11 @@ function permissionForAdminRequest(
   path: string,
   method: string
 ): (typeof ADMIN_PERMISSIONS)[number] | null {
+  if (path === "/api/admin/technology-history") {
+    return method === "DELETE"
+      ? "technology-history:manage"
+      : "admin:technology-history";
+  }
   if (method === "PUT" && path === "/api/admin/config") return null;
   if (method === "POST" && path === "/api/admin/run") return "task:run";
   if (method === "POST" && path === "/api/admin/interrupt") return "task:interrupt";
@@ -1672,6 +1797,9 @@ function permissionForAdminRequest(
     return method === "GET" ? "admin:access" : "keys:manage";
   }
   if (path === "/api/admin/temp-keys/revoke") {
+    return "keys:manage";
+  }
+  if (/^\/api\/admin\/temp-keys\/[^/]+\/permissions$/.test(path)) {
     return "keys:manage";
   }
   if (path.startsWith("/api/admin/identity-applications")) {

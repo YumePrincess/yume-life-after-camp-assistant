@@ -583,18 +583,29 @@ test("technology selection never double-clicks a slot when the list is closed", 
 
 test("formal technology workflow verifies every expected filled and empty slot", async () => {
   const reports = [];
+  const taps = [];
   const context = {
     config: technologyConfig(),
-    ui: { async tap() {} },
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
     vision: {
       async capture(label) {
-        return { path: `${label}.png`, observations: [] };
+        return {
+          path: `${label}.png`,
+          observations: label.includes("final-slot-core-1")
+            ? [observation("卸下", 700, 600)]
+            : []
+        };
       },
-      async probe(_path, slots) {
-        return slots.map((_slot, index) => feature(index === 0 ? 0.2 : 0));
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
       }
     },
     technologyEmptySlotBaseline: baseline(),
+    async sleep() {},
     async report(_level, step, message) {
       reports.push({ step, message });
     }
@@ -607,9 +618,63 @@ test("formal technology workflow verifies every expected filled and empty slot",
     reports.some(
       (item) =>
         item.step === "technology_final_verified" &&
-        item.message.includes("12 个槽位")
+        item.message.includes("2 个槽位")
     )
   );
+  assert.deepEqual(
+    taps.map(({ x, y }) => ({ x, y })),
+    [{ x: 800, y: 400 }, { x: 800, y: 550 }]
+  );
+  assert.ok(reports.some((item) => item.step === "tech_final_empty_slot_verified"));
+});
+
+test("final empty slots are clicked and verified by detail OCR, not pixels", async () => {
+  const taps = [];
+  const reports = [];
+  const config = technologyConfig();
+  config.technology.slots = {
+    core: Array.from({ length: 6 }, (_value, index) => ({
+      x: 800 + index * 100,
+      y: 400
+    })),
+    general: []
+  };
+  const context = {
+    config,
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    vision: {
+      async capture(label) {
+        const installed = /final-slot-core-[1-5]-attempt-1/.test(label);
+        return {
+          path: `${label}.png`,
+          observations: installed ? [observation("卸下", 700, 600)] : []
+        };
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+  await verifyFinalConfiguredSlots(context, {
+    core: Array.from({ length: 5 }, (_value, index) => ({
+      name: `科技${index + 1}`,
+      uiLabel: `科技${index + 1}`
+    })),
+    general: []
+  });
+  assert.deepEqual(
+    (({ x, y }) => ({ x, y }))(taps.at(-1)),
+    { x: 1300, y: 400 }
+  );
+  assert.ok(reports.includes("tech_final_empty_slot_verified"));
 });
 
 test("formal technology workflow aborts when a final slot has the wrong state", async () => {
@@ -620,11 +685,12 @@ test("formal technology workflow aborts when a final slot has the wrong state", 
       async capture(label) {
         return { path: `${label}.png`, observations: [] };
       },
-      async probe(_path, slots) {
-        return slots.map(() => feature(0));
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
       }
     },
     technologyEmptySlotBaseline: baseline(),
+    async sleep() {},
     async report() {}
   };
   await assert.rejects(

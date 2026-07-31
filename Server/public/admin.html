@@ -40,6 +40,7 @@
           <a class="admin-nav-item" href="#tasks" data-nav-target="tasks" hidden>任务计划</a>
           <a class="admin-nav-item" href="#agent" data-nav-target="agent" hidden>执行策略</a>
           <a class="admin-nav-item" href="#technology" data-nav-target="technology" hidden>科技管理</a>
+          <a class="admin-nav-item" href="#technology-history" data-nav-target="technology-history" hidden>科技投票历史</a>
           <a class="admin-nav-item" href="#identity-applications" data-nav-target="identity-applications" hidden>识别码审批</a>
           <a class="admin-nav-item" href="#identity-codes" data-nav-target="identity-codes" hidden>身份识别码</a>
           <a class="admin-nav-item" href="#smtp" data-nav-target="smtp" hidden>SMTP 发信</a>
@@ -407,6 +408,59 @@
             </section>
           </form>
 
+          <section class="panel admin-view technology-history" data-admin-view="technology-history" aria-labelledby="technology-history-title" hidden>
+            <div class="technology-history-heading">
+              <div>
+                <p class="eyebrow">VOTE ARCHIVE</p>
+                <h1 id="technology-history-title">科技投票历史</h1>
+                <p>按日期查询已锁定的两行科技方案、有效投票和当日固定科技。</p>
+              </div>
+              <div class="technology-history-actions">
+                <button id="delete-technology-history-date" class="button button-danger" type="button">删除所选日</button>
+                <button id="delete-technology-history-all" class="button button-danger button-danger-quiet" type="button">删除全部历史</button>
+              </div>
+            </div>
+            <div class="technology-history-toolbar">
+              <div class="technology-history-recent">
+                <span class="field-label">最近 7 天记录</span>
+                <div id="technology-history-recent-dates" class="technology-history-date-chips"></div>
+              </div>
+              <label class="field technology-history-date-field">
+                <span>查询更早日期</span>
+                <input id="technology-history-date" type="date" />
+              </label>
+              <button id="refresh-technology-history" class="button button-quiet" type="button">按日期查询</button>
+              <span id="technology-history-status" class="muted" aria-live="polite"></span>
+            </div>
+            <div id="technology-history-content" hidden>
+              <div class="technology-history-meta">
+                <span id="technology-history-ballots"></span>
+                <span id="technology-history-finalized"></span>
+              </div>
+              <div class="technology-history-plan-grid">
+                <section class="technology-history-plan">
+                  <div class="technology-history-subheading"><span>第一行</span><strong>营地类型科技</strong></div>
+                  <div id="technology-history-core" class="technology-history-tech-list"></div>
+                </section>
+                <section class="technology-history-plan">
+                  <div class="technology-history-subheading"><span>第二行</span><strong>其他科技</strong></div>
+                  <div id="technology-history-general" class="technology-history-tech-list"></div>
+                </section>
+              </div>
+              <div class="technology-history-detail-grid">
+                <section class="technology-history-detail">
+                  <div class="technology-history-subheading"><span>当日投票</span><strong>仅显示获得投票的科技</strong></div>
+                  <div id="technology-history-votes" class="technology-history-votes"></div>
+                </section>
+                <section class="technology-history-detail">
+                  <div class="technology-history-subheading"><span>当日固定</span><strong>仅显示实际固定的科技</strong></div>
+                  <div id="technology-history-fixed" class="technology-history-tech-list"></div>
+                </section>
+              </div>
+            </div>
+            <p id="technology-history-empty" class="empty-state">暂无已归档的历史投票结果。</p>
+          </section>
+
           <section id="temporary-key-panel" class="panel admin-view" data-admin-view="access" hidden>
             <div class="section-heading">
               <div>
@@ -437,6 +491,8 @@
                   <label><input type="checkbox" name="keyPermission" value="admin:tasks" /><span>任务计划</span></label>
                   <label><input type="checkbox" name="keyPermission" value="admin:agent" /><span>执行策略</span></label>
                   <label><input type="checkbox" name="keyPermission" value="admin:technology" /><span>科技管理</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:technology-history" /><span>科技投票历史 · 查询</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="technology-history:manage" /><span>科技投票历史 · 删除</span></label>
                   <label><input type="checkbox" name="keyPermission" value="admin:identity-review" /><span>识别码审批</span></label>
                   <label><input type="checkbox" name="keyPermission" value="admin:identity-codes" /><span>身份识别码</span></label>
                   <label><input type="checkbox" name="keyPermission" value="admin:smtp" /><span>SMTP 发信</span></label>
@@ -592,6 +648,41 @@
         </div>
         <p id="vote-detail-summary" class="muted"></p>
         <div id="vote-detail-list" class="vote-detail-list"></div>
+      </form>
+    </dialog>
+    <dialog id="temporary-key-permissions-dialog">
+      <form id="temporary-key-permissions-form" class="dialog-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">TEMPORARY ACCESS</p>
+            <h2 id="temporary-key-permissions-title">编辑 Key 权限</h2>
+          </div>
+          <button id="temporary-key-permissions-close" class="button button-quiet" type="button">关闭</button>
+        </div>
+        <p id="temporary-key-permissions-note" class="section-intro">保存后，该 Key 当前的登录会话会失效；下次登录即使用新权限。</p>
+        <fieldset class="permission-fieldset key-permissions-editor">
+          <legend>权限（Demo 为后台全部模块只读预览）</legend>
+          <div class="permission-options">
+            <label><input type="checkbox" name="keyEditPermission" value="demo:preview" /><span>Demo · 全后台只读</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:overview" /><span>控制台 · 查看与执行任务</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:general" /><span>基础设置</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:tasks" /><span>任务计划</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:agent" /><span>执行策略</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:technology" /><span>科技管理</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:technology-history" /><span>科技投票历史 · 查询</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="technology-history:manage" /><span>科技投票历史 · 删除</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:identity-review" /><span>识别码审批</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:identity-codes" /><span>身份识别码</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:smtp" /><span>SMTP 发信</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:access" /><span>访问密钥</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:members" /><span>成员管理</span></label>
+            <label><input type="checkbox" name="keyEditPermission" value="admin:history" /><span>运行记录</span></label>
+          </div>
+        </fieldset>
+        <div class="action-row">
+          <button id="temporary-key-permissions-save" class="button button-primary" type="submit">保存权限</button>
+          <span id="temporary-key-permissions-feedback" class="feedback" role="status"></span>
+        </div>
       </form>
     </dialog>
     <dialog id="identity-review-dialog">

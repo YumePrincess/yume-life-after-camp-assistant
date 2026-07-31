@@ -237,22 +237,46 @@ export class AdbClient {
     try {
       await this.shell(args, { signal, timeoutMs: 5_000 });
       await this.releaseMouseButton(x, y, signal);
+      return true;
     } catch (error) {
       if (signal?.aborted) throw error;
+      // 部分 MuMu/Android 构建允许 shell keyevent，却拒绝 mouse MOVE/UP
+      // 的跨应用注入。鼠标聚焦只是键盘输入前的辅助步骤，不能让 M/W 等
+      // 已可用的键盘指令因此中止整个任务。
+      if (isInputInjectionPermissionError(error)) return false;
       if (/Unknown action|IllegalArgumentException/i.test(error.message)) {
-        await this.releaseMouseButton(x, y, signal);
-        return;
+        try {
+          await this.releaseMouseButton(x, y, signal);
+        } catch (releaseError) {
+          if (!isInputInjectionPermissionError(releaseError)) throw releaseError;
+        }
+        return false;
       }
       await this.reconnect();
-      await this.shell(args, { signal, timeoutMs: 5_000 }).catch(
-        async (retryError) => {
-          if (/Unknown action|IllegalArgumentException/i.test(retryError.message)) {
-            return;
-          }
-          throw retryError;
+      try {
+        await this.shell(args, { signal, timeoutMs: 5_000 });
+        await this.releaseMouseButton(x, y, signal);
+        return true;
+      } catch (retryError) {
+        if (
+          isInputInjectionPermissionError(retryError) ||
+          /Unknown action|IllegalArgumentException/i.test(retryError.message)
+        ) {
+          return false;
         }
-      );
+        throw retryError;
+      }
+    }
+  }
+
+  async releaseMouseButtonForKeyboard(x, y, signal) {
+    try {
       await this.releaseMouseButton(x, y, signal);
+      return true;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (isInputInjectionPermissionError(error)) return false;
+      throw error;
     }
   }
 
@@ -330,7 +354,7 @@ export class AdbClient {
   }
 
   async key(code, signal, options = {}) {
-    await this.releaseMouseButton(
+    await this.releaseMouseButtonForKeyboard(
       Math.round((this.config.adb.screenWidth || 1920) / 2),
       Math.round((this.config.adb.screenHeight || 1200) / 2),
       signal
@@ -348,7 +372,7 @@ export class AdbClient {
     } catch (error) {
       if (signal?.aborted) throw error;
       await this.reconnect();
-      await this.releaseMouseButton(
+      await this.releaseMouseButtonForKeyboard(
         Math.round((this.config.adb.screenWidth || 1920) / 2),
         Math.round((this.config.adb.screenHeight || 1200) / 2),
         signal
@@ -361,7 +385,7 @@ export class AdbClient {
     if (!Array.isArray(codes) || codes.length < 2) {
       throw new Error("ADB key combination requires at least two key codes");
     }
-    await this.releaseMouseButton(
+    await this.releaseMouseButtonForKeyboard(
       Math.round((this.config.adb.screenWidth || 1920) / 2),
       Math.round((this.config.adb.screenHeight || 1200) / 2),
       signal
@@ -463,4 +487,10 @@ export class AdbClient {
     }
   }
 
+}
+
+function isInputInjectionPermissionError(error) {
+  return /SecurityException: Injecting to another application requires INJECT_EVENTS permission/i.test(
+    String(error?.message || error)
+  );
 }

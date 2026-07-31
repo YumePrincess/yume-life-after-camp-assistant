@@ -97,7 +97,7 @@ export async function runPatrol(context, command, bundle, signal) {
 }
 
 export async function createPatrolTeam(context, signal) {
-  const { config, ui, adb, vision, report } = context;
+  const { config, ui, adb, mumu, vision, report } = context;
   const controls = config.patrolTeamUi;
   if (!controls) {
     throw new Error("PATROL_TEAM_UI_NOT_CONFIGURED");
@@ -110,6 +110,10 @@ export async function createPatrolTeam(context, signal) {
   const patrolTargetWaitMs = Math.max(
     5_000,
     Number(controls.patrolTargetWaitMs) || 5_000
+  );
+  const campAffairsWaitMs = Math.max(
+    5_000,
+    Number(controls.campAffairsWaitMs) || 5_000
   );
   const sleep = context.sleep || delay;
   let screen = await capturePatrolScreen(
@@ -169,9 +173,12 @@ export async function createPatrolTeam(context, signal) {
         "PATROL_FLAG_NOT_VISIBLE: 未识别到 CtrlQ，且底部频道 HUD 锚点不足，禁止点击游戏世界"
       );
     }
+    // 与“营地频道→市政厅→营地卡片”相同：MuMu 在鼠标锁定状态下会
+    // 吃掉第一次 ADB 鼠标点击（实际表现为角色攻击）。首击只用于取得焦点，
+    // 未确认菜单时才按同一坐标再点一次；后续全程保留鼠标方式，不再切回触屏。
     const flagClickAttempts = Math.max(
-      1,
-      Math.min(2, Number(controls.flagClickAttempts) || 2)
+      2,
+      Math.min(3, Number(controls.flagClickAttempts) || 2)
     );
     for (
       let attempt = 1;
@@ -184,10 +191,10 @@ export async function createPatrolTeam(context, signal) {
           ? "patrol_flag_click"
           : "patrol_flag_mouse_focus_retry",
         attempt === 1
-          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点，点击旗帜按钮 (${controls.flagButton.x},${controls.flagButton.y})；点击后以队伍界面文字确认鼠标焦点`
-          : `第一次旗帜点击未出现任何队伍界面锚点，判定可能只取得了 MuMu 鼠标焦点；再次点击同一旗帜坐标 (${controls.flagButton.x},${controls.flagButton.y})`
+          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点，按营地频道已验证方式用 ADB 鼠标点击旗帜 (${controls.flagButton.x},${controls.flagButton.y})；首击仅可能取得 MuMu 鼠标焦点`
+          : `首击未出现队伍菜单，按营地频道已验证方式保留鼠标模式，再次点击同一旗帜坐标 (${controls.flagButton.x},${controls.flagButton.y})`
       );
-      await tapPatrolHud(ui, controls.flagButton, signal);
+      await tapPatrolMouse(ui, controls.flagButton, signal);
       await sleep(settleMs, signal);
       screen = await capturePatrolScreen(
         vision,
@@ -204,11 +211,14 @@ export async function createPatrolTeam(context, signal) {
         );
         return;
       }
-      createMenuMatch = findTextInRegion(
+      createMenuMatch = await findPatrolTextWithAccurateRegion(
         vision,
+        screen,
         screen.observations,
         "创建队伍",
-        controls.teamMenuRegion
+        controls.teamMenuRegion,
+        `patrol-team-menu-open-${attempt}-create-entry`,
+        signal
       );
       menuOpen = Boolean(createMenuMatch);
       creatorOpen = patrolCreatorOpen(
@@ -216,6 +226,16 @@ export async function createPatrolTeam(context, signal) {
         screen.observations,
         controls
       );
+      if (!creatorOpen) {
+        await patrolAiDiagnose(
+          vision,
+          report,
+          "patrol-creator",
+          "队伍创建流程：确认是否已打开标题为“队伍目标”的创建页面，并且右下角可见“创建队伍”按钮。只有这两个要素都清晰可见时返回 target_text_visible。",
+          screen.observations,
+          signal
+        );
+      }
       const anyTeamPanel = (
         controls.focusAcquiredTexts || [
           "创建队伍",
@@ -276,11 +296,14 @@ export async function createPatrolTeam(context, signal) {
         );
         return;
       }
-      createMenuMatch = findTextInRegion(
+      createMenuMatch = await findPatrolTextWithAccurateRegion(
         vision,
+        screen,
         screen.observations,
         "创建队伍",
-        controls.teamMenuRegion
+        controls.teamMenuRegion,
+        `patrol-team-menu-key-fallback-${attempt + 1}-create-entry`,
+        signal
       );
       menuOpen = Boolean(createMenuMatch);
       creatorOpen = patrolCreatorOpen(
@@ -297,46 +320,71 @@ export async function createPatrolTeam(context, signal) {
   }
 
   if (!creatorOpen) {
+    if (
+      controls.hostMouseUnlockBeforeCreate &&
+      typeof mumu?.releaseContainerMouseCapture !== "function"
+    ) {
+      throw new Error(
+        "MUMU_HOST_MOUSE_UNLOCK_UNAVAILABLE: 创建队伍前需要向 MuMu 安卓容器发送宿主机 ~ 键，但容器控制器不可用"
+      );
+    }
     const createMenuClickAttempts = Math.max(
       1,
       Math.min(6, Number(controls.createMenuClickAttempts) || 6)
     );
+    const hostMouseUnlockAttempts = controls.hostMouseUnlockBeforeCreate
+      ? Math.max(
+          1,
+          Math.min(6, Number(controls.hostMouseUnlockAttempts) || 6)
+        )
+      : 0;
     for (
       let attempt = 1;
       attempt <= createMenuClickAttempts && !creatorOpen;
       attempt += 1
     ) {
-      createMenuMatch = findTextInRegion(
+      createMenuMatch = await findPatrolTextWithAccurateRegion(
         vision,
+        screen,
         screen.observations,
         "创建队伍",
-        controls.teamMenuRegion
+        controls.teamMenuRegion,
+        `patrol-team-creator-entry-${attempt}-create-entry`,
+        signal
       );
       if (!createMenuMatch) {
         throw new Error(
           `PATROL_CREATE_MENU_TEXT_DISAPPEARED: 第 ${attempt}/${createMenuClickAttempts} 次点击前已无法再次确认“创建队伍”，禁止点击游戏世界`
         );
       }
-      const createMenuPoint = observationCenter(createMenuMatch);
+      if (attempt <= hostMouseUnlockAttempts) {
+        await report(
+          "info",
+          "patrol_create_host_mouse_unlock",
+          `第 ${attempt}/${hostMouseUnlockAttempts} 次：${attempt === 1 ? "将 MuMu 安卓容器置于前台并等待 4 秒，" : "保持 MuMu 安卓容器前台，"}发送 Esc 下方的 ~ 键后等待 4 秒，再检查 macOS 鼠标是否已释放；只有释放后才点击“创建队伍”`
+        );
+        const unlock = await mumu.releaseContainerMouseCapture(signal, {
+          bringToFront: attempt === 1
+        });
+        if (!unlock?.mouseReleased) {
+          await report(
+            "warning",
+            "patrol_create_host_mouse_still_captured",
+            `第 ${attempt}/${hostMouseUnlockAttempts} 次 ~ 键后 macOS 鼠标仍未确认释放；本轮不点击“创建队伍”，继续下一轮`
+          );
+          continue;
+        }
+      }
+      // 左侧菜单的 OCR 文本框会覆盖旗帜图标，文本中心并不等于可点击行中心。
+      // 宿主机的 MuMu 鼠标锁定已在进入本步骤前由 ~ 键解除；此处仍使用与
+      // 营地频道相同的 ADB 鼠标点击，不能改为触屏点击。
+      const createMenuPoint = controls.createMenuPoint || { x: 220, y: 180 };
       await report(
         attempt === 1 ? "info" : "warning",
         "patrol_create_menu_click",
-        `第 ${attempt}/${createMenuClickAttempts} 次：已确认左侧“创建队伍”，先通过容器 BTN_RIGHT 释放鼠标锁定，再用 ADB 触屏点击文字中心 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})`
+        `第 ${attempt}/${createMenuClickAttempts} 次：已在左侧区域精确识别“创建队伍”，并确认 macOS 鼠标已释放后，沿用营地频道已验证的 ADB 鼠标点击已校准按钮中心 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})`
       );
-      if (typeof adb.releaseGameMouseCapture === "function") {
-        await adb.releaseGameMouseCapture(signal);
-        await sleep(
-          Math.max(100, Number(controls.mouseReleaseSettleMs) || 250),
-          signal
-        );
-      } else if (typeof adb.focusGameInput === "function") {
-        await adb.focusGameInput(createMenuPoint.x, createMenuPoint.y, signal);
-      }
-      if (typeof adb.touchTap === "function") {
-        await adb.touchTap(createMenuPoint.x, createMenuPoint.y, signal);
-      } else {
-        await ui.tap(createMenuPoint, signal);
-      }
+      await tapPatrolMouse(ui, createMenuPoint, signal);
       await sleep(createMenuWaitMs, signal);
       screen = await capturePatrolScreen(
         vision,
@@ -348,45 +396,128 @@ export async function createPatrolTeam(context, signal) {
         screen.observations,
         controls
       );
+      if (!creatorOpen) {
+        const title = await findPatrolTextWithAccurateRegion(
+          vision,
+          screen,
+          screen.observations,
+          "队伍目标",
+          controls.creatorTitleRegion,
+          `patrol-team-creator-open-${attempt}-title`,
+          signal
+        );
+        const submit = await findPatrolTextWithAccurateRegion(
+          vision,
+          screen,
+          screen.observations,
+          "创建队伍",
+          controls.createButtonRegion,
+          `patrol-team-creator-open-${attempt}-submit`,
+          signal
+        );
+        creatorOpen = Boolean(title && submit);
+      }
       if (!creatorOpen && attempt < createMenuClickAttempts) {
         await report(
           "warning",
           "patrol_create_menu_click_unverified",
-          `第 ${attempt} 次点击未确认创建页；仅在“创建队伍”仍可见时继续下一轮右键释放与点击`
+          `第 ${attempt} 次点击左侧入口后仍未确认创建页面；仅在该入口仍可见时继续下一轮交叉释放与点击`
         );
       }
     }
-    if (!patrolCreatorOpen(vision, screen.observations, controls)) {
+    if (!creatorOpen) {
       throw new Error(
         "PATROL_TEAM_CREATOR_DID_NOT_OPEN: 未确认队伍目标创建页，禁止选择目标"
       );
     }
   }
 
-  await tapPatrolHud(ui, controls.campAffairsPoint, signal);
-  await sleep(settleMs, signal);
-  screen = await capturePatrolScreen(
-    vision,
-    "patrol-camp-affairs-selected",
-    signal
+  await tapPatrolMouse(ui, controls.campAffairsPoint, signal);
+  await report(
+    "info",
+    "patrol_camp_affairs_selected_wait",
+    "已点击最底部“营地事务”分类卡，等待 5 秒让“营地巡逻任务”列表稳定后再进行 OCR"
   );
-  const patrolTargetMatch = findAnyTextInRegion(
-    vision,
-    screen.observations,
-    controls.patrolTargetTexts || ["营地巡逻任务", "营地巡逻"],
-    controls.patrolTargetRegion
+  await sleep(campAffairsWaitMs, signal);
+  let patrolTargetMatch = null;
+  const patrolTargetReadAttempts = Math.max(
+    1,
+    Math.min(5, Number(controls.patrolTargetReadAttempts) || 3)
   );
+  for (let attempt = 1; attempt <= patrolTargetReadAttempts; attempt += 1) {
+    screen = await capturePatrolScreen(
+      vision,
+      attempt === 1
+        ? "patrol-camp-affairs-selected"
+        : `patrol-camp-affairs-selected-reread-${attempt}`,
+      signal
+    );
+    patrolTargetMatch = findAnyTextInRegion(
+      vision,
+      screen.observations,
+      controls.patrolTargetTexts || ["营地巡逻任务", "营地巡逻"],
+      controls.patrolTargetRegion
+    );
+    if (patrolTargetMatch) break;
+    if (attempt < patrolTargetReadAttempts) {
+      await report(
+        "warning",
+        "patrol_target_ocr_reread",
+        `“营地事务”已选中但第 ${attempt}/${patrolTargetReadAttempts} 次 OCR 尚未读到“营地巡逻任务”；保持当前页面原地重读，不重复点击分类卡`
+      );
+      await sleep(1_000, signal);
+    }
+  }
   if (!patrolTargetMatch) {
+    const categoryMatch = await scrollToCampAffairsCategory(
+      { adb, vision, ui, report, sleep, controls },
+      signal
+    );
+    if (categoryMatch) {
+      await tapPatrolMouse(ui, observationCenter(categoryMatch), signal);
+      await report(
+        "info",
+        "patrol_camp_affairs_scroll_selected",
+        `已滑动左侧目标列表并按文字中心选中“${categoryMatch.text}”，等待列表稳定后重读巡逻目标`
+      );
+      await sleep(campAffairsWaitMs, signal);
+      for (let attempt = 1; attempt <= patrolTargetReadAttempts; attempt += 1) {
+        screen = await capturePatrolScreen(
+          vision,
+          `patrol-camp-affairs-scroll-reread-${attempt}`,
+          signal
+        );
+        patrolTargetMatch = findAnyTextInRegion(
+          vision,
+          screen.observations,
+          controls.patrolTargetTexts || ["营地巡逻任务", "营地巡逻"],
+          controls.patrolTargetRegion
+        );
+        if (patrolTargetMatch) break;
+        if (attempt < patrolTargetReadAttempts) {
+          await sleep(1_000, signal);
+        }
+      }
+    }
+  }
+  if (!patrolTargetMatch) {
+    await patrolAiDiagnose(
+      vision,
+      report,
+      "patrol-target",
+      "队伍目标创建页：确认左侧已选营地事务，中央是否清晰显示“营地巡逻任务”。仅在文字确实可见时返回 target_text_visible。",
+      screen.observations,
+      signal
+    );
     throw new Error(
       "PATROL_TARGET_NOT_VISIBLE: 点击营地事务分类后未识别到“营地巡逻”"
     );
   }
 
-  await tapPatrolHud(ui, observationCenter(patrolTargetMatch), signal);
   await report(
     "info",
     "patrol_target_selected_wait",
-    `已选择“${patrolTargetMatch.text}”，等待 5 秒使创建按钮稳定后再继续`
+    `已确认“${patrolTargetMatch.text}”已随“营地事务”自动选中，等待 5 秒使创建按钮稳定后再继续`
   );
   await sleep(patrolTargetWaitMs, signal);
   screen = await capturePatrolScreen(
@@ -416,9 +547,9 @@ export async function createPatrolTeam(context, signal) {
   await report(
     "info",
     "patrol_create_submit",
-    "已确认“营地事务>营地巡逻任务”，点击创建队伍"
+    "已确认“营地事务>营地巡逻任务”，点击创建页面右下角的最终“创建队伍”按钮"
   );
-  await tapPatrolHud(ui, controls.createButtonPoint, signal);
+  await tapPatrolMouse(ui, controls.createButtonPoint, signal);
   await sleep(settleMs, signal);
   screen = await capturePatrolScreen(
     vision,
@@ -466,7 +597,120 @@ function patrolCreatorOpen(vision, observations, controls) {
     "创建队伍",
     controls.createButtonRegion
   );
-  return Boolean(title || submit);
+  return Boolean(title && submit);
+}
+
+async function scrollToCampAffairsCategory(context, signal) {
+  const { adb, vision, report, sleep, controls } = context;
+  const fallback = controls.campAffairsFallback;
+  if (!fallback || typeof adb?.mouseSwipe !== "function") return null;
+
+  const texts = fallback.texts || ["营地事务", "营地事物"];
+  const maxSwipes = Math.max(1, Math.min(3, Number(fallback.maxSwipes) || 1));
+  const settleMs = Math.max(1_000, Number(fallback.settleAfterSwipeMs) || 3_000);
+
+  for (let attempt = 1; attempt <= maxSwipes; attempt += 1) {
+    await report(
+      "warning",
+      "patrol_camp_affairs_scroll_fallback",
+      `中央巡逻目标 OCR 未命中；第 ${attempt}/${maxSwipes} 次复用贡献/斩杀列表的 ADB 鼠标上滑方式查找“营地事务”`
+    );
+    await adb.mouseSwipe(
+      fallback.from,
+      fallback.to,
+      Math.max(150, Number(fallback.durationMs) || 500),
+      signal
+    );
+    await sleep(settleMs, signal);
+    const screen = await capturePatrolScreen(
+      vision,
+      `patrol-camp-affairs-scroll-${attempt}`,
+      signal
+    );
+    const match = findAnyTextInRegion(
+      vision,
+      screen.observations,
+      texts,
+      fallback.region
+    );
+    if (match) return match;
+  }
+  await report(
+    "warning",
+    "patrol_camp_affairs_scroll_unverified",
+    "复用列表上滑后仍未识别到“营地事务”；不会盲点分类卡"
+  );
+  return null;
+}
+
+async function patrolAiDiagnose(
+  vision,
+  report,
+  label,
+  taskHint,
+  observations,
+  signal
+) {
+  if (
+    !vision?.advisor?.enabled ||
+    typeof vision.adviseCurrent !== "function"
+  ) {
+    return false;
+  }
+  const advice = await vision
+    .adviseCurrent(
+      `patrol-${label}-advisor`,
+      {
+        expectedState: "target_text_visible",
+        taskHint,
+        ocrTexts: (observations || []).map((item) => item.text).slice(0, 80)
+      },
+      signal
+    )
+    .catch(() => null);
+  const minimum = Math.max(
+    0.95,
+    Number(vision.advisor?.config?.minimumActionConfidence) || 0.95
+  );
+  const accepted =
+    advice?.state === "target_text_visible" &&
+    Number(advice?.confidence) >= minimum;
+  await report(
+    accepted ? "info" : "warning",
+    "patrol_ai_creation_diagnostic",
+    accepted
+      ? `AI 已以 ${(Number(advice.confidence) * 100).toFixed(0)}% 高置信确认 ${label}；此结果仅作诊断，不会越过局部 OCR 校验`
+      : `AI 未高置信确认 ${label}；此结果仅作诊断，不会触发任何盲点`,
+    advice || undefined
+  );
+}
+
+async function findPatrolTextWithAccurateRegion(
+  vision,
+  screen,
+  observations,
+  text,
+  region,
+  label,
+  signal
+) {
+  const existing = findTextInRegion(vision, observations, text, region);
+  if (existing) return existing;
+  if (typeof vision?.ocrRegion !== "function" || !screen?.frame?.path) {
+    return null;
+  }
+  const regional = await vision
+    .ocrRegion(
+      screen.frame.path,
+      region,
+      label,
+      signal,
+      "accurate",
+      0.1,
+      2
+    )
+    .catch(() => []);
+  return findTextInRegion(vision, regional, text, region);
 }
 
 function findAnyTextInRegion(vision, observations, texts, region) {
@@ -483,6 +727,12 @@ export async function sharePatrolTeam(context, signal) {
   }
   const sleep = context.sleep || delay;
   const settleMs = Math.max(150, Number(controls.stepSettleMs) || 500);
+  // “招募”打开的频道列表有入场动画。必须完整等待三秒后再 OCR，
+  // 否则会把尚未稳定的列表当成可点击状态。
+  const recruitMenuWaitMs = Math.max(
+    3_000,
+    Number(controls.recruitMenuWaitMs) || 3_000
+  );
   let screen = await capturePatrolScreen(
     vision,
     "patrol-share-team-page",
@@ -513,6 +763,16 @@ export async function sharePatrolTeam(context, signal) {
     1,
     Math.min(6, Number(controls.recruitAttempts) || 6)
   );
+  const campChannelTextRegion =
+    controls.campChannelTextRegion || controls.channelMenuRegion;
+  const campChannelPoint = controls.campChannelPoint || { x: 416, y: 895 };
+  const recruitTextRegion = controls.recruitTextRegion || {
+    left: 220,
+    top: 1_040,
+    right: 480,
+    bottom: 1_180
+  };
+  const recruitPoint = controls.recruitPoint || { x: 343, y: 1128 };
   let channelMenuVisible = false;
   for (let attempt = 1; attempt <= recruitAttempts; attempt += 1) {
     await report(
@@ -522,17 +782,44 @@ export async function sharePatrolTeam(context, signal) {
         : "patrol_share_recruit_focus_retry",
       attempt === 1
         ? "已确认队伍页面，点击“招募”"
-        : `第 ${attempt - 1} 次点击后仍未识别到“营地频道”；执行第 ${attempt}/${recruitAttempts} 次右键释放、重新识别并点击“招募”`
+        : `第 ${attempt - 1} 次点击后仍未识别到“营地频道”；执行第 ${attempt}/${recruitAttempts} 次重新 OCR 并点击“招募”`
+    );
+    // “更换队伍”和“招募”同在左侧区域。每一次点击前都重新截图，只接受
+    // 底部招募行内的文字；不再根据旧画面或固定坐标盲点。
+    screen = await capturePatrolScreen(
+      vision,
+      `patrol-share-recruit-verify-${attempt}`,
+      signal
     );
     const recruitMatch = findTextInRegion(
       vision,
       screen.observations,
       "招募",
-      controls.teamPageRegion
+      recruitTextRegion
     );
-    const recruitPoint = recruitMatch
-      ? observationCenter(recruitMatch)
-      : controls.recruitPoint;
+    if (!recruitMatch) {
+      await report(
+        "warning",
+        "patrol_share_recruit_unverified",
+        `第 ${attempt}/${recruitAttempts} 次点击前未在底部招募行 OCR 确认“招募”；不会点击“更换队伍”或任何固定坐标`
+      );
+      await sleep(settleMs, signal);
+      continue;
+    }
+    await report(
+      "info",
+      "patrol_share_recruit_verified",
+      `OCR 已在底部招募行确认“招募”，点击固定招募按钮中心 (${Math.round(recruitPoint.x)},${Math.round(recruitPoint.y)})`,
+      {
+        point: recruitPoint,
+        recognizedTextBounds: {
+          x: recruitMatch.x,
+          y: recruitMatch.y,
+          width: recruitMatch.width,
+          height: recruitMatch.height
+        }
+      }
+    );
     if (typeof ui.hudTap === "function") {
       await ui.hudTap(recruitPoint, signal);
     } else if (typeof adb?.touchTap === "function") {
@@ -541,7 +828,12 @@ export async function sharePatrolTeam(context, signal) {
     } else {
       await ui.tap(recruitPoint, signal);
     }
-    await sleep(settleMs, signal);
+    await report(
+      "info",
+      "patrol_share_channel_wait",
+      "已点击“招募”，等待 3 秒让频道列表稳定后再 OCR 确认“营地频道”"
+    );
+    await sleep(recruitMenuWaitMs, signal);
     screen = await capturePatrolScreen(
       vision,
       `patrol-share-channel-menu-${attempt}`,
@@ -551,9 +843,16 @@ export async function sharePatrolTeam(context, signal) {
       vision,
       screen.observations,
       "营地频道",
-      controls.channelMenuRegion
+      campChannelTextRegion
     );
-    if (channelMenuVisible) break;
+    if (channelMenuVisible) {
+      await report(
+        "info",
+        "patrol_share_camp_channel_verified",
+        "OCR 已确认校准行中的“营地频道”，将点击固定的营地频道行中心，不使用 OCR 文字框坐标"
+      );
+      break;
+    }
   }
   if (!channelMenuVisible) {
     throw new Error(
@@ -575,7 +874,7 @@ export async function sharePatrolTeam(context, signal) {
       vision,
       screen.observations,
       "营地频道",
-      controls.channelMenuRegion
+      campChannelTextRegion
     );
     if (!channelMatch) {
       await report(
@@ -585,15 +884,24 @@ export async function sharePatrolTeam(context, signal) {
       );
       break;
     }
-    const channelPoint = observationCenter(channelMatch);
-    if (typeof ui.hudTap === "function") {
-      await ui.hudTap(channelPoint, signal);
-    } else if (typeof adb?.touchTap === "function") {
-      await adb.releaseGameMouseCapture?.(signal);
-      await adb.touchTap(channelPoint.x, channelPoint.y, signal);
-    } else {
-      await ui.tap(channelPoint, signal);
-    }
+    // “可分享目标”是模态弹窗：hudTap 会先通过右键释放鼠标锁定，右键会
+    // 直接关闭该弹窗。OCR 只用于确认目标行存在，实际点击固定校准行中心。
+    // 这里必须使用普通 ADB 鼠标左键，且不能在前面释放鼠标锁定或改用触屏。
+    await report(
+      "info",
+      "patrol_share_camp_channel_click",
+      `已在 OCR 确认后使用 ADB 鼠标左键点击固定“营地频道”行中心 (${Math.round(campChannelPoint.x)},${Math.round(campChannelPoint.y)})`,
+      {
+        point: campChannelPoint,
+        recognizedTextBounds: {
+          x: channelMatch.x,
+          y: channelMatch.y,
+          width: channelMatch.width,
+          height: channelMatch.height
+        }
+      }
+    );
+    await tapPatrolMouse(ui, campChannelPoint, signal);
     await sleep(settleMs, signal);
     screen = await capturePatrolScreen(
       vision,
@@ -623,7 +931,7 @@ export async function sharePatrolTeam(context, signal) {
       vision,
       screen.observations,
       "营地频道",
-      controls.channelMenuRegion
+      campChannelTextRegion
     );
     if (!menuStillOpen) break;
   }
@@ -703,10 +1011,7 @@ function observationCenter(observation) {
   };
 }
 
-async function tapPatrolHud(ui, point, signal) {
-  if (typeof ui.hudTap === "function") {
-    return ui.hudTap(point, signal);
-  }
+async function tapPatrolMouse(ui, point, signal) {
   return ui.tap(point, signal);
 }
 

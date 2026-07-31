@@ -69,11 +69,7 @@ export async function runTechnology(context, command, bundle, signal) {
 }
 
 export async function verifyFinalConfiguredSlots(context, plan, signal) {
-  const { config, vision, report } = context;
-  const baseline = context.technologyEmptySlotBaseline;
-  if (!baseline?.slots?.length || !baseline?.probes?.length) {
-    throw new Error("科技最终校验缺少本轮清空后的空槽基线");
-  }
+  const { config, report } = context;
   const slots = ["core", "general"].flatMap((lane) =>
     config.technology.slots[lane].map((point, index) => ({
       ...point,
@@ -82,35 +78,42 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
       expectedTechnology: plan[lane]?.[index] ?? null
     }))
   );
-  const frame = await vision.capture("technology-final-verification", signal);
-  const probes = await vision.probe(
-    frame.path,
-    slots,
-    config.technology.filledSlotDetection.sampleRadius,
-    signal
-  );
-  const threshold = Math.max(
-    0.02,
-    Number(
-      config.technology.filledSlotDetection.minimumInstalledFeatureDistance ??
-        config.technology.filledSlotDetection.maximumEmptyFeatureDistance
-    ) || 0.08
-  );
-  const mismatches = slots.flatMap((slot, index) => {
+  const mismatches = [];
+  for (const slot of slots) {
+    const laneLabel = slot.lane === "core" ? "第一行" : "第二行";
+    await report(
+      "info",
+      "tech_final_slot_check",
+      `安装后点击并读取${laneLabel}第 ${slot.index + 1} 格详情，确认其应为${slot.expectedTechnology ? `“${slot.expectedTechnology.uiLabel}”` : "空"}`
+    );
+    // 槽位空图标会随页面状态、动画和光效发生像素变化。最终校验和安装前
+    // 的清空检查相同：逐格点击后只由详情里的“卸下”动作确认是否已安装。
+    const state = await readTechnologySlotState(
+      context,
+      slot,
+      `technology-final-slot-${slot.lane}-${slot.index + 1}`,
+      signal,
+      { attempts: 1 }
+    );
     const expectedFilled = Boolean(slot.expectedTechnology);
-    const distance = featureDistance(probes[index], baseline.probes[index]);
-    const detectedFilled = distance > threshold;
-    return detectedFilled === expectedFilled
-      ? []
-      : [{
-          lane: slot.lane,
-          slot: slot.index + 1,
-          expectedLabel: slot.expectedTechnology?.uiLabel || null,
-          expectedFilled,
-          detectedFilled,
-          distance
-        }];
-  });
+    if (state.occupied !== expectedFilled) {
+      mismatches.push({
+        lane: slot.lane,
+        slot: slot.index + 1,
+        expectedLabel: slot.expectedTechnology?.uiLabel || null,
+        expectedFilled,
+        detectedFilled: state.occupied
+      });
+      continue;
+    }
+    if (!expectedFilled) {
+      await report(
+        "info",
+        "tech_final_empty_slot_verified",
+        `${laneLabel}第 ${slot.index + 1} 格已点击，详情未出现“卸下”，确认为空`
+      );
+    }
+  }
   if (mismatches.length) {
     throw new Error(
       `科技最终槽位校验失败：${mismatches
@@ -124,8 +127,7 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
   await report(
     "info",
     "technology_final_verified",
-    `正式 Agent 已用本轮空槽基线无点击确认 12 个槽位：第一行 ${plan.core.length} 项、第二行 ${plan.general.length} 项，其余槽位为空`,
-    { probes, threshold, screenshot: frame.path }
+    `正式 Agent 已逐格点击并通过详情“卸下”动作确认 ${slots.length} 个槽位：第一行 ${plan.core.length} 项、第二行 ${plan.general.length} 项，其余槽位为空`
   );
 }
 

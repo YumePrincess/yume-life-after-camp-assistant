@@ -258,12 +258,12 @@ test("map click fallback uses the calibrated minimap center, never the camera bu
   );
 });
 
-test("a model map prediction never unlocks destination clicks without map OCR", async () => {
+test("a model map prediction never unlocks destination clicks without the top-left marker", async () => {
   const fixture = createUi({
     fastFrames: [
       [observation("背包", 120, 900)],
       [],
-      [observation("查看庄园", 260, 150)]
+      [observation("标志查看", 260, 150)]
     ],
     generalAdvice: {
       state: "map",
@@ -291,6 +291,54 @@ test("a model map prediction never unlocks destination clicks without map OCR", 
       message.includes("已通过地图固定文字确认")
     )
   );
+});
+
+test("map opening retries M after the OCR verification window", async () => {
+  const fixture = createUi({
+    fastFrames: [[observation("背包", 120, 900)], []]
+  });
+  await assert.rejects(
+    fixture.ui.ensureMapOpen({
+      mapButton: { x: 1780, y: 120 },
+      mapKey: "KEYCODE_M",
+      mapButtonFallbackDelayMs: 30_000,
+      mapKeyRetryAttempts: 2,
+      mapOpenTimeoutSeconds: 1,
+      mapReadyTexts: ["标志查看"],
+      mapPreparationMaxClosures: 2,
+      mapOpenPollMs: 1
+    }),
+    /MAP_DID_NOT_OPEN/
+  );
+  assert.deepEqual(fixture.keys, ["KEYCODE_M", "KEYCODE_M"]);
+  assert.deepEqual(fixture.focusPoints, [
+    { x: 1780, y: 120 },
+    { x: 1780, y: 120 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("仍未在左上角 OCR 识别“标志查看”")
+    )
+  );
+});
+
+test("a non-marker map text never confirms map opening", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("背包", 120, 900)],
+      [observation("查看庄园", 260, 150)],
+      [observation("标志查看", 900, 150)],
+      [observation("标志查看", 260, 150)]
+    ]
+  });
+  await fixture.ui.ensureMapOpen({
+    mapKey: "KEYCODE_M",
+    mapButtonFallbackDelayMs: 30_000,
+    mapReadyTexts: ["标志查看", "查看庄园"],
+    mapPreparationMaxClosures: 2,
+    mapOpenPollMs: 1
+  });
+  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
 });
 
 test("map preparation permits only a high-confidence AI safe close control", async () => {
@@ -484,50 +532,30 @@ test("destination approach sends five W presses per round and stops after six ro
   );
 });
 
-test("destination approach uses five held-W rounds before five joystick fallbacks", async () => {
+test("destination approach uses only five held-W rounds and never drags the joystick", async () => {
   const fixture = createUi({
-    fastFrames: Array.from({ length: 11 }, () => [])
+    fastFrames: Array.from({ length: 6 }, () => [])
   });
   const verified = await fixture.ui.verifyDestination({
     name: "公告版",
     approachUntilReady: true,
     approachMaxRounds: 5,
-    approachGesture: {
-      from: { x: 480, y: 600 },
-      to: { x: 480, y: 360 },
-      durationMs: 1_500
-    },
     approachIntervalMs: 250,
     approachFallbackKey: "KEYCODE_W",
     approachFallbackMaxRounds: 5,
-    approachFallbackHoldMs: 1_500,
+    approachFallbackHoldMs: 900,
     approachFallbackIntervalMs: 250,
     readyTexts: ["营地巡逻"],
     readyRegion: { left: 1180, top: 300, right: 1920, bottom: 1050 }
   });
 
   assert.equal(verified, false);
-  assert.equal(
-    fixture.approachActions.slice(0, 10).some((action) => action === "swipe"),
-    false
-  );
-  assert.deepEqual(
-    fixture.approachActions.slice(-5),
-    Array.from({ length: 5 }, () => "swipe")
-  );
-  assert.equal(fixture.swipes.length, 5);
-  assert.deepEqual(
-    fixture.swipes,
-    Array.from({ length: 5 }, () => ({
-      from: { x: 480, y: 600 },
-      to: { x: 480, y: 360 },
-      durationMs: 1_500
-    }))
-  );
+  assert.equal(fixture.approachActions.includes("swipe"), false);
+  assert.equal(fixture.swipes.length, 0);
   assert.deepEqual(fixture.keys, Array.from({ length: 5 }, () => "KEYCODE_W"));
   assert.deepEqual(
     fixture.holds,
-    Array.from({ length: 5 }, () => ({ code: "KEYCODE_W", durationMs: 1_500 }))
+    Array.from({ length: 5 }, () => ({ code: "KEYCODE_W", durationMs: 900 }))
   );
 });
 

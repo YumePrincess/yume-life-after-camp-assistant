@@ -75,6 +75,30 @@ test("an Android build without MOVE support falls back to mouse UP and continues
   ]);
 });
 
+test("mouse injection permission denial does not block supported keyboard commands", async () => {
+  const calls = [];
+  const adb = createAdb(calls);
+  adb.shell = async (args) => {
+    const normalized = args.map(String);
+    calls.push(normalized);
+    if (normalized.includes("motionevent")) {
+      throw new Error(
+        "SecurityException: Injecting to another application requires INJECT_EVENTS permission"
+      );
+    }
+    return { stdout: "", stderr: "" };
+  };
+
+  assert.equal(await adb.focusGameInput(1782, 128), false);
+  await adb.key("KEYCODE_M");
+
+  assert.deepEqual(calls, [
+    ["input", "mouse", "motionevent", "MOVE", "1782", "128"],
+    ["input", "mouse", "motionevent", "UP", "960", "600"],
+    ["input", "keyevent", "KEYCODE_M"]
+  ]);
+});
+
 test("ADB touch tap bypasses the mouse source and releases stale mouse state", async () => {
   const calls = [];
   const adb = createAdb(calls);

@@ -9,6 +9,7 @@ import {
   markTemporaryKeyUsed,
   revokeTemporaryKey,
   saveSession,
+  updateTemporaryKeyPermissions,
   type SessionRow
 } from "./db";
 import { json, problem, redirect } from "./response";
@@ -26,6 +27,7 @@ export const ADMIN_PERMISSIONS = [
   "admin:tasks",
   "admin:agent",
   "admin:technology",
+  "admin:technology-history",
   "admin:identity-review",
   "admin:identity-codes",
   "admin:smtp",
@@ -34,6 +36,7 @@ export const ADMIN_PERMISSIONS = [
   "admin:history",
   // Legacy action permissions remain valid for previously issued keys.
   "config:write",
+  "technology-history:manage",
   "task:run",
   "task:interrupt",
   "member:kick",
@@ -52,6 +55,7 @@ const MODULE_PERMISSION_ALIASES: Partial<
   "admin:tasks": ["config:write"],
   "admin:agent": ["config:write"],
   "admin:technology": ["config:write"],
+  "admin:technology-history": ["technology-history:manage"],
   "admin:identity-review": ["identity:review"],
   "admin:identity-codes": ["identity:manage"],
   "admin:smtp": ["smtp:manage"],
@@ -64,7 +68,8 @@ const MODULE_PERMISSION_ALIASES: Partial<
   "keys:manage": ["admin:access"],
   "identity:review": ["admin:identity-review"],
   "identity:manage": ["admin:identity-codes"],
-  "smtp:manage": ["admin:smtp"]
+  "smtp:manage": ["admin:smtp"],
+  "technology-history:manage": ["admin:technology-history"]
 };
 type OidcMode = "login" | "silent" | "check";
 
@@ -599,7 +604,7 @@ export async function issueTemporaryKey(
   return { id, key: `mrzh_${id}.${secret}` };
 }
 
-export { listTemporaryKeys, revokeTemporaryKey };
+export { listTemporaryKeys, revokeTemporaryKey, updateTemporaryKeyPermissions };
 
 function oidcFailure(state: OidcState, location: string, clearState: string): Response {
   return state.mode === "silent"

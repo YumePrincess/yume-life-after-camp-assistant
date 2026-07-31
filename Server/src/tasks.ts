@@ -2,6 +2,7 @@ import {
   createCommand,
   createRun,
   listBallots,
+  saveTechnologyVoteHistory,
   type SessionRow
 } from "./db";
 import type {
@@ -106,12 +107,30 @@ async function technologyPlanForRun(
       bundle.campConfig.gameResetTime
     );
   const voteSummary = await buildVoteSummary(env, bundle, now, resolvedTarget);
-  return buildTechnologyPlan({
+  const plan = buildTechnologyPlan({
     targetDate: resolvedTarget,
     currentCampType: bundle.campConfig.currentCampType,
     technologyConfig: bundle.technologyConfig,
     voteOptions: voteSummary.options
   });
+  const fixedKeys = new Set(
+    bundle.technologyConfig.fixedByDate[resolvedTarget] ??
+      bundle.technologyConfig.fixedByWeekday[
+        String(weekdayForDateKey(resolvedTarget))
+      ] ??
+      []
+  );
+  await saveTechnologyVoteHistory(env, {
+    pollDate: resolvedTarget,
+    finalizedAt: now.toISOString(),
+    ballotCount: voteSummary.ballotCount,
+    options: voteSummary.options,
+    projectedPlan: { core: plan.core, general: plan.general },
+    fixedTechnologies: bundle.technologyConfig.catalog.filter((item) =>
+      fixedKeys.has(item.key)
+    )
+  });
+  return plan;
 }
 
 export async function enqueueTask(

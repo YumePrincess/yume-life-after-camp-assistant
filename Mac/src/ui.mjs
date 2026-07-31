@@ -324,6 +324,20 @@ export class GameUi {
     return this.vision.find(filtered, text, mode);
   }
 
+  findMapVerificationMarker(observations, action) {
+    // 地图是否打开只能由左上角的“标志查看”确认。地图中的地点、
+    // 庄园等文字会在其他界面出现，不能作为放行后续点击的依据。
+    const markerText =
+      action.mapVerificationText || action.mapModeText || "标志查看";
+    const markerRegion = action.mapVerificationRegion || {
+      left: 0,
+      top: 0,
+      right: 700,
+      bottom: 260
+    };
+    return this.findInRegion(observations, markerText, markerRegion);
+  }
+
   async keyUntilText(action, signal) {
     const timeoutMs = this.timeoutMs(action);
     const deadline = Date.now() + timeoutMs;
@@ -937,10 +951,6 @@ export class GameUi {
           )
         )
       : 0;
-    const gesture = destination.approachGesture;
-    const gestureRounds = gesture
-      ? Math.max(1, Math.min(5, Number(destination.approachMaxRounds) || 5))
-      : 0;
     const fallbackKey = destination.approachFallbackKey;
     const fallbackRounds = fallbackKey
       ? Math.max(
@@ -948,9 +958,7 @@ export class GameUi {
           Math.min(5, Number(destination.approachFallbackMaxRounds) || 5)
         )
       : 0;
-    const approachRounds = gesture
-      ? gestureRounds + fallbackRounds
-      : legacyApproachRounds;
+    const approachRounds = fallbackKey ? fallbackRounds : legacyApproachRounds;
     const pressesPerRound = Math.max(
       1,
       Math.min(5, Number(destination.approachPressesPerRound) || 5)
@@ -992,7 +1000,7 @@ export class GameUi {
         return true;
       }
       if (attempt < approachRounds) {
-        if (gesture && fallbackKey && attempt < fallbackRounds) {
+        if (fallbackKey && attempt < fallbackRounds) {
           if (attempt === 0) {
             await this.report(
               "warning",
@@ -1024,29 +1032,6 @@ export class GameUi {
             ),
             signal
           );
-          continue;
-        }
-        if (gesture) {
-          const gestureAttempt = attempt - fallbackRounds + 1;
-          if (gestureAttempt === 1) {
-            await this.report(
-              "warning",
-              "teleport_approach_gesture_fallback",
-              `W 寻路 ${fallbackRounds} 轮后仍未找到交互选项，备用执行左侧虚拟摇杆向上拖动（每次 ${gesture.durationMs || 1_500} 毫秒，最多 ${gestureRounds} 轮）`
-            );
-          }
-          if (typeof this.adb.releaseGameMouseCapture === "function") {
-            await this.adb.releaseGameMouseCapture(signal).catch(
-              () => undefined
-            );
-          }
-          await this.adb.touchSwipe(
-            gesture.from,
-            gesture.to,
-            gesture.durationMs || 1_500,
-            signal
-          );
-          await delay(approachIntervalMs, signal);
           continue;
         }
         if (attempt === 0) {
@@ -1097,7 +1082,6 @@ export class GameUi {
       {
         readyTexts: destination.readyTexts,
         approachRounds,
-        gestureRounds,
         fallbackRounds,
         pressesPerRound
       }
@@ -1112,17 +1096,31 @@ export class GameUi {
       ? action.mapButton
       : { x: 1782, y: 128 };
     const mapKey = action.mapKey || "KEYCODE_M";
-    if (mapKey) {
+    const timeoutMs = Math.max(
+      1,
+      Number(action.mapOpenTimeoutSeconds) || 10
+    ) * 1000;
+    const mapKeyRetryAttempts = mapKey
+      ? Math.max(1, Math.min(6, Number(action.mapKeyRetryAttempts) || 3))
+      : 0;
+    let mapKeyAttempts = 0;
+    const sendMapKey = async (retry = false) => {
+      mapKeyAttempts += 1;
       await this.report(
-        "info",
-        "map_open_key",
-        "正在通过 ADB 复位游戏输入后发送 M 键打开地图；不会先点击右上角以免误开相机",
-        { key: mapKey, focusPoint: mapButton || null }
+        retry ? "warning" : "info",
+        retry ? "map_open_key_retry" : "map_open_key",
+        retry
+          ? `等待 ${timeoutMs / 1000} 秒仍未在左上角 OCR 识别“标志查看”，重新发送 M 键打开地图（${mapKeyAttempts}/${mapKeyRetryAttempts}）`
+          : "正在通过 ADB 复位游戏输入后发送 M 键打开地图；不会先点击右上角以免误开相机",
+        { key: mapKey, focusPoint: mapButton || null, attempt: mapKeyAttempts }
       );
       if (mapButton && typeof this.adb.focusGameInput === "function") {
         await this.adb.focusGameInput(mapButton.x, mapButton.y, signal);
       }
       await this.sendGameKey(mapKey, signal);
+    };
+    if (mapKey) {
+      await sendMapKey();
     } else {
       await this.report(
         "info",
@@ -1132,10 +1130,6 @@ export class GameUi {
       );
       await this.hudTap(mapButton, signal);
     }
-    const timeoutMs = Math.max(
-      180,
-      Number(action.mapOpenTimeoutSeconds) || 10
-    ) * 1000;
     let deadline = Date.now() + timeoutMs;
     let advisorChecked = false;
     let modelMapCandidate = false;
@@ -1155,9 +1149,10 @@ export class GameUi {
         "teleport-map-verification",
         signal
       );
-      const verified = (action.mapReadyTexts || [])
-        .map((text) => this.vision.find(verification.observations, text))
-        .find(Boolean);
+      const verified = this.findMapVerificationMarker(
+        verification.observations,
+        action
+      );
       if (verified) {
         await this.report(
           "info",
@@ -1175,13 +1170,9 @@ export class GameUi {
           "teleport-map-verification-accurate",
           signal
         ).catch(() => null);
-        const accurateVerified = (action.mapReadyTexts || [])
-          .map((text) =>
-            accurate
-              ? this.vision.find(accurate.observations, text)
-              : null
-          )
-          .find(Boolean);
+        const accurateVerified = accurate
+          ? this.findMapVerificationMarker(accurate.observations, action)
+          : null;
         if (accurateVerified) {
           await this.report(
             "info",
@@ -1202,7 +1193,7 @@ export class GameUi {
           {
             expectedState: "map",
             taskHint: `确认营地地图是否已打开；可见文字通常包括${(
-              action.mapReadyTexts || []
+              [action.mapVerificationText || action.mapModeText || "标志查看"]
             ).join("、")}`,
             ocrTexts: verification.observations.map((item) => item.text)
           },
@@ -1228,7 +1219,6 @@ export class GameUi {
       }
       if (
         !mapButtonFallbackSent &&
-        !modelMapCandidate &&
         Date.now() >= mapButtonFallbackAt
       ) {
         mapButtonFallbackSent = true;
@@ -1242,14 +1232,12 @@ export class GameUi {
       }
       if (
         Date.now() >= deadline &&
-        this.config.timeouts.neverAbortHealthyTaskOnTimeout
+        mapKey &&
+        mapKeyAttempts < mapKeyRetryAttempts
       ) {
-        await this.report(
-          "warning",
-          "healthy_map_wait_extended",
-          "游戏进程健康但地图尚未确认；不会点击地点或快速前往，继续等待"
-        );
+        await sendMapKey(true);
         advisorChecked = false;
+        modelMapCandidate = false;
         accurateCheckedAt = 0;
         deadline = Date.now() + timeoutMs;
       }
@@ -1518,22 +1506,19 @@ export class GameUi {
         signal
       );
       let accurateFrame = null;
-      const mapOpen = (action.mapReadyTexts || [])
-        .map((text) => this.vision.find(frame.observations, text))
-        .find(Boolean);
+      const mapOpen = this.findMapVerificationMarker(
+        frame.observations,
+        action
+      );
       if (mapOpen) return "map";
       if (typeof this.vision.captureAccurateTransient === "function") {
         accurateFrame = await this.vision.captureAccurateTransient(
           `map-preparation-map-accurate-${attempt}`,
           signal
         ).catch(() => null);
-        const accurateMapOpen = (action.mapReadyTexts || [])
-          .map((text) =>
-            accurateFrame
-              ? this.vision.find(accurateFrame.observations, text)
-              : null
-          )
-          .find(Boolean);
+        const accurateMapOpen = accurateFrame
+          ? this.findMapVerificationMarker(accurateFrame.observations, action)
+          : null;
         if (accurateMapOpen) {
           await this.report(
             "info",

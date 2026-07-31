@@ -19,6 +19,7 @@
     tasks: "admin:tasks",
     agent: "admin:agent",
     technology: "admin:technology",
+    "technology-history": "admin:technology-history",
     "identity-applications": "admin:identity-review",
     "identity-codes": "admin:identity-codes",
     smtp: "admin:smtp",
@@ -32,6 +33,7 @@
     "admin:tasks": ["config:write"],
     "admin:agent": ["config:write"],
     "admin:technology": ["config:write"],
+    "admin:technology-history": ["technology-history:manage"],
     "admin:identity-review": ["identity:review"],
     "admin:identity-codes": ["identity:manage"],
     "admin:smtp": ["smtp:manage"],
@@ -44,7 +46,8 @@
     "keys:manage": ["admin:access"],
     "identity:review": ["admin:identity-review"],
     "identity:manage": ["admin:identity-codes"],
-    "smtp:manage": ["admin:smtp"]
+    "smtp:manage": ["admin:smtp"],
+    "technology-history:manage": ["admin:technology-history"]
   };
   const TASK_NAMES = {
     ...Object.fromEntries(TASKS.map(([key, name]) => [key, name])),
@@ -66,6 +69,8 @@
     technologyDraft: null,
     technologyQuery: "",
     technologyCategory: "all",
+    technologyHistory: { dates: [], history: null },
+    technologyHistoryLoading: false,
     activeView: "overview",
     accessAllowed: false,
     activeEventRunId: null,
@@ -82,6 +87,7 @@
     identityCodeStatus: "",
     temporaryKeySearch: "",
     temporaryKeyStatus: "",
+    editingTemporaryKeyId: null,
     selectedIdentityApplication: null,
     selectedIdentityCode: null,
     publicContentLocale: "zh-cn",
@@ -164,6 +170,7 @@
         "admin:tasks": "任务计划",
         "admin:agent": "执行策略",
         "admin:technology": "科技管理",
+        "admin:technology-history": "科技投票历史",
         "admin:identity-review": "识别码审批",
         "admin:identity-codes": "身份识别码",
         "admin:smtp": "SMTP 发信",
@@ -171,6 +178,7 @@
         "admin:members": "成员管理",
         "admin:history": "运行记录",
         "config:write": "修改配置",
+        "technology-history:manage": "管理科技投票历史",
         "task:run": "执行任务",
         "task:interrupt": "中断任务",
         "member:kick": "踢出成员",
@@ -480,6 +488,168 @@
         );
       }
       root.append(item);
+    }
+  }
+
+  function historyTechnologyItem(item, tag = "article") {
+    const card = create(tag, "technology-history-tech");
+    const icon = document.createElement(item.iconUrl ? "img" : "span");
+    icon.className = "technology-history-tech-icon";
+    if (item.iconUrl) {
+      icon.src = item.iconUrl;
+      icon.alt = "";
+      icon.loading = "lazy";
+    } else {
+      icon.textContent = (item.name || "?").slice(0, 1);
+    }
+    card.append(icon, create("strong", "", item.name || "—"));
+    return card;
+  }
+
+  function renderHistoryTechnologyList(root, items, emptyText) {
+    root.replaceChildren();
+    if (!items.length) {
+      root.append(create("p", "technology-history-none", emptyText));
+      return;
+    }
+    for (const item of items) root.append(historyTechnologyItem(item));
+  }
+
+  function renderTechnologyHistory(payload) {
+    state.technologyHistory = payload || { dates: [], history: null, voteBallots: [] };
+    const dates = state.technologyHistory.dates || [];
+    const history = state.technologyHistory.history;
+    const dateInput = byId("technology-history-date");
+    const recentRoot = byId("technology-history-recent-dates");
+    recentRoot.replaceChildren();
+    if (!dates.length) {
+      recentRoot.append(create("span", "technology-history-recent-empty", "暂无历史结果"));
+    } else {
+      for (const date of dates.slice(0, 7)) {
+        const button = create(
+          "button",
+          "technology-history-date-chip",
+          date.pollDate.slice(5)
+        );
+        button.type = "button";
+        button.dataset.active = String(date.pollDate === history?.pollDate);
+        button.title = `${date.pollDate} · ${date.ballotCount || 0} 人投票`;
+        button.addEventListener("click", () => loadTechnologyHistory(date.pollDate));
+        recentRoot.append(button);
+      }
+    }
+    dateInput.value = history?.pollDate || dateInput.value || "";
+    dateInput.disabled = state.technologyHistoryLoading;
+    byId("refresh-technology-history").disabled = state.technologyHistoryLoading;
+    byId("delete-technology-history-date").disabled =
+      !history || !hasPermission("technology-history:manage");
+    byId("delete-technology-history-all").disabled =
+      !dates.length || !hasPermission("technology-history:manage");
+    const content = byId("technology-history-content");
+    const empty = byId("technology-history-empty");
+    content.hidden = !history;
+    empty.hidden = Boolean(history);
+    if (!history) return;
+    byId("technology-history-ballots").textContent = window.MrzhI18n.format(
+      "{count} 人最终投票",
+      { count: history.ballotCount || 0 }
+    );
+    byId("technology-history-finalized").textContent = window.MrzhI18n.format(
+      "归档于 {date}",
+      { date: formatDate(history.finalizedAt) }
+    );
+    renderHistoryTechnologyList(
+      byId("technology-history-core"),
+      history.projectedPlan?.core || [],
+      "该行当天没有开启科技"
+    );
+    renderHistoryTechnologyList(
+      byId("technology-history-general"),
+      history.projectedPlan?.general || [],
+      "该行当天没有开启科技"
+    );
+    renderHistoryTechnologyList(
+      byId("technology-history-fixed"),
+      history.fixedTechnologies || [],
+      "当天未设置固定科技"
+    );
+    const votes = byId("technology-history-votes");
+    votes.replaceChildren();
+    const voted = (history.options || []).filter((item) => Number(item.votes) > 0);
+    const ballots = state.technologyHistory.voteBallots || [];
+    if (!voted.length) {
+      votes.append(create("p", "technology-history-none", "当天没有有效投票"));
+    } else {
+      for (const item of voted) {
+        const row = create(
+          "button",
+          "technology-history-vote technology-history-vote-button"
+        );
+        row.type = "button";
+        row.title = "查看投票人详情";
+        row.addEventListener("click", () =>
+          openVoteDetails(
+            item,
+            ballots.filter((ballot) =>
+              (ballot.selections || []).includes(item.key)
+            )
+          )
+        );
+        row.append(
+          historyTechnologyItem(item, "span"),
+          create("strong", "technology-history-vote-count", `${item.votes} 票`)
+        );
+        votes.append(row);
+      }
+    }
+  }
+
+  async function loadTechnologyHistory(date = "") {
+    if (!canView("technology-history") || state.technologyHistoryLoading) return;
+    state.technologyHistoryLoading = true;
+    byId("technology-history-status").textContent = "正在读取历史记录…";
+    try {
+      const params = new URLSearchParams({
+        locale: window.MrzhI18n.language()
+      });
+      if (date) params.set("date", date);
+      const payload = await request(`/api/admin/technology-history?${params}`);
+      renderTechnologyHistory(payload);
+      byId("technology-history-status").textContent = payload.history
+        ? "已载入最终归档"
+        : "暂无可查询记录";
+    } catch (error) {
+      byId("technology-history-status").textContent = error.message;
+    } finally {
+      state.technologyHistoryLoading = false;
+      renderTechnologyHistory(state.technologyHistory);
+    }
+  }
+
+  async function deleteTechnologyHistory(date) {
+    const deletingAll = !date;
+    const label = deletingAll ? "全部历史投票结果" : `${date} 的历史投票结果`;
+    if (!window.confirm(`确认删除${label}吗？删除后无法从后台恢复。`)) return;
+    const button = byId(
+      deletingAll
+        ? "delete-technology-history-all"
+        : "delete-technology-history-date"
+    );
+    button.disabled = true;
+    try {
+      const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
+      const result = await request(`/api/admin/technology-history${suffix}`, {
+        method: "DELETE"
+      });
+      byId("technology-history-status").textContent = window.MrzhI18n.format(
+        "已删除 {count} 条历史结果。",
+        { count: result.deleted || 0 }
+      );
+      await loadTechnologyHistory();
+    } catch (error) {
+      byId("technology-history-status").textContent = error.message;
+    } finally {
+      button.disabled = false;
     }
   }
 
@@ -938,6 +1108,9 @@
       loadSmtpConfig();
     }
     if (resolved === "access" && canView(resolved)) loadTemporaryKeys();
+    if (resolved === "technology-history" && canView(resolved)) {
+      loadTechnologyHistory();
+    }
   }
 
   function render(data, fillSections = []) {
@@ -986,8 +1159,9 @@
       for (const field of form.querySelectorAll(
         "input, select, textarea, button"
       )) {
+        const uiOnly = field.matches("[data-ui-only]") || field.closest("[data-ui-only]");
         field.disabled =
-          readonly ||
+          (!uiOnly && readonly) ||
           (state.saving && field.matches('button[type="submit"]'));
       }
     }
@@ -1007,6 +1181,13 @@
     byId("auto-kick-evaluate").disabled = !hasPermission("member:kick");
     byId("clear-rate-limits").disabled = !hasPermission("admin:history");
     byId("clear-run-history").disabled = !hasPermission("admin:history");
+    const canManageTechnologyHistory = hasPermission("technology-history:manage");
+    byId("delete-technology-history-date").hidden = !canManageTechnologyHistory;
+    byId("delete-technology-history-all").hidden = !canManageTechnologyHistory;
+    byId("delete-technology-history-date").disabled =
+      !canManageTechnologyHistory || !state.technologyHistory.history;
+    byId("delete-technology-history-all").disabled =
+      !canManageTechnologyHistory || !(state.technologyHistory.dates || []).length;
   }
 
   async function loadTemporaryKeys(page = state.temporaryKeys.page) {
@@ -1069,12 +1250,21 @@
         ]
           .filter(Boolean)
           .join(" · ");
+        const actions = create("div", "key-item-actions");
+        const edit = create("button", "button button-quiet", "编辑权限");
+        edit.type = "button";
+        edit.hidden = !hasPermission("keys:manage");
+        edit.disabled = Boolean(item.revoked_at);
+        edit.addEventListener("click", () =>
+          openTemporaryKeyPermissions(item, permissions)
+        );
         const revoke = create("button", "button button-danger", "撤销");
         revoke.type = "button";
         revoke.hidden = !hasPermission("keys:manage");
         revoke.disabled = Boolean(item.revoked_at);
         revoke.addEventListener("click", () => revokeTemporaryKey(item.id, revoke));
-        row.append(identity, create("div", "key-item-meta", suffix), revoke);
+        actions.append(edit, revoke);
+        row.append(identity, create("div", "key-item-meta", suffix), actions);
         root.append(row);
       }
     }
@@ -1538,6 +1728,48 @@
     } catch (error) {
       byId("save-state").textContent = error.message;
       button.disabled = false;
+    }
+  }
+
+  function openTemporaryKeyPermissions(item, permissions) {
+    state.editingTemporaryKeyId = item.id;
+    byId("temporary-key-permissions-title").textContent =
+      `编辑权限 · ${item.name}`;
+    byId("temporary-key-permissions-feedback").textContent = "";
+    const selected = new Set(permissions);
+    for (const field of document.querySelectorAll('[name="keyEditPermission"]')) {
+      field.checked = selected.has(field.value);
+    }
+    byId("temporary-key-permissions-dialog").showModal();
+  }
+
+  async function saveTemporaryKeyPermissions(event) {
+    event.preventDefault();
+    const id = state.editingTemporaryKeyId;
+    if (!id) return;
+    const form = event.currentTarget;
+    const permissions = [
+      ...form.querySelectorAll('[name="keyEditPermission"]:checked')
+    ].map((field) => field.value);
+    if (!permissions.length) {
+      byId("temporary-key-permissions-feedback").textContent = "请选择至少一项权限";
+      return;
+    }
+    const save = byId("temporary-key-permissions-save");
+    save.disabled = true;
+    try {
+      await request(`/api/admin/temp-keys/${encodeURIComponent(id)}/permissions`, {
+        method: "PATCH",
+        body: JSON.stringify({ permissions })
+      });
+      byId("temporary-key-permissions-feedback").textContent =
+        "权限已更新；该 Key 的现有登录会话已失效。";
+      await loadTemporaryKeys();
+      window.setTimeout(() => byId("temporary-key-permissions-dialog").close(), 500);
+    } catch (error) {
+      byId("temporary-key-permissions-feedback").textContent = error.message;
+    } finally {
+      save.disabled = false;
     }
   }
 
@@ -2090,6 +2322,15 @@
     state.technologyCategory = event.target.value || "all";
     renderTechnologyEditor();
   });
+  byId("refresh-technology-history").addEventListener("click", () =>
+    loadTechnologyHistory(byId("technology-history-date").value)
+  );
+  byId("delete-technology-history-date").addEventListener("click", () =>
+    deleteTechnologyHistory(state.technologyHistory.history?.pollDate)
+  );
+  byId("delete-technology-history-all").addEventListener("click", () =>
+    deleteTechnologyHistory("")
+  );
   byId("public-content-locale").addEventListener("change", (event) => {
     switchPublicContentLocale(event.target.value);
   });
@@ -2098,6 +2339,17 @@
   byId("refresh-admin").addEventListener("click", () => refresh(false));
   byId("logout").addEventListener("click", logout);
   byId("temporary-key-form").addEventListener("submit", generateTemporaryKey);
+  byId("temporary-key-permissions-form").addEventListener(
+    "submit",
+    saveTemporaryKeyPermissions
+  );
+  byId("temporary-key-permissions-close").addEventListener("click", () =>
+    byId("temporary-key-permissions-dialog").close()
+  );
+  byId("temporary-key-permissions-dialog").addEventListener("close", () => {
+    state.editingTemporaryKeyId = null;
+    byId("temporary-key-permissions-feedback").textContent = "";
+  });
   byId("temporary-key-search-form").addEventListener("submit", (event) => {
     event.preventDefault();
     state.temporaryKeySearch = byId("temporary-key-search").value.trim();
@@ -2127,6 +2379,20 @@
       );
       if (field === demo && field.checked) {
         for (const other of document.querySelectorAll('[name="keyPermission"]')) {
+          if (other !== demo) other.checked = false;
+        }
+      } else if (field.checked && demo) {
+        demo.checked = false;
+      }
+    });
+  }
+  for (const field of document.querySelectorAll('[name="keyEditPermission"]')) {
+    field.addEventListener("change", () => {
+      const demo = document.querySelector(
+        '[name="keyEditPermission"][value="demo:preview"]'
+      );
+      if (field === demo && field.checked) {
+        for (const other of document.querySelectorAll('[name="keyEditPermission"]')) {
           if (other !== demo) other.checked = false;
         }
       } else if (field.checked && demo) {

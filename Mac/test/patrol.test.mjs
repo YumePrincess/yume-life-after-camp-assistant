@@ -8,8 +8,6 @@ import {
 
 test("patrol team creation follows only region-verified live-device steps", async () => {
   const taps = [];
-  const touchTaps = [];
-  let mouseReleaseCount = 0;
   const reports = [];
   const sleeps = [];
   const context = {
@@ -20,12 +18,6 @@ test("patrol team creation follows only region-verified live-device steps", asyn
       }
     },
     adb: {
-      async releaseGameMouseCapture() {
-        mouseReleaseCount += 1;
-      },
-      async touchTap(x, y) {
-        touchTaps.push({ x, y });
-      },
       async key() {
         throw new Error("voice prompt was not present");
       }
@@ -60,12 +52,10 @@ test("patrol team creation follows only region-verified live-device steps", asyn
 
   assert.deepEqual(taps, [
     { x: 48, y: 327 },
-    { x: 470, y: 900 },
-    { x: 770, y: 380 },
+    { x: 220, y: 180 },
+    { x: 480, y: 906 },
     { x: 1419, y: 891 }
   ]);
-  assert.deepEqual(touchTaps, [{ x: 190, y: 180 }]);
-  assert.equal(mouseReleaseCount, 1);
   assert.ok(sleeps.filter((ms) => ms === 5_000).length >= 2);
   assert.ok(reports.includes("patrol_flag_click"));
   assert.ok(reports.includes("patrol_team_created_verified"));
@@ -175,18 +165,25 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
   assert.deepEqual(taps[0], { x: 48, y: 327 });
 });
 
-test("patrol create-menu click releases the container mouse before each of six attempts", async () => {
-  let mouseReleaseCount = 0;
-  let touchCount = 0;
+test("patrol create-menu retains the acquired mouse focus for up to six retries", async () => {
+  let mouseTapCount = 0;
+  let hostUnlockCount = 0;
+  const config = patrolConfig();
+  config.patrolTeamUi.hostMouseUnlockBeforeCreate = true;
   const context = {
-    config: patrolConfig(),
-    ui: { async tap() {} },
+    config,
+    ui: {
+      async tap() {
+        mouseTapCount += 1;
+      }
+    },
     adb: {
-      async releaseGameMouseCapture() {
-        mouseReleaseCount += 1;
-      },
-      async touchTap() {
-        touchCount += 1;
+      async key() {}
+    },
+    mumu: {
+      async releaseContainerMouseCapture() {
+        hostUnlockCount += 1;
+        return { mouseReleased: true };
       }
     },
     vision: {
@@ -215,8 +212,9 @@ test("patrol create-menu click releases the container mouse before each of six a
     createPatrolTeam(context),
     /PATROL_TEAM_CREATOR_DID_NOT_OPEN/
   );
-  assert.equal(mouseReleaseCount, 6);
-  assert.equal(touchCount, 6);
+  // The initial capture already has the flag menu open; retry only the create entry.
+  assert.equal(mouseTapCount, 6);
+  assert.equal(hostUnlockCount, 6);
 });
 
 test("an existing patrol team is recognized without toggling the flag", async () => {
@@ -316,9 +314,84 @@ test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", a
   assert.deepEqual(taps, [
     { x: 48, y: 327 },
     { x: 48, y: 327 },
-    { x: 190, y: 180 },
-    { x: 470, y: 900 },
-    { x: 770, y: 380 },
+    { x: 220, y: 180 },
+    { x: 480, y: 906 },
+    { x: 1419, y: 891 }
+  ]);
+});
+
+test("patrol category fallback reuses the contribution-list ADB mouse swipe", async () => {
+  const taps = [];
+  const swipes = [];
+  const context = {
+    config: patrolConfig(),
+    ui: { async tap(point) { taps.push(point); } },
+    adb: {
+      async releaseGameMouseCapture() {},
+      async mouseTap() {},
+      async mouseSwipe(from, to, durationMs) {
+        swipes.push({ from, to, durationMs });
+      },
+      async key() {}
+    },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return { path: "hud.png", observations: [observation("CtrlQ", 20, 300)] };
+        }
+        if (label === "patrol-team-menu-open") {
+          return { path: "menu.png", observations: [observation("创建队伍", 120, 160)] };
+        }
+        if (label.startsWith("patrol-team-creator-open-")) {
+          return {
+            path: "creator.png",
+            observations: [observation("队伍目标", 390, 250), observation("创建队伍", 1340, 865)]
+          };
+        }
+        if (label.startsWith("patrol-camp-affairs-selected")) {
+          return { path: "miss.png", observations: [] };
+        }
+        if (label === "patrol-camp-affairs-scroll-1") {
+          return { path: "scroll.png", observations: [observation("营地事务", 400, 800)] };
+        }
+        if (label.startsWith("patrol-camp-affairs-scroll-reread")) {
+          return { path: "target.png", observations: [observation("营地巡逻任务", 700, 360)] };
+        }
+        if (label === "patrol-target-selected") {
+          return {
+            path: "selected.png",
+            observations: [observation("营地巡逻任务", 700, 360), observation("创建队伍", 1340, 865)]
+          };
+        }
+        return {
+          path: "created.png",
+          observations: [
+            observation("目标：营地事务>营地巡逻任务", 200, 20),
+            observation("等待队员加入", 650, 600)
+          ]
+        };
+      },
+      async captureAccurateTransient() { return { path: null, observations: [] }; },
+      find(observations, query, mode) {
+        return observations.find((item) => mode === "exact" ? item.text === query : item.text.includes(query));
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await createPatrolTeam(context);
+
+  assert.deepEqual(swipes, [{
+    from: { x: 480, y: 820 },
+    to: { x: 480, y: 510 },
+    durationMs: 500
+  }]);
+  assert.deepEqual(taps, [
+    { x: 48, y: 327 },
+    { x: 220, y: 180 },
+    { x: 480, y: 906 },
+    { x: 470, y: 820 },
     { x: 1419, y: 891 }
   ]);
 });
@@ -427,17 +500,25 @@ test("Ctrl+Q fallback stops after six recognition attempts", async () => {
 
 test("patrol share uses calibrated recruit and camp-channel points and verifies success", async () => {
   const taps = [];
+  const hudTaps = [];
   const reports = [];
+  const sleeps = [];
   const context = {
     config: patrolConfig(),
     ui: {
       async tap(point) {
         taps.push(point);
+      },
+      async hudTap(point) {
+        hudTaps.push(point);
       }
     },
     vision: {
       async capture(label) {
-        if (label === "patrol-share-team-page") {
+        if (
+          label === "patrol-share-team-page" ||
+          label.startsWith("patrol-share-recruit-verify")
+        ) {
           return {
             path: "team.png",
             observations: [
@@ -467,7 +548,9 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
         );
       }
     },
-    async sleep() {},
+    async sleep(ms) {
+      sleeps.push(ms);
+    },
     async report(_level, step) {
       reports.push(step);
     }
@@ -476,13 +559,15 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
   await sharePatrolTeam(context);
 
   assert.deepEqual(taps, [
-    { x: 370, y: 1120 },
-    { x: 420, y: 890 }
+    { x: 416, y: 895 }
   ]);
+  assert.deepEqual(hudTaps, [{ x: 343, y: 1128 }]);
+  assert.equal(sleeps[0], 3_000);
+  assert.ok(reports.includes("patrol_share_camp_channel_verified"));
   assert.ok(reports.includes("patrol_share_success"));
 });
 
-test("patrol share retries recruit once when the first click only acquires input", async () => {
+test("book-defense patrol share verifies and clicks the fixed camp-channel row", async () => {
   const taps = [];
   let channelAttempts = 0;
   const context = {
@@ -498,6 +583,12 @@ test("patrol share retries recruit once when the first click only acquires input
           return {
             path: "team.png",
             observations: [observation("保卫古籍", 160, 20)]
+          };
+        }
+        if (label.startsWith("patrol-share-recruit-verify")) {
+          return {
+            path: "team.png",
+            observations: [observation("招募", 300, 1100)]
           };
         }
         if (label.startsWith("patrol-share-channel-menu")) {
@@ -533,7 +624,7 @@ test("patrol share retries recruit once when the first click only acquires input
   assert.deepEqual(taps, [
     { x: 343, y: 1128 },
     { x: 343, y: 1128 },
-    { x: 420, y: 890 }
+    { x: 416, y: 895 }
   ]);
 });
 
@@ -572,14 +663,7 @@ test("patrol share never clicks the channel point unless the selector is verifie
     sharePatrolTeam(context),
     /PATROL_SHARE_CHANNEL_MENU_UNVERIFIED/
   );
-  assert.deepEqual(taps, [
-    { x: 343, y: 1128 },
-    { x: 343, y: 1128 },
-    { x: 343, y: 1128 },
-    { x: 343, y: 1128 },
-    { x: 343, y: 1128 },
-    { x: 343, y: 1128 }
-  ]);
+  assert.deepEqual(taps, []);
 });
 
 test("patrol team is not full when a member slot has no occupied evidence", async () => {
@@ -699,9 +783,18 @@ function patrolUiConfig() {
     flagReadyTexts: ["CtrlQ", "Ctrl Q"],
     flagReadyRegion: { left: 0, top: 260, right: 130, bottom: 390 },
     teamMenuRegion: { left: 70, top: 115, right: 360, bottom: 365 },
-    createMenuPoint: { x: 211, y: 180 },
+    createMenuPoint: { x: 220, y: 180 },
     creatorTitleRegion: { left: 350, top: 235, right: 1565, bottom: 325 },
-    campAffairsPoint: { x: 470, y: 900 },
+    campAffairsPoint: { x: 480, y: 906 },
+    campAffairsFallback: {
+      texts: ["营地事务", "营地事物"],
+      region: { left: 350, top: 285, right: 620, bottom: 975 },
+      from: { x: 480, y: 820 },
+      to: { x: 480, y: 510 },
+      durationMs: 500,
+      settleAfterSwipeMs: 3000,
+      maxSwipes: 2
+    },
     patrolTargetRegion: { left: 650, top: 330, right: 1170, bottom: 540 },
     patrolTargetPoint: { x: 900, y: 386 },
     createButtonRegion: { left: 1285, top: 845, right: 1555, bottom: 935 },
@@ -742,12 +835,24 @@ function patrolUiConfig() {
         bottom: 1180
       },
       recruitPoint: { x: 343, y: 1128 },
+      recruitTextRegion: {
+        left: 220,
+        top: 1040,
+        right: 480,
+        bottom: 1180
+      },
       recruitAttempts: 6,
       channelMenuRegion: {
         left: 280,
         top: 760,
         right: 550,
         bottom: 1080
+      },
+      campChannelTextRegion: {
+        left: 280,
+        top: 840,
+        right: 550,
+        bottom: 960
       },
       campChannelPoint: { x: 416, y: 895 },
       channelAttempts: 6,

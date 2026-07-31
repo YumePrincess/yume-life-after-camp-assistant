@@ -354,6 +354,19 @@ textarea {
   line-height: 1.55;
 }
 
+.key-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.key-item-actions .button {
+  min-height: 36px;
+  padding-inline: 12px;
+  font-size: 12px;
+}
+
 [data-readonly="true"] .section-savebar,
 [data-readonly="true"] .config-form button[type="submit"] {
   display: none;
@@ -2317,6 +2330,258 @@ select option {
   align-self: center;
 }
 
+.button-danger-quiet {
+  border-color: color-mix(in srgb, var(--red) 24%, var(--line));
+  background: transparent;
+}
+
+.technology-history {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 22px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent 45%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.technology-history-heading,
+.technology-history-toolbar,
+.technology-history-meta,
+.technology-history-subheading,
+.technology-history-vote {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.technology-history-heading {
+  align-items: flex-start;
+}
+
+.technology-history-heading .field-label,
+.technology-history-heading strong {
+  display: block;
+}
+
+.technology-history-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.technology-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.technology-history-actions .button,
+.technology-history-toolbar .button {
+  min-height: 38px;
+  padding-inline: 13px;
+  font-size: 12px;
+}
+
+.technology-history-toolbar {
+  justify-content: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel-strong) 68%, transparent);
+}
+
+.technology-history-recent {
+  display: grid;
+  gap: 5px;
+}
+
+.technology-history-date-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.technology-history-date-chip {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.technology-history-date-chip[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.technology-history-date-chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.technology-history-recent-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.technology-history-date-field {
+  display: grid;
+  min-width: min(100%, 280px);
+  gap: 5px;
+  margin: 0;
+}
+
+.technology-history-date-field select {
+  min-height: 38px;
+}
+
+.technology-history-meta {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.technology-history-meta span {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.technology-history-plan-grid,
+.technology-history-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.technology-history-plan,
+.technology-history-detail {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.technology-history-subheading {
+  margin-bottom: 11px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.technology-history-subheading strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.technology-history-tech-list,
+.technology-history-votes {
+  display: grid;
+  gap: 8px;
+}
+
+.technology-history-tech-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.technology-history-tech {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-strong) 54%, transparent);
+}
+
+.technology-history-tech-icon {
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 9px;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+}
+
+.technology-history-tech span.technology-history-tech-icon {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.technology-history-tech strong {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.technology-history-vote {
+  padding: 5px;
+  border-bottom: 1px solid var(--line);
+}
+
+.technology-history-vote-button {
+  width: 100%;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.technology-history-vote-button:hover .technology-history-tech {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.technology-history-vote-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.technology-history-vote:last-child {
+  border-bottom: 0;
+}
+
+.technology-history-vote .technology-history-tech {
+  flex: 1;
+  border: 0;
+  background: transparent;
+}
+
+.technology-history-vote-count {
+  min-width: 42px;
+  color: var(--accent);
+  font-size: 13px;
+  text-align: right;
+}
+
+.technology-history-none {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .section-savebar {
   display: flex;
   align-items: center;
@@ -2573,7 +2838,9 @@ dialog::backdrop {
 
   .highlights-panel,
   .technology-fixed-preview,
-  .technology-vote-overview {
+  .technology-vote-overview,
+  .technology-history-plan-grid,
+  .technology-history-detail-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2601,6 +2868,16 @@ dialog::backdrop {
 
   .technology-admin-controls {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .technology-history-heading,
+  .technology-history-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .technology-history-actions {
+    justify-content: flex-start;
   }
 
   .technology-lane-select {

@@ -143,6 +143,81 @@ export class MumuLifecycle {
     return this.resolvedInstance;
   }
 
+  async releaseContainerMouseCapture(signal, { bringToFront = true } = {}) {
+    const controls = this.config.mumu.hostMouseUnlock;
+    if (!controls?.enabled) return false;
+    const instance = await this.resolveInstance(signal);
+    const processId = Number(instance.pid);
+    if (!Number.isSafeInteger(processId) || processId <= 0) {
+      throw new Error(
+        "MUMU_HOST_MOUSE_UNLOCK_PID_UNAVAILABLE: 未能取得 MuMu 安卓容器进程 PID"
+      );
+    }
+    const keyCode = Math.max(
+      0,
+      Math.min(255, Number(controls.keyCode) || 50)
+    );
+    const foregroundSettleSeconds = Math.max(
+      0.1,
+      Math.min(10, Number(controls.foregroundSettleMs) / 1000 || 4)
+    );
+    const postKeySettleSeconds = Math.max(
+      0.1,
+      Math.min(10, Number(controls.postKeySettleMs) / 1000 || 4)
+    );
+    // 创建队伍前必须让这个容器保持前台：先等待窗口实际获得焦点，再发送
+    // Esc 下方物理键（ANSI key code 50，即 ` / ~），然后等待游戏解除锁定。
+    // 不点击 Dock、菜单栏或桌面，也不使用切换空间的快捷键。
+    const script = [
+      'tell application "System Events"',
+      `  set targetProcess to first application process whose unix id is ${processId}`,
+      ...(bringToFront
+        ? ["  set frontmost of targetProcess to true", `  delay ${foregroundSettleSeconds}`]
+        : []),
+      `  key code ${keyCode}`,
+      `  delay ${postKeySettleSeconds}`,
+      "end tell"
+    ].join("\n");
+    await runFile("/usr/bin/osascript", ["-e", script], {
+      timeoutMs: 15_000,
+      signal
+    });
+    const mouseReleased = await this.hostMouseButtonsReleased(signal);
+    return {
+      instanceIndex: instance.index,
+      processId,
+      keyCode,
+      bringToFront,
+      foregroundSettleSeconds,
+      postKeySettleSeconds,
+      mouseReleased
+    };
+  }
+
+  async hostMouseButtonsReleased(signal) {
+    // macOS does not expose an app's private cursor-capture state. The safe,
+    // observable condition before an ADB click is that no global mouse button
+    // remains pressed; this check deliberately treats an unavailable result as
+    // not released so the patrol workflow does not click blindly.
+    const script = [
+      "ObjC.import('ApplicationServices');",
+      "const source = $.kCGEventSourceStateCombinedSessionState;",
+      "const pressed = $.CGEventSourceButtonState(source, $.kCGMouseButtonLeft) || $.CGEventSourceButtonState(source, $.kCGMouseButtonRight) || $.CGEventSourceButtonState(source, $.kCGMouseButtonCenter);",
+      "JSON.stringify({ released: !pressed });"
+    ].join("\n");
+    try {
+      const result = await runFile(
+        "/usr/bin/osascript",
+        ["-l", "JavaScript", "-e", script],
+        { timeoutMs: 5_000, signal }
+      );
+      return JSON.parse(String(result.stdout || "{}")).released === true;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return false;
+    }
+  }
+
   async ensureManagerRunning(signal) {
     const { appName, appPath, toolPath } = this.config.mumu;
     try {

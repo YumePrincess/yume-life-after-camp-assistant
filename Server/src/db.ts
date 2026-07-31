@@ -5,7 +5,8 @@ import type {
   RunState,
   TaskKey,
   TaskRun,
-  TriggerMode
+  TriggerMode,
+  TechnologyVoteHistory
 } from "./domain";
 import { BUILT_IN_TECHNOLOGY_CATALOG } from "./built-in-technology-catalog";
 import {
@@ -266,6 +267,23 @@ export async function revokeTemporaryKey(env: Env, id: string): Promise<boolean>
   return (results[0]?.meta.changes ?? 0) > 0;
 }
 
+export async function updateTemporaryKeyPermissions(
+  env: Env,
+  input: { id: string; permissions: string[] }
+): Promise<boolean> {
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE temporary_keys
+       SET permissions_json = ?
+       WHERE id = ? AND revoked_at IS NULL`
+    ).bind(JSON.stringify(input.permissions), input.id),
+    env.DB.prepare(
+      "DELETE FROM sessions WHERE auth_method = 'temporary_key' AND temp_key_id = ?"
+    ).bind(input.id)
+  ]);
+  return (results[0]?.meta.changes ?? 0) > 0;
+}
+
 export async function getSession(env: Env, id: string): Promise<SessionRow | null> {
   return env.DB.prepare("SELECT * FROM sessions WHERE id = ? AND expires_at > ?")
     .bind(id, isoNow())
@@ -322,6 +340,129 @@ export async function listBallots(
   return result.results.map((row) => ({
     selections: parseJson<string[]>(row.selections_json, [])
   }));
+}
+
+export async function listVotePollDates(env: Env): Promise<string[]> {
+  const result = await env.DB.prepare(
+    "SELECT DISTINCT poll_date FROM tech_ballots ORDER BY poll_date DESC"
+  ).all<{ poll_date: string }>();
+  return result.results.map((row) => row.poll_date);
+}
+
+export async function saveTechnologyVoteHistory(
+  env: Env,
+  history: TechnologyVoteHistory
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO technology_vote_history(
+       poll_date, finalized_at, ballot_count, options_json, projected_plan_json,
+     fixed_technologies_json, deleted_at
+     ) VALUES(?, ?, ?, ?, ?, ?, NULL)
+     ON CONFLICT(poll_date) DO NOTHING`
+  )
+    .bind(
+      history.pollDate,
+      history.finalizedAt,
+      history.ballotCount,
+      JSON.stringify(history.options),
+      JSON.stringify(history.projectedPlan),
+      JSON.stringify(history.fixedTechnologies)
+    )
+    .run();
+}
+
+interface TechnologyVoteHistoryRow {
+  poll_date: string;
+  finalized_at: string;
+  ballot_count: number;
+  options_json: string;
+  projected_plan_json: string;
+  fixed_technologies_json: string;
+}
+
+function parseTechnologyVoteHistory(
+  row: TechnologyVoteHistoryRow
+): TechnologyVoteHistory {
+  const projectedPlan = parseJson<TechnologyVoteHistory["projectedPlan"]>(
+    row.projected_plan_json,
+    { core: [], general: [] }
+  );
+  return {
+    pollDate: row.poll_date,
+    finalizedAt: row.finalized_at,
+    ballotCount: Number(row.ballot_count) || 0,
+    options: parseJson<TechnologyVoteHistory["options"]>(row.options_json, []),
+    projectedPlan: {
+      core: Array.isArray(projectedPlan.core) ? projectedPlan.core : [],
+      general: Array.isArray(projectedPlan.general) ? projectedPlan.general : []
+    },
+    fixedTechnologies: parseJson<TechnologyVoteHistory["fixedTechnologies"]>(
+      row.fixed_technologies_json,
+      []
+    )
+  };
+}
+
+export async function listTechnologyVoteHistory(
+  env: Env
+): Promise<Array<Pick<TechnologyVoteHistory, "pollDate" | "finalizedAt" | "ballotCount">>> {
+  const result = await env.DB.prepare(
+    `SELECT poll_date, finalized_at, ballot_count
+     FROM technology_vote_history
+     WHERE deleted_at IS NULL
+     ORDER BY poll_date DESC`
+  ).all<Pick<TechnologyVoteHistoryRow, "poll_date" | "finalized_at" | "ballot_count">>();
+  return result.results.map((row) => ({
+    pollDate: row.poll_date,
+    finalizedAt: row.finalized_at,
+    ballotCount: Number(row.ballot_count) || 0
+  }));
+}
+
+export async function listRecordedTechnologyVoteHistoryDates(
+  env: Env
+): Promise<string[]> {
+  const result = await env.DB.prepare(
+    "SELECT poll_date FROM technology_vote_history"
+  ).all<{ poll_date: string }>();
+  return result.results.map((row) => row.poll_date);
+}
+
+export async function getTechnologyVoteHistory(
+  env: Env,
+  pollDate: string
+): Promise<TechnologyVoteHistory | null> {
+  const row = await env.DB.prepare(
+    `SELECT poll_date, finalized_at, ballot_count, options_json, projected_plan_json,
+            fixed_technologies_json
+     FROM technology_vote_history
+     WHERE poll_date = ? AND deleted_at IS NULL`
+  )
+    .bind(pollDate)
+    .first<TechnologyVoteHistoryRow>();
+  return row ? parseTechnologyVoteHistory(row) : null;
+}
+
+export async function deleteTechnologyVoteHistory(
+  env: Env,
+  pollDate?: string
+): Promise<number> {
+  const now = isoNow();
+  const statement = pollDate
+    ? env.DB.prepare(
+        `UPDATE technology_vote_history
+         SET options_json = '[]', projected_plan_json = '{"core":[],"general":[]}',
+             fixed_technologies_json = '[]', deleted_at = ?
+         WHERE poll_date = ? AND deleted_at IS NULL`
+      ).bind(now, pollDate)
+    : env.DB.prepare(
+        `UPDATE technology_vote_history
+         SET options_json = '[]', projected_plan_json = '{"core":[],"general":[]}',
+             fixed_technologies_json = '[]', deleted_at = ?
+         WHERE deleted_at IS NULL`
+      ).bind(now);
+  const result = await statement.run();
+  return result.meta.changes ?? 0;
 }
 
 export async function listMembers(env: Env, limit = 200): Promise<Record<string, unknown>[]> {

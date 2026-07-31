@@ -168,6 +168,18 @@ export interface VoteSummary {
   };
 }
 
+export interface TechnologyVoteHistory {
+  pollDate: string;
+  finalizedAt: string;
+  ballotCount: number;
+  options: VoteOption[];
+  projectedPlan: {
+    core: TechnologyDefinition[];
+    general: TechnologyDefinition[];
+  };
+  fixedTechnologies: TechnologyDefinition[];
+}
+
 export interface TechnologyPlan {
   targetDate: string;
   targetWeekday: number;
