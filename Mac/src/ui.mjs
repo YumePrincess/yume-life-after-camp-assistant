@@ -992,49 +992,20 @@ export class GameUi {
         return true;
       }
       if (attempt < approachRounds) {
-        if (gesture && attempt < gestureRounds) {
+        if (gesture && fallbackKey && attempt < fallbackRounds) {
           if (attempt === 0) {
             await this.report(
               "warning",
               "teleport_destination_approaching",
-              `已到达${destination.name}但暂未看到交互选项，正在使用左侧虚拟摇杆向上拖动（每次 ${gesture.durationMs || 1_500} 毫秒，最多 ${gestureRounds} 轮），每轮后暂停 ${approachIntervalMs} 毫秒识别`,
+              `已到达${destination.name}但暂未看到交互选项，优先使用实机验证有效的 W 寻路：每轮先按一次 W，再持续按住 ${destination.approachFallbackHoldMs || 1_500} 毫秒，暂停 ${destination.approachFallbackIntervalMs || 2_000} 毫秒识别，最多 ${fallbackRounds} 轮`,
               {
                 readyTexts: destination.readyTexts,
-                maximumRounds: gestureRounds,
-                gesture,
-                intervalMs: approachIntervalMs
+                maximumRounds: fallbackRounds,
+                key: fallbackKey,
+                holdMs: destination.approachFallbackHoldMs || 1_500,
+                intervalMs: destination.approachFallbackIntervalMs || 2_000
               }
             );
-          }
-          if (typeof this.adb.releaseGameMouseCapture === "function") {
-            await this.adb.releaseGameMouseCapture(signal).catch(
-              () => undefined
-            );
-          }
-          await this.adb.touchSwipe(
-            gesture.from,
-            gesture.to,
-            gesture.durationMs || 1_500,
-            signal
-          );
-          await delay(approachIntervalMs, signal);
-          continue;
-        }
-        if (gesture && fallbackKey) {
-          const fallbackAttempt = attempt - gestureRounds + 1;
-          if (fallbackAttempt === 1) {
-            await this.report(
-              "warning",
-              "teleport_approach_key_fallback",
-              `虚拟摇杆 ${gestureRounds} 轮后仍未找到交互选项，启用 W 备用：每轮先按一次 W，再持续按住 ${destination.approachFallbackHoldMs || 1_500} 毫秒，最多 ${fallbackRounds} 轮`
-            );
-          }
-          if (typeof this.adb.focusGameInput === "function") {
-            const focusPoint = destination.approachFocusPoint || {
-              x: Math.round((this.config.adb?.screenWidth || 1920) / 2),
-              y: Math.round((this.config.adb?.screenHeight || 1200) / 2)
-            };
-            await this.adb.focusGameInput(focusPoint.x, focusPoint.y, signal);
           }
           await this.sendGameKey(fallbackKey, signal);
           if (typeof this.adb.holdKey === "function") {
@@ -1053,6 +1024,29 @@ export class GameUi {
             ),
             signal
           );
+          continue;
+        }
+        if (gesture) {
+          const gestureAttempt = attempt - fallbackRounds + 1;
+          if (gestureAttempt === 1) {
+            await this.report(
+              "warning",
+              "teleport_approach_gesture_fallback",
+              `W 寻路 ${fallbackRounds} 轮后仍未找到交互选项，备用执行左侧虚拟摇杆向上拖动（每次 ${gesture.durationMs || 1_500} 毫秒，最多 ${gestureRounds} 轮）`
+            );
+          }
+          if (typeof this.adb.releaseGameMouseCapture === "function") {
+            await this.adb.releaseGameMouseCapture(signal).catch(
+              () => undefined
+            );
+          }
+          await this.adb.touchSwipe(
+            gesture.from,
+            gesture.to,
+            gesture.durationMs || 1_500,
+            signal
+          );
+          await delay(approachIntervalMs, signal);
           continue;
         }
         if (attempt === 0) {
@@ -1406,16 +1400,13 @@ export class GameUi {
       await this.report(
         "info",
         "camp_panel_map_closing",
-        `打开营地面板前检测到地图遮挡（${match.text}），正在按 M 关闭地图`
+        `打开营地面板前检测到地图遮挡（${match.text}），正在点击右上角 X 关闭地图`
       );
-      await this.sendGameKey(
-        action.mapCloseKey || "KEYCODE_M",
-        signal
-      );
+      await this.tap(action.mapClosePoint || { x: 1850, y: 70 }, signal);
       await this.afterAction(signal);
     }
     throw new Error(
-      "CAMP_PANEL_MAP_BLOCKED: 已确认地图遮挡但两次按 M 后仍未关闭"
+      "CAMP_PANEL_MAP_BLOCKED: 已确认地图遮挡但两次点击右上角 X 后仍未关闭"
     );
   }
 

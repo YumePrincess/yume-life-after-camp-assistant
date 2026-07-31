@@ -230,7 +230,7 @@ export class AdbClient {
       "input",
       "mouse",
       "motionevent",
-      "HOVER_MOVE",
+      "MOVE",
       Math.round(x),
       Math.round(y)
     ];
@@ -239,8 +239,19 @@ export class AdbClient {
       await this.releaseMouseButton(x, y, signal);
     } catch (error) {
       if (signal?.aborted) throw error;
+      if (/Unknown action|IllegalArgumentException/i.test(error.message)) {
+        await this.releaseMouseButton(x, y, signal);
+        return;
+      }
       await this.reconnect();
-      await this.shell(args, { signal, timeoutMs: 5_000 });
+      await this.shell(args, { signal, timeoutMs: 5_000 }).catch(
+        async (retryError) => {
+          if (/Unknown action|IllegalArgumentException/i.test(retryError.message)) {
+            return;
+          }
+          throw retryError;
+        }
+      );
       await this.releaseMouseButton(x, y, signal);
     }
   }

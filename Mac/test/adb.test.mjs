@@ -42,17 +42,37 @@ test("a failed ADB mouse reset blocks the key instead of pretending it was focus
   );
 });
 
-test("ADB movement focus uses hover and release without a click", async () => {
+test("ADB movement focus uses supported MOVE and release without a click", async () => {
   const calls = [];
   const adb = createAdb(calls);
 
   await adb.focusGameInput(960, 600);
 
   assert.deepEqual(calls, [
-    ["input", "mouse", "motionevent", "HOVER_MOVE", "960", "600"],
+    ["input", "mouse", "motionevent", "MOVE", "960", "600"],
     ["input", "mouse", "motionevent", "UP", "960", "600"]
   ]);
   assert.equal(calls.some((args) => args.includes("tap")), false);
+});
+
+test("an Android build without MOVE support falls back to mouse UP and continues", async () => {
+  const calls = [];
+  const adb = createAdb(calls);
+  adb.shell = async (args) => {
+    const normalized = args.map(String);
+    calls.push(normalized);
+    if (normalized.includes("MOVE")) {
+      throw new Error("IllegalArgumentException: Unknown action: MOVE");
+    }
+    return { stdout: "", stderr: "" };
+  };
+
+  await adb.focusGameInput(1782, 128);
+
+  assert.deepEqual(calls, [
+    ["input", "mouse", "motionevent", "MOVE", "1782", "128"],
+    ["input", "mouse", "motionevent", "UP", "1782", "128"]
+  ]);
 });
 
 test("ADB touch tap bypasses the mouse source and releases stale mouse state", async () => {

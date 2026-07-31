@@ -91,8 +91,9 @@ test("a map blocking the camp panel is closed before any chat click", async () =
     channelDelayMs: 1,
     verifySeconds: 1
   });
-  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+  assert.deepEqual(fixture.keys, []);
   assert.deepEqual(fixture.taps, [
+    { x: 1850, y: 70 },
     { x: 250, y: 1060 },
     { x: 1740, y: 355 },
     { x: 980, y: 65 }
@@ -454,7 +455,7 @@ test("destination approach sends five W presses per round and stops after six ro
   );
 });
 
-test("destination approach uses five upward joystick drags then five held-W fallbacks", async () => {
+test("destination approach uses five held-W rounds before five joystick fallbacks", async () => {
   const fixture = createUi({
     fastFrames: Array.from({ length: 11 }, () => [])
   });
@@ -477,6 +478,14 @@ test("destination approach uses five upward joystick drags then five held-W fall
   });
 
   assert.equal(verified, false);
+  assert.equal(
+    fixture.approachActions.slice(0, 10).some((action) => action === "swipe"),
+    false
+  );
+  assert.deepEqual(
+    fixture.approachActions.slice(-5),
+    Array.from({ length: 5 }, () => "swipe")
+  );
   assert.equal(fixture.swipes.length, 5);
   assert.deepEqual(
     fixture.swipes,
@@ -868,6 +877,7 @@ function createUi({
   const focusPoints = [];
   const swipes = [];
   const holds = [];
+  const approachActions = [];
   const messages = [];
   let fastIndex = 0;
   let accurateIndex = 0;
@@ -918,6 +928,7 @@ function createUi({
     async key(code, _signal, options = {}) {
       keys.push(code);
       keyCalls.push({ code, options });
+      approachActions.push("key");
     },
     async focusGameInput(x, y) {
       focusPoints.push({ x, y });
@@ -925,9 +936,11 @@ function createUi({
     async releaseGameMouseCapture() {},
     async touchSwipe(from, to, durationMs) {
       swipes.push({ from, to, durationMs });
+      approachActions.push("swipe");
     },
     async holdKey(code, durationMs) {
       holds.push({ code, durationMs });
+      approachActions.push("hold");
     }
   };
   const ui = new GameUi(
@@ -945,6 +958,7 @@ function createUi({
     focusPoints,
     swipes,
     holds,
+    approachActions,
     messages
   };
 }
