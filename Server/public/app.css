@@ -1330,15 +1330,39 @@ td {
   display: grid;
   gap: 9px;
   margin: 22px 0;
-  padding: 18px 18px 18px 40px;
+  padding: 18px;
+  list-style: none;
+  counter-reset: identity-rule;
   border: 1px solid var(--line);
   border-radius: 18px;
   color: var(--muted);
   background: rgba(255, 255, 255, 0.035);
 }
 
+.identity-rules li {
+  display: grid;
+  grid-template-columns: 2.2ch minmax(0, 1fr);
+  gap: 0.65ch;
+  align-items: start;
+}
+
+.identity-rules li::before {
+  counter-increment: identity-rule;
+  content: counter(identity-rule) ".";
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .identity-rules[hidden] {
   display: none;
+}
+
+.maintenance-dialog-card {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.admin-maintenance-actions {
+  justify-content: flex-end;
 }
 
 .application-number {

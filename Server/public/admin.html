@@ -508,6 +508,14 @@
                 <p class="eyebrow">RUN HISTORY</p>
                 <h1>任务运行记录</h1>
               </div>
+              <div class="action-row admin-maintenance-actions">
+                <button id="clear-rate-limits" class="button button-quiet" type="button">
+                  清空临时限流
+                </button>
+                <button id="clear-run-history" class="button button-danger" type="button">
+                  清理运行记录
+                </button>
+              </div>
             </div>
             <div class="table-scroll">
               <table class="run-history-table">
@@ -543,6 +551,24 @@
           <button class="button button-quiet" value="close">关闭</button>
         </div>
         <div id="run-events" class="event-list"></div>
+      </form>
+    </dialog>
+    <dialog id="maintenance-dialog">
+      <form method="dialog" class="dialog-card maintenance-dialog-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">MAINTENANCE</p>
+            <h2 id="maintenance-dialog-title">确认维护操作</h2>
+          </div>
+          <button class="button button-quiet" value="cancel">关闭</button>
+        </div>
+        <p id="maintenance-dialog-message" class="section-intro"></p>
+        <div class="action-row">
+          <button id="maintenance-confirm" class="button button-danger" type="button">
+            确认清理
+          </button>
+          <span id="maintenance-feedback" class="feedback" role="status"></span>
+        </div>
       </form>
     </dialog>
     <dialog id="member-dialog">

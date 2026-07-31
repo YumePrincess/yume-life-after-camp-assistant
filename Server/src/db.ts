@@ -916,6 +916,49 @@ export async function listRecentRuns(env: Env, limit = 50): Promise<TaskRun[]> {
   return result.results;
 }
 
+export async function clearPublicRateLimits(env: Env): Promise<number> {
+  const result = await env.DB.prepare("DELETE FROM public_rate_limits").run();
+  return result.meta.changes;
+}
+
+export async function clearFinishedRunHistory(env: Env): Promise<{
+  runs: number;
+  events: number;
+  commands: number;
+}> {
+  const terminalStates = [
+    "interrupted",
+    "succeeded",
+    "partially_succeeded",
+    "failed",
+    "timed_out",
+    "skipped"
+  ];
+  const placeholders = terminalStates.map(() => "?").join(", ");
+  const [commands, events, runs] = await env.DB.batch([
+    env.DB.prepare(
+      `DELETE FROM command_queue
+       WHERE run_id IN (
+         SELECT id FROM task_runs WHERE state IN (${placeholders})
+       )`
+    ).bind(...terminalStates),
+    env.DB.prepare(
+      `DELETE FROM task_events
+       WHERE run_id IN (
+         SELECT id FROM task_runs WHERE state IN (${placeholders})
+       )`
+    ).bind(...terminalStates),
+    env.DB.prepare(
+      `DELETE FROM task_runs WHERE state IN (${placeholders})`
+    ).bind(...terminalStates)
+  ]);
+  return {
+    runs: runs?.meta.changes ?? 0,
+    events: events?.meta.changes ?? 0,
+    commands: commands?.meta.changes ?? 0
+  };
+}
+
 export async function expireUnclaimedRuns(
   env: Env,
   claimTimeoutMinutes: number,

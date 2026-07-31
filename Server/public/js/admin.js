@@ -89,7 +89,8 @@
     smtpConfigLoaded: false,
     smtpConfigLoading: false,
     smtpDraftRevision: 0,
-    smtpDirty: false
+    smtpDirty: false,
+    maintenanceAction: null
   };
 
   function byId(id) {
@@ -779,6 +780,51 @@
     }
   }
 
+  function openMaintenanceDialog(action) {
+    const rateLimits = action === "rate-limits";
+    state.maintenanceAction = action;
+    byId("maintenance-dialog-title").textContent = window.MrzhI18n.t(
+      rateLimits ? "清空临时限流？" : "清理任务运行记录？"
+    );
+    byId("maintenance-dialog-message").textContent = window.MrzhI18n.t(
+      rateLimits
+        ? "将删除当前公开接口的临时失败计数并立即解除误封，不会修改识别码或申请资料。"
+        : "只删除已结束任务及其事件，不影响排队中或运行中的任务。"
+    );
+    byId("maintenance-feedback").textContent = "";
+    byId("maintenance-dialog").showModal();
+  }
+
+  async function confirmMaintenance() {
+    if (!state.maintenanceAction) return;
+    const action = state.maintenanceAction;
+    const button = byId("maintenance-confirm");
+    button.disabled = true;
+    byId("maintenance-feedback").textContent = window.MrzhI18n.t("正在清理…");
+    try {
+      const result = await request(
+        `/api/admin/maintenance/${action}`,
+        { method: "DELETE" }
+      );
+      const count =
+        action === "rate-limits"
+          ? result.deleted
+          : result.totalDeleted;
+      byId("maintenance-feedback").textContent = window.MrzhI18n.format(
+        "清理完成：已删除 {count} 条记录。",
+        { count: count ?? 0 }
+      );
+      if (action === "run-history") {
+        await refresh(false);
+      }
+    } catch (error) {
+      byId("maintenance-feedback").textContent =
+        error.message || window.MrzhI18n.t("维护操作失败");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function closeRunActionMenu() {
     const active = state.runActionMenu;
     if (!active) return;
@@ -934,6 +980,8 @@
     }
     byId("kick-member").disabled = !hasPermission("member:kick");
     byId("auto-kick-evaluate").disabled = !hasPermission("member:kick");
+    byId("clear-rate-limits").disabled = !hasPermission("admin:history");
+    byId("clear-run-history").disabled = !hasPermission("admin:history");
   }
 
   async function loadTemporaryKeys(page = state.temporaryKeys.page) {
@@ -2046,6 +2094,17 @@
     });
   }
   byId("run-dialog").addEventListener("close", stopEventRefresh);
+  byId("clear-rate-limits").addEventListener("click", () =>
+    openMaintenanceDialog("rate-limits")
+  );
+  byId("clear-run-history").addEventListener("click", () =>
+    openMaintenanceDialog("run-history")
+  );
+  byId("maintenance-confirm").addEventListener("click", confirmMaintenance);
+  byId("maintenance-dialog").addEventListener("close", () => {
+    state.maintenanceAction = null;
+    byId("maintenance-feedback").textContent = "";
+  });
   document.addEventListener("click", closeRunActionMenu);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeRunActionMenu();

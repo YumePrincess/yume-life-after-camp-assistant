@@ -19,6 +19,8 @@ import {
 import {
   appendRunEvent,
   claimNextCommand,
+  clearFinishedRunHistory,
+  clearPublicRateLimits,
   completeCommand,
   createCommand,
   expireUnclaimedRuns,
@@ -760,6 +762,17 @@ async function handleAdminApi(
         new URL(request.url).searchParams.get("locale")
       )
     );
+  }
+  if (path === "/api/admin/maintenance/rate-limits" && method === "DELETE") {
+    return json({ ok: true, deleted: await clearPublicRateLimits(env) });
+  }
+  if (path === "/api/admin/maintenance/run-history" && method === "DELETE") {
+    const deleted = await clearFinishedRunHistory(env);
+    return json({
+      ok: true,
+      deleted,
+      totalDeleted: deleted.runs + deleted.events + deleted.commands
+    });
   }
   if (path === "/api/admin/smtp-config" && method === "GET") {
     return json(publicSmtpConfig(await getSmtpConfig(env)));
@@ -1647,6 +1660,9 @@ function permissionForAdminRequest(
   if (method === "POST" && path === "/api/admin/kick-member") return "member:kick";
   if (method === "POST" && path === "/api/admin/auto-kick-evaluate") {
     return "member:kick";
+  }
+  if (method === "DELETE" && path.startsWith("/api/admin/maintenance/")) {
+    return "admin:history";
   }
   if (path === "/api/admin/temp-keys") {
     return method === "GET" ? "admin:access" : "keys:manage";
