@@ -244,6 +244,26 @@
     }).format(new Date(value));
   }
 
+  function formatVoteDate(value) {
+    if (!value) return "—";
+    const locale = {
+      "zh-cn": "zh-CN",
+      "zh-tw": "zh-TW",
+      en: "en",
+      fr: "fr",
+      ja: "ja"
+    }[window.MrzhI18n.language()] || "zh-CN";
+    return new Intl.DateTimeFormat(locale, {
+      timeZone: configuredTimezone(),
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }).format(new Date(value));
+  }
+
   function formatDateOnly(value) {
     if (!value) return "—";
     const locale = {
@@ -527,8 +547,13 @@
           : "vote"
         : "empty";
       slot.title = item
-        ? `${item.name} · ${fixedKeys.has(item.key) ? "固定科技" : "投票科技"}`
-        : "空位";
+        ? window.MrzhI18n.format("{name} · {source}", {
+            name: item.name,
+            source: fixedKeys.has(item.key)
+              ? window.MrzhI18n.t("固定科技")
+              : window.MrzhI18n.t("投票科技")
+          })
+        : window.MrzhI18n.t("空位");
       if (item?.iconUrl) {
         const image = document.createElement("img");
         image.src = item.iconUrl;
@@ -550,7 +575,9 @@
     const recentRoot = byId("technology-history-recent-dates");
     recentRoot.replaceChildren();
     if (!dates.length) {
-      recentRoot.append(create("span", "technology-history-recent-empty", "暂无历史结果"));
+      recentRoot.append(
+        create("span", "technology-history-recent-empty", window.MrzhI18n.t("暂无历史结果"))
+      );
     } else {
       for (const date of dates.slice(0, 7)) {
         const button = create(
@@ -560,7 +587,10 @@
         );
         button.type = "button";
         button.dataset.active = String(date.pollDate === history?.pollDate);
-        button.title = `${date.pollDate} · ${date.ballotCount || 0} 人投票`;
+        button.title = window.MrzhI18n.format("{date} · {count} 人投票", {
+          date: date.pollDate,
+          count: date.ballotCount || 0
+        });
         button.addEventListener("click", () => loadTechnologyHistory(date.pollDate));
         recentRoot.append(button);
       }
@@ -601,14 +631,16 @@
     renderHistoryTechnologyList(
       byId("technology-history-fixed"),
       history.fixedTechnologies || [],
-      "当天未设置固定科技"
+      window.MrzhI18n.t("当天未设置固定科技")
     );
     const votes = byId("technology-history-votes");
     votes.replaceChildren();
     const voted = (history.options || []).filter((item) => Number(item.votes) > 0);
     const ballots = state.technologyHistory.voteBallots || [];
     if (!voted.length) {
-      votes.append(create("p", "technology-history-none", "当天没有有效投票"));
+      votes.append(
+        create("p", "technology-history-none", window.MrzhI18n.t("当天没有有效投票"))
+      );
     } else {
       for (const item of voted) {
         const row = create(
@@ -616,7 +648,7 @@
           "technology-history-vote technology-history-vote-button"
         );
         row.type = "button";
-        row.title = "查看投票人详情";
+        row.title = window.MrzhI18n.t("查看投票人详情");
         row.addEventListener("click", () =>
           openVoteDetails(
             item,
@@ -627,7 +659,11 @@
         );
         row.append(
           historyTechnologyItem(item, "span"),
-          create("strong", "technology-history-vote-count", `${item.votes} 票`)
+          create(
+            "strong",
+            "technology-history-vote-count",
+            window.MrzhI18n.format("{count} 票", { count: item.votes })
+          )
         );
         votes.append(row);
       }
@@ -637,7 +673,9 @@
   async function loadTechnologyHistory(date = "") {
     if (!canView("technology-history") || state.technologyHistoryLoading) return;
     state.technologyHistoryLoading = true;
-    byId("technology-history-status").textContent = "正在读取历史记录…";
+    byId("technology-history-status").textContent = window.MrzhI18n.t(
+      "正在读取历史记录…"
+    );
     try {
       const params = new URLSearchParams({
         locale: window.MrzhI18n.language()
@@ -646,8 +684,8 @@
       const payload = await request(`/api/admin/technology-history?${params}`);
       renderTechnologyHistory(payload);
       byId("technology-history-status").textContent = payload.history
-        ? "已载入最终归档"
-        : "暂无可查询记录";
+        ? window.MrzhI18n.t("已载入最终归档")
+        : window.MrzhI18n.t("暂无可查询记录");
     } catch (error) {
       byId("technology-history-status").textContent = error.message;
     } finally {
@@ -658,8 +696,14 @@
 
   async function deleteTechnologyHistory(date) {
     const deletingAll = !date;
-    const label = deletingAll ? "全部历史投票结果" : `${date} 的历史投票结果`;
-    if (!window.confirm(`确认删除${label}吗？删除后无法从后台恢复。`)) return;
+    const label = deletingAll
+      ? window.MrzhI18n.t("全部历史投票结果")
+      : window.MrzhI18n.format("{date} 的历史投票结果", { date });
+    if (
+      !window.confirm(
+        window.MrzhI18n.format("确认删除{label}吗？删除后无法从后台恢复。", { label })
+      )
+    ) return;
     const button = byId(
       deletingAll
         ? "delete-technology-history-all"
@@ -686,17 +730,20 @@
   function openVoteDetails(option, ballots) {
     byId("vote-detail-title").textContent = option.name;
     byId("vote-detail-summary").textContent =
-      `共 ${ballots.length} 票；同一识别码重复投票时仅保留最后一次提交。`;
+      window.MrzhI18n.format(
+        "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。",
+        { count: ballots.length }
+      );
     const root = byId("vote-detail-list");
     root.replaceChildren();
     if (!ballots.length) {
-      root.append(create("p", "empty-state", "暂无投票记录"));
+      root.append(create("p", "empty-state", window.MrzhI18n.t("暂无投票记录")));
     } else {
       for (const ballot of ballots) {
         const item = create("article", "vote-detail-item");
         const identity = create("code", "vote-detail-code", ballot.identityCode || "—");
         const player = create("strong", "vote-detail-player", ballot.playerName || "—");
-        const time = create("time", "muted", formatDate(ballot.votedAt));
+        const time = create("time", "muted", formatVoteDate(ballot.votedAt));
         item.append(identity, player, time);
         root.append(item);
       }
@@ -1281,7 +1328,11 @@
           .filter(Boolean)
           .join(" · ");
         const actions = create("div", "key-item-actions");
-        const edit = create("button", "button button-quiet", "编辑权限");
+        const edit = create(
+          "button",
+          "button button-quiet",
+          window.MrzhI18n.t("编辑权限")
+        );
         edit.type = "button";
         edit.hidden = !hasPermission("keys:manage");
         edit.disabled = Boolean(item.revoked_at);
@@ -1764,7 +1815,7 @@
   function openTemporaryKeyPermissions(item, permissions) {
     state.editingTemporaryKeyId = item.id;
     byId("temporary-key-permissions-title").textContent =
-      `编辑权限 · ${item.name}`;
+      window.MrzhI18n.format("编辑权限 · {name}", { name: item.name });
     byId("temporary-key-permissions-feedback").textContent = "";
     const selected = new Set(permissions);
     for (const field of document.querySelectorAll('[name="keyEditPermission"]')) {
@@ -1782,7 +1833,9 @@
       ...form.querySelectorAll('[name="keyEditPermission"]:checked')
     ].map((field) => field.value);
     if (!permissions.length) {
-      byId("temporary-key-permissions-feedback").textContent = "请选择至少一项权限";
+      byId("temporary-key-permissions-feedback").textContent = window.MrzhI18n.t(
+        "请选择至少一项权限"
+      );
       return;
     }
     const save = byId("temporary-key-permissions-save");
@@ -1793,7 +1846,7 @@
         body: JSON.stringify({ permissions })
       });
       byId("temporary-key-permissions-feedback").textContent =
-        "权限已更新；该 Key 的现有登录会话已失效。";
+        window.MrzhI18n.t("权限已更新；该 Key 的现有登录会话已失效。");
       await loadTemporaryKeys();
       window.setTimeout(() => byId("temporary-key-permissions-dialog").close(), 500);
     } catch (error) {

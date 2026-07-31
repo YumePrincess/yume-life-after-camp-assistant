@@ -1389,6 +1389,228 @@
     }
   };
 
+  const technologyHistoryTranslations = {
+    en: {
+      "科技投票历史": "Technology vote history",
+      "按科技生效日查询已锁定的两行科技方案、有效投票和当日固定科技；归档时间以每日刷新为准。":
+        "Browse locked two-row technology plans, valid votes, and fixed technologies by effective date. Archive time follows the daily reset.",
+      "删除所选日": "Delete selected day",
+      "删除全部历史": "Delete all history",
+      "最近 7 个科技生效日": "Latest 7 effective days",
+      "查询更早生效日": "Search an earlier effective day",
+      "按日期查询": "Search by date",
+      "第一行": "Row 1",
+      "第二行": "Row 2",
+      "营地类型科技": "Camp-type technologies",
+      "当日投票": "Votes for this day",
+      "仅显示获得投票的科技": "Only technologies with votes are shown",
+      "当日固定": "Fixed for this day",
+      "仅显示实际固定的科技": "Only technologies actually fixed are shown",
+      "暂无已归档的历史投票结果。": "No archived vote results yet.",
+      "科技投票历史 · 查询": "Technology vote history · view",
+      "科技投票历史 · 删除": "Technology vote history · delete",
+      "管理科技投票历史": "Manage technology vote history",
+      "固定科技": "Fixed technology",
+      "投票科技": "Voted technology",
+      "{name} · {source}": "{name} · {source}",
+      "{date} · {count} 人投票": "{date} · {count} voters",
+      "暂无历史结果": "No history results",
+      "{count} 人最终投票": "{count} final voters",
+      "按每日刷新归档于 {date}": "Archived at daily reset: {date}",
+      "当天未设置固定科技": "No fixed technologies were set for this day",
+      "当天没有有效投票": "No valid votes for this day",
+      "查看投票人详情": "View voter details",
+      "{count} 票": "{count} votes",
+      "正在读取历史记录…": "Loading history…",
+      "已载入最终归档": "Final archive loaded",
+      "暂无可查询记录": "No matching archive",
+      "全部历史投票结果": "all historical vote results",
+      "{date} 的历史投票结果": "vote history for {date}",
+      "确认删除{label}吗？删除后无法从后台恢复。":
+        "Delete {label}? This cannot be restored from the admin console.",
+      "已删除 {count} 条历史结果。": "Deleted {count} historical result(s).",
+      "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。":
+        "{count} vote(s); only the latest submission for each identity code is retained.",
+      "暂无投票记录": "No voting records",
+      "编辑权限": "Edit permissions",
+      "编辑 Key 权限": "Edit key permissions",
+      "编辑权限 · {name}": "Edit permissions · {name}",
+      "保存后，该 Key 当前的登录会话会失效；下次登录即使用新权限。":
+        "Saving signs out current sessions for this key; the new permissions apply at the next sign-in.",
+      "权限（Demo 为后台全部模块只读预览）":
+        "Permissions (Demo is read-only access to every admin module)",
+      "保存权限": "Save permissions",
+      "请选择至少一项权限": "Select at least one permission",
+      "权限已更新；该 Key 的现有登录会话已失效。":
+        "Permissions updated; current sessions for this key have been signed out."
+    },
+    fr: {
+      "科技投票历史": "Historique des votes technologiques",
+      "按科技生效日查询已锁定的两行科技方案、有效投票和当日固定科技；归档时间以每日刷新为准。":
+        "Consultez par date d’effet les deux lignes verrouillées, les votes valides et les technologies fixes. L’archivage suit la réinitialisation quotidienne.",
+      "删除所选日": "Supprimer le jour sélectionné",
+      "删除全部历史": "Supprimer tout l’historique",
+      "最近 7 个科技生效日": "7 derniers jours d’effet",
+      "查询更早生效日": "Rechercher une date d’effet antérieure",
+      "按日期查询": "Rechercher par date",
+      "第一行": "Ligne 1",
+      "第二行": "Ligne 2",
+      "营地类型科技": "Technologies du type de camp",
+      "当日投票": "Votes du jour",
+      "仅显示获得投票的科技": "Seules les technologies ayant des votes sont affichées",
+      "当日固定": "Fixées ce jour",
+      "仅显示实际固定的科技": "Seules les technologies réellement fixées sont affichées",
+      "暂无已归档的历史投票结果。": "Aucun résultat de vote archivé.",
+      "科技投票历史 · 查询": "Historique des votes · consulter",
+      "科技投票历史 · 删除": "Historique des votes · supprimer",
+      "管理科技投票历史": "Gérer l’historique des votes",
+      "固定科技": "Technologie fixe",
+      "投票科技": "Technologie votée",
+      "{name} · {source}": "{name} · {source}",
+      "{date} · {count} 人投票": "{date} · {count} votants",
+      "暂无历史结果": "Aucun historique",
+      "{count} 人最终投票": "{count} votants finaux",
+      "按每日刷新归档于 {date}": "Archivé à la réinitialisation quotidienne : {date}",
+      "当天未设置固定科技": "Aucune technologie fixe ce jour",
+      "当天没有有效投票": "Aucun vote valide ce jour",
+      "查看投票人详情": "Voir les votants",
+      "{count} 票": "{count} votes",
+      "正在读取历史记录…": "Chargement de l’historique…",
+      "已载入最终归档": "Archive finale chargée",
+      "暂无可查询记录": "Aucune archive correspondante",
+      "全部历史投票结果": "tous les résultats historiques",
+      "{date} 的历史投票结果": "l’historique du {date}",
+      "确认删除{label}吗？删除后无法从后台恢复。":
+        "Supprimer {label} ? Cette opération est irréversible depuis l’administration.",
+      "已删除 {count} 条历史结果。": "{count} résultat(s) historique(s) supprimé(s).",
+      "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。":
+        "{count} vote(s) ; seul le dernier envoi de chaque code d’identité est conservé.",
+      "暂无投票记录": "Aucun vote enregistré",
+      "编辑权限": "Modifier les autorisations",
+      "编辑 Key 权限": "Modifier les autorisations de la clé",
+      "编辑权限 · {name}": "Modifier les autorisations · {name}",
+      "保存后，该 Key 当前的登录会话会失效；下次登录即使用新权限。":
+        "L’enregistrement déconnecte les sessions de cette clé ; les nouveaux droits s’appliquent à la prochaine connexion.",
+      "权限（Demo 为后台全部模块只读预览）":
+        "Autorisations (Demo donne un aperçu en lecture seule de toute l’administration)",
+      "保存权限": "Enregistrer les autorisations",
+      "请选择至少一项权限": "Sélectionnez au moins une autorisation",
+      "权限已更新；该 Key 的现有登录会话已失效。":
+        "Autorisations mises à jour ; les sessions actuelles de cette clé ont été déconnectées."
+    },
+    ja: {
+      "科技投票历史": "技術投票履歴",
+      "按科技生效日查询已锁定的两行科技方案、有效投票和当日固定科技；归档时间以每日刷新为准。":
+        "技術の有効日ごとに、確定した2行の技術案・有効投票・固定技術を確認できます。アーカイブ時刻は毎日のリセットに従います。",
+      "删除所选日": "選択日を削除",
+      "删除全部历史": "全履歴を削除",
+      "最近 7 个科技生效日": "直近7件の有効日",
+      "查询更早生效日": "過去の有効日を検索",
+      "按日期查询": "日付で検索",
+      "第一行": "1行目",
+      "第二行": "2行目",
+      "营地类型科技": "野営地タイプ技術",
+      "当日投票": "当日の投票",
+      "仅显示获得投票的科技": "票を得た技術のみ表示",
+      "当日固定": "当日の固定",
+      "仅显示实际固定的科技": "実際に固定された技術のみ表示",
+      "暂无已归档的历史投票结果。": "アーカイブ済みの投票結果はありません。",
+      "科技投票历史 · 查询": "技術投票履歴・閲覧",
+      "科技投票历史 · 删除": "技術投票履歴・削除",
+      "管理科技投票历史": "技術投票履歴を管理",
+      "固定科技": "固定技術",
+      "投票科技": "投票技術",
+      "{name} · {source}": "{name}・{source}",
+      "{date} · {count} 人投票": "{date}・{count}人投票",
+      "暂无历史结果": "履歴はありません",
+      "{count} 人最终投票": "最終投票者 {count} 人",
+      "按每日刷新归档于 {date}": "毎日のリセット時にアーカイブ：{date}",
+      "当天未设置固定科技": "当日の固定技術はありません",
+      "当天没有有效投票": "当日の有効投票はありません",
+      "查看投票人详情": "投票者の詳細を見る",
+      "{count} 票": "{count}票",
+      "正在读取历史记录…": "履歴を読み込み中…",
+      "已载入最终归档": "最終アーカイブを読み込みました",
+      "暂无可查询记录": "該当するアーカイブはありません",
+      "全部历史投票结果": "すべての投票履歴",
+      "{date} 的历史投票结果": "{date} の投票履歴",
+      "确认删除{label}吗？删除后无法从后台恢复。":
+        "{label} を削除しますか？管理画面からは復元できません。",
+      "已删除 {count} 条历史结果。": "履歴結果を {count} 件削除しました。",
+      "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。":
+        "{count}票。同じ本人識別コードの投票は最後の送信のみ保持されます。",
+      "暂无投票记录": "投票記録はありません",
+      "编辑权限": "権限を編集",
+      "编辑 Key 权限": "キー権限を編集",
+      "编辑权限 · {name}": "権限を編集・{name}",
+      "保存后，该 Key 当前的登录会话会失效；下次登录即使用新权限。":
+        "保存するとこのキーの現在のログインセッションは無効になり、次回ログインから新しい権限が適用されます。",
+      "权限（Demo 为后台全部模块只读预览）":
+        "権限（Demo はすべての管理モジュールを読み取り専用で閲覧できます）",
+      "保存权限": "権限を保存",
+      "请选择至少一项权限": "少なくとも1つの権限を選択してください",
+      "权限已更新；该 Key 的现有登录会话已失效。":
+        "権限を更新しました。このキーの現在のログインセッションは無効です。"
+    },
+    "zh-tw": {
+      "科技投票历史": "科技投票歷史",
+      "按科技生效日查询已锁定的两行科技方案、有效投票和当日固定科技；归档时间以每日刷新为准。":
+        "依科技生效日查詢已鎖定的兩行科技方案、有效投票和當日固定科技；歸檔時間以每日重設為準。",
+      "删除所选日": "刪除所選日",
+      "删除全部历史": "刪除全部歷史",
+      "最近 7 个科技生效日": "最近 7 個科技生效日",
+      "查询更早生效日": "查詢更早生效日",
+      "按日期查询": "按日期查詢",
+      "第一行": "第一行",
+      "第二行": "第二行",
+      "营地类型科技": "營地類型科技",
+      "当日投票": "當日投票",
+      "仅显示获得投票的科技": "僅顯示獲得投票的科技",
+      "当日固定": "當日固定",
+      "仅显示实际固定的科技": "僅顯示實際固定的科技",
+      "暂无已归档的历史投票结果。": "暫無已歸檔的歷史投票結果。",
+      "科技投票历史 · 查询": "科技投票歷史 · 查詢",
+      "科技投票历史 · 删除": "科技投票歷史 · 刪除",
+      "管理科技投票历史": "管理科技投票歷史",
+      "固定科技": "固定科技",
+      "投票科技": "投票科技",
+      "{name} · {source}": "{name} · {source}",
+      "{date} · {count} 人投票": "{date} · {count} 人投票",
+      "暂无历史结果": "暫無歷史結果",
+      "{count} 人最终投票": "{count} 人最終投票",
+      "按每日刷新归档于 {date}": "依每日重設歸檔於 {date}",
+      "当天未设置固定科技": "當天未設定固定科技",
+      "当天没有有效投票": "當天沒有有效投票",
+      "查看投票人详情": "查看投票人詳情",
+      "{count} 票": "{count} 票",
+      "正在读取历史记录…": "正在讀取歷史記錄…",
+      "已载入最终归档": "已載入最終歸檔",
+      "暂无可查询记录": "暫無可查詢記錄",
+      "全部历史投票结果": "全部歷史投票結果",
+      "{date} 的历史投票结果": "{date} 的歷史投票結果",
+      "确认删除{label}吗？删除后无法从后台恢复。":
+        "確認刪除{label}嗎？刪除後無法從後台恢復。",
+      "已删除 {count} 条历史结果。": "已刪除 {count} 條歷史結果。",
+      "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。":
+        "共 {count} 票；相同識別碼重複投票時僅保留最後一次提交。",
+      "暂无投票记录": "暫無投票記錄",
+      "编辑权限": "編輯權限",
+      "编辑 Key 权限": "編輯 Key 權限",
+      "编辑权限 · {name}": "編輯權限 · {name}",
+      "保存后，该 Key 当前的登录会话会失效；下次登录即使用新权限。":
+        "儲存後，該 Key 目前的登入工作階段會失效；下次登入即使用新權限。",
+      "权限（Demo 为后台全部模块只读预览）":
+        "權限（Demo 為後台全部模組唯讀預覽）",
+      "保存权限": "儲存權限",
+      "请选择至少一项权限": "請選擇至少一項權限",
+      "权限已更新；该 Key 的现有登录会话已失效。":
+        "權限已更新；該 Key 的現有登入工作階段已失效。"
+    }
+  };
+  for (const [language, additions] of Object.entries(technologyHistoryTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+
   const identityTranslations = {
     en: {
       "身份识别码（必填）": "Identity code (required)",
