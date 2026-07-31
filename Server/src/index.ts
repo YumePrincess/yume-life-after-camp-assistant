@@ -658,6 +658,7 @@ async function handlePublicApi(
     const reissueLookupValue = identityLookupFingerprint({
       email: body.email,
       identityCode: body.identityCode,
+      applicationNumber: body.applicationNumber,
       playerName: body.playerName
     });
     const valueLimited = await rejectIfValueRateLimited(
@@ -670,6 +671,7 @@ async function handlePublicApi(
     try {
       const result = await reissuePreview(env, {
           identityCode: body.identityCode,
+          applicationNumber: body.applicationNumber,
           email: body.email,
           playerName: body.playerName
         });
@@ -707,6 +709,7 @@ async function handlePublicApi(
     const reissueLookupValue = identityLookupFingerprint({
       email: body.email,
       identityCode: body.identityCode,
+      applicationNumber: body.applicationNumber,
       playerName: body.playerName
     });
     const valueLimited = await rejectIfValueRateLimited(
@@ -719,6 +722,7 @@ async function handlePublicApi(
     try {
       const result = await submitReissue(env, {
           identityCode: body.identityCode,
+          applicationNumber: body.applicationNumber,
           email: body.email,
           playerName: body.playerName,
           locale: body.locale

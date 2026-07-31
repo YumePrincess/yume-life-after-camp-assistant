@@ -530,20 +530,44 @@ async function codeForReissue(
   env: Env,
   input: {
     identityCode: unknown;
+    applicationNumber: unknown;
     email: unknown;
     playerName: unknown;
   }
 ): Promise<IdentityCodeRow> {
   const identityCode =
     typeof input.identityCode === "string" ? input.identityCode.trim() : "";
+  const applicationNumber =
+    typeof input.applicationNumber === "string"
+      ? input.applicationNumber.trim().slice(0, 40)
+      : "";
   const email = cleanEmail(input.email, false);
   const playerName = cleanPlayerName(input.playerName, false);
-  if (!identityCode && !email && !playerName) {
-    throw new Error("请至少填写玩家名称、申请时预留邮箱或旧识别码中的一项");
+  if (!applicationNumber && !identityCode && !email && !playerName) {
+    throw new Error(
+      "请至少填写申请编号、玩家名称、申请时预留邮箱或旧识别码中的一项"
+    );
+  }
+  let code: IdentityCodeRow | null = null;
+  if (applicationNumber) {
+    const application = await env.DB.prepare(
+      `SELECT * FROM identity_code_applications WHERE application_number = ? LIMIT 1`
+    )
+      .bind(applicationNumber)
+      .first<IdentityApplicationRow>();
+    if (!application) throw new Error("未找到匹配的身份识别码申请记录");
+    code = await codeForApplication(env, application);
+    if (!code) throw new Error("该申请没有关联可更换的身份识别码");
   }
   if (identityCode) {
-    const code = await codeByPlaintext(env, identityCode);
-    if (!code) throw new Error("旧身份识别码无效");
+    const codeByValue = await codeByPlaintext(env, identityCode);
+    if (!codeByValue) throw new Error("旧身份识别码无效");
+    if (code && code.id !== codeByValue.id) {
+      throw new Error("填写的信息未指向同一份识别码记录");
+    }
+    code = codeByValue;
+  }
+  if (code) {
     if (
       (email && code.email?.toLowerCase() !== email) ||
       (playerName &&
@@ -551,6 +575,12 @@ async function codeForReissue(
           identityPlayerNameKey(playerName))
     ) {
       throw new Error("填写的信息未指向同一份识别码记录");
+    }
+    if (code.status !== "active") {
+      throw new Error("只有状态为有效的身份识别码可以申请更换");
+    }
+    if (isIdentityCodeExpired(code.expires_at)) {
+      throw new Error("已过期的身份识别码不能申请更换，请申请延长有效期");
     }
     return code;
   }
@@ -578,13 +608,21 @@ async function codeForReissue(
   if (matches.length > 1) {
     throw new Error("匹配到多个识别码，请再填写另一项信息缩小范围");
   }
-  return matches[0]!;
+  const matchedCode = matches[0]!;
+  if (matchedCode.status !== "active") {
+    throw new Error("只有状态为有效的身份识别码可以申请更换");
+  }
+  if (isIdentityCodeExpired(matchedCode.expires_at)) {
+    throw new Error("已过期的身份识别码不能申请更换，请申请延长有效期");
+  }
+  return matchedCode;
 }
 
 export async function reissuePreview(
   env: Env,
   input: {
     identityCode: unknown;
+    applicationNumber: unknown;
     email: unknown;
     playerName: unknown;
   }
@@ -617,6 +655,7 @@ export async function submitReissue(
   env: Env,
   input: {
     identityCode: unknown;
+    applicationNumber: unknown;
     email: unknown;
     playerName: unknown;
     locale: unknown;
@@ -851,7 +890,7 @@ export async function approveIdentityApplication(
       .bind(application.identity_code_id)
       .first<IdentityCodeRow>();
   } else if (application.request_type === "reissue") {
-    if (!application.identity_code_id) throw new Error("重新发行申请未关联识别码");
+    if (!application.identity_code_id) throw new Error("更换申请未关联识别码");
     await assertNoOtherActiveIdentityCode(env, {
       email: application.email,
       playerName: application.player_name,
@@ -1353,7 +1392,7 @@ export async function reissueIdentityCode(
     .first<IdentityCodeRow>();
   if (!code) throw new Error("识别码不存在");
   if (!code.email || !code.player_name) {
-    throw new Error("重新发行前必须先补全玩家名称和邮箱");
+    throw new Error("更换识别码前必须先补全玩家名称和邮箱");
   }
   await assertNoOtherActiveIdentityCode(env, {
     email: code.email,
@@ -1382,7 +1421,7 @@ export async function reissueIdentityCode(
   const updated = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
     .bind(code.id)
     .first<IdentityCodeRow>();
-  if (!updated) throw new Error("重新发行识别码失败");
+  if (!updated) throw new Error("更换身份识别码失败");
   const application = code.application_id
     ? await env.DB.prepare("SELECT * FROM identity_code_applications WHERE id = ?")
         .bind(code.application_id)

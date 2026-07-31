@@ -9,6 +9,7 @@
     renewalCode: "",
     renewalApplicationNumber: "",
     reissueCode: "",
+    reissueApplicationNumber: "",
     reissueEmail: "",
     reissuePlayerName: "",
     voteErrorRenewalCode: ""
@@ -627,6 +628,7 @@
     byId("identity-player-name").value = "";
     byId("identity-recovery-number-field").hidden = true;
     byId("identity-reissue-code-field").hidden = true;
+    byId("identity-reissue-application-number-field").hidden = true;
     byId("identity-renewal-application-number-field").hidden = true;
     byId("identity-renewal-code-field").hidden = true;
     byId("identity-email-field").hidden = false;
@@ -660,6 +662,7 @@
     byId("identity-renewal-number").hidden = false;
     byId("identity-recovery-number-field").hidden = true;
     byId("identity-reissue-code-field").hidden = true;
+    byId("identity-reissue-application-number-field").hidden = true;
     byId("identity-renewal-application-number-field").hidden = true;
     byId("identity-renewal-code-field").hidden = true;
     byId("identity-email-field").hidden = false;
@@ -705,6 +708,7 @@
     byId("identity-renewal-number").hidden = true;
     byId("identity-recovery-number-field").hidden = true;
     byId("identity-reissue-code-field").hidden = true;
+    byId("identity-reissue-application-number-field").hidden = true;
     byId("identity-renewal-application-number-field").hidden = false;
     byId("identity-renewal-code-field").hidden = false;
     byId("identity-email-field").hidden = true;
@@ -725,11 +729,13 @@
     state.renewalCode = "";
     state.renewalApplicationNumber = "";
     state.reissueCode = "";
+    state.reissueApplicationNumber = "";
     state.reissueEmail = "";
     state.reissuePlayerName = "";
-    setText("identity-dialog-title", window.MrzhI18n.t("申请重新发行身份识别码"));
+    setText("identity-dialog-title", window.MrzhI18n.t("申请更换身份识别码"));
     byId("identity-renewal-number").hidden = true;
     byId("identity-recovery-number-field").hidden = true;
+    byId("identity-reissue-application-number-field").hidden = false;
     byId("identity-reissue-code-field").hidden = false;
     byId("identity-renewal-application-number-field").hidden = true;
     byId("identity-renewal-code-field").hidden = true;
@@ -742,6 +748,7 @@
     setText("identity-email-label", window.MrzhI18n.t("申请时预留的邮箱"));
     setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
     setText("submit-identity-application", window.MrzhI18n.t("下一步：核对信息"));
+    byId("identity-reissue-application-number").value = "";
     byId("identity-reissue-code").value = identityCode;
     byId("identity-email").value = "";
     byId("identity-player-name").value = "";
@@ -752,9 +759,11 @@
   function showReissueConfirmation(preview, lookup) {
     state.identityMode = "reissue";
     state.reissueCode = lookup.identityCode;
+    state.reissueApplicationNumber =
+      lookup.applicationNumber || preview.applicationNumber || "";
     state.reissueEmail = lookup.email;
     state.reissuePlayerName = lookup.playerName;
-    setText("identity-dialog-title", window.MrzhI18n.t("申请重新发行身份识别码"));
+    setText("identity-dialog-title", window.MrzhI18n.t("申请更换身份识别码"));
     setText(
       "identity-renewal-number",
       window.MrzhI18n.format("申请编号：{number}", {
@@ -764,6 +773,7 @@
     byId("identity-renewal-number").hidden = false;
     byId("identity-recovery-number-field").hidden = true;
     byId("identity-reissue-code-field").hidden = true;
+    byId("identity-reissue-application-number-field").hidden = true;
     byId("identity-renewal-application-number-field").hidden = true;
     byId("identity-renewal-code-field").hidden = true;
     byId("identity-email-field").hidden = false;
@@ -774,7 +784,7 @@
     byId("identity-renewal-lookup-rules").hidden = true;
     setText("identity-email-label", window.MrzhI18n.t("申请时预留的邮箱"));
     setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
-    setText("submit-identity-application", window.MrzhI18n.t("提交重新发行申请"));
+    setText("submit-identity-application", window.MrzhI18n.t("提交更换申请"));
     byId("identity-email").value = preview.email;
     byId("identity-player-name").value = preview.playerName;
     setText("identity-application-feedback", "");
@@ -788,6 +798,7 @@
     byId("identity-renewal-number").hidden = true;
     byId("identity-recovery-number-field").hidden = false;
     byId("identity-reissue-code-field").hidden = true;
+    byId("identity-reissue-application-number-field").hidden = true;
     byId("identity-renewal-application-number-field").hidden = true;
     byId("identity-renewal-code-field").hidden = true;
     byId("identity-email-field").hidden = false;
@@ -830,12 +841,13 @@
     }
     if (
       reissueLookup &&
+      !byId("identity-reissue-application-number").value.trim() &&
       !byId("identity-reissue-code").value.trim() &&
       !byId("identity-email").value.trim() &&
       !byId("identity-player-name").value.trim()
     ) {
       feedback.textContent = window.MrzhI18n.t(
-        "请至少填写玩家名称、申请时预留邮箱或旧识别码中的一项。"
+        "请至少填写申请编号、玩家名称、申请时预留邮箱或旧识别码中的一项。"
       );
       return;
     }
@@ -871,6 +883,8 @@
       }
       if (reissueLookup) {
         const lookup = {
+          applicationNumber:
+            byId("identity-reissue-application-number").value.trim(),
           identityCode: byId("identity-reissue-code").value.trim(),
           email: byId("identity-email").value.trim(),
           playerName: byId("identity-player-name").value.trim()
@@ -905,7 +919,8 @@
                 method: "POST",
                 body: JSON.stringify({
                   ...common,
-                  identityCode: state.reissueCode
+                  identityCode: state.reissueCode,
+                  applicationNumber: state.reissueApplicationNumber
                 })
               })
           : state.identityMode === "recovery"
@@ -931,7 +946,7 @@
               state.identityMode === "renewal"
                 ? "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。"
                 : state.identityMode === "reissue"
-                  ? "重新发行申请已提交，申请编号：{number}。旧识别码已作废。"
+                  ? "更换申请已提交，申请编号：{number}。旧识别码已作废。"
                 : "申请已提交，申请编号：{number}。",
               { number: result.applicationNumber }
             );

@@ -123,7 +123,7 @@
             申请延长识别码有效期
           </button>
           <button id="reissue-identity-code" class="button button-quiet" type="button">
-            申请重新发行识别码
+            申请更换身份识别码
           </button>
           <button id="recover-identity-code" class="button button-quiet" type="button">
             忘记识别码
@@ -194,6 +194,10 @@
             <span>申请编号</span>
             <input id="identity-recovery-number" maxlength="40" />
           </label>
+          <label id="identity-reissue-application-number-field" class="field" hidden>
+            <span>申请编号</span>
+            <input id="identity-reissue-application-number" maxlength="40" />
+          </label>
           <label id="identity-reissue-code-field" class="field" hidden>
             <span>旧身份识别码</span>
             <input id="identity-reissue-code" inputmode="numeric" maxlength="8" />
@@ -227,10 +231,10 @@
           <li>找回的识别码将发送到申请时预留的邮箱，如果您更换了邮箱，请联系市长人工处理。</li>
         </ol>
         <ol id="identity-reissue-rules" class="identity-rules" hidden>
-          <li>申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。</li>
-          <li>在识别码被盗用等情况下建议立即申请重新发行识别码。</li>
+          <li>申请更换身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。</li>
+          <li>在识别码被盗用等情况下建议立即申请更换身份识别码。</li>
           <li>新发行的识别码的有效期以审批为准。</li>
-          <li>申请重新发行识别码请输入玩家名称、申请时预留的邮箱、旧识别码的其一。</li>
+          <li>申请更换身份识别码请输入申请编号、玩家名称、申请时预留的邮箱、旧识别码的其中一项。</li>
           <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
         </ol>
         <ol id="identity-renewal-lookup-rules" class="identity-rules" hidden>

@@ -1403,6 +1403,22 @@
         "Enter an application number or identity code.",
       "申请重新发行识别码": "Request code reissue",
       "申请重新发行身份识别码": "Request identity-code reissue",
+      "申请更换身份识别码": "Request an identity-code replacement",
+      "提交更换申请": "Submit replacement request",
+      "更换申请已提交，申请编号：{number}。旧识别码已作废。":
+        "Replacement request submitted under {number}. The old code is now invalid.",
+      "申请更换身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。":
+        "A replacement request invalidates the old code and replaces it with a new one. The current code becomes invalid immediately when the request is submitted.",
+      "在识别码被盗用等情况下建议立即申请更换身份识别码。":
+        "Request a replacement immediately if the code may have been stolen.",
+      "申请更换身份识别码请输入申请编号、玩家名称、申请时预留的邮箱、旧识别码的其中一项。":
+        "Enter at least one of: application number, player name, email saved with the application, or old identity code.",
+      "请至少填写申请编号、玩家名称、申请时预留邮箱或旧识别码中的一项。":
+        "Enter at least an application number, player name, the email saved with the application, or the old identity code.",
+      "只有状态为有效的身份识别码可以申请更换":
+        "Only an active identity code can be replaced.",
+      "已过期的身份识别码不能申请更换，请申请延长有效期":
+        "An expired identity code cannot be replaced. Request a validity extension instead.",
       "请先在上方输入需要重新发行的身份识别码。":
         "Enter the identity code to reissue in the field above first.",
       "提交重新发行申请": "Submit reissue request",
@@ -1539,6 +1555,22 @@
         "Saisissez un numéro de demande ou un code d’identité.",
       "申请重新发行识别码": "Demander la réémission du code",
       "申请重新发行身份识别码": "Demander la réémission du code d’identité",
+      "申请更换身份识别码": "Demander le remplacement du code d’identité",
+      "提交更换申请": "Envoyer la demande de remplacement",
+      "更换申请已提交，申请编号：{number}。旧识别码已作废。":
+        "Demande de remplacement envoyée sous le numéro {number}. L’ancien code est désormais invalide.",
+      "申请更换身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。":
+        "Une demande de remplacement invalide l’ancien code et le remplace par un nouveau. Le code actuel devient invalide dès l’envoi de la demande.",
+      "在识别码被盗用等情况下建议立即申请更换身份识别码。":
+        "Demandez immédiatement un remplacement si le code a pu être volé.",
+      "申请更换身份识别码请输入申请编号、玩家名称、申请时预留的邮箱、旧识别码的其中一项。":
+        "Saisissez au moins le numéro de demande, le nom du joueur, l’e-mail enregistré ou l’ancien code.",
+      "请至少填写申请编号、玩家名称、申请时预留邮箱或旧识别码中的一项。":
+        "Saisissez au moins le numéro de demande, le nom du joueur, l’e-mail enregistré ou l’ancien code.",
+      "只有状态为有效的身份识别码可以申请更换":
+        "Seul un code d’identité actif peut être remplacé.",
+      "已过期的身份识别码不能申请更换，请申请延长有效期":
+        "Un code expiré ne peut pas être remplacé. Demandez plutôt une prolongation.",
       "请先在上方输入需要重新发行的身份识别码。":
         "Saisissez d’abord ci-dessus le code d’identité à réémettre.",
       "提交重新发行申请": "Envoyer la demande de réémission",
@@ -1668,6 +1700,22 @@
         "申請番号または本人確認コードを入力してください。",
       "申请重新发行识别码": "コードの再発行を申請",
       "申请重新发行身份识别码": "本人確認コードの再発行を申請",
+      "申请更换身份识别码": "本人確認コードの変更を申請",
+      "提交更换申请": "変更申請を送信",
+      "更换申请已提交，申请编号：{number}。旧识别码已作废。":
+        "申請番号 {number} で変更を申請しました。旧コードは無効になりました。",
+      "申请更换身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。":
+        "変更申請では旧コードを無効にして新しいコードに置き換えます。申請を送信した時点で現在のコードは直ちに無効になります。",
+      "在识别码被盗用等情况下建议立即申请更换身份识别码。":
+        "コードが盗用された可能性がある場合は、すぐに変更を申請してください。",
+      "申请更换身份识别码请输入申请编号、玩家名称、申请时预留的邮箱、旧识别码的其中一项。":
+        "申請番号、プレイヤー名、登録メール、旧コードのいずれか1つ以上を入力してください。",
+      "请至少填写申请编号、玩家名称、申请时预留邮箱或旧识别码中的一项。":
+        "申請番号、プレイヤー名、登録メール、旧コードのいずれか1つ以上を入力してください。",
+      "只有状态为有效的身份识别码可以申请更换":
+        "有効状態の本人確認コードのみ変更を申請できます。",
+      "已过期的身份识别码不能申请更换，请申请延长有效期":
+        "期限切れの本人確認コードは変更できません。有効期限の延長を申請してください。",
       "请先在上方输入需要重新发行的身份识别码。":
         "再発行する本人確認コードを上の欄に入力してください。",
       "提交重新发行申请": "再発行申請を送信",
@@ -1797,6 +1845,22 @@
         "請填寫申請編號或身分識別碼。",
       "申请重新发行识别码": "申請重新發行識別碼",
       "申请重新发行身份识别码": "申請重新發行身分識別碼",
+      "申请更换身份识别码": "申請更換身分識別碼",
+      "提交更换申请": "提交更換申請",
+      "更换申请已提交，申请编号：{number}。旧识别码已作废。":
+        "更換申請已提交，申請編號：{number}。舊識別碼已作廢。",
+      "申请更换身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。":
+        "申請更換身分識別碼將作廢舊識別碼並更換新的識別碼。申請一旦提交，現有識別碼將立即失效。",
+      "在识别码被盗用等情况下建议立即申请更换身份识别码。":
+        "識別碼遭盜用等情況下，建議立即申請更換。",
+      "申请更换身份识别码请输入申请编号、玩家名称、申请时预留的邮箱、旧识别码的其中一项。":
+        "申請更換身分識別碼，請輸入申請編號、玩家名稱、申請時預留的信箱或舊識別碼其中一項。",
+      "请至少填写申请编号、玩家名称、申请时预留邮箱或旧识别码中的一项。":
+        "請至少填寫申請編號、玩家名稱、申請時預留的信箱或舊識別碼其中一項。",
+      "只有状态为有效的身份识别码可以申请更换":
+        "只有狀態為有效的身分識別碼可以申請更換。",
+      "已过期的身份识别码不能申请更换，请申请延长有效期":
+        "已過期的身分識別碼不能申請更換，請申請延長有效期。",
       "请先在上方输入需要重新发行的身份识别码。":
         "請先在上方輸入需要重新發行的身分識別碼。",
       "提交重新发行申请": "提交重新發行申請",
