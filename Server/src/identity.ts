@@ -248,9 +248,115 @@ async function applicationForCode(
   env: Env,
   code: IdentityCodeRow
 ): Promise<IdentityApplicationRow | null> {
-  if (!code.application_id) return null;
-  return env.DB.prepare("SELECT * FROM identity_code_applications WHERE id = ?")
-    .bind(code.application_id)
+  let application = code.application_id
+    ? await env.DB.prepare(
+        "SELECT * FROM identity_code_applications WHERE id = ?"
+      )
+        .bind(code.application_id)
+        .first<IdentityApplicationRow>()
+    : null;
+  if (!application) {
+    application = await env.DB.prepare(
+      `SELECT * FROM identity_code_applications
+       WHERE identity_code_id = ?
+       ORDER BY reviewed_at DESC, submitted_at DESC LIMIT 1`
+    )
+      .bind(code.id)
+      .first<IdentityApplicationRow>();
+  }
+  if (!application) return null;
+  const repairs: D1PreparedStatement[] = [];
+  if (code.application_id !== application.id) {
+    repairs.push(
+      env.DB.prepare(
+        "UPDATE identity_codes SET application_id = ?, updated_at = ? WHERE id = ?"
+      ).bind(application.id, now(), code.id)
+    );
+  }
+  if (!application.identity_code_id) {
+    repairs.push(
+      env.DB.prepare(
+        "UPDATE identity_code_applications SET identity_code_id = ? WHERE id = ?"
+      ).bind(code.id, application.id)
+    );
+    application = { ...application, identity_code_id: code.id };
+  }
+  if (repairs.length) await env.DB.batch(repairs);
+  return application;
+}
+
+async function codeForApplication(
+  env: Env,
+  application: IdentityApplicationRow
+): Promise<IdentityCodeRow | null> {
+  let code = application.identity_code_id
+    ? await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+        .bind(application.identity_code_id)
+        .first<IdentityCodeRow>()
+    : null;
+  if (!code) {
+    code = await env.DB.prepare(
+      `SELECT * FROM identity_codes WHERE application_id = ?
+       ORDER BY updated_at DESC LIMIT 1`
+    )
+      .bind(application.id)
+      .first<IdentityCodeRow>();
+  }
+  if (!code) return null;
+  const repairs: D1PreparedStatement[] = [];
+  if (code.application_id !== application.id) {
+    repairs.push(
+      env.DB.prepare(
+        "UPDATE identity_codes SET application_id = ?, updated_at = ? WHERE id = ?"
+      ).bind(application.id, now(), code.id)
+    );
+  }
+  if (application.identity_code_id !== code.id) {
+    repairs.push(
+      env.DB.prepare(
+        "UPDATE identity_code_applications SET identity_code_id = ? WHERE id = ?"
+      ).bind(code.id, application.id)
+    );
+  }
+  if (repairs.length) await env.DB.batch(repairs);
+  return code;
+}
+
+async function ensureApplicationForCode(
+  env: Env,
+  code: IdentityCodeRow
+): Promise<IdentityApplicationRow | null> {
+  const existing = await applicationForCode(env, code);
+  if (existing) return existing;
+  if (!code.email || !code.player_name) return null;
+  const id = uuid();
+  const applicationNumber = await generateApplicationNumber(env);
+  const timestamp = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO identity_code_applications(
+        id, application_number, request_type, email, player_name, locale,
+        status, identity_code_id, submitted_at, reviewed_at, reviewed_by
+      ) VALUES(?, ?, 'new', ?, ?, ?, 'approved', ?, ?, ?, ?)`
+    ).bind(
+      id,
+      applicationNumber,
+      code.email,
+      code.player_name,
+      code.locale,
+      code.id,
+      code.created_at,
+      timestamp,
+      code.created_by
+    ),
+    env.DB.prepare(
+      "UPDATE identity_codes SET application_id = ?, updated_at = ? WHERE id = ?"
+    ).bind(id, timestamp, code.id)
+  ]);
+  return env.DB.prepare(
+    "SELECT * FROM identity_code_applications WHERE id = ?"
+  )
+    .bind(id)
     .first<IdentityApplicationRow>();
 }
 
@@ -316,18 +422,14 @@ async function codeAndApplicationForRenewal(
   if (identityCode) {
     code = await codeByPlaintext(env, identityCode);
     if (!code) throw new Error("身份识别码无效");
-    application = await applicationForCode(env, code);
+    application = await ensureApplicationForCode(env, code);
   } else {
     application = await env.DB.prepare(
       "SELECT * FROM identity_code_applications WHERE application_number = ?"
     )
       .bind(applicationNumber)
       .first<IdentityApplicationRow>();
-    if (application?.identity_code_id) {
-      code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
-        .bind(application.identity_code_id)
-        .first<IdentityCodeRow>();
-    }
+    if (application) code = await codeForApplication(env, application);
   }
   if (!code || !application) {
     throw new Error("没有找到可延期的识别码申请记录");
@@ -494,7 +596,7 @@ export async function reissuePreview(
   canSubmit: boolean;
 }> {
   const code = await codeForReissue(env, input);
-  const application = await applicationForCode(env, code);
+  const application = await ensureApplicationForCode(env, code);
   if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
   if (application.status === "pending") {
     throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
@@ -521,7 +623,7 @@ export async function submitReissue(
   }
 ): Promise<{ applicationNumber: string; status: "pending" }> {
   const code = await codeForReissue(env, input);
-  const application = await applicationForCode(env, code);
+  const application = await ensureApplicationForCode(env, code);
   if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
   if (
     application.request_type === "reissue" &&
@@ -578,30 +680,33 @@ export async function recoverIdentityCode(
   if (!email && !playerName && !applicationNumber) {
     throw new Error("请至少填写邮箱、申请编号或玩家名称中的一项");
   }
-  const clauses = ["c.status = 'active'"];
-  const bindings: unknown[] = [];
-  if (email) {
-    clauses.push("lower(c.email) = ?");
-    bindings.push(email);
-  }
+  let candidates: IdentityCodeRow[] = [];
   if (applicationNumber) {
-    clauses.push("a.application_number = ?");
-    bindings.push(applicationNumber);
+    const application = await env.DB.prepare(
+      "SELECT * FROM identity_code_applications WHERE application_number = ?"
+    )
+      .bind(applicationNumber)
+      .first<IdentityApplicationRow>();
+    const code = application
+      ? await codeForApplication(env, application)
+      : null;
+    if (code?.status === "active") candidates = [code];
+  } else {
+    const result = await env.DB.prepare(
+      `SELECT * FROM identity_codes
+       WHERE status = 'active' ${email ? "AND lower(email) = ?" : ""}
+       ORDER BY created_at DESC LIMIT 500`
+    )
+      .bind(...(email ? [email] : []))
+      .all<IdentityCodeRow>();
+    candidates = result.results;
   }
-  const result = await env.DB.prepare(
-    `SELECT c.*, a.application_number
-     FROM identity_codes c
-     LEFT JOIN identity_code_applications a ON a.id = c.application_id
-     WHERE ${clauses.join(" AND ")}
-     ORDER BY c.created_at DESC LIMIT 500`
-  )
-    .bind(...bindings)
-    .all<IdentityCodeRow & { application_number: string | null }>();
   const playerNameKey = identityPlayerNameKey(playerName);
-  const matches = result.results.filter(
+  const matches = candidates.filter(
     (row) =>
-      !playerNameKey ||
-      identityPlayerNameKey(row.player_name) === playerNameKey
+      (!email || row.email?.toLowerCase() === email) &&
+      (!playerNameKey ||
+        identityPlayerNameKey(row.player_name) === playerNameKey)
   );
   if (!matches.length) {
     throw new Error("没有找到符合条件的有效或过期识别码");
@@ -613,10 +718,14 @@ export async function recoverIdentityCode(
   if (!code?.email) {
     throw new Error("申请预留信息不足，请联系市长处理");
   }
+  const application = await ensureApplicationForCode(env, code);
+  if (!application) {
+    throw new Error("申请预留信息不足，请联系市长处理");
+  }
   const expired = Boolean(code.expires_at && Date.parse(code.expires_at) <= Date.now());
   const message = identityRecoveryMail({
     locale: code.locale,
-    applicationNumber: code.application_number,
+    applicationNumber: application.application_number,
     playerName: code.player_name,
     code: await decryptSecret(env, "identity-code-value", code.code_encrypted),
     expiresAt: await localizedExpiry(env, code.expires_at, code.locale),
@@ -914,7 +1023,14 @@ async function recordMailResult(
 export async function listIdentityCodes(
   env: Env,
   input: { page: number; search: string; status: string }
-): Promise<{ items: Array<IdentityCodeRow & { code: string }>; page: number; pageSize: 10; total: number }> {
+): Promise<{
+  items: Array<
+    IdentityCodeRow & { code: string; application_number: string | null }
+  >;
+  page: number;
+  pageSize: 10;
+  total: number;
+}> {
   const page = Math.max(1, Math.floor(input.page));
   const clauses: string[] = [];
   const bindings: unknown[] = [];
@@ -922,36 +1038,70 @@ export async function listIdentityCodes(
   if (search) {
     const textSearch = `%${search.toLowerCase()}%`;
     if (/^\d{8}$/.test(search)) {
-      clauses.push("(code_hash = ? OR lower(player_name) LIKE ? OR lower(email) LIKE ?)");
+      clauses.push(
+        "(c.code_hash = ? OR lower(c.player_name) LIKE ? OR lower(c.email) LIKE ?)"
+      );
       bindings.push(
         await keyedHash(env, "identity-code", search),
         textSearch,
         textSearch
       );
     } else {
-      clauses.push("(lower(player_name) LIKE ? OR lower(email) LIKE ?)");
-      bindings.push(textSearch, textSearch);
+      clauses.push(
+        `(lower(c.player_name) LIKE ? OR lower(c.email) LIKE ? OR EXISTS (
+          SELECT 1 FROM identity_code_applications search_application
+          WHERE (
+            search_application.id = c.application_id
+            OR search_application.identity_code_id = c.id
+          ) AND lower(search_application.application_number) LIKE ?
+        ))`
+      );
+      bindings.push(textSearch, textSearch, textSearch);
     }
   }
   const timestamp = now();
   if (input.status === "active") {
-    clauses.push("status = 'active' AND (expires_at IS NULL OR expires_at > ?)");
+    clauses.push(
+      "c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > ?)"
+    );
     bindings.push(timestamp);
   } else if (input.status === "expired") {
-    clauses.push("status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?");
+    clauses.push(
+      "c.status = 'active' AND c.expires_at IS NOT NULL AND c.expires_at <= ?"
+    );
     bindings.push(timestamp);
   } else if (input.status === "disabled") {
-    clauses.push("status = 'disabled'");
+    clauses.push("c.status = 'disabled'");
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  const total = await env.DB.prepare(`SELECT COUNT(*) AS total FROM identity_codes ${where}`)
+  const total = await env.DB.prepare(
+    `SELECT COUNT(*) AS total FROM identity_codes c ${where}`
+  )
     .bind(...bindings)
     .first<{ total: number }>();
   const rows = await env.DB.prepare(
-    `SELECT * FROM identity_codes ${where} ORDER BY created_at DESC LIMIT 10 OFFSET ?`
+    `SELECT c.*,
+      COALESCE(
+        (
+          SELECT direct_application.application_number
+          FROM identity_code_applications direct_application
+          WHERE direct_application.id = c.application_id
+          LIMIT 1
+        ),
+        (
+          SELECT inverse_application.application_number
+          FROM identity_code_applications inverse_application
+          WHERE inverse_application.identity_code_id = c.id
+          ORDER BY inverse_application.reviewed_at DESC,
+                   inverse_application.submitted_at DESC
+          LIMIT 1
+        )
+      ) AS application_number
+     FROM identity_codes c ${where}
+     ORDER BY c.created_at DESC LIMIT 10 OFFSET ?`
   )
     .bind(...bindings, (page - 1) * 10)
-    .all<IdentityCodeRow>();
+    .all<IdentityCodeRow & { application_number: string | null }>();
   return {
     items: await Promise.all(
       rows.results.map(async (row) => ({
@@ -1042,25 +1192,53 @@ export async function createManualIdentityCode(
   const generated = await generateCode(env);
   const id = uuid();
   const timestamp = now();
-  await env.DB.prepare(
-    `INSERT INTO identity_codes(
-      id, code_hash, code_encrypted, player_name, email, locale, status,
-      expires_at, created_by, created_at, updated_at
-    ) VALUES(?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`
-  )
-    .bind(
+  const locale = normalizeLocale(input.locale);
+  const expiresAt = parseExpiry(input);
+  const applicationId = playerName && email ? uuid() : null;
+  const applicationNumber =
+    applicationId ? await generateApplicationNumber(env) : null;
+  const statements: D1PreparedStatement[] = [];
+  if (applicationId && applicationNumber && playerName && email) {
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO identity_code_applications(
+          id, application_number, request_type, email, player_name, locale,
+          status, identity_code_id, submitted_at, reviewed_at, reviewed_by
+        ) VALUES(?, ?, 'new', ?, ?, ?, 'approved', ?, ?, ?, ?)`
+      ).bind(
+        applicationId,
+        applicationNumber,
+        email,
+        playerName,
+        locale,
+        id,
+        timestamp,
+        timestamp,
+        input.createdBy
+      )
+    );
+  }
+  statements.push(
+    env.DB.prepare(
+      `INSERT INTO identity_codes(
+        id, code_hash, code_encrypted, player_name, email, locale, application_id,
+        status, expires_at, created_by, created_at, updated_at
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`
+    ).bind(
       id,
       generated.hash,
       await encryptSecret(env, "identity-code-value", generated.code),
       playerName,
       email,
-      normalizeLocale(input.locale),
-      parseExpiry(input),
+      locale,
+      applicationId,
+      expiresAt,
       input.createdBy,
       timestamp,
       timestamp
     )
-    .run();
+  );
+  await env.DB.batch(statements);
   return { id, code: generated.code };
 }
 
@@ -1128,6 +1306,7 @@ export async function updateIdentityCodeInformation(
       excludeId: code.id
     });
   }
+  const application = await applicationForCode(env, code);
   const timestamp = now();
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
@@ -1136,7 +1315,7 @@ export async function updateIdentityCodeInformation(
        WHERE id = ?`
     ).bind(playerName, email, locale, expiresAt, timestamp, code.id)
   ];
-  if (code.application_id) {
+  if (application) {
     if (!playerName || !email) {
       throw new Error("有关联申请的识别码必须保留玩家名称和邮箱");
     }
@@ -1144,10 +1323,20 @@ export async function updateIdentityCodeInformation(
       env.DB.prepare(
         `UPDATE identity_code_applications SET player_name = ?, email = ?, locale = ?
          WHERE id = ?`
-      ).bind(playerName, email, locale, code.application_id)
+      ).bind(playerName, email, locale, application.id)
     );
   }
   await env.DB.batch(statements);
+  if (!application && playerName && email) {
+    await ensureApplicationForCode(env, {
+      ...code,
+      player_name: playerName,
+      email,
+      locale,
+      expires_at: expiresAt,
+      updated_at: timestamp
+    });
+  }
 }
 
 export async function reissueIdentityCode(

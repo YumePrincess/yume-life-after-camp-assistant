@@ -791,6 +791,14 @@
         ? "将删除当前公开接口的临时失败计数并立即解除误封，不会修改识别码或申请资料。"
         : "只删除已结束任务及其事件，不影响排队中或运行中的任务。"
     );
+    byId("maintenance-confirm").classList.toggle(
+      "button-primary",
+      rateLimits
+    );
+    byId("maintenance-confirm").classList.toggle(
+      "button-danger",
+      !rateLimits
+    );
     byId("maintenance-feedback").textContent = "";
     byId("maintenance-dialog").showModal();
   }
@@ -1710,6 +1718,7 @@
         item.expires_at &&
         Date.parse(item.expires_at) <= Date.now();
       for (const value of [
+        item.application_number || "—",
         item.code,
         item.player_name || "—",
         item.email || "—",
