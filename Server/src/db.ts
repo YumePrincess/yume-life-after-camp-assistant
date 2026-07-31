@@ -151,6 +151,7 @@ export interface TemporaryKeyRow {
   created_by: string;
   created_at: string;
   expires_at: string;
+  permanent: number;
   last_used_at: string | null;
   revoked_at: string | null;
 }
@@ -161,8 +162,9 @@ export async function createTemporaryKey(
 ): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO temporary_keys(
-       id, name, secret_hash, permissions_json, created_by, created_at, expires_at
-     ) VALUES(?, ?, ?, ?, ?, ?, ?)`
+       id, name, secret_hash, permissions_json, created_by, created_at, expires_at,
+       permanent
+     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       input.id,
@@ -171,7 +173,8 @@ export async function createTemporaryKey(
       input.permissions_json,
       input.created_by,
       input.created_at,
-      input.expires_at
+      input.expires_at,
+      input.permanent
     )
     .run();
 }
@@ -191,17 +194,63 @@ export async function markTemporaryKeyUsed(env: Env, id: string): Promise<void> 
     .run();
 }
 
-export async function listTemporaryKeys(env: Env): Promise<
-  Omit<TemporaryKeyRow, "secret_hash">[]
-> {
+export async function listTemporaryKeys(
+  env: Env,
+  input: {
+    page?: number;
+    search?: string;
+    status?: string;
+  } = {}
+): Promise<{
+  page: number;
+  total: number;
+  items: Omit<TemporaryKeyRow, "secret_hash">[];
+}> {
+  const requestedPage = Number.isFinite(input.page) ? Math.trunc(input.page ?? 1) : 1;
+  const search = (input.search ?? "").trim().replace(/[%_]/g, "").slice(0, 120);
+  const status = ["active", "expired", "revoked", "permanent"].includes(
+    input.status ?? ""
+  )
+    ? input.status ?? ""
+    : "";
+  const now = isoNow();
+  const clauses: string[] = [];
+  const bindings: unknown[] = [];
+  if (search) {
+    clauses.push("(id LIKE ? OR name LIKE ? OR created_by LIKE ?)");
+    const pattern = `%${search}%`;
+    bindings.push(pattern, pattern, pattern);
+  }
+  if (status === "active") {
+    clauses.push("revoked_at IS NULL AND (permanent = 1 OR expires_at > ?)");
+    bindings.push(now);
+  } else if (status === "expired") {
+    clauses.push("revoked_at IS NULL AND permanent = 0 AND expires_at <= ?");
+    bindings.push(now);
+  } else if (status === "revoked") {
+    clauses.push("revoked_at IS NOT NULL");
+  } else if (status === "permanent") {
+    clauses.push("revoked_at IS NULL AND permanent = 1");
+  }
+  const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
+  const count = await env.DB.prepare(
+    `SELECT COUNT(*) AS total FROM temporary_keys${where}`
+  )
+    .bind(...bindings)
+    .first<{ total: number }>();
+  const total = Number(count?.total ?? 0);
+  const pages = Math.max(1, Math.ceil(total / 10));
+  const page = Math.min(pages, Math.max(1, requestedPage));
   const result = await env.DB.prepare(
     `SELECT id, name, permissions_json, created_by, created_at, expires_at,
-            last_used_at, revoked_at
-     FROM temporary_keys
+            permanent, last_used_at, revoked_at
+     FROM temporary_keys${where}
      ORDER BY created_at DESC
-     LIMIT 100`
-  ).all<Omit<TemporaryKeyRow, "secret_hash">>();
-  return result.results;
+     LIMIT 10 OFFSET ?`
+  )
+    .bind(...bindings, (page - 1) * 10)
+    .all<Omit<TemporaryKeyRow, "secret_hash">>();
+  return { page, total, items: result.results };
 }
 
 export async function revokeTemporaryKey(env: Env, id: string): Promise<boolean> {
@@ -494,21 +543,28 @@ export function reconcileContributionMembers(
       continue;
     } else {
       const sourceName = comparableMemberName(row.name);
-      const fuzzyCandidates = masterMembers.filter((member) => {
-        if (!available.has(member.name)) return false;
+      const fuzzyCandidates = masterMembers.flatMap((member) => {
+        if (!available.has(member.name)) return [];
         const targetName = comparableMemberName(member.name);
-        return (
-          sourceName.length >= 4 &&
-          targetName.length >= 4 &&
-          levenshteinDistance(sourceName, targetName) <= 1 &&
+        const minimumLength = Math.min(sourceName.length, targetName.length);
+        const distance = levenshteinDistance(sourceName, targetName);
+        const maximumDistance =
+          minimumLength >= 10 ? 3 : minimumLength >= 5 ? 2 : 1;
+        return sourceName.length >= 3 &&
+          targetName.length >= 3 &&
+          distance <= maximumDistance &&
           contributionsCorroborate(
             row.weeklyContribution,
             member.weeklyContribution
           )
-        );
+          ? [{ member, distance }]
+          : [];
       });
-      if (fuzzyCandidates.length === 1) {
-        candidate = fuzzyCandidates[0]!;
+      fuzzyCandidates.sort((left, right) => left.distance - right.distance);
+      const best = fuzzyCandidates[0];
+      const second = fuzzyCandidates[1];
+      if (best && (!second || best.distance < second.distance)) {
+        candidate = best.member;
       } else {
         if (fuzzyCandidates.length > 1) ambiguous += 1;
         ignored += 1;
@@ -523,26 +579,31 @@ export function reconcileContributionMembers(
 }
 
 function comparableMemberName(value: string): string {
-  return value
+  const normalized = value
     .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/\s+/g, "");
+    .toLocaleLowerCase();
+  // Player names are frequently decorated with full-width punctuation,
+  // emoji, middle dots or OCR-inserted separators. Letters and numbers are
+  // authoritative; a symbol-only name falls back to its normalized glyphs so
+  // unrelated symbol names do not collapse to the same empty key.
+  const lettersAndNumbers = normalized.match(/[\p{L}\p{N}]+/gu)?.join("") ?? "";
+  return lettersAndNumbers || normalized.replace(/\s+/g, "");
 }
 
 function contributionsCorroborate(left: number, right: number): boolean {
   if (left === right) return true;
   const a = String(Math.max(0, Math.trunc(left)));
   const b = String(Math.max(0, Math.trunc(right)));
-  return a.length >= 2 && a.length === b.length && levenshteinDistance(a, b) <= 1;
+  if (a.length < 2 || a.length !== b.length) return false;
+  const maximumDistance = a.length >= 7 ? 2 : 1;
+  return levenshteinDistance(a, b) <= maximumDistance;
 }
 
 function levenshteinDistance(left: string, right: string): number {
   if (left === right) return 0;
-  if (Math.abs(left.length - right.length) > 1) return 2;
   let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
   for (let row = 1; row <= left.length; row += 1) {
     const current = [row];
-    let minimum = current[0]!;
     for (let column = 1; column <= right.length; column += 1) {
       const value = Math.min(
         current[column - 1]! + 1,
@@ -551,9 +612,7 @@ function levenshteinDistance(left: string, right: string): number {
           (left[row - 1] === right[column - 1] ? 0 : 1)
       );
       current.push(value);
-      minimum = Math.min(minimum, value);
     }
-    if (minimum > 1) return 2;
     previous = current;
   }
   return previous[right.length]!;

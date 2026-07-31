@@ -285,7 +285,7 @@ textarea {
 
 .permission-options {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   width: 100%;
 }
@@ -299,13 +299,12 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel) 72%, transparent);
-  white-space: nowrap;
 }
 
 .permission-options label span {
   min-width: 0;
   color: var(--text);
-  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .permission-options input {
@@ -1293,9 +1292,17 @@ td {
 
 .vote-success-card {
   display: grid;
-  width: min(430px, calc(100vw - 32px));
   gap: 16px;
   text-align: center;
+}
+
+.compact-dialog {
+  width: min(520px, calc(100% - 28px));
+}
+
+.compact-dialog .vote-success-card {
+  width: auto;
+  padding: 30px 32px;
 }
 
 .vote-success-card .button {
@@ -1339,6 +1346,21 @@ td {
   border: 1px solid var(--line-strong);
   border-radius: 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.identity-conflict-message {
+  margin: 2px 0 4px;
+  padding: 16px 18px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.75;
+  text-align: left;
+  text-wrap: pretty;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.055), transparent),
+    rgba(255, 255, 255, 0.025);
 }
 
 .inline-renew-button {

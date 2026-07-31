@@ -13,6 +13,39 @@
     ["patrol", "营地巡逻", "组队、困难路线与定时古籍分享"]
   ];
   const CONFIG_SECTIONS = ["general", "tasks", "agent", "technology"];
+  const VIEW_PERMISSIONS = {
+    overview: "admin:overview",
+    general: "admin:general",
+    tasks: "admin:tasks",
+    agent: "admin:agent",
+    technology: "admin:technology",
+    "identity-applications": "admin:identity-review",
+    "identity-codes": "admin:identity-codes",
+    smtp: "admin:smtp",
+    access: "admin:access",
+    members: "admin:members",
+    history: "admin:history"
+  };
+  const PERMISSION_ALIASES = {
+    "admin:overview": ["task:run"],
+    "admin:general": ["config:write"],
+    "admin:tasks": ["config:write"],
+    "admin:agent": ["config:write"],
+    "admin:technology": ["config:write"],
+    "admin:identity-review": ["identity:review"],
+    "admin:identity-codes": ["identity:manage"],
+    "admin:smtp": ["smtp:manage"],
+    "admin:access": ["keys:manage"],
+    "admin:members": ["member:kick"],
+    "admin:history": ["task:interrupt"],
+    "task:run": ["admin:overview"],
+    "task:interrupt": ["admin:history"],
+    "member:kick": ["admin:members"],
+    "keys:manage": ["admin:access"],
+    "identity:review": ["admin:identity-review"],
+    "identity:manage": ["admin:identity-codes"],
+    "smtp:manage": ["admin:smtp"]
+  };
   const TASK_NAMES = {
     ...Object.fromEntries(TASKS.map(([key, name]) => [key, name])),
     member_sync: "成员同步",
@@ -42,10 +75,13 @@
     runActionMenu: null,
     identityApplications: { page: 1, total: 0, items: [] },
     identityCodes: { page: 1, total: 0, items: [] },
+    temporaryKeys: { page: 1, total: 0, items: [] },
     identityApplicationSearch: "",
     identityApplicationStatus: "",
     identityCodeSearch: "",
     identityCodeStatus: "",
+    temporaryKeySearch: "",
+    temporaryKeyStatus: "",
     selectedIdentityApplication: null,
     publicContentLocale: "zh-cn",
     publicContentDraft: null,
@@ -120,6 +156,18 @@
   function permissionName(value) {
     return (
       {
+        "demo:preview": "Demo · 全后台只读",
+        "admin:overview": "控制台",
+        "admin:general": "基础设置",
+        "admin:tasks": "任务计划",
+        "admin:agent": "执行策略",
+        "admin:technology": "科技管理",
+        "admin:identity-review": "识别码审批",
+        "admin:identity-codes": "身份识别码",
+        "admin:smtp": "SMTP 发信",
+        "admin:access": "访问密钥",
+        "admin:members": "成员管理",
+        "admin:history": "运行记录",
         "config:write": "修改配置",
         "task:run": "执行任务",
         "task:interrupt": "中断任务",
@@ -134,7 +182,22 @@
 
   function hasPermission(permission) {
     const permissions = state.bootstrap?.session?.permissions || [];
-    return permissions.includes("*") || permissions.includes(permission);
+    return (
+      permissions.includes("*") ||
+      permissions.includes(permission) ||
+      (PERMISSION_ALIASES[permission] || []).some((alias) =>
+        permissions.includes(alias)
+      )
+    );
+  }
+
+  function canView(view) {
+    const permissions = state.bootstrap?.session?.permissions || [];
+    return (
+      permissions.includes("*") ||
+      permissions.includes("demo:preview") ||
+      hasPermission(VIEW_PERMISSIONS[view])
+    );
   }
 
   function stateName(value) {
@@ -375,7 +438,7 @@
         })
       )
     );
-    const canInspectVoters = hasPermission("identity:manage");
+    const canInspectVoters = canView("technology");
     const ballots = state.bootstrap?.voteBallots || [];
     for (const option of summary.options || []) {
       const item = create(
@@ -779,29 +842,30 @@
       )
     );
     const resolved =
-      availableViews.has(view) && (view !== "access" || state.accessAllowed)
+      availableViews.has(view) && canView(view)
         ? view
-        : "overview";
+        : [...availableViews].find((candidate) => canView(candidate)) || "overview";
     state.activeView = resolved;
     for (const element of document.querySelectorAll("[data-admin-view]")) {
       element.hidden =
         element.dataset.adminView !== resolved ||
-        (element.dataset.adminView === "access" && !state.accessAllowed);
+        !canView(element.dataset.adminView);
     }
     for (const link of document.querySelectorAll("[data-nav-target]")) {
       const active = link.dataset.navTarget === resolved;
       if (active) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     }
-    if (resolved === "identity-applications" && hasPermission("identity:review")) {
+    if (resolved === "identity-applications" && canView(resolved)) {
       loadIdentityApplications();
     }
-    if (resolved === "identity-codes" && hasPermission("identity:manage")) {
+    if (resolved === "identity-codes" && canView(resolved)) {
       loadIdentityCodes();
     }
-    if (resolved === "smtp" && hasPermission("smtp:manage")) {
+    if (resolved === "smtp" && canView(resolved)) {
       loadSmtpConfig();
     }
+    if (resolved === "access" && canView(resolved)) loadTemporaryKeys();
   }
 
   function render(data, fillSections = []) {
@@ -813,103 +877,138 @@
     byId("session-email").textContent =
       data.session.displayName || data.session.email;
     document.body.dataset.readonly = String(
-      !hasPermission("config:write") &&
-        !hasPermission("task:run") &&
-        !hasPermission("task:interrupt") &&
-        !hasPermission("member:kick") &&
-        !hasPermission("keys:manage") &&
-        !hasPermission("identity:review") &&
-        !hasPermission("identity:manage") &&
-        !hasPermission("smtp:manage")
+      (data.session.permissions || []).includes("demo:preview") &&
+        !(data.session.permissions || []).includes("*")
     );
     byId("next-tech-date").textContent = data.nextTechnologyTargetDate || "--";
-    renderAgents(data.heartbeats);
-    renderVote(data.voteSummary);
-    renderRuns(data.recentRuns);
-    renderAdminMembers(data.members || []);
-    renderAutoKick(data.autoKickCandidates || [], data.configBundle.campConfig);
-    renderTemporaryKeys(data.temporaryKeys || []);
-    state.accessAllowed = hasPermission("keys:manage");
-    document.querySelector('[data-nav-target="access"]').hidden =
-      !state.accessAllowed;
-    for (const target of ["identity-applications", "identity-codes"]) {
-      document.querySelector(`[data-nav-target="${target}"]`).hidden =
-        !hasPermission(
-          target === "identity-applications" ? "identity:review" : "identity:manage"
-        );
+    if (canView("overview")) renderAgents(data.heartbeats || []);
+    if (canView("technology")) renderVote(data.voteSummary || { options: [] });
+    if (canView("history")) renderRuns(data.recentRuns || []);
+    if (canView("members")) {
+      renderAdminMembers(data.members || []);
+      renderAutoKick(data.autoKickCandidates || [], data.configBundle.campConfig);
     }
-    document.querySelector('[data-nav-target="smtp"]').hidden =
-      !hasPermission("smtp:manage");
+    state.accessAllowed = canView("access");
+    for (const link of document.querySelectorAll("[data-nav-target]")) {
+      link.hidden = !canView(link.dataset.navTarget);
+    }
     if (fillSections.length) {
-      fillConfig(data.configBundle, fillSections);
+      fillConfig(
+        data.configBundle,
+        fillSections.filter((section) => canView(section))
+      );
     }
-    setConfigReadOnly(!hasPermission("config:write"));
+    setConfigReadOnly();
     if (!hasPermission("member:kick")) {
       input("automaticKickEnabled").disabled = true;
       input("automaticKickGraceDays").disabled = true;
     }
+    setModuleActionState();
     const requestedView = location.hash.slice(1) || state.activeView;
     activateView(requestedView);
   }
 
-  function setConfigReadOnly(readonly) {
-    for (const field of document.querySelectorAll(
-      ".config-form input, .config-form select, .config-form textarea, .config-form button"
-    )) {
-      field.disabled = readonly || (state.saving && field.matches('button[type="submit"]'));
+  function setConfigReadOnly() {
+    for (const form of document.querySelectorAll(".config-form")) {
+      const readonly = !hasPermission(VIEW_PERMISSIONS[form.dataset.configSection]);
+      for (const field of form.querySelectorAll(
+        "input, select, textarea, button"
+      )) {
+        field.disabled =
+          readonly ||
+          (state.saving && field.matches('button[type="submit"]'));
+      }
     }
   }
 
-  function renderTemporaryKeys(items) {
+  function setModuleActionState() {
+    for (const [selector, permission] of [
+      ["#temporary-key-form input, #temporary-key-form button", "keys:manage"],
+      ["#manual-identity-code-form input, #manual-identity-code-form select, #manual-identity-code-form button", "identity:manage"],
+      ["#smtp-config-form input, #smtp-config-form select, #smtp-config-form button, #smtp-test-form input, #smtp-test-form button", "smtp:manage"]
+    ]) {
+      for (const control of document.querySelectorAll(selector)) {
+        control.disabled = !hasPermission(permission);
+      }
+    }
+    byId("kick-member").disabled = !hasPermission("member:kick");
+    byId("auto-kick-evaluate").disabled = !hasPermission("member:kick");
+  }
+
+  async function loadTemporaryKeys(page = state.temporaryKeys.page) {
+    if (!canView("access")) return;
+    const params = new URLSearchParams({
+      page: String(Math.max(1, page)),
+      search: state.temporaryKeySearch,
+      status: state.temporaryKeyStatus
+    });
+    try {
+      state.temporaryKeys = await request(`/api/admin/temp-keys?${params}`);
+      renderTemporaryKeys();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  function renderTemporaryKeys() {
     const root = byId("temporary-key-list");
     if (!root) return;
     root.replaceChildren();
+    const payload = state.temporaryKeys;
+    const items = payload.items || [];
+    const pages = Math.max(1, Math.ceil((payload.total || 0) / 10));
     if (!items.length) {
-      root.append(create("p", "empty-state", "尚未生成临时 Key。"));
-      return;
-    }
-    for (const item of items) {
-      let permissions = [];
-      try {
-        permissions = JSON.parse(item.permissions_json || "[]");
-      } catch {
-        permissions = [];
+      root.append(create("p", "empty-state", "没有符合条件的临时 Key。"));
+    } else {
+      for (const item of items) {
+        let permissions = [];
+        try {
+          permissions = JSON.parse(item.permissions_json || "[]");
+        } catch {
+          permissions = [];
+        }
+        const row = create("article", "key-item");
+        const identity = create("div");
+        identity.append(
+          create("strong", "", item.name),
+          create(
+            "div",
+            "key-item-meta",
+            window.MrzhI18n.format("编号 {id}", { id: item.id })
+          )
+        );
+        const suffix = [
+          permissions
+            .map((permission) => window.MrzhI18n.t(permissionName(permission)))
+            .join(" · "),
+          item.permanent === 1
+            ? window.MrzhI18n.t("永久有效")
+            : window.MrzhI18n.format("有效期 {date}", {
+                date: formatDate(item.expires_at)
+              }),
+          item.last_used_at
+            ? window.MrzhI18n.format("最近使用 {date}", {
+                date: formatDate(item.last_used_at)
+              })
+            : "",
+          item.revoked_at ? window.MrzhI18n.t("已撤销") : ""
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        const revoke = create("button", "button button-danger", "撤销");
+        revoke.type = "button";
+        revoke.hidden = !hasPermission("keys:manage");
+        revoke.disabled = Boolean(item.revoked_at);
+        revoke.addEventListener("click", () => revokeTemporaryKey(item.id, revoke));
+        row.append(identity, create("div", "key-item-meta", suffix), revoke);
+        root.append(row);
       }
-      const row = create("article", "key-item");
-      const identity = create("div");
-      identity.append(
-        create("strong", "", item.name),
-        create(
-          "div",
-          "key-item-meta",
-          window.MrzhI18n.format("编号 {id}", { id: item.id })
-        )
-      );
-      const suffix = [
-        permissions.length
-          ? permissions
-              .map((permission) => window.MrzhI18n.t(permissionName(permission)))
-              .join(" · ")
-          : window.MrzhI18n.t("仅预览"),
-        window.MrzhI18n.format("有效期 {date}", {
-          date: formatDate(item.expires_at)
-        }),
-        item.last_used_at
-          ? window.MrzhI18n.format("最近使用 {date}", {
-              date: formatDate(item.last_used_at)
-            })
-          : "",
-        item.revoked_at ? window.MrzhI18n.t("已撤销") : ""
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      const revoke = create("button", "button button-danger", "撤销");
-      revoke.type = "button";
-      revoke.disabled = Boolean(item.revoked_at);
-      revoke.addEventListener("click", () => revokeTemporaryKey(item.id, revoke));
-      row.append(identity, create("div", "key-item-meta", suffix), revoke);
-      root.append(row);
     }
+    setText("temporary-key-page", `${payload.page || 1} / ${pages}`);
+    byId("temporary-key-prev").disabled = (payload.page || 1) <= 1;
+    byId("temporary-key-next").disabled = (payload.page || 1) >= pages;
+    byId("temporary-key-jump").max = String(pages);
+    byId("temporary-key-jump").value = String(payload.page || 1);
   }
 
   function renderAdminMembers(items) {
@@ -1298,6 +1397,7 @@
     try {
       const data = await request("/api/admin/config", {
         method: "PUT",
+        headers: { "X-Admin-Section": section },
         body: JSON.stringify(collectConfig(section))
       });
       state.dirtySections.delete(section);
@@ -1309,9 +1409,7 @@
       byId("save-state").textContent = error.message;
     } finally {
       state.saving = false;
-      for (const button of buttons) {
-        button.disabled = !hasPermission("config:write");
-      }
+      setConfigReadOnly();
     }
   }
 
@@ -1326,20 +1424,30 @@
     const permissions = [
       ...form.querySelectorAll('[name="keyPermission"]:checked')
     ].map((field) => field.value);
+    if (!permissions.length) {
+      byId("save-state").textContent = window.MrzhI18n.t(
+        "请输入至少一项权限；仅预览请勾选 Demo 权限"
+      );
+      return;
+    }
+    const permanent = form.elements.keyPermanent.checked;
     try {
       const payload = await request("/api/admin/temp-keys", {
         method: "POST",
         body: JSON.stringify({
           name: form.elements.keyName.value.trim(),
-          expiresLocal: form.elements.keyExpiresAt.value,
+          expiresLocal: permanent ? null : form.elements.keyExpiresAt.value,
+          permanent,
           permissions
         })
       });
       byId("temporary-key-value").textContent = payload.key;
       byId("temporary-key-reveal").hidden = false;
       form.reset();
+      form.elements.keyExpiresAt.disabled = false;
+      form.elements.keyExpiresAt.required = true;
       setDefaultKeyExpiry();
-      await refresh(false);
+      await loadTemporaryKeys(1);
     } catch (error) {
       byId("save-state").textContent = error.message;
     }
@@ -1352,7 +1460,7 @@
         method: "POST",
         body: JSON.stringify({ id })
       });
-      await refresh(false);
+      await loadTemporaryKeys();
     } catch (error) {
       byId("save-state").textContent = error.message;
       button.disabled = false;
@@ -1377,7 +1485,7 @@
   }
 
   async function loadIdentityApplications(page = state.identityApplications.page) {
-    if (!hasPermission("identity:review")) return;
+    if (!canView("identity-applications")) return;
     const params = new URLSearchParams({
       page: String(Math.max(1, page)),
       search: state.identityApplicationSearch,
@@ -1423,7 +1531,8 @@
       );
       operation.setAttribute("aria-haspopup", "menu");
       operation.setAttribute("aria-expanded", "false");
-      operation.disabled = item.status !== "pending";
+      operation.disabled =
+        item.status !== "pending" || !hasPermission("identity:review");
       operation.addEventListener("click", (event) => {
         event.stopPropagation();
         toggleActionMenu(operation, [
@@ -1526,7 +1635,7 @@
   }
 
   async function loadIdentityCodes(page = state.identityCodes.page) {
-    if (!hasPermission("identity:manage")) return;
+    if (!canView("identity-codes")) return;
     const params = new URLSearchParams({
       page: String(Math.max(1, page)),
       search: state.identityCodeSearch,
@@ -1569,6 +1678,7 @@
       );
       operation.setAttribute("aria-haspopup", "menu");
       operation.setAttribute("aria-expanded", "false");
+      operation.disabled = !hasPermission("identity:manage");
       operation.addEventListener("click", (event) => {
         event.stopPropagation();
         toggleActionMenu(operation, [
@@ -1589,11 +1699,6 @@
             label: "修改信息",
             icon: "events",
             onSelect: () => editIdentityInformation(item)
-          },
-          {
-            label: "修改有效期",
-            icon: "events",
-            onSelect: () => editIdentityExpiry(item)
           },
           {
             label: "重新发行识别码",
@@ -1632,24 +1737,28 @@
     }
   }
 
-  function editIdentityExpiry(item) {
-    const value = window.prompt(
-      "输入新的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效。当天将按基础设置中的每日刷新时间过期：",
+  async function editIdentityInformation(item) {
+    const playerName = window.prompt(
+      window.MrzhI18n.t("输入玩家名称："),
+      item.player_name || ""
+    );
+    if (playerName === null) return;
+    const email = window.prompt(
+      window.MrzhI18n.t("输入接收邮箱："),
+      item.email || ""
+    );
+    if (email === null) return;
+    const locale = window.prompt(
+      window.MrzhI18n.t("输入邮件语言（zh-cn、zh-tw、en、fr、ja）："),
+      item.locale || "zh-cn"
+    );
+    if (locale === null) return;
+    const expiresOn = window.prompt(
+      window.MrzhI18n.t("输入有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效："),
       item.expires_at ? identityExpiryDate(item.expires_at) : "permanent"
     );
-    if (!value) return;
-    updateIdentityCodeItem(item, {
-      status: item.status,
-      permanent: value.trim().toLowerCase() === "permanent",
-      expiresOn: value.trim()
-    });
-  }
-
-  async function editIdentityInformation(item) {
-    const playerName = window.prompt("输入玩家名称：", item.player_name || "");
-    if (playerName === null) return;
-    const email = window.prompt("输入接收邮箱：", item.email || "");
-    if (email === null) return;
+    if (expiresOn === null) return;
+    const permanent = expiresOn.trim().toLowerCase() === "permanent";
     try {
       await request(
         `/api/admin/identity-codes/${encodeURIComponent(item.id)}/information`,
@@ -1657,11 +1766,14 @@
           method: "PATCH",
           body: JSON.stringify({
             playerName: playerName.trim(),
-            email: email.trim()
+            email: email.trim(),
+            locale: locale.trim().toLowerCase(),
+            permanent,
+            expiresOn: permanent ? null : expiresOn.trim()
           })
         }
       );
-      byId("save-state").textContent = "识别码资料已修改";
+      byId("save-state").textContent = window.MrzhI18n.t("识别码资料已修改");
       await loadIdentityCodes();
       await loadIdentityApplications();
     } catch (error) {
@@ -1739,6 +1851,7 @@
   }
 
   async function loadSmtpConfig(force = false) {
+    if (!canView("smtp")) return;
     if (
       state.smtpConfigLoading ||
       (!force && (state.smtpConfigLoaded || state.smtpDirty))
@@ -1867,6 +1980,42 @@
   byId("refresh-admin").addEventListener("click", () => refresh(false));
   byId("logout").addEventListener("click", logout);
   byId("temporary-key-form").addEventListener("submit", generateTemporaryKey);
+  byId("temporary-key-search-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.temporaryKeySearch = byId("temporary-key-search").value.trim();
+    loadTemporaryKeys(1);
+  });
+  byId("temporary-key-status").addEventListener("change", (event) => {
+    state.temporaryKeyStatus = event.target.value;
+    loadTemporaryKeys(1);
+  });
+  byId("temporary-key-prev").addEventListener("click", () =>
+    loadTemporaryKeys(state.temporaryKeys.page - 1)
+  );
+  byId("temporary-key-next").addEventListener("click", () =>
+    loadTemporaryKeys(state.temporaryKeys.page + 1)
+  );
+  byId("temporary-key-jump-button").addEventListener("click", () =>
+    loadTemporaryKeys(Number(byId("temporary-key-jump").value))
+  );
+  input("keyPermanent").addEventListener("change", (event) => {
+    input("keyExpiresAt").disabled = event.target.checked;
+    input("keyExpiresAt").required = !event.target.checked;
+  });
+  for (const field of document.querySelectorAll('[name="keyPermission"]')) {
+    field.addEventListener("change", () => {
+      const demo = document.querySelector(
+        '[name="keyPermission"][value="demo:preview"]'
+      );
+      if (field === demo && field.checked) {
+        for (const other of document.querySelectorAll('[name="keyPermission"]')) {
+          if (other !== demo) other.checked = false;
+        }
+      } else if (field.checked && demo) {
+        demo.checked = false;
+      }
+    });
+  }
   byId("run-dialog").addEventListener("close", stopEventRefresh);
   document.addEventListener("click", closeRunActionMenu);
   document.addEventListener("keydown", (event) => {

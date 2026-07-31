@@ -1,5 +1,6 @@
 import {
   ADMIN_PERMISSIONS,
+  canViewAdminModule,
   getAuthenticatedSession,
   handleOidcSilentStart,
   handleTemporaryKeyLogin,
@@ -772,12 +773,21 @@ async function handleAdminApi(
   }
   if (path === "/api/admin/identity-codes" && method === "GET") {
     const url = new URL(request.url);
-    return json(
-      await listIdentityCodes(env, {
+    const result = await listIdentityCodes(env, {
         page: Number(url.searchParams.get("page") ?? 1),
         search: url.searchParams.get("search")?.trim() ?? "",
         status: url.searchParams.get("status")?.trim() ?? ""
-      })
+      });
+    return json(
+      hasPermission(session, "identity:manage")
+        ? result
+        : {
+            ...result,
+            items: result.items.map((item) => ({
+              ...item,
+              code: "••••••••"
+            }))
+          }
     );
   }
   if (path === "/api/admin/identity-codes" && method === "POST") {
@@ -831,10 +841,18 @@ async function handleAdminApi(
     if (!codeId) return problem("识别码不存在", 404);
     try {
       const body = await readJsonObject(request, 16_000);
+      const expiry = await resolveIdentityExpiry(
+        env,
+        body.permanent,
+        body.expiresOn
+      );
       await updateIdentityCodeInformation(env, {
         id: codeId,
         playerName: body.playerName,
-        email: body.email
+        email: body.email,
+        locale: body.locale,
+        permanent: expiry.permanent,
+        expiresAt: expiry.expiresAt
       });
       return json({ ok: true });
     } catch (error) {
@@ -873,26 +891,40 @@ async function handleAdminApi(
       return problem(errorMessage(error), 400, "identity_code_reissue_failed");
     }
   }
+  if (path === "/api/admin/temp-keys" && method === "GET") {
+    const url = new URL(request.url);
+    return json(
+      await listTemporaryKeys(env, {
+        page: Number(url.searchParams.get("page") ?? 1),
+        search: url.searchParams.get("search")?.trim() ?? "",
+        status: url.searchParams.get("status")?.trim() ?? ""
+      })
+    );
+  }
   if (path === "/api/admin/temp-keys" && method === "POST") {
     const body = await readJsonObject(request, 32_000);
     const name = boundedText(body.name, "name", 80);
-    const expiresLocal = boundedText(body.expiresLocal, "expiresLocal", 40);
-    const [expiresOn = "", expiresClock = ""] = expiresLocal.split("T");
+    const permanent = body.permanent === true;
     const bundle = await getConfigBundle(env);
-    const expiry = new Date(
-      zonedDateTimeToIso(
-        expiresOn,
-        expiresClock,
-        bundle.campConfig.timezone
-      )
-    );
-    const now = Date.now();
-    if (
-      Number.isNaN(expiry.getTime()) ||
-      expiry.getTime() < now + 5 * 60_000 ||
-      expiry.getTime() > now + 366 * 24 * 60 * 60_000
-    ) {
-      return problem("有效期必须在 5 分钟至 366 天之间", 400, "invalid_expiry");
+    let expiry = new Date("9999-12-31T23:59:59.999Z");
+    if (!permanent) {
+      const expiresLocal = boundedText(body.expiresLocal, "expiresLocal", 40);
+      const [expiresOn = "", expiresClock = ""] = expiresLocal.split("T");
+      expiry = new Date(
+        zonedDateTimeToIso(
+          expiresOn,
+          expiresClock,
+          bundle.campConfig.timezone
+        )
+      );
+      const now = Date.now();
+      if (
+        Number.isNaN(expiry.getTime()) ||
+        expiry.getTime() < now + 5 * 60_000 ||
+        expiry.getTime() > now + 366 * 24 * 60 * 60_000
+      ) {
+        return problem("有效期必须在 5 分钟至 366 天之间", 400, "invalid_expiry");
+      }
     }
     if (!Array.isArray(body.permissions)) {
       return problem("permissions must be an array", 400);
@@ -904,9 +936,16 @@ async function handleAdminApi(
     if (permissions.length !== body.permissions.length) {
       return problem("包含未知权限", 400, "invalid_permission");
     }
+    if (!permissions.length) {
+      return problem("请选择至少一项权限；仅预览请勾选 Demo 权限", 400, "permission_required");
+    }
+    if (permissions.includes("demo:preview") && permissions.length > 1) {
+      return problem("Demo 权限必须单独使用", 400, "demo_permission_exclusive");
+    }
     const issued = await issueTemporaryKey(env, {
       name,
       expiresAt: expiry.toISOString(),
+      permanent,
       permissions,
       createdBy: session.email
     });
@@ -915,6 +954,7 @@ async function handleAdminApi(
         ...issued,
         name,
         expiresAt: expiry.toISOString(),
+        permanent,
         permissions,
         warning: "Key 明文仅显示本次，请立即安全保存"
       },
@@ -927,8 +967,53 @@ async function handleAdminApi(
     return json({ revoked: await revokeTemporaryKey(env, id) });
   }
   if (path === "/api/admin/config" && method === "PUT") {
+    const section = request.headers.get("X-Admin-Section") ?? "";
+    const sectionPermission = {
+      general: "admin:general",
+      tasks: "admin:tasks",
+      agent: "admin:agent",
+      technology: "admin:technology"
+    }[section] as (typeof ADMIN_PERMISSIONS)[number] | undefined;
+    if (!sectionPermission || !hasPermission(session, sectionPermission)) {
+      return problem("当前登录凭据没有修改此模块的权限", 403, "permission_denied");
+    }
     const current = await getConfigBundle(env);
-    const next = validateConfigBundle(await readJsonObject(request, 300_000));
+    const submitted = validateConfigBundle(await readJsonObject(request, 300_000));
+    const next = validateConfigBundle({
+      ...current,
+      ...(section === "general"
+        ? {
+            campConfig: submitted.campConfig,
+            authConfig: submitted.authConfig,
+            publicOverview: submitted.publicOverview,
+            automationConfig: {
+              ...current.automationConfig,
+              timezone: submitted.automationConfig.timezone
+            }
+          }
+        : {}),
+      ...(section === "tasks"
+        ? {
+            automationConfig: {
+              ...current.automationConfig,
+              tasks: submitted.automationConfig.tasks
+            }
+          }
+        : {}),
+      ...(section === "agent"
+        ? {
+            automationConfig: {
+              ...current.automationConfig,
+              agentPolling: submitted.automationConfig.agentPolling,
+              gameWatchdog: submitted.automationConfig.gameWatchdog,
+              routines: submitted.automationConfig.routines
+            }
+          }
+        : {}),
+      ...(section === "technology"
+        ? { technologyConfig: submitted.technologyConfig }
+        : {})
+    });
     const kickPolicyChanged =
       current.campConfig.automaticKickEnabled !==
         next.campConfig.automaticKickEnabled ||
@@ -1333,16 +1418,24 @@ async function buildAdminBootstrap(
   locale: unknown = "zh-cn"
 ): Promise<Record<string, unknown>> {
   const bundle = await getConfigBundle(env);
+  const canOverview = canViewAdminModule(session, "admin:overview");
+  const canTechnology = canViewAdminModule(session, "admin:technology");
+  const canMembers = canViewAdminModule(session, "admin:members");
+  const canHistory = canViewAdminModule(session, "admin:history");
   const [voteSummary, heartbeats, recentRuns, staff, members, warnings] = await Promise.all([
     buildVoteSummary(env, bundle),
-    listHeartbeats(env),
-    listRecentRuns(env, 100),
-    listStaff(env),
-    listMembers(env),
-    listActivityWarnings(env)
+    canOverview ? listHeartbeats(env) : Promise.resolve([]),
+    canHistory ? listRecentRuns(env, 100) : Promise.resolve([]),
+    canMembers ? listStaff(env) : Promise.resolve([]),
+    canMembers ? listMembers(env) : Promise.resolve([]),
+    canMembers ? listActivityWarnings(env) : Promise.resolve([])
   ]);
-  const voteBallots = hasPermission(session, "identity:manage")
-    ? await listVoteBallotDetails(env, voteSummary.pollDate)
+  const voteBallots = canTechnology
+    ? (await listVoteBallotDetails(env, voteSummary.pollDate)).map((ballot) =>
+        hasPermission(session, "admin:technology")
+          ? ballot
+          : { ...ballot, identityCode: "••••••••" }
+      )
     : [];
   return {
     session: {
@@ -1362,20 +1455,22 @@ async function buildAdminBootstrap(
         )
       }
     },
-    voteSummary: localizeVoteSummary(voteSummary, locale),
+    voteSummary: canTechnology
+      ? localizeVoteSummary(voteSummary, locale)
+      : { pollDate: voteSummary.pollDate, ballotCount: 0, options: [], projectedPlan: { core: [], general: [] } },
     voteBallots,
     heartbeats,
     recentRuns: recentRuns.filter(isCurrentFeatureRun),
-    staffAssignments: staff,
-    members,
-    autoKickCandidates: automaticKickCandidates(bundle, warnings),
+    staffAssignments: canMembers ? staff : [],
+    members: canMembers ? members : [],
+    autoKickCandidates: canMembers
+      ? automaticKickCandidates(bundle, warnings)
+      : [],
     agentOnlineThresholdSeconds: Math.max(
       45,
       bundle.automationConfig.agentPolling.idleSeconds * 2 + 30
     ),
-    temporaryKeys: hasPermission(session, "keys:manage")
-      ? await listTemporaryKeys(env)
-      : [],
+    temporaryKeys: [],
     nextTechnologyTargetDate: nextTechnologyTargetDate(
       new Date(),
       bundle.automationConfig.timezone,
@@ -1492,22 +1587,31 @@ function permissionForAdminRequest(
   path: string,
   method: string
 ): (typeof ADMIN_PERMISSIONS)[number] | null {
-  if (method === "PUT" && path === "/api/admin/config") return "config:write";
+  if (method === "PUT" && path === "/api/admin/config") return null;
   if (method === "POST" && path === "/api/admin/run") return "task:run";
   if (method === "POST" && path === "/api/admin/interrupt") return "task:interrupt";
   if (method === "POST" && path === "/api/admin/kick-member") return "member:kick";
   if (method === "POST" && path === "/api/admin/auto-kick-evaluate") {
     return "member:kick";
   }
-  if (
-    path === "/api/admin/temp-keys" ||
-    path === "/api/admin/temp-keys/revoke"
-  ) {
+  if (path === "/api/admin/temp-keys") {
+    return method === "GET" ? "admin:access" : "keys:manage";
+  }
+  if (path === "/api/admin/temp-keys/revoke") {
     return "keys:manage";
   }
-  if (path.startsWith("/api/admin/identity-applications")) return "identity:review";
-  if (path.startsWith("/api/admin/identity-codes")) return "identity:manage";
-  if (path.startsWith("/api/admin/smtp-config")) return "smtp:manage";
+  if (path.startsWith("/api/admin/identity-applications")) {
+    return method === "GET" ? "admin:identity-review" : "identity:review";
+  }
+  if (path.startsWith("/api/admin/identity-codes")) {
+    return method === "GET" ? "admin:identity-codes" : "identity:manage";
+  }
+  if (path.startsWith("/api/admin/smtp-config")) {
+    return method === "GET" ? "admin:smtp" : "smtp:manage";
+  }
+  if (/^\/api\/admin\/runs\/[^/]+\/events$/.test(path) && method === "GET") {
+    return "admin:history";
+  }
   return null;
 }
 

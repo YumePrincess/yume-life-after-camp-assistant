@@ -8,8 +8,15 @@
     identityMode: "new",
     renewalCode: "",
     renewalApplicationNumber: "",
+    reissueCode: "",
+    reissueEmail: "",
+    reissuePlayerName: "",
     voteErrorRenewalCode: ""
   };
+  const ACTIVE_IDENTITY_CONFLICT =
+    "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。";
+  const EXPIRED_IDENTITY_CONFLICT =
+    "您提供的信息关联的身份识别码已过期，请通过“申请延长识别码有效期”功能申请延期。延期申请被拒绝后，该识别码将标记为失效，届时可以重新申请身份识别码。";
 
   function byId(id) {
     return document.getElementById(id);
@@ -577,7 +584,7 @@
           ? window.MrzhI18n.format("尝试次数过多，请在 {seconds} 秒后重试。", {
               seconds: error.retryAfterSeconds || "—"
             })
-          : error.message;
+          : window.MrzhI18n.t(error.message);
       showVoteError(
         message,
         window.MrzhI18n.t("投票未提交"),
@@ -601,6 +608,12 @@
     state.voteErrorRenewalCode = canRenew ? identityCode : "";
     byId("vote-error-renew").hidden = !canRenew;
     const dialog = byId("vote-error-dialog");
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function showIdentityApplicationError(message) {
+    setText("identity-application-error-message", window.MrzhI18n.t(message));
+    const dialog = byId("identity-application-error-dialog");
     if (!dialog.open) dialog.showModal();
   }
 
@@ -680,7 +693,7 @@
           ? window.MrzhI18n.format("尝试次数过多，请在 {seconds} 秒后重试。", {
               seconds: error.retryAfterSeconds || "—"
             })
-          : error.message;
+          : window.MrzhI18n.t(error.message);
     }
   }
 
@@ -708,9 +721,12 @@
   }
 
   function openReissue(identityCode = "") {
-    state.identityMode = "reissue";
+    state.identityMode = "reissue-lookup";
     state.renewalCode = "";
     state.renewalApplicationNumber = "";
+    state.reissueCode = "";
+    state.reissueEmail = "";
+    state.reissuePlayerName = "";
     setText("identity-dialog-title", window.MrzhI18n.t("申请重新发行身份识别码"));
     byId("identity-renewal-number").hidden = true;
     byId("identity-recovery-number-field").hidden = true;
@@ -725,12 +741,43 @@
     byId("identity-renewal-lookup-rules").hidden = true;
     setText("identity-email-label", window.MrzhI18n.t("申请时预留的邮箱"));
     setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
-    setText("submit-identity-application", window.MrzhI18n.t("提交重新发行申请"));
+    setText("submit-identity-application", window.MrzhI18n.t("下一步：核对信息"));
     byId("identity-reissue-code").value = identityCode;
     byId("identity-email").value = "";
     byId("identity-player-name").value = "";
     setText("identity-application-feedback", "");
     byId("identity-application-dialog").showModal();
+  }
+
+  function showReissueConfirmation(preview, lookup) {
+    state.identityMode = "reissue";
+    state.reissueCode = lookup.identityCode;
+    state.reissueEmail = lookup.email;
+    state.reissuePlayerName = lookup.playerName;
+    setText("identity-dialog-title", window.MrzhI18n.t("申请重新发行身份识别码"));
+    setText(
+      "identity-renewal-number",
+      window.MrzhI18n.format("申请编号：{number}", {
+        number: preview.applicationNumber
+      })
+    );
+    byId("identity-renewal-number").hidden = false;
+    byId("identity-recovery-number-field").hidden = true;
+    byId("identity-reissue-code-field").hidden = true;
+    byId("identity-renewal-application-number-field").hidden = true;
+    byId("identity-renewal-code-field").hidden = true;
+    byId("identity-email-field").hidden = false;
+    byId("identity-player-name-field").hidden = false;
+    byId("identity-rules").hidden = true;
+    byId("identity-recovery-rules").hidden = true;
+    byId("identity-reissue-rules").hidden = false;
+    byId("identity-renewal-lookup-rules").hidden = true;
+    setText("identity-email-label", window.MrzhI18n.t("申请时预留的邮箱"));
+    setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
+    setText("submit-identity-application", window.MrzhI18n.t("提交重新发行申请"));
+    byId("identity-email").value = preview.email;
+    byId("identity-player-name").value = preview.playerName;
+    setText("identity-application-feedback", "");
   }
 
   function openIdentityRecovery() {
@@ -767,6 +814,7 @@
     const button = byId("submit-identity-application");
     const feedback = byId("identity-application-feedback");
     const renewalLookup = state.identityMode === "renewal-lookup";
+    const reissueLookup = state.identityMode === "reissue-lookup";
     const renewalLookupApplicationNumber =
       byId("identity-renewal-application-number").value.trim();
     const renewalLookupCode = byId("identity-renewal-code").value.trim();
@@ -781,13 +829,23 @@
       return;
     }
     if (
-      state.identityMode === "reissue" &&
+      reissueLookup &&
       !byId("identity-reissue-code").value.trim() &&
       !byId("identity-email").value.trim() &&
       !byId("identity-player-name").value.trim()
     ) {
       feedback.textContent = window.MrzhI18n.t(
         "请至少填写玩家名称、申请时预留邮箱或旧识别码中的一项。"
+      );
+      return;
+    }
+    if (
+      state.identityMode === "reissue" &&
+      (!byId("identity-email").value.trim() ||
+        !byId("identity-player-name").value.trim())
+    ) {
+      feedback.textContent = window.MrzhI18n.t(
+        "请核对玩家名称和申请时预留邮箱"
       );
       return;
     }
@@ -811,6 +869,22 @@
         });
         return;
       }
+      if (reissueLookup) {
+        const lookup = {
+          identityCode: byId("identity-reissue-code").value.trim(),
+          email: byId("identity-email").value.trim(),
+          playerName: byId("identity-player-name").value.trim()
+        };
+        const preview = await request(
+          "/api/public/identity-code-reissue-preview",
+          {
+            method: "POST",
+            body: JSON.stringify(lookup)
+          }
+        );
+        showReissueConfirmation(preview, lookup);
+        return;
+      }
       const common = {
         email: byId("identity-email").value.trim(),
         playerName: byId("identity-player-name").value.trim(),
@@ -831,7 +905,7 @@
                 method: "POST",
                 body: JSON.stringify({
                   ...common,
-                  identityCode: byId("identity-reissue-code").value.trim()
+                  identityCode: state.reissueCode
                 })
               })
           : state.identityMode === "recovery"
@@ -862,13 +936,20 @@
               { number: result.applicationNumber }
             );
     } catch (error) {
-      feedback.textContent =
+      const message =
         error.code === "rate_limited" ||
         error.code === "identity_code_rate_limited"
           ? window.MrzhI18n.format("尝试次数过多，请在 {seconds} 秒后重试。", {
               seconds: error.retryAfterSeconds || "—"
             })
-          : error.message;
+          : window.MrzhI18n.t(error.message);
+      feedback.textContent = message;
+      if (
+        error.message === ACTIVE_IDENTITY_CONFLICT ||
+        error.message === EXPIRED_IDENTITY_CONFLICT
+      ) {
+        showIdentityApplicationError(error.message);
+      }
     } finally {
       button.disabled = false;
     }

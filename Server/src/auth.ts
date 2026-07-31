@@ -20,6 +20,19 @@ const STATE_DURATION_MS = 10 * 60 * 1000;
 const DEFAULT_SESSION_CHECK_SECONDS = 5;
 
 export const ADMIN_PERMISSIONS = [
+  "demo:preview",
+  "admin:overview",
+  "admin:general",
+  "admin:tasks",
+  "admin:agent",
+  "admin:technology",
+  "admin:identity-review",
+  "admin:identity-codes",
+  "admin:smtp",
+  "admin:access",
+  "admin:members",
+  "admin:history",
+  // Legacy action permissions remain valid for previously issued keys.
   "config:write",
   "task:run",
   "task:interrupt",
@@ -30,6 +43,29 @@ export const ADMIN_PERMISSIONS = [
   "smtp:manage"
 ] as const;
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
+
+const MODULE_PERMISSION_ALIASES: Partial<
+  Record<AdminPermission, readonly AdminPermission[]>
+> = {
+  "admin:overview": ["task:run"],
+  "admin:general": ["config:write"],
+  "admin:tasks": ["config:write"],
+  "admin:agent": ["config:write"],
+  "admin:technology": ["config:write"],
+  "admin:identity-review": ["identity:review"],
+  "admin:identity-codes": ["identity:manage"],
+  "admin:smtp": ["smtp:manage"],
+  "admin:access": ["keys:manage"],
+  "admin:members": ["member:kick"],
+  "admin:history": ["task:interrupt"],
+  "task:run": ["admin:overview"],
+  "task:interrupt": ["admin:history"],
+  "member:kick": ["admin:members"],
+  "keys:manage": ["admin:access"],
+  "identity:review": ["admin:identity-review"],
+  "identity:manage": ["admin:identity-codes"],
+  "smtp:manage": ["admin:smtp"]
+};
 type OidcMode = "login" | "silent" | "check";
 
 interface DiscoveryDocument {
@@ -172,6 +208,9 @@ function requireVerifiedEmail(env: Env): boolean {
 }
 
 export function sessionPermissions(session: SessionRow): string[] {
+  // OIDC is the system administrator identity source. Keep it authoritative
+  // even for sessions created before wildcard permissions were persisted.
+  if (session.auth_method === "oidc") return ["*"];
   try {
     const value = JSON.parse(session.permissions_json) as unknown;
     return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -185,7 +224,21 @@ export function hasPermission(
   permission: AdminPermission
 ): boolean {
   const permissions = sessionPermissions(session);
-  return permissions.includes("*") || permissions.includes(permission);
+  if (permissions.includes("*") || permissions.includes(permission)) return true;
+  return (MODULE_PERMISSION_ALIASES[permission] ?? []).some((alias) =>
+    permissions.includes(alias)
+  );
+}
+
+export function canViewAdminModule(
+  session: SessionRow,
+  permission: AdminPermission
+): boolean {
+  return (
+    permission.startsWith("admin:") &&
+    (hasPermission(session, permission) ||
+      sessionPermissions(session).includes("demo:preview"))
+  );
 }
 
 export async function getAuthenticatedSession(
@@ -227,7 +280,12 @@ export async function requireAdmin(
     }
   }
 
-  if (options.permission && !hasPermission(session, options.permission)) {
+  if (
+    options.permission &&
+    !(options.permission.startsWith("admin:")
+      ? canViewAdminModule(session, options.permission)
+      : hasPermission(session, options.permission))
+  ) {
     return {
       response: problem("当前登录凭据没有执行此操作的权限", 403, "permission_denied")
     };
@@ -480,15 +538,15 @@ export async function handleTemporaryKeyLogin(
   if (
     !record ||
     record.revoked_at ||
-    Date.parse(record.expires_at) <= Date.now() ||
+    (record.permanent !== 1 && Date.parse(record.expires_at) <= Date.now()) ||
     !(await timingSafeEqual(await sha256Hex(secret), record.secret_hash))
   ) {
     return problem("临时 Key 无效、已过期或已撤销", 401, "invalid_temporary_key");
   }
   const now = new Date();
-  const expiresAt = new Date(
-    Math.min(now.getTime() + SESSION_DURATION_MS, Date.parse(record.expires_at))
-  );
+  const expiresAt = new Date(record.permanent === 1
+    ? now.getTime() + SESSION_DURATION_MS
+    : Math.min(now.getTime() + SESSION_DURATION_MS, Date.parse(record.expires_at)));
   const session: SessionRow = {
     id: randomToken(32),
     csrf_token: randomToken(32),
@@ -517,6 +575,7 @@ export async function issueTemporaryKey(
   input: {
     name: string;
     expiresAt: string;
+    permanent: boolean;
     permissions: string[];
     createdBy: string;
   }
@@ -534,7 +593,8 @@ export async function issueTemporaryKey(
     permissions_json: JSON.stringify(input.permissions),
     created_by: input.createdBy,
     created_at: new Date().toISOString(),
-    expires_at: input.expiresAt
+    expires_at: input.expiresAt,
+    permanent: input.permanent ? 1 : 0
   });
   return { id, key: `mrzh_${id}.${secret}` };
 }

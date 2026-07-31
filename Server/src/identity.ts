@@ -105,6 +105,67 @@ function cleanPlayerName(value: unknown, required = true): string {
   return result;
 }
 
+async function assertNoPendingIdentityApplication(
+  env: Env,
+  input: { email: string; playerName: string; excludeId?: string }
+): Promise<void> {
+  const bindings: string[] = [input.email.toLowerCase(), input.playerName];
+  const excluded = input.excludeId ? " AND id <> ?" : "";
+  if (input.excludeId) bindings.push(input.excludeId);
+  const pending = await env.DB.prepare(
+    `SELECT application_number FROM identity_code_applications
+     WHERE status = 'pending'
+       AND (lower(email) = ? OR player_name = ?)${excluded}
+     ORDER BY submitted_at DESC LIMIT 1`
+  )
+    .bind(...bindings)
+    .first<{ application_number: string }>();
+  if (pending) {
+    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
+  }
+}
+
+async function assertNoOtherActiveIdentityCode(
+  env: Env,
+  input: {
+    email: string | null;
+    playerName: string | null;
+    excludeId?: string;
+    conflictMessage?: string;
+  }
+): Promise<void> {
+  const matches: string[] = [];
+  const bindings: string[] = [];
+  if (input.email) {
+    matches.push("lower(email) = ?");
+    bindings.push(input.email.toLowerCase());
+  }
+  if (input.playerName) {
+    matches.push("player_name = ?");
+    bindings.push(input.playerName);
+  }
+  if (!matches.length) return;
+  const excluded = input.excludeId ? " AND id <> ?" : "";
+  if (input.excludeId) bindings.push(input.excludeId);
+  const active = await env.DB.prepare(
+    `SELECT id, expires_at FROM identity_codes
+     WHERE status = 'active' AND (${matches.join(" OR ")})${excluded}
+     LIMIT 1`
+  )
+    .bind(...bindings)
+    .first<{ id: string; expires_at: string | null }>();
+  if (active) {
+    if (isIdentityCodeExpired(active.expires_at)) {
+      throw new Error(
+        "您提供的信息关联的身份识别码已过期，请通过“申请延长识别码有效期”功能申请延期。延期申请被拒绝后，该识别码将标记为失效，届时可以重新申请身份识别码。"
+      );
+    }
+    throw new Error(
+      input.conflictMessage ?? "相同邮箱或玩家名称已有状态为有效的身份识别码"
+    );
+  }
+}
+
 function cleanIdentityCode(value: unknown): string {
   const code = typeof value === "string" ? value.trim() : String(value ?? "");
   if (!/^\d{8}$/.test(code)) throw new Error("身份识别码必须为8位数字");
@@ -148,16 +209,13 @@ export async function createIdentityApplication(
 ): Promise<{ applicationNumber: string; status: string }> {
   const email = cleanEmail(input.email);
   const playerName = cleanPlayerName(input.playerName);
-  const existing = await env.DB.prepare(
-    `SELECT application_number, status FROM identity_code_applications
-     WHERE lower(email) = ? AND player_name = ? AND request_type = 'new'
-     ORDER BY submitted_at DESC LIMIT 1`
-  )
-    .bind(email, playerName)
-    .first<{ application_number: string; status: string }>();
-  if (existing?.status === "pending") {
-    return { applicationNumber: existing.application_number, status: existing.status };
-  }
+  await assertNoPendingIdentityApplication(env, { email, playerName });
+  await assertNoOtherActiveIdentityCode(env, {
+    email,
+    playerName,
+    conflictMessage:
+      "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。"
+  });
   const id = uuid();
   const applicationNumber = await generateApplicationNumber(env);
   await env.DB.prepare(
@@ -290,12 +348,15 @@ export async function renewalPreview(
   if (!isIdentityRenewalWindowOpen(code.expires_at)) {
     throw new Error("仅可在识别码有效期届满前7天内申请延期");
   }
+  if (application.status === "pending") {
+    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
+  }
   return {
     applicationNumber: application.application_number,
     email: application.email,
     playerName: application.player_name,
     status: application.status,
-    canSubmit: application.status !== "rejected" && application.status !== "pending"
+    canSubmit: application.status !== "rejected"
   };
 }
 
@@ -326,12 +387,13 @@ export async function submitRenewal(
   ) {
     throw new Error("核对信息与原申请不一致");
   }
+  await assertNoPendingIdentityApplication(env, {
+    email: application.email,
+    playerName: application.player_name,
+    excludeId: application.id
+  });
   if (application.request_type === "renewal" && application.status === "pending") {
-    return {
-      applicationNumber: application.application_number,
-      status: "pending",
-      graceVoteAvailable: !code.renewal_grace_vote_used_at
-    };
+    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
   }
   const submittedAt = now();
   await env.DB.batch([
@@ -422,14 +484,18 @@ export async function reissuePreview(
   const code = await codeForReissue(env, input);
   const application = await applicationForCode(env, code);
   if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
+  if (application.status === "pending") {
+    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
+  }
+  if (application.status === "rejected") {
+    throw new Error("该申请已被拒绝，请重新申请身份识别码");
+  }
   return {
     applicationNumber: application.application_number,
     email: application.email,
     playerName: application.player_name,
     status: application.status,
-    canSubmit:
-      application.request_type !== "reissue" ||
-      application.status !== "pending"
+    canSubmit: true
   };
 }
 
@@ -449,11 +515,19 @@ export async function submitReissue(
     application.request_type === "reissue" &&
     application.status === "pending"
   ) {
-    return {
-      applicationNumber: application.application_number,
-      status: "pending"
-    };
+    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
   }
+  if (
+    application.request_type === "reissue" &&
+    application.status === "rejected"
+  ) {
+    throw new Error("该申请已被拒绝，请重新申请身份识别码");
+  }
+  await assertNoPendingIdentityApplication(env, {
+    email: application.email,
+    playerName: application.player_name,
+    excludeId: application.id
+  });
   const submittedAt = now();
   await env.DB.batch([
     env.DB.prepare(
@@ -635,6 +709,11 @@ export async function approveIdentityApplication(
   let code: IdentityCodeRow | null = null;
   if (application.request_type === "renewal") {
     if (!application.identity_code_id) throw new Error("延期申请未关联识别码");
+    await assertNoOtherActiveIdentityCode(env, {
+      email: application.email,
+      playerName: application.player_name,
+      excludeId: application.identity_code_id
+    });
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE identity_codes SET expires_at = ?, status = 'active', disabled_at = NULL,
@@ -650,6 +729,11 @@ export async function approveIdentityApplication(
       .first<IdentityCodeRow>();
   } else if (application.request_type === "reissue") {
     if (!application.identity_code_id) throw new Error("重新发行申请未关联识别码");
+    await assertNoOtherActiveIdentityCode(env, {
+      email: application.email,
+      playerName: application.player_name,
+      excludeId: application.identity_code_id
+    });
     const generated = await generateCode(env);
     await env.DB.batch([
       env.DB.prepare(
@@ -677,6 +761,10 @@ export async function approveIdentityApplication(
       .bind(application.identity_code_id)
       .first<IdentityCodeRow>();
   } else {
+    await assertNoOtherActiveIdentityCode(env, {
+      email: application.email,
+      playerName: application.player_name
+    });
     const generated = await generateCode(env);
     const codeId = uuid();
     await env.DB.batch([
@@ -738,12 +826,31 @@ export async function rejectIdentityApplication(
     .first<IdentityApplicationRow>();
   if (!application) throw new Error("申请不存在");
   if (application.status !== "pending") throw new Error("申请已处理");
-  await env.DB.prepare(
-    `UPDATE identity_code_applications SET status = 'rejected', reviewed_at = ?,
-     reviewed_by = ?, rejection_reason = ? WHERE id = ?`
-  )
-    .bind(now(), input.reviewedBy, input.reason.slice(0, 500) || null, input.id)
-    .run();
+  const reviewedAt = now();
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `UPDATE identity_code_applications SET status = 'rejected', reviewed_at = ?,
+       reviewed_by = ?, rejection_reason = ? WHERE id = ?`
+    ).bind(
+      reviewedAt,
+      input.reviewedBy,
+      input.reason.slice(0, 500) || null,
+      input.id
+    )
+  ];
+  if (
+    application.identity_code_id &&
+    (application.request_type === "renewal" ||
+      application.request_type === "reissue")
+  ) {
+    statements.push(
+      env.DB.prepare(
+        `UPDATE identity_codes SET status = 'disabled', disabled_at = ?,
+         updated_at = ? WHERE id = ?`
+      ).bind(reviewedAt, reviewedAt, application.identity_code_id)
+    );
+  }
+  await env.DB.batch(statements);
   try {
     await sendApplicationMail(env, application, {
       approved: false,
@@ -915,6 +1022,9 @@ export async function createManualIdentityCode(
     createdBy: string;
   }
 ): Promise<{ id: string; code: string }> {
+  const playerName = cleanPlayerName(input.playerName, false) || null;
+  const email = cleanEmail(input.email, false) || null;
+  await assertNoOtherActiveIdentityCode(env, { email, playerName });
   const generated = await generateCode(env);
   const id = uuid();
   const timestamp = now();
@@ -928,8 +1038,8 @@ export async function createManualIdentityCode(
       id,
       generated.hash,
       await encryptSecret(env, "identity-code-value", generated.code),
-      cleanPlayerName(input.playerName, false) || null,
-      cleanEmail(input.email, false) || null,
+      playerName,
+      email,
       normalizeLocale(input.locale),
       parseExpiry(input),
       input.createdBy,
@@ -950,6 +1060,17 @@ export async function updateIdentityCode(
   }
 ): Promise<void> {
   const status = input.status === "disabled" ? "disabled" : "active";
+  const code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+    .bind(input.id)
+    .first<IdentityCodeRow>();
+  if (!code) throw new Error("识别码不存在");
+  if (status === "active") {
+    await assertNoOtherActiveIdentityCode(env, {
+      email: code.email,
+      playerName: code.player_name,
+      excludeId: code.id
+    });
+  }
   const expiresAt =
     input.permanent === true
       ? null
@@ -969,7 +1090,14 @@ export async function updateIdentityCode(
 
 export async function updateIdentityCodeInformation(
   env: Env,
-  input: { id: string; playerName: unknown; email: unknown }
+  input: {
+    id: string;
+    playerName: unknown;
+    email: unknown;
+    locale: unknown;
+    permanent: unknown;
+    expiresAt: unknown;
+  }
 ): Promise<void> {
   const code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
     .bind(input.id)
@@ -977,12 +1105,22 @@ export async function updateIdentityCodeInformation(
   if (!code) throw new Error("识别码不存在");
   const playerName = cleanPlayerName(input.playerName, false) || null;
   const email = cleanEmail(input.email, false) || null;
+  const locale = normalizeLocale(input.locale);
+  const expiresAt = parseExpiry(input);
+  if (code.status === "active") {
+    await assertNoOtherActiveIdentityCode(env, {
+      email,
+      playerName,
+      excludeId: code.id
+    });
+  }
   const timestamp = now();
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
-      `UPDATE identity_codes SET player_name = ?, email = ?, updated_at = ?
+      `UPDATE identity_codes SET player_name = ?, email = ?, locale = ?,
+       expires_at = ?, updated_at = ?
        WHERE id = ?`
-    ).bind(playerName, email, timestamp, code.id)
+    ).bind(playerName, email, locale, expiresAt, timestamp, code.id)
   ];
   if (code.application_id) {
     if (!playerName || !email) {
@@ -990,9 +1128,9 @@ export async function updateIdentityCodeInformation(
     }
     statements.push(
       env.DB.prepare(
-        `UPDATE identity_code_applications SET player_name = ?, email = ?
+        `UPDATE identity_code_applications SET player_name = ?, email = ?, locale = ?
          WHERE id = ?`
-      ).bind(playerName, email, code.application_id)
+      ).bind(playerName, email, locale, code.application_id)
     );
   }
   await env.DB.batch(statements);
@@ -1014,6 +1152,11 @@ export async function reissueIdentityCode(
   if (!code.email || !code.player_name) {
     throw new Error("重新发行前必须先补全玩家名称和邮箱");
   }
+  await assertNoOtherActiveIdentityCode(env, {
+    email: code.email,
+    playerName: code.player_name,
+    excludeId: code.id
+  });
   const generated = await generateCode(env);
   const expiresAt = parseExpiry(input);
   const timestamp = now();

@@ -35,21 +35,21 @@
             <p class="eyebrow">ADMIN MENU</p>
             <strong>管理菜单</strong>
           </div>
-          <a class="admin-nav-item" href="#overview" data-nav-target="overview" aria-current="page">控制台</a>
-          <a class="admin-nav-item" href="#general" data-nav-target="general">基础设置</a>
-          <a class="admin-nav-item" href="#tasks" data-nav-target="tasks">任务计划</a>
-          <a class="admin-nav-item" href="#agent" data-nav-target="agent">执行策略</a>
-          <a class="admin-nav-item" href="#technology" data-nav-target="technology">科技管理</a>
+          <a class="admin-nav-item" href="#overview" data-nav-target="overview" aria-current="page" hidden>控制台</a>
+          <a class="admin-nav-item" href="#general" data-nav-target="general" hidden>基础设置</a>
+          <a class="admin-nav-item" href="#tasks" data-nav-target="tasks" hidden>任务计划</a>
+          <a class="admin-nav-item" href="#agent" data-nav-target="agent" hidden>执行策略</a>
+          <a class="admin-nav-item" href="#technology" data-nav-target="technology" hidden>科技管理</a>
           <a class="admin-nav-item" href="#identity-applications" data-nav-target="identity-applications" hidden>识别码审批</a>
           <a class="admin-nav-item" href="#identity-codes" data-nav-target="identity-codes" hidden>身份识别码</a>
           <a class="admin-nav-item" href="#smtp" data-nav-target="smtp" hidden>SMTP 发信</a>
           <a class="admin-nav-item" href="#access" data-nav-target="access" hidden>访问密钥</a>
-          <a class="admin-nav-item" href="#members" data-nav-target="members">成员管理</a>
-          <a class="admin-nav-item" href="#history" data-nav-target="history">运行记录</a>
+          <a class="admin-nav-item" href="#members" data-nav-target="members" hidden>成员管理</a>
+          <a class="admin-nav-item" href="#history" data-nav-target="history" hidden>运行记录</a>
         </nav>
 
         <div class="admin-content">
-          <section class="panel admin-view" data-admin-view="overview">
+          <section class="panel admin-view" data-admin-view="overview" hidden>
             <div class="section-heading">
               <div>
                 <p class="eyebrow">LOCAL AGENT</p>
@@ -424,17 +424,25 @@
                 <span>有效期至</span>
                 <input name="keyExpiresAt" type="datetime-local" required />
               </label>
+              <label class="field field-checkbox">
+                <input name="keyPermanent" type="checkbox" />
+                <span>永久有效</span>
+              </label>
               <fieldset class="permission-fieldset">
-                <legend>权限（全部不选即为仅预览）</legend>
+                <legend>权限（Demo 为后台全部模块只读预览）</legend>
                 <div class="permission-options">
-                  <label><input type="checkbox" name="keyPermission" value="config:write" /><span>修改配置</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="task:run" /><span>执行任务</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="task:interrupt" /><span>中断任务</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="member:kick" /><span>踢出成员</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="keys:manage" /><span>管理 Key</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="identity:review" /><span>审批身份识别码</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="identity:manage" /><span>管理身份识别码</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="smtp:manage" /><span>管理 SMTP 配置</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="demo:preview" /><span>Demo · 全后台只读</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:overview" /><span>控制台 · 查看与执行任务</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:general" /><span>基础设置</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:tasks" /><span>任务计划</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:agent" /><span>执行策略</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:technology" /><span>科技管理</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:identity-review" /><span>识别码审批</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:identity-codes" /><span>身份识别码</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:smtp" /><span>SMTP 发信</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:access" /><span>访问密钥</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:members" /><span>成员管理</span></label>
+                  <label><input type="checkbox" name="keyPermission" value="admin:history" /><span>运行记录</span></label>
                 </div>
               </fieldset>
               <button class="button button-primary" type="submit">生成 Key</button>
@@ -444,7 +452,31 @@
               <code id="temporary-key-value"></code>
               <button id="copy-temporary-key" class="button button-quiet" type="button">复制</button>
             </div>
+            <form id="temporary-key-search-form" class="list-toolbar identity-search-toolbar">
+              <label class="search-field">
+                <span class="sr-only">搜索 Key 编号、名称或创建人</span>
+                <input id="temporary-key-search" type="search" placeholder="搜索 Key 编号、名称或创建人" />
+              </label>
+              <button class="button button-quiet identity-search-button" type="submit">搜索</button>
+              <label class="field compact-field">
+                <span>Key 状态</span>
+                <select id="temporary-key-status" class="glass-select">
+                  <option value="">全部</option>
+                  <option value="active">有效</option>
+                  <option value="permanent">永久有效</option>
+                  <option value="expired">已过期</option>
+                  <option value="revoked">已撤销</option>
+                </select>
+              </label>
+            </form>
             <div id="temporary-key-list" class="key-list"></div>
+            <div class="pagination">
+              <button id="temporary-key-prev" class="button button-quiet" type="button">上一页</button>
+              <span id="temporary-key-page">1 / 1</span>
+              <label class="jump-field"><span>跳至</span><input id="temporary-key-jump" type="number" min="1" value="1" /></label>
+              <button id="temporary-key-jump-button" class="button button-quiet" type="button">跳页</button>
+              <button id="temporary-key-next" class="button button-quiet" type="button">下一页</button>
+            </div>
           </section>
 
           <section class="panel admin-view" data-admin-view="members" hidden>

@@ -1873,6 +1873,192 @@
   for (const [language, additions] of Object.entries(identityTranslations)) {
     Object.assign(translations[language], additions);
   }
+  const adminKeyTranslations = {
+    en: {
+      "权限（Demo 为后台全部模块只读预览）": "Permissions (Demo is a read-only preview of every admin module)",
+      "Demo · 全后台只读": "Demo · Entire admin read-only",
+      "控制台 · 查看与执行任务": "Console · View and run tasks",
+      "识别码审批": "Identity-code review",
+      "身份识别码": "Identity codes",
+      "SMTP 发信": "SMTP email",
+      "永久有效": "Never expires",
+      "搜索 Key 编号、名称或创建人": "Search key ID, name, or creator",
+      "Key 状态": "Key status",
+      "全部": "All",
+      "有效": "Active",
+      "已过期": "Expired",
+      "已撤销": "Revoked",
+      "没有符合条件的临时 Key。": "No temporary keys match the filters.",
+      "上一页": "Previous",
+      "下一页": "Next",
+      "跳至": "Go to",
+      "跳页": "Go",
+      "修改信息": "Edit information",
+      "输入玩家名称：": "Enter the player name:",
+      "输入接收邮箱：": "Enter the recipient email:",
+      "输入邮件语言（zh-cn、zh-tw、en、fr、ja）：": "Enter the email language (zh-cn, zh-tw, en, fr, or ja):",
+      "输入有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：": "Enter an expiry date (YYYY-MM-DD), or enter permanent for no expiry:",
+      "识别码资料已修改": "Identity-code information updated",
+      "请输入至少一项权限；仅预览请勾选 Demo 权限": "Select at least one permission; choose Demo for preview-only access"
+    },
+    fr: {
+      "权限（Demo 为后台全部模块只读预览）": "Autorisations (Demo affiche tous les modules en lecture seule)",
+      "Demo · 全后台只读": "Démo · Administration en lecture seule",
+      "控制台 · 查看与执行任务": "Console · Voir et exécuter les tâches",
+      "识别码审批": "Validation des codes d’identité",
+      "身份识别码": "Codes d’identité",
+      "SMTP 发信": "E-mail SMTP",
+      "永久有效": "Validité permanente",
+      "搜索 Key 编号、名称或创建人": "Rechercher l’ID, le nom ou le créateur de la clé",
+      "Key 状态": "État de la clé",
+      "全部": "Tous",
+      "有效": "Valide",
+      "已过期": "Expirée",
+      "已撤销": "Révoquée",
+      "没有符合条件的临时 Key。": "Aucune clé temporaire ne correspond aux filtres.",
+      "上一页": "Précédent",
+      "下一页": "Suivant",
+      "跳至": "Page",
+      "跳页": "Aller",
+      "修改信息": "Modifier les informations",
+      "输入玩家名称：": "Saisissez le nom du joueur :",
+      "输入接收邮箱：": "Saisissez l’adresse e-mail destinataire :",
+      "输入邮件语言（zh-cn、zh-tw、en、fr、ja）：": "Saisissez la langue de l’e-mail (zh-cn, zh-tw, en, fr ou ja) :",
+      "输入有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：": "Saisissez une date d’expiration (AAAA-MM-JJ), ou permanent pour une validité illimitée :",
+      "识别码资料已修改": "Informations du code d’identité mises à jour",
+      "请输入至少一项权限；仅预览请勾选 Demo 权限": "Sélectionnez au moins une autorisation ; choisissez Demo pour un aperçu en lecture seule"
+    },
+    ja: {
+      "权限（Demo 为后台全部模块只读预览）": "権限（Demo は管理画面全体の読み取り専用プレビューです）",
+      "Demo · 全后台只读": "Demo・管理画面全体を読み取り専用",
+      "控制台 · 查看与执行任务": "コンソール・タスクの表示と実行",
+      "识别码审批": "本人確認コード審査",
+      "身份识别码": "本人確認コード",
+      "SMTP 发信": "SMTP メール",
+      "永久有效": "無期限",
+      "搜索 Key 编号、名称或创建人": "キーID・名前・作成者を検索",
+      "Key 状态": "キーの状態",
+      "全部": "すべて",
+      "有效": "有効",
+      "已过期": "期限切れ",
+      "已撤销": "取り消し済み",
+      "没有符合条件的临时 Key。": "条件に一致する一時キーはありません。",
+      "上一页": "前へ",
+      "下一页": "次へ",
+      "跳至": "移動先",
+      "跳页": "移動",
+      "修改信息": "情報を変更",
+      "输入玩家名称：": "プレイヤー名を入力：",
+      "输入接收邮箱：": "受信メールアドレスを入力：",
+      "输入邮件语言（zh-cn、zh-tw、en、fr、ja）：": "メール言語（zh-cn、zh-tw、en、fr、ja）を入力：",
+      "输入有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：": "有効期限（YYYY-MM-DD）を入力するか、無期限の場合は permanent と入力：",
+      "识别码资料已修改": "本人確認コード情報を更新しました",
+      "请输入至少一项权限；仅预览请勾选 Demo 权限": "権限を1つ以上選択してください。閲覧のみの場合は Demo を選択してください"
+    },
+    "zh-tw": {
+      "权限（Demo 为后台全部模块只读预览）": "權限（Demo 為後台全部模組唯讀預覽）",
+      "Demo · 全后台只读": "Demo · 全後台唯讀",
+      "控制台 · 查看与执行任务": "控制台 · 查看與執行任務",
+      "识别码审批": "識別碼審批",
+      "身份识别码": "身分識別碼",
+      "SMTP 发信": "SMTP 發信",
+      "永久有效": "永久有效",
+      "搜索 Key 编号、名称或创建人": "搜尋 Key 編號、名稱或建立者",
+      "Key 状态": "Key 狀態",
+      "全部": "全部",
+      "有效": "有效",
+      "已过期": "已過期",
+      "已撤销": "已撤銷",
+      "没有符合条件的临时 Key。": "沒有符合條件的臨時 Key。",
+      "上一页": "上一頁",
+      "下一页": "下一頁",
+      "跳至": "跳至",
+      "跳页": "跳頁",
+      "修改信息": "修改資訊",
+      "输入玩家名称：": "輸入玩家名稱：",
+      "输入接收邮箱：": "輸入接收信箱：",
+      "输入邮件语言（zh-cn、zh-tw、en、fr、ja）：": "輸入郵件語言（zh-cn、zh-tw、en、fr、ja）：",
+      "输入有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效：": "輸入有效日期（YYYY-MM-DD），或輸入 permanent 設為永久有效：",
+      "识别码资料已修改": "識別碼資料已修改",
+      "请输入至少一项权限；仅预览请勾选 Demo 权限": "請選擇至少一項權限；僅預覽請勾選 Demo 權限"
+    }
+  };
+  for (const [language, additions] of Object.entries(adminKeyTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+  const identityLifecycleTranslations = {
+    en: {
+      "申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。":
+        "A reissue request replaces the old code with a new one. The current code becomes invalid immediately when the request is submitted.",
+      "玩家名称只有符号的，如果无法完整准确填写玩家名称，请联系市长人工申请。":
+        "If the player name contains only symbols and you cannot enter it completely and accurately, contact the mayor for a manual application.",
+      "请核对玩家名称和申请时预留邮箱":
+        "Verify the player name and email saved with the application.",
+      "相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型":
+        "An application with the same email or player name is already awaiting review. You cannot submit a duplicate or another request type.",
+      "该申请已被拒绝，请重新申请身份识别码":
+        "This request was rejected. Submit a new identity-code application.",
+      "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。":
+        "The information you provided may already have a successfully issued identity code. If you forgot the code, use “Forgot code” to recover it. If you did not submit that application, contact the mayor.",
+      "您提供的信息关联的身份识别码已过期，请通过“申请延长识别码有效期”功能申请延期。延期申请被拒绝后，该识别码将标记为失效，届时可以重新申请身份识别码。":
+        "The identity code associated with this information has expired. Use “Extend identity-code validity” to request an extension. If the extension is rejected, the code will be disabled and you can then submit a new identity-code application.",
+      "申请未提交": "Application not submitted"
+    },
+    fr: {
+      "申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。":
+        "Une demande de réémission remplace l’ancien code par un nouveau. Le code actuel devient invalide dès l’envoi de la demande.",
+      "玩家名称只有符号的，如果无法完整准确填写玩家名称，请联系市长人工申请。":
+        "Si le nom ne contient que des symboles et ne peut pas être saisi intégralement et précisément, contactez le maire pour une demande manuelle.",
+      "请核对玩家名称和申请时预留邮箱":
+        "Vérifiez le nom du joueur et l’e-mail enregistré lors de la demande.",
+      "相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型":
+        "Une demande avec le même e-mail ou nom de joueur est déjà en attente. Vous ne pouvez pas envoyer un doublon ni un autre type de demande.",
+      "该申请已被拒绝，请重新申请身份识别码":
+        "Cette demande a été refusée. Envoyez une nouvelle demande de code d’identité.",
+      "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。":
+        "Les informations fournies peuvent déjà correspondre à un code d’identité émis. Si vous avez oublié le code, utilisez « Code oublié » pour le récupérer. Si vous n’avez pas envoyé cette demande, contactez le maire.",
+      "您提供的信息关联的身份识别码已过期，请通过“申请延长识别码有效期”功能申请延期。延期申请被拒绝后，该识别码将标记为失效，届时可以重新申请身份识别码。":
+        "Le code d’identité associé à ces informations a expiré. Utilisez « Prolonger la validité du code » pour demander une prolongation. Si elle est refusée, le code sera désactivé et vous pourrez alors envoyer une nouvelle demande.",
+      "申请未提交": "Demande non envoyée"
+    },
+    ja: {
+      "申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。":
+        "再発行申請では旧コードを新しいコードに置き換えます。申請を送信した時点で現在のコードは直ちに無効になります。",
+      "玩家名称只有符号的，如果无法完整准确填写玩家名称，请联系市长人工申请。":
+        "名前が記号のみで完全かつ正確に入力できない場合は、市長に手動申請を依頼してください。",
+      "请核对玩家名称和申请时预留邮箱":
+        "プレイヤー名と申請時に登録したメールアドレスを確認してください。",
+      "相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型":
+        "同じメールアドレスまたはプレイヤー名の申請が審査中です。重複申請や別種類の申請は送信できません。",
+      "该申请已被拒绝，请重新申请身份识别码":
+        "この申請は却下されました。本人確認コードを新規申請してください。",
+      "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。":
+        "入力した情報では、すでに本人確認コードが発行されている可能性があります。コードを忘れた場合は「コードを忘れた」から再送してください。ご自身が申請していない場合は市長に連絡してください。",
+      "您提供的信息关联的身份识别码已过期，请通过“申请延长识别码有效期”功能申请延期。延期申请被拒绝后，该识别码将标记为失效，届时可以重新申请身份识别码。":
+        "入力した情報に紐づく本人確認コードは期限切れです。「コードの有効期限を延長」から延長を申請してください。延長申請が却下されるとコードは無効になり、その後は新規申請できます。",
+      "申请未提交": "申請は送信されませんでした"
+    },
+    "zh-tw": {
+      "申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。":
+        "申請重新發行身分識別碼將作廢舊識別碼並更換新的識別碼。申請一旦提交，現有識別碼將立即失效。",
+      "玩家名称只有符号的，如果无法完整准确填写玩家名称，请联系市长人工申请。":
+        "玩家名稱只有符號且無法完整準確填寫時，請聯絡市長人工申請。",
+      "请核对玩家名称和申请时预留邮箱":
+        "請核對玩家名稱與申請時預留的信箱。",
+      "相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型":
+        "相同信箱或玩家名稱已有待審批申請，不能重複提交或申請其他類型。",
+      "该申请已被拒绝，请重新申请身份识别码":
+        "該申請已被拒絕，請重新申請身分識別碼。",
+      "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。":
+        "您提供的資訊可能已成功申請身分識別碼。若忘記識別碼，請使用「忘記識別碼」功能找回。若這不是您提交的申請，請聯絡市長處理。",
+      "您提供的信息关联的身份识别码已过期，请通过“申请延长识别码有效期”功能申请延期。延期申请被拒绝后，该识别码将标记为失效，届时可以重新申请身份识别码。":
+        "您提供的資訊所關聯的身分識別碼已過期，請使用「申請延長識別碼有效期」功能申請延期。延期申請被拒絕後，該識別碼將標記為失效，屆時可重新申請身分識別碼。",
+      "申请未提交": "申請未提交"
+    }
+  };
+  for (const [language, additions] of Object.entries(identityLifecycleTranslations)) {
+    Object.assign(translations[language], additions);
+  }
 
   function translate(source, language = currentLanguage()) {
     return translations[language]?.[source] || source;

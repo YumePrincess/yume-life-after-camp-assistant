@@ -219,7 +219,7 @@
           <li>小号及非本营地成员不得申请，否则申请将被审批拒绝。</li>
           <li>忘记玩家名称请查询后再来申请，填写不实信息将被审批拒绝。</li>
           <li>玩家名称中的符号可以省略填写。</li>
-          <li>玩家名称只有符号的，请联系市长人工申请。</li>
+          <li>玩家名称只有符号的，如果无法完整准确填写玩家名称，请联系市长人工申请。</li>
         </ol>
         <ol id="identity-recovery-rules" class="identity-rules" hidden>
           <li>请输入申请时预留的信息（至少一条）。</li>
@@ -227,7 +227,7 @@
           <li>找回的识别码将发送到申请时预留的邮箱，如果您更换了邮箱，请联系市长人工处理。</li>
         </ol>
         <ol id="identity-reissue-rules" class="identity-rules" hidden>
-          <li>申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。</li>
+          <li>申请重新发行身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。</li>
           <li>在识别码被盗用等情况下建议立即申请重新发行识别码。</li>
           <li>新发行的识别码的有效期以审批为准。</li>
           <li>申请重新发行识别码请输入玩家名称、申请时预留的邮箱、旧识别码的其一。</li>
@@ -245,7 +245,19 @@
       </form>
     </dialog>
 
-    <dialog id="vote-success-dialog">
+    <dialog id="identity-application-error-dialog" class="compact-dialog">
+      <form method="dialog" class="dialog-card vote-success-card">
+        <p class="eyebrow">IDENTITY CODE</p>
+        <h2>申请未提交</h2>
+        <p
+          id="identity-application-error-message"
+          class="application-number identity-conflict-message"
+        ></p>
+        <button class="button button-primary" value="close">关闭</button>
+      </form>
+    </dialog>
+
+    <dialog id="vote-success-dialog" class="compact-dialog">
       <form method="dialog" class="dialog-card vote-success-card">
         <p class="eyebrow">TECHNOLOGY VOTE</p>
         <h2>投票成功</h2>
@@ -253,7 +265,7 @@
         <button class="button button-primary" value="close">关闭</button>
       </form>
     </dialog>
-    <dialog id="vote-error-dialog">
+    <dialog id="vote-error-dialog" class="compact-dialog">
       <form method="dialog" class="dialog-card vote-success-card">
         <p class="eyebrow">TECHNOLOGY VOTE</p>
         <h2 id="vote-error-title">投票未提交</h2>
