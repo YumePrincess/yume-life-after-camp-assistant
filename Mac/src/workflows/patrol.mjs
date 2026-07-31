@@ -103,6 +103,14 @@ export async function createPatrolTeam(context, signal) {
     throw new Error("PATROL_TEAM_UI_NOT_CONFIGURED");
   }
   const settleMs = Math.max(800, Number(controls.stepSettleMs) || 1_200);
+  const createMenuWaitMs = Math.max(
+    5_000,
+    Number(controls.createMenuWaitMs) || 5_000
+  );
+  const patrolTargetWaitMs = Math.max(
+    5_000,
+    Number(controls.patrolTargetWaitMs) || 5_000
+  );
   const sleep = context.sleep || delay;
   let screen = await capturePatrolScreen(
     vision,
@@ -125,11 +133,10 @@ export async function createPatrolTeam(context, signal) {
     controls.teamMenuRegion
   );
   let menuOpen = Boolean(createMenuMatch);
-  let creatorOpen = hasTextInRegion(
+  let creatorOpen = patrolCreatorOpen(
     vision,
     screen.observations,
-    "队伍目标",
-    controls.creatorTitleRegion
+    controls
   );
   if (!menuOpen && !creatorOpen) {
     const flagReady = controls.flagReadyTexts.some((text) =>
@@ -204,11 +211,10 @@ export async function createPatrolTeam(context, signal) {
         controls.teamMenuRegion
       );
       menuOpen = Boolean(createMenuMatch);
-      creatorOpen = hasTextInRegion(
+      creatorOpen = patrolCreatorOpen(
         vision,
         screen.observations,
-        "队伍目标",
-        controls.creatorTitleRegion
+        controls
       );
       const anyTeamPanel = (
         controls.focusAcquiredTexts || [
@@ -277,11 +283,10 @@ export async function createPatrolTeam(context, signal) {
         controls.teamMenuRegion
       );
       menuOpen = Boolean(createMenuMatch);
-      creatorOpen = hasTextInRegion(
+      creatorOpen = patrolCreatorOpen(
         vision,
         screen.observations,
-        "队伍目标",
-        controls.creatorTitleRegion
+        controls
       );
     }
     if (!menuOpen && !creatorOpen) {
@@ -332,17 +337,16 @@ export async function createPatrolTeam(context, signal) {
       } else {
         await ui.tap(createMenuPoint, signal);
       }
-      await sleep(settleMs, signal);
+      await sleep(createMenuWaitMs, signal);
       screen = await capturePatrolScreen(
         vision,
         `patrol-team-creator-open-${attempt}`,
         signal
       );
-      creatorOpen = hasTextInRegion(
+      creatorOpen = patrolCreatorOpen(
         vision,
         screen.observations,
-        "队伍目标",
-        controls.creatorTitleRegion
+        controls
       );
       if (!creatorOpen && attempt < createMenuClickAttempts) {
         await report(
@@ -352,20 +356,7 @@ export async function createPatrolTeam(context, signal) {
         );
       }
     }
-    if (
-      !hasTextInRegion(
-        vision,
-        screen.observations,
-        "队伍目标",
-        controls.creatorTitleRegion
-      ) ||
-      !hasTextInRegion(
-        vision,
-        screen.observations,
-        "创建队伍",
-        controls.createButtonRegion
-      )
-    ) {
+    if (!patrolCreatorOpen(vision, screen.observations, controls)) {
       throw new Error(
         "PATROL_TEAM_CREATOR_DID_NOT_OPEN: 未确认队伍目标创建页，禁止选择目标"
       );
@@ -379,31 +370,35 @@ export async function createPatrolTeam(context, signal) {
     "patrol-camp-affairs-selected",
     signal
   );
-  if (
-    !hasTextInRegion(
-      vision,
-      screen.observations,
-      "营地巡逻任务",
-      controls.patrolTargetRegion
-    )
-  ) {
+  const patrolTargetMatch = findAnyTextInRegion(
+    vision,
+    screen.observations,
+    controls.patrolTargetTexts || ["营地巡逻任务", "营地巡逻"],
+    controls.patrolTargetRegion
+  );
+  if (!patrolTargetMatch) {
     throw new Error(
-      "PATROL_TARGET_NOT_VISIBLE: 点击营地事务分类后未识别到“营地巡逻任务”"
+      "PATROL_TARGET_NOT_VISIBLE: 点击营地事务分类后未识别到“营地巡逻”"
     );
   }
 
-  await tapPatrolHud(ui, controls.patrolTargetPoint, signal);
-  await sleep(settleMs, signal);
+  await tapPatrolHud(ui, observationCenter(patrolTargetMatch), signal);
+  await report(
+    "info",
+    "patrol_target_selected_wait",
+    `已选择“${patrolTargetMatch.text}”，等待 5 秒使创建按钮稳定后再继续`
+  );
+  await sleep(patrolTargetWaitMs, signal);
   screen = await capturePatrolScreen(
     vision,
     "patrol-target-selected",
     signal
   );
   if (
-    !hasTextInRegion(
+    !findAnyTextInRegion(
       vision,
       screen.observations,
-      "营地巡逻任务",
+      controls.patrolTargetTexts || ["营地巡逻任务", "营地巡逻"],
       controls.patrolTargetRegion
     ) ||
     !hasTextInRegion(
@@ -456,6 +451,28 @@ export async function createPatrolTeam(context, signal) {
     "patrol_team_created_verified",
     "已确认巡逻队创建成功，目标为“营地事务>营地巡逻任务”"
   );
+}
+
+function patrolCreatorOpen(vision, observations, controls) {
+  const title = findAnyTextInRegion(
+    vision,
+    observations,
+    controls.creatorTitleTexts || ["队伍目标", "选择目标", "创建队伍"],
+    controls.creatorTitleRegion
+  );
+  const submit = hasTextInRegion(
+    vision,
+    observations,
+    "创建队伍",
+    controls.createButtonRegion
+  );
+  return Boolean(title || submit);
+}
+
+function findAnyTextInRegion(vision, observations, texts, region) {
+  return texts
+    .map((text) => findTextInRegion(vision, observations, text, region))
+    .find(Boolean) || null;
 }
 
 export async function sharePatrolTeam(context, signal) {

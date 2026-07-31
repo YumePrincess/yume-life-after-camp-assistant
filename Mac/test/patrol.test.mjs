@@ -11,6 +11,7 @@ test("patrol team creation follows only region-verified live-device steps", asyn
   const touchTaps = [];
   let mouseReleaseCount = 0;
   const reports = [];
+  const sleeps = [];
   const context = {
     config: patrolConfig(),
     ui: {
@@ -47,7 +48,9 @@ test("patrol team creation follows only region-verified live-device steps", asyn
         );
       }
     },
-    async sleep() {},
+    async sleep(ms) {
+      sleeps.push(ms);
+    },
     async report(_level, step) {
       reports.push(step);
     }
@@ -58,11 +61,12 @@ test("patrol team creation follows only region-verified live-device steps", asyn
   assert.deepEqual(taps, [
     { x: 48, y: 327 },
     { x: 470, y: 900 },
-    { x: 900, y: 386 },
+    { x: 770, y: 380 },
     { x: 1419, y: 891 }
   ]);
   assert.deepEqual(touchTaps, [{ x: 190, y: 180 }]);
   assert.equal(mouseReleaseCount, 1);
+  assert.ok(sleeps.filter((ms) => ms === 5_000).length >= 2);
   assert.ok(reports.includes("patrol_flag_click"));
   assert.ok(reports.includes("patrol_team_created_verified"));
 });
@@ -314,7 +318,7 @@ test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", a
     { x: 48, y: 327 },
     { x: 190, y: 180 },
     { x: 470, y: 900 },
-    { x: 900, y: 386 },
+    { x: 770, y: 380 },
     { x: 1419, y: 891 }
   ]);
 });

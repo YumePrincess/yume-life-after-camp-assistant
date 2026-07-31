@@ -150,6 +150,35 @@ test("an NPC interaction menu is HUD context, not a map-blocking overlay", async
   assert.deepEqual(fixture.keys, []);
 });
 
+test("bottom-left channels plus an NPC menu never collapse or open camp chat", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("综合", 40, 1080),
+        observation("世界", 110, 1080),
+        observation("场景", 180, 1080),
+        observation("营地", 250, 1080),
+        observation("队伍", 320, 1080),
+        observation("查看玩法", 1320, 690),
+        observation("营地巡逻", 1320, 750),
+        observation("交谈", 1320, 810),
+        observation("收起", 1700, 1030)
+      ]
+    ]
+  });
+  const result = await fixture.ui.closePagesBeforeMap(
+    { mapPreparationMaxClosures: 6, mapReadyTexts: ["标志查看"] }
+  );
+  assert.equal(result, "hud");
+  assert.deepEqual(fixture.taps, []);
+  assert.deepEqual(fixture.keys, []);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("右侧没有深灰色聊天大框")
+    )
+  );
+});
+
 test("1920x1200 map flow closes every overlay and opens map with M after input focus", async () => {
   const fixture = createUi({
     fastFrames: [

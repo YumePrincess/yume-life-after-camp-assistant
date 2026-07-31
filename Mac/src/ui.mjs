@@ -1483,12 +1483,7 @@ export class GameUi {
       "所在场景",
       "成员信息",
       "活动时间管理",
-      "营地公职人员",
-      "调整队伍目标",
-      "创建队伍",
-      "离开队伍",
-      "确定",
-      "取消"
+      "营地公职人员"
     ];
     const campPanelTexts = [
       "一周贡献",
@@ -1604,7 +1599,37 @@ export class GameUi {
           )
         )
         .filter(Boolean);
-      const chatOpen = Boolean(chatCollapse) || chatMarkers.length >= 2;
+      // “收起”可能来自任务/交互控件，“营地”也可能只是“营地巡逻”。
+      // 只有右侧同时出现至少两个聊天频道锚点，才把深灰色大面板视为聊天页。
+      const chatOpen = chatMarkers.length >= 2;
+      const bottomChannelMarkers = [
+        "综合",
+        "世界",
+        "场景",
+        "营地",
+        "队伍"
+      ]
+        .map((text) =>
+          this.findInRegion(
+            observations,
+            text,
+            { left: 0, top: 930, right: 760, bottom: 1200 }
+          )
+        )
+        .filter(Boolean);
+      const bottomChannelHud = bottomChannelMarkers.length >= 2;
+      const teamPanelMarkers = [
+        "调整队伍目标",
+        "队伍目标",
+        "目标：",
+        "创建队伍",
+        "离开队伍",
+        "快速匹配",
+        "招募"
+      ]
+        .map((text) => this.vision.find(observations, text))
+        .filter(Boolean);
+      const teamPanelOpen = teamPanelMarkers.length >= 2;
       const visibleHudText = ["背包", "配方", "生存手册", "任务"]
         .map((text) => this.vision.find(observations, text))
         .find(Boolean);
@@ -1625,6 +1650,7 @@ export class GameUi {
         !visiblePanelText &&
         !visibleInteractionPanelText &&
         !visibleHudText &&
+        !bottomChannelHud &&
         !failureOverlay &&
         typeof this.vision.adviseOverlayControlCurrent === "function"
       ) {
@@ -1637,6 +1663,7 @@ export class GameUi {
       if (
         !visiblePanelText &&
         !visibleInteractionPanelText &&
+        !bottomChannelHud &&
         !failureOverlay &&
         advisorEnabled
       ) {
@@ -1661,12 +1688,39 @@ export class GameUi {
         advice.state === "panel" &&
         ["close_x", "back", "collapse"].includes(overlayAdvice?.control);
       if (
-        (visibleHudText || visibleInteractionPanelText) &&
+        (
+          visibleHudText ||
+          visibleInteractionPanelText ||
+          (bottomChannelHud && !chatOpen)
+        ) &&
+        !bottomChannelHud &&
         !visiblePanelText &&
+        !teamPanelOpen &&
         !campPanelOpen &&
         !chatOpen &&
         !failureOverlay
       ) {
+        return "hud";
+      }
+      if (
+        bottomChannelHud &&
+        !chatOpen &&
+        !teamPanelOpen &&
+        !campPanelOpen &&
+        !sandTableOpen &&
+        !failureOverlay
+      ) {
+        await this.report(
+          "info",
+          "map_preparation_bottom_channels_hud",
+          "已确认左下角频道 HUD，且右侧没有深灰色聊天大框；交互按钮不视为遮挡，直接打开地图",
+          {
+            bottomChannelMarkers: bottomChannelMarkers.map(
+              (item) => item.text
+            ),
+            interactionText: visibleInteractionPanelText?.text || null
+          }
+        );
         return "hud";
       }
       if (
@@ -1683,6 +1737,7 @@ export class GameUi {
         Boolean(closeText) ||
         overlayConfident ||
         Boolean(visiblePanelText) ||
+        teamPanelOpen ||
         Boolean(failureOverlay);
       if (!hasExplicitCloseAction) {
         await this.report(
@@ -1720,12 +1775,21 @@ export class GameUi {
           campTabMarkers: campTabMarkers.map((item) => item.text),
           sandTableMarkers: sandTableMarkers.map((item) => item.text),
           chatOpen,
+          bottomChannelMarkers: bottomChannelMarkers.map(
+            (item) => item.text
+          ),
+          teamPanelMarkers: teamPanelMarkers.map((item) => item.text),
           visibleHudText: visibleHudText?.text || null,
           overlayControl: overlayAdvice?.control || null,
           overlayConfidence: overlayAdvice?.confidence || null
         }
       );
-      if (visiblePanelText || sandTableOpen || failureOverlay) {
+      if (
+        visiblePanelText ||
+        sandTableOpen ||
+        teamPanelOpen ||
+        failureOverlay
+      ) {
         await this.tap(bottomLeftBack, signal);
       } else if (campPanelOpen) {
         await this.tap(topRightClose, signal);
