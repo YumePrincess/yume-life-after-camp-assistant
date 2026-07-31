@@ -55,6 +55,60 @@ test("ADB movement focus uses hover and release without a click", async () => {
   assert.equal(calls.some((args) => args.includes("tap")), false);
 });
 
+test("ADB touch tap bypasses the mouse source and releases stale mouse state", async () => {
+  const calls = [];
+  const adb = createAdb(calls);
+
+  await adb.touchTap(190, 180);
+
+  assert.deepEqual(calls, [
+    ["input", "tap", "190", "180"],
+    ["input", "mouse", "motionevent", "UP", "190", "180"]
+  ]);
+});
+
+test("ADB touch swipe performs the calibrated held joystick drag", async () => {
+  const calls = [];
+  const adb = createAdb(calls);
+
+  await adb.touchSwipe({ x: 480, y: 600 }, { x: 480, y: 360 }, 1_500);
+
+  assert.deepEqual(calls, [
+    ["input", "swipe", "480", "600", "480", "360", "1500"]
+  ]);
+});
+
+test("ADB held W uses container key down and up events", async () => {
+  const calls = [];
+  const adb = createAdb(calls);
+  adb.keyboardInputDevice = "/dev/input/event2";
+
+  await adb.holdKey("KEYCODE_W", 100);
+
+  assert.deepEqual(calls, [
+    ["sendevent", "/dev/input/event2", "1", "17", "1"],
+    ["sendevent", "/dev/input/event2", "0", "0", "0"],
+    ["sendevent", "/dev/input/event2", "1", "17", "0"],
+    ["sendevent", "/dev/input/event2", "0", "0", "0"]
+  ]);
+});
+
+test("ADB game mouse release sends a real BTN_RIGHT click inside the container", async () => {
+  const calls = [];
+  const adb = createAdb(calls);
+  adb.mouseInputDevice = "/dev/input/event1";
+
+  await adb.releaseGameMouseCapture();
+
+  assert.deepEqual(calls, [
+    ["sendevent", "/dev/input/event1", "1", "273", "1"],
+    ["sendevent", "/dev/input/event1", "0", "0", "0"],
+    ["sendevent", "/dev/input/event1", "1", "273", "0"],
+    ["sendevent", "/dev/input/event1", "0", "0", "0"],
+    ["input", "mouse", "motionevent", "UP", "960", "600"]
+  ]);
+});
+
 function createAdb(calls, failReset = false) {
   const adb = new AdbClient({
     adb: {

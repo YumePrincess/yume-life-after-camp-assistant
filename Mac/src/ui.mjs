@@ -24,6 +24,29 @@ export class GameUi {
     await this.afterAction(signal);
   }
 
+  async hudTap(point, signal) {
+    if (typeof this.adb.releaseGameMouseCapture === "function") {
+      await this.adb.releaseGameMouseCapture(signal);
+      await delay(
+        Math.max(100, Number(point.mouseReleaseSettleMs) || 250),
+        signal
+      );
+    }
+    if (typeof this.adb.touchTap === "function") {
+      await this.adb.touchTap(point.x, point.y, signal);
+    } else {
+      await this.adb.mouseTap(point.x, point.y, signal);
+    }
+    await this.afterAction(signal);
+  }
+
+  async tapAction(point, signal) {
+    if (point?.hud === true) {
+      return this.hudTap(point, signal);
+    }
+    return this.tap(point, signal);
+  }
+
   async clickText(text, options = {}, signal) {
     const timeoutMs = this.timeoutMs(options);
     let deadline = Date.now() + timeoutMs;
@@ -94,7 +117,8 @@ export class GameUi {
         }
       }
       if (match) {
-        await this.tap(center(match), signal);
+        const point = center(match);
+        await this.tapAction({ ...point, hud: options.hud === true }, signal);
         return { frame, match };
       }
       await delay(700, signal);
@@ -348,23 +372,66 @@ export class GameUi {
   }
 
   async tapIfAnyText(texts, point, signal) {
-    const frame = await this.vision.capture("conditional-tap", signal);
-    const found = texts
-      .map((text) => ({ text, match: this.vision.find(frame.observations, text) }))
-      .find((item) => item.match);
+    const { frame, found } = await this.findConditionalText(
+      texts,
+      "conditional-tap",
+      point,
+      signal
+    );
     if (!found) return null;
-    await this.tap(point, signal);
+    await this.tapAction(point, signal);
     return { ...found, frame };
   }
 
   async tapUnlessAnyText(texts, point, signal) {
-    const frame = await this.vision.capture("conditional-tap-unless", signal);
-    const found = texts
-      .map((text) => ({ text, match: this.vision.find(frame.observations, text) }))
-      .find((item) => item.match);
+    const { frame, found } = await this.findConditionalText(
+      texts,
+      "conditional-tap-unless",
+      point,
+      signal
+    );
     if (found) return { ...found, frame, skipped: true };
-    await this.tap(point, signal);
+    await this.tapAction(point, signal);
     return { frame, skipped: false };
+  }
+
+  async findConditionalText(texts, label, options, signal) {
+    const frame = await this.vision.capture(label, signal);
+    let found = texts
+      .map((text) => ({
+        text,
+        match: this.findInRegion(
+          frame.observations,
+          text,
+          options.region,
+          options.mode
+        )
+      }))
+      .find((item) => item.match);
+    if (!found && typeof this.vision.captureAccurateTransient === "function") {
+      const accurate = await this.vision
+        .captureAccurateTransient(`${label}-accurate`, signal)
+        .catch(() => null);
+      found = texts
+        .map((text) => ({
+          text,
+          match: this.findInRegion(
+            accurate?.observations || [],
+            text,
+            options.region,
+            options.mode
+          )
+        }))
+        .find((item) => item.match);
+      if (found) {
+        await this.report(
+          "info",
+          "accurate_conditional_text_verified",
+          `快速 OCR 漏读后，已通过高精度 OCR 确认条件文字：${found.text}`
+        );
+      }
+    }
+    return { frame, found };
   }
 
   async clickIfText(text, options, signal) {
@@ -417,7 +484,8 @@ export class GameUi {
       );
     }
     if (!match) return null;
-    await this.tap(center(match), signal);
+    const point = center(match);
+    await this.tapAction({ ...point, hud: options.hud === true }, signal);
     return { frame, match };
   }
 
@@ -528,7 +596,8 @@ export class GameUi {
         }
       }
       if (candidate) {
-        await this.tap(center(candidate.match), signal);
+        const point = center(candidate.match);
+        await this.tapAction({ ...point, hud: action.hud === true }, signal);
       } else {
         const anchoredClick = (action.anchorClickFallbacks || [])
           .map((fallback) => ({
@@ -552,7 +621,7 @@ export class GameUi {
             `已确认交互菜单锚点“${anchoredClick.fallback.anchorText}”，点击其相邻的“${anchoredClick.fallback.targetText}”按钮`,
             { point }
           );
-          await this.tap(point, signal);
+          await this.tapAction({ ...point, hud: action.hud === true }, signal);
         } else {
           await delay(action.intervalMs || 800, signal);
         }
@@ -560,6 +629,113 @@ export class GameUi {
     } while (Date.now() < deadline);
     throw new Error(
       `Timed out navigating via ${action.clickTexts.join(" / ")} to ${action.targetTexts.join(" / ")}`
+    );
+  }
+
+  async captureFlowObservations(label, action, signal) {
+    const frame = await this.vision.capture(label, signal);
+    const observations = [...(frame.observations || [])];
+    if (
+      action.region &&
+      frame.path &&
+      typeof this.vision.ocrRegion === "function"
+    ) {
+      const regional = await this.vision
+        .ocrRegion(
+          frame.path,
+          action.region,
+          `${label}-region`,
+          signal,
+          "accurate",
+          Number(action.regionOcrMinimumConfidence) || 0.2,
+          Number(action.regionOcrScale) || 2
+        )
+        .catch(() => []);
+      observations.push(...regional);
+    }
+    if (typeof this.vision.captureAccurateTransient === "function") {
+      const accurate = await this.vision
+        .captureAccurateTransient(`${label}-accurate`, signal)
+        .catch(() => null);
+      observations.push(...(accurate?.observations || []));
+    }
+    return { frame, observations };
+  }
+
+  countFlowTexts(observations, action) {
+    return (action.texts || []).filter((text) =>
+      this.findInRegion(observations, text, action.region, action.mode)
+    ).length;
+  }
+
+  async tapUntilNoneTexts(action, signal) {
+    const attempts = Math.max(
+      1,
+      Math.min(6, Number(action.maxAttempts) || 6)
+    );
+    for (let attempt = 0; attempt <= attempts; attempt += 1) {
+      const screen = await this.captureFlowObservations(
+        `tap-until-none-${attempt + 1}`,
+        action,
+        signal
+      );
+      if (this.countFlowTexts(screen.observations, action) === 0) {
+        await this.report(
+          "info",
+          "hud_panel_closed_verified",
+          `已确认界面文字“${(action.texts || []).join("/")}”消失，HUD 面板已关闭`
+        );
+        return screen;
+      }
+      if (attempt >= attempts) break;
+      await this.report(
+        attempt === 0 ? "info" : "warning",
+        "hud_panel_close_attempt",
+        `第 ${attempt + 1}/${attempts} 次关闭 HUD 面板；点击前先释放容器鼠标并在点击后重新识别`
+      );
+      await this.tapAction(action, signal);
+      await delay(Math.max(200, Number(action.intervalMs) || 500), signal);
+    }
+    throw new Error(
+      `HUD_PANEL_DID_NOT_CLOSE: ${attempts} 次后仍识别到 ${(action.texts || []).join("/")}`
+    );
+  }
+
+  async tapUntilAnyTexts(action, signal) {
+    const attempts = Math.max(
+      1,
+      Math.min(6, Number(action.maxAttempts) || 4)
+    );
+    const minimumTexts = Math.max(
+      1,
+      Math.min((action.texts || []).length, Number(action.minimumTexts) || 1)
+    );
+    for (let attempt = 0; attempt <= attempts; attempt += 1) {
+      const screen = await this.captureFlowObservations(
+        `tap-until-any-${attempt + 1}`,
+        action,
+        signal
+      );
+      const matched = this.countFlowTexts(screen.observations, action);
+      if (matched >= minimumTexts) {
+        await this.report(
+          "info",
+          "hud_return_verified",
+          `已识别到 ${matched} 个 HUD 锚点，确认遮挡页面已全部关闭`
+        );
+        return screen;
+      }
+      if (attempt >= attempts) break;
+      await this.report(
+        "info",
+        "overlay_exit_attempt",
+        `正在逐层退出遮挡页面（${attempt + 1}/${attempts}），返回 HUD 后立即停止`
+      );
+      await this.tapAction(action, signal);
+      await delay(Math.max(200, Number(action.intervalMs) || 500), signal);
+    }
+    throw new Error(
+      `HUD_RETURN_UNVERIFIED: ${attempts} 次返回后仍未识别到至少 ${minimumTexts} 个 HUD 锚点`
     );
   }
 
@@ -598,40 +774,76 @@ export class GameUi {
       );
     }
 
-    await this.report(
-      "warning",
-      "teleport_nearby_recovery",
-      `角色可能已在${action.target.name}附近，先传送到${action.fallback.name}，等待传送冷却后再返回`,
-      { firstState: result.state, detectedText: result.text || null }
+    const maximumRecoveries = Math.max(
+      1,
+      Math.min(6, Number(action.fallbackMaxAttempts) || 6)
     );
-    const fallback = await this.attemptTeleport(
-      action,
-      action.fallback,
-      signal
-    );
-    if (!["success", "nearby"].includes(fallback.state)) {
-      throw new Error(
-        `Teleport fallback to ${action.fallback.name} failed: ${fallback.state}${fallback.text ? ` (${fallback.text})` : ""}`
-      );
-    }
-    this.lastConfirmedDestination = action.fallback.name;
-    if (fallback.state === "success") {
-      await delay(action.cooldownSeconds * 1000, signal);
-    } else {
+    let lastResult = result;
+    for (let recovery = 1; recovery <= maximumRecoveries; recovery += 1) {
       await this.report(
-        "info",
-        "teleport_fallback_already_there",
-        `角色已在${action.fallback.name}附近，跳过备用传送和冷却等待，直接继续前往${action.target.name}`
+        "warning",
+        "teleport_nearby_recovery",
+        `第 ${recovery}/${maximumRecoveries} 次寻路恢复：先传送到${action.fallback.name}，再返回${action.target.name}`,
+        {
+          recovery,
+          maximumRecoveries,
+          previousState: lastResult.state,
+          detectedText: lastResult.text || null
+        }
+      );
+      let fallback = await this.attemptTeleport(
+        action,
+        action.fallback,
+        signal
+      );
+      if (fallback.state === "cooldown") {
+        await delay(action.cooldownSeconds * 1000, signal);
+        fallback = await this.attemptTeleport(action, action.fallback, signal);
+      }
+      if (!["success", "nearby"].includes(fallback.state)) {
+        lastResult = fallback;
+        await this.report(
+          "warning",
+          "teleport_fallback_retry_failed",
+          `第 ${recovery}/${maximumRecoveries} 次返回${action.fallback.name}未成功，游戏健康时继续下一轮恢复`,
+          { state: fallback.state, text: fallback.text || null }
+        );
+        continue;
+      }
+      this.lastConfirmedDestination = action.fallback.name;
+      if (fallback.state === "success") {
+        await delay(action.cooldownSeconds * 1000, signal);
+      } else {
+        await this.report(
+          "info",
+          "teleport_fallback_already_there",
+          `角色已在${action.fallback.name}附近，跳过备用传送和冷却等待，直接继续前往${action.target.name}`
+        );
+      }
+      let returned = await this.attemptTeleport(action, action.target, signal);
+      if (returned.state === "cooldown") {
+        await delay(action.cooldownSeconds * 1000, signal);
+        returned = await this.attemptTeleport(action, action.target, signal);
+      }
+      if (returned.state === "success") {
+        this.lastConfirmedDestination = action.target.name;
+        return returned;
+      }
+      if (returned.state === "nearby" && action.nearbyIsSuccess) {
+        this.lastConfirmedDestination = action.target.name;
+        return returned;
+      }
+      lastResult = returned;
+      await this.report(
+        "warning",
+        "teleport_target_recovery_retry",
+        `第 ${recovery}/${maximumRecoveries} 次返回${action.target.name}后仍未找到交互选项，将继续往返恢复`,
+        { state: returned.state, text: returned.text || null }
       );
     }
-    const returned = await this.attemptTeleport(action, action.target, signal);
-    if (returned.state !== "success") {
-      throw new Error(
-        `Teleport return to ${action.target.name} failed after fallback: ${returned.state}${returned.text ? ` (${returned.text})` : ""}`
-      );
-    }
-    this.lastConfirmedDestination = action.target.name;
-    return returned;
+    throw new Error(
+      `Teleport return to ${action.target.name} failed after ${maximumRecoveries} recovery attempts: ${lastResult.state}${lastResult.text ? ` (${lastResult.text})` : ""}`
+    );
   }
 
   async attemptTeleport(action, destination, signal) {
@@ -714,14 +926,40 @@ export class GameUi {
   }
 
   async verifyDestination(destination, signal) {
-    const approachSteps = destination.approachUntilReady
+    const legacyApproachRounds = destination.approachUntilReady
       ? Math.max(
           1,
-          Math.min(5, Number(destination.approachMaxSteps) || 5)
+          Math.min(
+            6,
+            Number(destination.approachMaxRounds) ||
+              Number(destination.approachMaxSteps) ||
+              6
+          )
         )
       : 0;
-    const approachPressMs = 1_000;
-    for (let attempt = 0; attempt < Math.max(2, approachSteps + 1); attempt += 1) {
+    const gesture = destination.approachGesture;
+    const gestureRounds = gesture
+      ? Math.max(1, Math.min(5, Number(destination.approachMaxRounds) || 5))
+      : 0;
+    const fallbackKey = destination.approachFallbackKey;
+    const fallbackRounds = fallbackKey
+      ? Math.max(
+          1,
+          Math.min(5, Number(destination.approachFallbackMaxRounds) || 5)
+        )
+      : 0;
+    const approachRounds = gesture
+      ? gestureRounds + fallbackRounds
+      : legacyApproachRounds;
+    const pressesPerRound = Math.max(
+      1,
+      Math.min(5, Number(destination.approachPressesPerRound) || 5)
+    );
+    const approachIntervalMs = Math.max(
+      250,
+      Number(destination.approachIntervalMs) || 1_000
+    );
+    for (let attempt = 0; attempt < Math.max(2, approachRounds + 1); attempt += 1) {
       const frame = await this.vision.capture(
         `verify-destination-${destination.name}-${attempt + 1}`,
         signal
@@ -753,16 +991,80 @@ export class GameUi {
         );
         return true;
       }
-      if (attempt < approachSteps) {
+      if (attempt < approachRounds) {
+        if (gesture && attempt < gestureRounds) {
+          if (attempt === 0) {
+            await this.report(
+              "warning",
+              "teleport_destination_approaching",
+              `已到达${destination.name}但暂未看到交互选项，正在使用左侧虚拟摇杆向上拖动（每次 ${gesture.durationMs || 1_500} 毫秒，最多 ${gestureRounds} 轮），每轮后暂停 ${approachIntervalMs} 毫秒识别`,
+              {
+                readyTexts: destination.readyTexts,
+                maximumRounds: gestureRounds,
+                gesture,
+                intervalMs: approachIntervalMs
+              }
+            );
+          }
+          if (typeof this.adb.releaseGameMouseCapture === "function") {
+            await this.adb.releaseGameMouseCapture(signal).catch(
+              () => undefined
+            );
+          }
+          await this.adb.touchSwipe(
+            gesture.from,
+            gesture.to,
+            gesture.durationMs || 1_500,
+            signal
+          );
+          await delay(approachIntervalMs, signal);
+          continue;
+        }
+        if (gesture && fallbackKey) {
+          const fallbackAttempt = attempt - gestureRounds + 1;
+          if (fallbackAttempt === 1) {
+            await this.report(
+              "warning",
+              "teleport_approach_key_fallback",
+              `虚拟摇杆 ${gestureRounds} 轮后仍未找到交互选项，启用 W 备用：每轮先按一次 W，再持续按住 ${destination.approachFallbackHoldMs || 1_500} 毫秒，最多 ${fallbackRounds} 轮`
+            );
+          }
+          if (typeof this.adb.focusGameInput === "function") {
+            const focusPoint = destination.approachFocusPoint || {
+              x: Math.round((this.config.adb?.screenWidth || 1920) / 2),
+              y: Math.round((this.config.adb?.screenHeight || 1200) / 2)
+            };
+            await this.adb.focusGameInput(focusPoint.x, focusPoint.y, signal);
+          }
+          await this.sendGameKey(fallbackKey, signal);
+          if (typeof this.adb.holdKey === "function") {
+            await this.adb.holdKey(
+              fallbackKey,
+              destination.approachFallbackHoldMs || 1_500,
+              signal
+            );
+          } else {
+            await this.sendGameKey(fallbackKey, signal, { longPress: true });
+          }
+          await delay(
+            Math.max(
+              250,
+              Number(destination.approachFallbackIntervalMs) || 2_000
+            ),
+            signal
+          );
+          continue;
+        }
         if (attempt === 0) {
           await this.report(
             "warning",
             "teleport_destination_approaching",
-            `已到达${destination.name}但暂未看到交互选项，正在按 W 分段前进（每次 1 秒，最多 ${approachSteps} 次），识别到目标文字后立即停止`,
+            `已到达${destination.name}但暂未看到交互选项，正在按 W 分轮前进（每轮连续按 ${pressesPerRound} 次，最多 ${approachRounds} 轮），每轮后识别目标文字并立即停止`,
             {
               readyTexts: destination.readyTexts,
-              maximumSteps: approachSteps,
-              pressDurationMs: approachPressMs
+              maximumRounds: approachRounds,
+              pressesPerRound,
+              intervalMs: approachIntervalMs
             }
           );
         }
@@ -787,11 +1089,9 @@ export class GameUi {
         await this.sendGameKey(
           destination.approachKey || "KEYCODE_W",
           signal,
-          { longPress: true }
+          { repeat: pressesPerRound }
         );
-        // MuMu receives W through Android's long-press key event. Keep every
-        // movement segment at one second before re-reading the interaction UI.
-        await delay(approachPressMs, signal);
+        await delay(approachIntervalMs, signal);
       } else {
         await delay(1_000, signal);
       }
@@ -802,7 +1102,10 @@ export class GameUi {
       `已到达${destination.name}传送点并完成前进恢复，但没有出现配置的正确交互选项；将执行中心出入口往返恢复`,
       {
         readyTexts: destination.readyTexts,
-        approachSteps
+        approachRounds,
+        gestureRounds,
+        fallbackRounds,
+        pressesPerRound
       }
     );
     return false;
@@ -813,24 +1116,27 @@ export class GameUi {
     if (prepared === "map") return;
     const mapButton = Object.hasOwn(action, "mapButton")
       ? action.mapButton
-      : { x: 1780, y: 120 };
+      : { x: 1782, y: 128 };
     const mapKey = action.mapKey || "KEYCODE_M";
-    if (mapButton) {
-      await this.report(
-        "info",
-        "map_open_button",
-        "正在点击右上角地图按钮；识别到地图固定文字后才会继续",
-        { point: mapButton }
-      );
-      await this.tap(mapButton, signal);
-    } else {
+    if (mapKey) {
       await this.report(
         "info",
         "map_open_key",
-        "正在发送 M 键打开地图；识别到地图固定文字后才会继续",
-        { key: mapKey }
+        "正在通过 ADB 复位游戏输入后发送 M 键打开地图；不会先点击右上角以免误开相机",
+        { key: mapKey, focusPoint: mapButton || null }
       );
+      if (mapButton && typeof this.adb.focusGameInput === "function") {
+        await this.adb.focusGameInput(mapButton.x, mapButton.y, signal);
+      }
       await this.sendGameKey(mapKey, signal);
+    } else {
+      await this.report(
+        "info",
+        "map_open_button",
+        "未配置地图快捷键，正在点击校准后的右上角圆盘中心",
+        { point: mapButton }
+      );
+      await this.hudTap(mapButton, signal);
     }
     const timeoutMs = Math.max(
       180,
@@ -838,16 +1144,17 @@ export class GameUi {
     ) * 1000;
     let deadline = Date.now() + timeoutMs;
     let advisorChecked = false;
+    let modelMapCandidate = false;
     let accurateCheckedAt = 0;
-    let mapKeyFallbackSent = !mapButton || !mapKey;
-    const configuredFallbackDelayMs = Number(action.mapKeyFallbackDelayMs);
-    const mapKeyFallbackDelayMs = Math.max(
+    let mapButtonFallbackSent = !mapButton || !mapKey;
+    const configuredFallbackDelayMs = Number(action.mapButtonFallbackDelayMs);
+    const mapButtonFallbackDelayMs = Math.max(
       0,
       Number.isFinite(configuredFallbackDelayMs)
         ? configuredFallbackDelayMs
         : 4_000
     );
-    const mapKeyFallbackAt = Date.now() + mapKeyFallbackDelayMs;
+    const mapButtonFallbackAt = Date.now() + mapButtonFallbackDelayMs;
     do {
       await delay(action.mapOpenPollMs || 500, signal);
       const verification = await this.vision.captureTransient(
@@ -864,16 +1171,6 @@ export class GameUi {
           `已通过地图固定文字确认页面打开：${verified.text}`
         );
         return;
-      }
-      if (!mapKeyFallbackSent && Date.now() >= mapKeyFallbackAt) {
-        mapKeyFallbackSent = true;
-        await this.report(
-          "warning",
-          "map_open_key_fallback",
-          "地图按钮已用于取得游戏输入焦点，快速 OCR 尚未确认地图；立即发送一次 M 键备用，之后仍需地图固定文字确认",
-          { key: mapKey }
-        );
-        await this.sendGameKey(mapKey, signal);
       }
       if (
         typeof this.vision.captureAccurateTransient === "function" &&
@@ -921,6 +1218,8 @@ export class GameUi {
           Number(
             this.vision.advisor.config.minimumActionConfidence
           ) || 0.95;
+        modelMapCandidate =
+          advice?.state === "map" && advice.confidence >= minimum;
         await this.report(
           "info",
           "local_model_map_verification",
@@ -929,9 +1228,23 @@ export class GameUi {
             ...advice,
             accepted: false,
             modelWouldAccept:
-              advice?.state === "map" && advice.confidence >= minimum
+              modelMapCandidate
           }
         );
+      }
+      if (
+        !mapButtonFallbackSent &&
+        !modelMapCandidate &&
+        Date.now() >= mapButtonFallbackAt
+      ) {
+        mapButtonFallbackSent = true;
+        await this.report(
+          "warning",
+          "map_open_button_fallback",
+          "M 键及高精度 OCR 均未确认地图，正在点击校准后的右上角圆盘中心；该点与相机按钮保持安全距离",
+          { point: mapButton }
+        );
+        await this.hudTap(mapButton, signal);
       }
       if (
         Date.now() >= deadline &&
@@ -1015,7 +1328,7 @@ export class GameUi {
         "open_camp_panel_attempt",
         `通过聊天营地频道打开营地界面（${attempt}/${attempts}）`
       );
-      await this.tap(action.chatButton || { x: 250, y: 1060 }, signal);
+      await this.hudTap(action.chatButton || { x: 250, y: 1060 }, signal);
       await delay(action.chatDelayMs || 500, signal);
       await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
       await delay(action.channelDelayMs || 500, signal);
@@ -1746,7 +2059,7 @@ export class GameUi {
       const action = substitute(source, variables);
       switch (action.op) {
         case "tap":
-          await this.tap(action, signal);
+          await this.tapAction(action, signal);
           break;
         case "openCampPanelViaChat":
           await this.openCampPanelViaChat(action, signal);
@@ -1776,6 +2089,12 @@ export class GameUi {
           break;
         case "tapUnlessAnyText":
           await this.tapUnlessAnyText(action.texts, action, signal);
+          break;
+        case "tapUntilNoneTexts":
+          await this.tapUntilNoneTexts(action, signal);
+          break;
+        case "tapUntilAnyTexts":
+          await this.tapUntilAnyTexts(action, signal);
           break;
         case "clickIfText":
           await this.clickIfText(action.text, action, signal);

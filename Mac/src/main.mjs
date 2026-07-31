@@ -199,7 +199,7 @@ async function executeCommand(command, signal) {
     report,
     progress,
     positionIndependent,
-    skipUnknownRecovery: taskKey === "patrol",
+    skipUnknownRecovery: false,
     skipReturnToCenter: positionIndependent
   };
   vision.beginTask();

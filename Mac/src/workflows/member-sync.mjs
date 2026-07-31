@@ -6,6 +6,7 @@ import {
   normalizeStaffGrid,
   parseTable
 } from "../table-parser.mjs";
+import { delay } from "../process.mjs";
 
 export async function runMemberSync(context, command, _bundle, signal) {
   const contribution = await captureContribution(context, signal);
@@ -585,13 +586,29 @@ export async function capturePagedTable(
     if (stagnantPages >= definition.pagination.stopAfterStagnantPages) break;
     previousFingerprint = fingerprint;
     previousRows = rows.map((row) => ({ ...row }));
+    if (page + 1 >= definition.pagination.maxPages) {
+      await report(
+        "info",
+        `${label}_page_limit_reached`,
+        `已扫描配置上限 ${definition.pagination.maxPages} 页，不再继续翻页`
+      );
+      break;
+    }
     await adb.mouseSwipe(
       definition.pagination.from,
       definition.pagination.to,
       definition.pagination.durationMs,
       signal
     );
-    await ui.afterAction(signal);
+    const settleAfterSwipeMs = Math.max(
+      0,
+      Number(definition.pagination.settleAfterSwipeMs) || 0
+    );
+    if (settleAfterSwipeMs > 0) {
+      await delay(settleAfterSwipeMs, signal);
+    } else {
+      await ui.afterAction(signal);
+    }
   }
   return [...byName.values()];
 }

@@ -8,6 +8,8 @@ export class AdbClient {
     this.binary = config.adb.binary;
     this.serial = config.adb.serial;
     this.rawQueue = Promise.resolve();
+    this.mouseInputDevice = null;
+    this.keyboardInputDevice = null;
   }
 
   setSerial(serial) {
@@ -160,6 +162,47 @@ export class AdbClient {
     }
   }
 
+  async touchTap(x, y, signal) {
+    const args = ["input", "tap", Math.round(x), Math.round(y)];
+    try {
+      await this.shell(args, { signal, timeoutMs: 5_000 });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      await this.reconnect();
+      await this.shell(args, { signal, timeoutMs: 5_000 }).catch((retryError) => {
+        retryError.cause = error;
+        throw retryError;
+      });
+    } finally {
+      await this.releaseMouseButton(x, y, signal).catch(() => undefined);
+    }
+  }
+
+  async touchSwipe(from, to, durationMs = 1_500, signal) {
+    const args = [
+      "input",
+      "swipe",
+      Math.round(from.x),
+      Math.round(from.y),
+      Math.round(to.x),
+      Math.round(to.y),
+      Math.round(durationMs)
+    ];
+    try {
+      await this.shell(args, {
+        signal,
+        timeoutMs: Math.max(5_000, Number(durationMs) + 3_000)
+      });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      await this.reconnect();
+      await this.shell(args, {
+        signal,
+        timeoutMs: Math.max(5_000, Number(durationMs) + 3_000)
+      });
+    }
+  }
+
   async releaseMouseButton(
     x = Math.round((this.config.adb.screenWidth || 1920) / 2),
     y = Math.round((this.config.adb.screenHeight || 1200) / 2),
@@ -183,18 +226,62 @@ export class AdbClient {
     y = Math.round((this.config.adb.screenHeight || 1200) / 2),
     signal
   ) {
-    await this.shell(
-      [
-        "input",
-        "mouse",
-        "motionevent",
-        "HOVER_MOVE",
-        Math.round(x),
-        Math.round(y)
-      ],
-      { signal, timeoutMs: 5_000 }
+    const args = [
+      "input",
+      "mouse",
+      "motionevent",
+      "HOVER_MOVE",
+      Math.round(x),
+      Math.round(y)
+    ];
+    try {
+      await this.shell(args, { signal, timeoutMs: 5_000 });
+      await this.releaseMouseButton(x, y, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      await this.reconnect();
+      await this.shell(args, { signal, timeoutMs: 5_000 });
+      await this.releaseMouseButton(x, y, signal);
+    }
+  }
+
+  async releaseGameMouseCapture(signal) {
+    const device = await this.resolveMouseInputDevice(signal);
+    const events = [
+      ["1", "273", "1"],
+      ["0", "0", "0"],
+      ["1", "273", "0"],
+      ["0", "0", "0"]
+    ];
+    for (const event of events) {
+      await this.shell(["sendevent", device, ...event], {
+        signal,
+        timeoutMs: 5_000
+      });
+    }
+    await this.releaseMouseButton(undefined, undefined, signal);
+  }
+
+  async resolveMouseInputDevice(signal) {
+    if (this.mouseInputDevice) return this.mouseInputDevice;
+    const result = await this.shell(["getevent", "-pl"], {
+      signal,
+      timeoutMs: 8_000
+    });
+    const blocks = String(result.stdout || "").split(/(?=add device \d+: )/);
+    const mouse = blocks.find(
+      (block) =>
+        /add device \d+: \/dev\/input\/event\d+/.test(block) &&
+        /\bBTN_RIGHT\b/.test(block)
     );
-    await this.releaseMouseButton(x, y, signal);
+    const match = mouse?.match(/add device \d+: (\/dev\/input\/event\d+)/);
+    if (!match) {
+      throw new Error(
+        "ADB_MOUSE_RIGHT_DEVICE_NOT_FOUND: 容器输入设备未提供 BTN_RIGHT"
+      );
+    }
+    this.mouseInputDevice = match[1];
+    return this.mouseInputDevice;
   }
 
   async mouseSwipe(from, to, durationMs = 500, signal) {
@@ -239,15 +326,24 @@ export class AdbClient {
     );
     const repeat = Math.max(1, Math.min(20, Number(options.repeat) || 1));
     const codes = Array.from({ length: repeat }, () => String(code));
-    await this.shell(
-      [
-        "input",
-        "keyevent",
-        ...(options.longPress ? ["--longpress"] : []),
-        ...codes
-      ],
-      { signal, timeoutMs: 5_000 }
-    );
+    const args = [
+      "input",
+      "keyevent",
+      ...(options.longPress ? ["--longpress"] : []),
+      ...codes
+    ];
+    try {
+      await this.shell(args, { signal, timeoutMs: 5_000 });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      await this.reconnect();
+      await this.releaseMouseButton(
+        Math.round((this.config.adb.screenWidth || 1920) / 2),
+        Math.round((this.config.adb.screenHeight || 1200) / 2),
+        signal
+      );
+      await this.shell(args, { signal, timeoutMs: 5_000 });
+    }
   }
 
   async keyCombination(codes, signal, options = {}) {
@@ -267,6 +363,58 @@ export class AdbClient {
       ],
       { signal, timeoutMs: 5_000 }
     );
+  }
+
+  async holdKey(code, durationMs = 1_500, signal) {
+    const normalized = String(code).replace(/^KEYCODE_/, "KEY_");
+    const linuxCodes = { KEY_W: 17 };
+    const linuxCode = linuxCodes[normalized];
+    if (!linuxCode) {
+      throw new Error(`ADB_KEY_HOLD_UNSUPPORTED: ${code}`);
+    }
+    const device = await this.resolveKeyboardInputDevice(normalized, signal);
+    try {
+      await this.shell(["sendevent", device, "1", linuxCode, "1"], {
+        signal,
+        timeoutMs: 5_000
+      });
+      await this.shell(["sendevent", device, "0", "0", "0"], {
+        signal,
+        timeoutMs: 5_000
+      });
+      await delay(Math.max(100, Number(durationMs) || 1_500), signal);
+    } finally {
+      await this.shell(["sendevent", device, "1", linuxCode, "0"], {
+        signal,
+        timeoutMs: 5_000
+      }).catch(() => undefined);
+      await this.shell(["sendevent", device, "0", "0", "0"], {
+        signal,
+        timeoutMs: 5_000
+      }).catch(() => undefined);
+    }
+  }
+
+  async resolveKeyboardInputDevice(capability = "KEY_W", signal) {
+    if (this.keyboardInputDevice) return this.keyboardInputDevice;
+    const result = await this.shell(["getevent", "-pl"], {
+      signal,
+      timeoutMs: 8_000
+    });
+    const blocks = String(result.stdout || "").split(/(?=add device \d+: )/);
+    const keyboard = blocks.find(
+      (block) =>
+        /add device \d+: \/dev\/input\/event\d+/.test(block) &&
+        new RegExp(`\\b${capability}\\b`).test(block)
+    );
+    const match = keyboard?.match(/add device \d+: (\/dev\/input\/event\d+)/);
+    if (!match) {
+      throw new Error(
+        `ADB_KEYBOARD_DEVICE_NOT_FOUND: 容器输入设备未提供 ${capability}`
+      );
+    }
+    this.keyboardInputDevice = match[1];
+    return this.keyboardInputDevice;
   }
 
   async currentIme() {

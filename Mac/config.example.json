@@ -82,8 +82,8 @@
     "channelReadyTexts": ["综合", "世界", "场景", "营地", "队伍"],
     "channelReadyRegion": { "left": 0, "top": 980, "right": 760, "bottom": 1200 },
     "channelReadyMinimumTexts": 2,
-    "channelReadyStableFrames": 2,
-    "channelReadyStableMs": 1000,
+    "channelReadyStableFrames": 1,
+    "channelReadyStableMs": 0,
     "loadingTexts": ["场景加载中", "正在加载", "加载中", "网络连接中"],
     "readyMinimumTexts": 2,
     "readyStableFrames": 5,
@@ -202,6 +202,8 @@
     "flagReadyRegion": { "left": 0, "top": 260, "right": 130, "bottom": 390 },
     "teamMenuRegion": { "left": 70, "top": 115, "right": 360, "bottom": 365 },
     "createMenuPoint": { "x": 211, "y": 180 },
+    "createMenuClickAttempts": 6,
+    "mouseReleaseSettleMs": 250,
     "creatorTitleRegion": { "left": 350, "top": 235, "right": 1565, "bottom": 325 },
     "campAffairsPoint": { "x": 470, "y": 900 },
     "patrolTargetRegion": { "left": 650, "top": 330, "right": 1170, "bottom": 540 },
@@ -217,17 +219,17 @@
     ],
     "focusAcquiredTexts": ["创建队伍", "自动匹配", "暂无队员加入", "调整", "离开队伍"],
     "focusAcquiredRegion": { "left": 0, "top": 0, "right": 620, "bottom": 1180 },
-    "comboFallbackAttempts": 1,
+    "comboFallbackAttempts": 6,
     "comboHoldMs": 120,
     "stepSettleMs": 1200,
     "share": {
       "teamPageTexts": ["营地巡逻任务", "保卫古籍", "招募", "离开队伍"],
       "teamPageRegion": { "left": 0, "top": 0, "right": 830, "bottom": 1180 },
       "recruitPoint": { "x": 343, "y": 1128 },
-      "recruitAttempts": 2,
+      "recruitAttempts": 6,
       "channelMenuRegion": { "left": 280, "top": 760, "right": 550, "bottom": 1080 },
       "campChannelPoint": { "x": 416, "y": 895 },
-      "channelAttempts": 2,
+      "channelAttempts": 6,
       "successTexts": ["成功分享至营地频道", "分享成功"],
       "successRegion": { "left": 650, "top": 150, "right": 1300, "bottom": 330 },
       "stepSettleMs": 500
@@ -248,7 +250,8 @@
         "from": { "x": 1550, "y": 900 },
         "to": { "x": 1550, "y": 350 },
         "durationMs": 800,
-        "maxPages": 40,
+        "settleAfterSwipeMs": 3000,
+        "maxPages": 11,
         "stopAfterStagnantPages": 2
       }
     },
@@ -293,7 +296,8 @@
         "from": { "x": 1550, "y": 900 },
         "to": { "x": 1550, "y": 350 },
         "durationMs": 800,
-        "maxPages": 40,
+        "settleAfterSwipeMs": 3000,
+        "maxPages": 11,
         "stopAfterStagnantPages": 2
       }
     },
@@ -363,9 +367,9 @@
     "teleportNoticeBoard": [
       {
         "op": "teleportWithFallback",
-        "mapButton": { "x": 1780, "y": 120 },
+        "mapButton": { "x": 1782, "y": 128 },
         "mapKey": "KEYCODE_M",
-        "mapKeyFallbackDelayMs": 0,
+        "mapButtonFallbackDelayMs": 3000,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapModeText": "标志查看",
         "mapModeFallbackEnabled": false,
@@ -388,8 +392,17 @@
           "y": 577,
           "approachUntilReady": true,
           "approachKey": "KEYCODE_W",
-          "approachMaxSteps": 5,
-          "approachIntervalMs": 1000,
+          "approachMaxRounds": 5,
+          "approachGesture": {
+            "from": { "x": 480, "y": 600 },
+            "to": { "x": 480, "y": 360 },
+            "durationMs": 1500
+          },
+          "approachIntervalMs": 2000,
+          "approachFallbackKey": "KEYCODE_W",
+          "approachFallbackMaxRounds": 5,
+          "approachFallbackHoldMs": 1500,
+          "approachFallbackIntervalMs": 2000,
           "readyTexts": ["查看玩法", "营地巡逻", "交谈"],
           "readyRegion": { "left": 1180, "top": 300, "right": 1920, "bottom": 1050 }
         },
@@ -400,6 +413,7 @@
           "readyTexts": ["配方", "背包"]
         },
         "failureTexts": ["已在目标点附近", "目标点附近", "无法传送", "传送冷却中"],
+        "fallbackMaxAttempts": 6,
         "cooldownSeconds": 10,
         "resultTimeoutSeconds": 30
       }
@@ -409,6 +423,7 @@
         "op": "clickTextsUntilAnyText",
         "clickTexts": ["查看巡逻队当前进程", "查看巡逻进度", "营地巡逻", "交谈"],
         "targetTexts": ["简单巡逻路线", "普通巡逻路线", "困难巡逻路线"],
+        "hud": true,
         "clickRegion": { "left": 1200, "top": 540, "right": 1520, "bottom": 1010 },
         "regionOcrScale": 2,
         "anchorClickFallbacks": [
@@ -428,8 +443,8 @@
       }
     ],
     "shareTeam": [
-      { "op": "clickText", "text": "招募", "timeoutSeconds": 8 },
-      { "op": "clickText", "text": "营地频道", "timeoutSeconds": 8 }
+      { "op": "clickText", "text": "招募", "timeoutSeconds": 8, "hud": true },
+      { "op": "clickText", "text": "营地频道", "timeoutSeconds": 8, "hud": true }
     ],
     "startHardPatrol": [
       {
@@ -473,50 +488,62 @@
       { "op": "waitAnyText", "texts": ["巡逻进度", "困难巡逻", "营地巡逻"], "timeoutSeconds": 15 }
     ],
     "exitPatrolPages": [
-      { "op": "tap", "x": 75, "y": 1120 },
-      { "op": "sleep", "ms": 250 },
-      { "op": "tap", "x": 75, "y": 1120 },
-      { "op": "sleep", "ms": 300 }
+      {
+        "op": "tapUntilAnyTexts",
+        "texts": ["综合", "世界", "场景", "营地", "队伍"],
+        "minimumTexts": 2,
+        "region": { "left": 0, "top": 980, "right": 760, "bottom": 1200 },
+        "x": 75,
+        "y": 1120,
+        "maxAttempts": 6,
+        "intervalMs": 500
+      }
     ],
     "switchToBookDefense": [
-      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 350, "y": 150 },
-      { "op": "sleep", "ms": 500 },
-      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 50, "y": 325 },
-      { "op": "sleep", "ms": 300 },
-      { "op": "tapUnlessAnyText", "texts": ["调整"], "x": 350, "y": 150 },
       { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
-      { "op": "tapIfAnyText", "texts": ["调整"], "x": 100, "y": 55 },
+      {
+        "op": "clickText",
+        "text": "调整",
+        "mode": "exact",
+        "region": { "left": 0, "top": 0, "right": 220, "bottom": 130 },
+        "regionOcrScale": 2,
+        "timeoutSeconds": 10,
+        "hud": true
+      },
       { "op": "waitAnyText", "texts": ["调整队伍目标"], "timeoutSeconds": 10 },
-      { "op": "clickText", "text": "限时活动", "timeoutSeconds": 8 },
-      { "op": "clickText", "text": "保卫古籍", "timeoutSeconds": 8 },
-      { "op": "clickText", "text": "修改队伍", "timeoutSeconds": 8 },
+      { "op": "clickText", "text": "限时活动", "timeoutSeconds": 8, "hud": true },
+      { "op": "clickText", "text": "保卫古籍", "timeoutSeconds": 8, "hud": true },
+      { "op": "clickText", "text": "修改队伍", "timeoutSeconds": 8, "hud": true },
       { "op": "waitAnyText", "texts": ["限时活动>保卫古籍", "保卫古籍"], "timeoutSeconds": 10 }
     ],
     "openTeamPanel": [
-      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150 },
+      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150, "hud": true },
       { "op": "sleep", "ms": 500 },
-      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 50, "y": 325 },
+      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 50, "y": 325, "hud": true },
       { "op": "sleep", "ms": 300 },
-      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150 },
+      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150, "hud": true },
       { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
-      { "op": "tapIfAnyText", "texts": ["3D模式"], "x": 1655, "y": 55 },
+      { "op": "tapIfAnyText", "texts": ["3D模式"], "x": 1655, "y": 55, "hud": true },
       { "op": "sleep", "ms": 500 }
     ],
     "closeTeamPanel": [
       {
-        "op": "tapIfAnyText",
+        "op": "tapUntilNoneTexts",
         "texts": ["调整", "离开队伍"],
         "x": 48,
-        "y": 327
-      },
-      { "op": "sleep", "ms": 500 }
+        "y": 327,
+        "region": { "left": 0, "top": 0, "right": 1920, "bottom": 1200 },
+        "maxAttempts": 6,
+        "intervalMs": 500,
+        "hud": true
+      }
     ],
     "teleportCityHall": [
       {
         "op": "teleportWithFallback",
-        "mapButton": { "x": 1780, "y": 120 },
+        "mapButton": { "x": 1782, "y": 128 },
         "mapKey": "KEYCODE_M",
-        "mapKeyFallbackDelayMs": 0,
+        "mapButtonFallbackDelayMs": 3000,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapModeText": "标志查看",
         "mapModeFallbackEnabled": false,
@@ -539,8 +566,17 @@
           "y": 420,
           "approachUntilReady": true,
           "approachKey": "KEYCODE_W",
-          "approachMaxSteps": 5,
-          "approachIntervalMs": 1000,
+          "approachMaxRounds": 5,
+          "approachGesture": {
+            "from": { "x": 480, "y": 600 },
+            "to": { "x": 480, "y": 360 },
+            "durationMs": 1500
+          },
+          "approachIntervalMs": 2000,
+          "approachFallbackKey": "KEYCODE_W",
+          "approachFallbackMaxRounds": 5,
+          "approachFallbackHoldMs": 1500,
+          "approachFallbackIntervalMs": 2000,
           "readyTexts": ["营地数据中心", "营地管理"],
           "readyRegion": { "left": 1150, "top": 450, "right": 1650, "bottom": 900 }
         },
@@ -552,6 +588,7 @@
           "readyRegion": { "left": 0, "top": 300, "right": 650, "bottom": 1000 }
         },
         "failureTexts": ["已在目标点附近", "目标点附近", "无法传送", "传送冷却中"],
+        "fallbackMaxAttempts": 6,
         "cooldownSeconds": 10,
         "resultTimeoutSeconds": 30
       }
@@ -559,9 +596,9 @@
     "teleportCentralExit": [
       {
         "op": "teleportWithFallback",
-        "mapButton": { "x": 1780, "y": 120 },
+        "mapButton": { "x": 1782, "y": 128 },
         "mapKey": "KEYCODE_M",
-        "mapKeyFallbackDelayMs": 0,
+        "mapButtonFallbackDelayMs": 3000,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapModeText": "标志查看",
         "mapModeFallbackEnabled": false,

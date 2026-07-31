@@ -1,11 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   capturePagedTable,
   dedupeStaffAssignments,
   reconcilePageRows,
   selectActivityWarningRows
 } from "../src/workflows/member-sync.mjs";
+
+test("contribution and inactivity scans wait three seconds after paging and stop at eleven pages", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    for (const table of ["contribution", "activity"]) {
+      assert.equal(config.tables[table].pagination.maxPages, 11);
+      assert.equal(
+        config.tables[table].pagination.settleAfterSwipeMs,
+        3000
+      );
+    }
+  }
+});
 
 test("page overlap reconciles only the same positional member", () => {
   const previous = [

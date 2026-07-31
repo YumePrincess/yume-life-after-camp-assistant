@@ -72,6 +72,7 @@ export async function runPatrol(context, command, bundle, signal) {
   await ui.executeFlow("openPatrol", {}, signal);
   await ui.executeFlow("startHardPatrol", {}, signal);
   await ui.executeFlow("exitPatrolPages", {}, signal);
+  await ui.executeFlow("openTeamPanel", {}, signal);
   await ui.executeFlow("switchToBookDefense", {}, signal);
   await sharePatrolTeam(context, signal);
   await ui.executeFlow("openTeamPanel", {}, signal);
@@ -117,12 +118,13 @@ export async function createPatrolTeam(context, signal) {
     return;
   }
 
-  let menuOpen = hasTextInRegion(
+  let createMenuMatch = findTextInRegion(
     vision,
     screen.observations,
     "创建队伍",
     controls.teamMenuRegion
   );
+  let menuOpen = Boolean(createMenuMatch);
   let creatorOpen = hasTextInRegion(
     vision,
     screen.observations,
@@ -178,7 +180,7 @@ export async function createPatrolTeam(context, signal) {
           ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点，点击旗帜按钮 (${controls.flagButton.x},${controls.flagButton.y})；点击后以队伍界面文字确认鼠标焦点`
           : `第一次旗帜点击未出现任何队伍界面锚点，判定可能只取得了 MuMu 鼠标焦点；再次点击同一旗帜坐标 (${controls.flagButton.x},${controls.flagButton.y})`
       );
-      await ui.tap(controls.flagButton, signal);
+      await tapPatrolHud(ui, controls.flagButton, signal);
       await sleep(settleMs, signal);
       screen = await capturePatrolScreen(
         vision,
@@ -195,12 +197,13 @@ export async function createPatrolTeam(context, signal) {
         );
         return;
       }
-      menuOpen = hasTextInRegion(
+      createMenuMatch = findTextInRegion(
         vision,
         screen.observations,
         "创建队伍",
         controls.teamMenuRegion
       );
+      menuOpen = Boolean(createMenuMatch);
       creatorOpen = hasTextInRegion(
         vision,
         screen.observations,
@@ -235,8 +238,8 @@ export async function createPatrolTeam(context, signal) {
       return;
     }
     const comboAttempts = Math.max(
-      0,
-      Math.min(2, Number(controls.comboFallbackAttempts) || 2)
+      1,
+      Math.min(6, Number(controls.comboFallbackAttempts) || 6)
     );
     for (
       let attempt = 0;
@@ -267,12 +270,13 @@ export async function createPatrolTeam(context, signal) {
         );
         return;
       }
-      menuOpen = hasTextInRegion(
+      createMenuMatch = findTextInRegion(
         vision,
         screen.observations,
         "创建队伍",
         controls.teamMenuRegion
       );
+      menuOpen = Boolean(createMenuMatch);
       creatorOpen = hasTextInRegion(
         vision,
         screen.observations,
@@ -282,24 +286,72 @@ export async function createPatrolTeam(context, signal) {
     }
     if (!menuOpen && !creatorOpen) {
       throw new Error(
-        "PATROL_TEAM_MENU_DID_NOT_OPEN: 旗帜点击及两次 Ctrl+Q 备用后仍未识别到“创建队伍”，禁止继续点击"
+        `PATROL_TEAM_MENU_DID_NOT_OPEN: 旗帜点击及 ${comboAttempts} 次逐次 Ctrl+Q 备用后仍未识别到“创建队伍”，禁止继续点击`
       );
     }
   }
 
   if (!creatorOpen) {
-    await report(
-      "info",
-      "patrol_create_menu_click",
-      "已确认左侧队伍菜单打开，点击“创建队伍”"
+    const createMenuClickAttempts = Math.max(
+      1,
+      Math.min(6, Number(controls.createMenuClickAttempts) || 6)
     );
-    await ui.tap(controls.createMenuPoint, signal);
-    await sleep(settleMs, signal);
-    screen = await capturePatrolScreen(
-      vision,
-      "patrol-team-creator-open",
-      signal
-    );
+    for (
+      let attempt = 1;
+      attempt <= createMenuClickAttempts && !creatorOpen;
+      attempt += 1
+    ) {
+      createMenuMatch = findTextInRegion(
+        vision,
+        screen.observations,
+        "创建队伍",
+        controls.teamMenuRegion
+      );
+      if (!createMenuMatch) {
+        throw new Error(
+          `PATROL_CREATE_MENU_TEXT_DISAPPEARED: 第 ${attempt}/${createMenuClickAttempts} 次点击前已无法再次确认“创建队伍”，禁止点击游戏世界`
+        );
+      }
+      const createMenuPoint = observationCenter(createMenuMatch);
+      await report(
+        attempt === 1 ? "info" : "warning",
+        "patrol_create_menu_click",
+        `第 ${attempt}/${createMenuClickAttempts} 次：已确认左侧“创建队伍”，先通过容器 BTN_RIGHT 释放鼠标锁定，再用 ADB 触屏点击文字中心 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})`
+      );
+      if (typeof adb.releaseGameMouseCapture === "function") {
+        await adb.releaseGameMouseCapture(signal);
+        await sleep(
+          Math.max(100, Number(controls.mouseReleaseSettleMs) || 250),
+          signal
+        );
+      } else if (typeof adb.focusGameInput === "function") {
+        await adb.focusGameInput(createMenuPoint.x, createMenuPoint.y, signal);
+      }
+      if (typeof adb.touchTap === "function") {
+        await adb.touchTap(createMenuPoint.x, createMenuPoint.y, signal);
+      } else {
+        await ui.tap(createMenuPoint, signal);
+      }
+      await sleep(settleMs, signal);
+      screen = await capturePatrolScreen(
+        vision,
+        `patrol-team-creator-open-${attempt}`,
+        signal
+      );
+      creatorOpen = hasTextInRegion(
+        vision,
+        screen.observations,
+        "队伍目标",
+        controls.creatorTitleRegion
+      );
+      if (!creatorOpen && attempt < createMenuClickAttempts) {
+        await report(
+          "warning",
+          "patrol_create_menu_click_unverified",
+          `第 ${attempt} 次点击未确认创建页；仅在“创建队伍”仍可见时继续下一轮右键释放与点击`
+        );
+      }
+    }
     if (
       !hasTextInRegion(
         vision,
@@ -320,7 +372,7 @@ export async function createPatrolTeam(context, signal) {
     }
   }
 
-  await ui.tap(controls.campAffairsPoint, signal);
+  await tapPatrolHud(ui, controls.campAffairsPoint, signal);
   await sleep(settleMs, signal);
   screen = await capturePatrolScreen(
     vision,
@@ -340,7 +392,7 @@ export async function createPatrolTeam(context, signal) {
     );
   }
 
-  await ui.tap(controls.patrolTargetPoint, signal);
+  await tapPatrolHud(ui, controls.patrolTargetPoint, signal);
   await sleep(settleMs, signal);
   screen = await capturePatrolScreen(
     vision,
@@ -371,7 +423,7 @@ export async function createPatrolTeam(context, signal) {
     "patrol_create_submit",
     "已确认“营地事务>营地巡逻任务”，点击创建队伍"
   );
-  await ui.tap(controls.createButtonPoint, signal);
+  await tapPatrolHud(ui, controls.createButtonPoint, signal);
   await sleep(settleMs, signal);
   screen = await capturePatrolScreen(
     vision,
@@ -407,7 +459,7 @@ export async function createPatrolTeam(context, signal) {
 }
 
 export async function sharePatrolTeam(context, signal) {
-  const { config, ui, vision, report } = context;
+  const { config, ui, adb, vision, report } = context;
   const controls = config.patrolTeamUi?.share;
   if (!controls) {
     throw new Error("PATROL_SHARE_UI_NOT_CONFIGURED");
@@ -442,7 +494,7 @@ export async function sharePatrolTeam(context, signal) {
 
   const recruitAttempts = Math.max(
     1,
-    Math.min(2, Number(controls.recruitAttempts) || 2)
+    Math.min(6, Number(controls.recruitAttempts) || 6)
   );
   let channelMenuVisible = false;
   for (let attempt = 1; attempt <= recruitAttempts; attempt += 1) {
@@ -453,9 +505,25 @@ export async function sharePatrolTeam(context, signal) {
         : "patrol_share_recruit_focus_retry",
       attempt === 1
         ? "已确认队伍页面，点击“招募”"
-        : "第一次点击可能只取得 MuMu 鼠标焦点；重新点击“招募”"
+        : `第 ${attempt - 1} 次点击后仍未识别到“营地频道”；执行第 ${attempt}/${recruitAttempts} 次右键释放、重新识别并点击“招募”`
     );
-    await ui.tap(controls.recruitPoint, signal);
+    const recruitMatch = findTextInRegion(
+      vision,
+      screen.observations,
+      "招募",
+      controls.teamPageRegion
+    );
+    const recruitPoint = recruitMatch
+      ? observationCenter(recruitMatch)
+      : controls.recruitPoint;
+    if (typeof ui.hudTap === "function") {
+      await ui.hudTap(recruitPoint, signal);
+    } else if (typeof adb?.touchTap === "function") {
+      await adb.releaseGameMouseCapture?.(signal);
+      await adb.touchTap(recruitPoint.x, recruitPoint.y, signal);
+    } else {
+      await ui.tap(recruitPoint, signal);
+    }
     await sleep(settleMs, signal);
     screen = await capturePatrolScreen(
       vision,
@@ -478,7 +546,7 @@ export async function sharePatrolTeam(context, signal) {
 
   const channelAttempts = Math.max(
     1,
-    Math.min(2, Number(controls.channelAttempts) || 2)
+    Math.min(6, Number(controls.channelAttempts) || 6)
   );
   for (let attempt = 1; attempt <= channelAttempts; attempt += 1) {
     await report(
@@ -486,7 +554,29 @@ export async function sharePatrolTeam(context, signal) {
       "patrol_share_camp_channel",
       `已确认分享频道列表，点击“营地频道”${attempt > 1 ? "（重试）" : ""}`
     );
-    await ui.tap(controls.campChannelPoint, signal);
+    const channelMatch = findTextInRegion(
+      vision,
+      screen.observations,
+      "营地频道",
+      controls.channelMenuRegion
+    );
+    if (!channelMatch) {
+      await report(
+        "warning",
+        "patrol_share_channel_text_lost",
+        `第 ${attempt}/${channelAttempts} 次分享前未再次识别到“营地频道”，返回招募阶段重新打开频道列表`
+      );
+      break;
+    }
+    const channelPoint = observationCenter(channelMatch);
+    if (typeof ui.hudTap === "function") {
+      await ui.hudTap(channelPoint, signal);
+    } else if (typeof adb?.touchTap === "function") {
+      await adb.releaseGameMouseCapture?.(signal);
+      await adb.touchTap(channelPoint.x, channelPoint.y, signal);
+    } else {
+      await ui.tap(channelPoint, signal);
+    }
     await sleep(settleMs, signal);
     screen = await capturePatrolScreen(
       vision,
@@ -569,6 +659,10 @@ function patrolTeamCreated(vision, observations, controls) {
 }
 
 function hasTextInRegion(vision, observations, text, region) {
+  return Boolean(findTextInRegion(vision, observations, text, region));
+}
+
+function findTextInRegion(vision, observations, text, region) {
   const bounded = observations.filter((item) => {
     const x = item.x + item.width / 2;
     const y = item.y + item.height / 2;
@@ -579,10 +673,24 @@ function hasTextInRegion(vision, observations, text, region) {
       y <= region.bottom
     );
   });
-  return Boolean(
+  return (
     vision.find(bounded, text, "exact") ||
-      vision.find(bounded, text, "includes")
+    vision.find(bounded, text, "includes")
   );
+}
+
+function observationCenter(observation) {
+  return {
+    x: observation.x + observation.width / 2,
+    y: observation.y + observation.height / 2
+  };
+}
+
+async function tapPatrolHud(ui, point, signal) {
+  if (typeof ui.hudTap === "function") {
+    return ui.hudTap(point, signal);
+  }
+  return ui.tap(point, signal);
 }
 
 export async function patrolTeamIsFull(

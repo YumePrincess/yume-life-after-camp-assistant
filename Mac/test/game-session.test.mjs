@@ -1,6 +1,51 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { waitForGameReady } from "../src/game-session.mjs";
+import {
+  isRecoverableGameFailure,
+  waitForGameReady
+} from "../src/game-session.mjs";
+
+test("a healthy game is never restarted for a UI or input timeout", () => {
+  assert.equal(
+    isRecoverableGameFailure(
+      new Error("ADB input timeout while approaching destination"),
+      { running: true, anr: false },
+      "device"
+    ),
+    false
+  );
+  assert.equal(
+    isRecoverableGameFailure(
+      new Error("界面超时"),
+      { running: true, anr: false },
+      "device"
+    ),
+    false
+  );
+});
+
+test("an exited game, ANR, or offline device remains restartable", () => {
+  assert.equal(
+    isRecoverableGameFailure(new Error("failure"), { running: false }, "device"),
+    true
+  );
+  assert.equal(
+    isRecoverableGameFailure(
+      new Error("failure"),
+      { running: true, anr: true },
+      "device"
+    ),
+    true
+  );
+  assert.equal(
+    isRecoverableGameFailure(
+      new Error("failure"),
+      { running: true, anr: false },
+      "offline"
+    ),
+    true
+  );
+});
 
 test("zero promotion pages reaches HUD without blindly tapping the map area", async () => {
   const fixture = createFixture([["背包"]]);
@@ -283,17 +328,62 @@ test("two bottom-left chat channel anchors confirm HUD without local-model class
   );
 });
 
+test("precise bottom-left channel OCR confirms login when general HUD OCR keeps fluctuating", async () => {
+  const fixture = createFixture(
+    [["背包"], ["背包"]],
+    {
+      state: "unknown",
+      action: "wait",
+      confidence: 0.99,
+      evidence: "整页分类持续不稳定"
+    },
+    [],
+    "guarded",
+    {
+      readyMinimumTexts: 2,
+      channelReadyTexts: ["综合", "世界", "场景", "营地", "队伍"],
+      channelReadyRegion: {
+        left: 0,
+        top: 980,
+        right: 760,
+        bottom: 1200
+      },
+      channelReadyMinimumTexts: 2,
+      channelReadyStableFrames: 1,
+      channelReadyStableMs: 0,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    },
+    [[
+      { text: "综合", x: 30, y: 1090 },
+      { text: "世界", x: 120, y: 1090 },
+      { text: "营地", x: 300, y: 1090 }
+    ]]
+  );
+
+  await waitForGameReady(fixture.context);
+
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("左下角频道区域高精度 OCR 确认 HUD")
+    )
+  );
+  assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
+});
+
 function createFixture(
   frames,
   modelAdvice = null,
   accurateFrames = [],
   advisorMode = "shadow",
-  readyPolicy = {}
+  readyPolicy = {},
+  regionalFrames = []
 ) {
   const taps = [];
   const messages = [];
   let frameIndex = 0;
   let accurateFrameIndex = 0;
+  let regionalFrameIndex = 0;
   const vision = {
     advisor: modelAdvice
       ? {
@@ -324,6 +414,25 @@ function createFixture(
         })
       };
     },
+    ...(regionalFrames.length
+      ? {
+          async capture() {
+            return { path: "/tmp/mock-game-ready-channel.png", observations: [] };
+          },
+          async ocrRegion() {
+            return (
+              regionalFrames[
+                Math.min(regionalFrameIndex++, regionalFrames.length - 1)
+              ] || []
+            ).map((item) => ({
+              confidence: 1,
+              width: 10,
+              height: 10,
+              ...item
+            }));
+          }
+        }
+      : {}),
     async captureAccurateTransient() {
       const texts =
         accurateFrames[

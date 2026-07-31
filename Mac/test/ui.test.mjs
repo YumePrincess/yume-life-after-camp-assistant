@@ -149,7 +149,7 @@ test("an NPC interaction menu is HUD context, not a map-blocking overlay", async
   assert.deepEqual(fixture.keys, []);
 });
 
-test("1920x1200 map flow closes every overlay and opens the verified map button", async () => {
+test("1920x1200 map flow closes every overlay and opens map with M after input focus", async () => {
   const fixture = createUi({
     fastFrames: [
       [
@@ -174,13 +174,13 @@ test("1920x1200 map flow closes every overlay and opens the verified map button"
   });
   assert.deepEqual(fixture.taps, [
     { x: 1850, y: 70 },
-    { x: 1710, y: 1050 },
-    { x: 1780, y: 120 }
+    { x: 1710, y: 1050 }
   ]);
-  assert.deepEqual(fixture.keys, []);
+  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+  assert.deepEqual(fixture.focusPoints.at(-1), { x: 1782, y: 128 });
 });
 
-test("M is used only after the map button fails and still requires map OCR", async () => {
+test("M is the primary map action and still requires map OCR", async () => {
   const fixture = createUi({
     fastFrames: [
       [observation("背包", 120, 900)],
@@ -191,13 +191,41 @@ test("M is used only after the map button fails and still requires map OCR", asy
   await fixture.ui.ensureMapOpen({
     mapButton: { x: 1780, y: 120 },
     mapKey: "KEYCODE_M",
-    mapKeyFallbackDelayMs: 0,
+    mapButtonFallbackDelayMs: 30_000,
     mapReadyTexts: ["标志查看"],
     mapPreparationMaxClosures: 2,
     mapOpenPollMs: 1
   });
-  assert.deepEqual(fixture.taps, [{ x: 1780, y: 120 }]);
+  assert.deepEqual(fixture.taps, []);
   assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+  assert.deepEqual(fixture.focusPoints, [{ x: 1780, y: 120 }]);
+});
+
+test("map click fallback uses the calibrated minimap center, never the camera button", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("背包", 120, 900)],
+      [],
+      [observation("标志查看", 260, 150)]
+    ]
+  });
+
+  await fixture.ui.ensureMapOpen({
+    mapButton: { x: 1782, y: 128 },
+    mapKey: "KEYCODE_M",
+    mapButtonFallbackDelayMs: 0,
+    mapReadyTexts: ["标志查看"],
+    mapPreparationMaxClosures: 2,
+    mapOpenPollMs: 1
+  });
+
+  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+  assert.deepEqual(fixture.taps, [{ x: 1782, y: 128 }]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("右上角圆盘中心")
+    )
+  );
 });
 
 test("a model map prediction never unlocks destination clicks without map OCR", async () => {
@@ -216,13 +244,13 @@ test("a model map prediction never unlocks destination clicks without map OCR", 
   await fixture.ui.ensureMapOpen({
     mapButton: { x: 1780, y: 120 },
     mapKey: "KEYCODE_M",
-    mapKeyFallbackDelayMs: 30_000,
+    mapButtonFallbackDelayMs: 30_000,
     mapReadyTexts: ["标志查看", "查看庄园"],
     mapPreparationMaxClosures: 2,
     mapOpenPollMs: 1
   });
-  assert.deepEqual(fixture.taps, [{ x: 1780, y: 120 }]);
-  assert.deepEqual(fixture.keys, []);
+  assert.deepEqual(fixture.taps, []);
+  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("模型地图候选仅供记录")
@@ -386,16 +414,18 @@ test("destination verification walks forward only until the interaction text app
   assert.deepEqual(fixture.taps, []);
 });
 
-test("destination approach is capped at five one-second W segments", async () => {
+test("destination approach sends five W presses per round and stops after six rounds", async () => {
   const fixture = createUi({
-    fastFrames: Array.from({ length: 6 }, () => [])
+    fastFrames: Array.from({ length: 7 }, () => [])
   });
   const startedAt = Date.now();
   const verified = await fixture.ui.verifyDestination(
     {
       name: "公告版",
       approachUntilReady: true,
-      approachMaxSteps: 12,
+      approachMaxRounds: 12,
+      approachPressesPerRound: 5,
+      approachIntervalMs: 250,
       readyTexts: ["查看玩法", "营地巡逻"],
       readyRegion: { left: 1180, top: 540, right: 1580, bottom: 900 }
     }
@@ -403,18 +433,182 @@ test("destination approach is capped at five one-second W segments", async () =>
   assert.equal(verified, false);
   assert.deepEqual(
     fixture.keys,
-    Array.from({ length: 5 }, () => "KEYCODE_W")
+    Array.from({ length: 6 }, () => "KEYCODE_W")
+  );
+  assert.deepEqual(
+    fixture.keyCalls,
+    Array.from({ length: 6 }, () => ({
+      code: "KEYCODE_W",
+      options: { repeat: 5 }
+    }))
   );
   assert.deepEqual(
     fixture.focusPoints,
-    Array.from({ length: 5 }, () => ({ x: 960, y: 600 }))
+    Array.from({ length: 6 }, () => ({ x: 960, y: 600 }))
   );
-  assert.ok(Date.now() - startedAt >= 5_000);
+  assert.ok(Date.now() - startedAt >= 1_500);
   assert.ok(
     fixture.messages.some((message) =>
-      message.includes("每次 1 秒，最多 5 次")
+      message.includes("每轮连续按 5 次，最多 6 轮")
     )
   );
+});
+
+test("destination approach uses five upward joystick drags then five held-W fallbacks", async () => {
+  const fixture = createUi({
+    fastFrames: Array.from({ length: 11 }, () => [])
+  });
+  const verified = await fixture.ui.verifyDestination({
+    name: "公告版",
+    approachUntilReady: true,
+    approachMaxRounds: 5,
+    approachGesture: {
+      from: { x: 480, y: 600 },
+      to: { x: 480, y: 360 },
+      durationMs: 1_500
+    },
+    approachIntervalMs: 250,
+    approachFallbackKey: "KEYCODE_W",
+    approachFallbackMaxRounds: 5,
+    approachFallbackHoldMs: 1_500,
+    approachFallbackIntervalMs: 250,
+    readyTexts: ["营地巡逻"],
+    readyRegion: { left: 1180, top: 300, right: 1920, bottom: 1050 }
+  });
+
+  assert.equal(verified, false);
+  assert.equal(fixture.swipes.length, 5);
+  assert.deepEqual(
+    fixture.swipes,
+    Array.from({ length: 5 }, () => ({
+      from: { x: 480, y: 600 },
+      to: { x: 480, y: 360 },
+      durationMs: 1_500
+    }))
+  );
+  assert.deepEqual(fixture.keys, Array.from({ length: 5 }, () => "KEYCODE_W"));
+  assert.deepEqual(
+    fixture.holds,
+    Array.from({ length: 5 }, () => ({ code: "KEYCODE_W", durationMs: 1_500 }))
+  );
+});
+
+test("failed destination approach recovers through center exit up to the target again", async () => {
+  const fixture = createUi();
+  const calls = [];
+  const results = [
+    { state: "nearby", text: "寻路后仍无交互" },
+    { state: "nearby", text: "已在中心出入口" },
+    { state: "nearby", text: "第一次返回仍无交互" },
+    { state: "nearby", text: "已在中心出入口" },
+    { state: "success", text: "营地巡逻" }
+  ];
+  fixture.ui.attemptTeleport = async (_action, destination) => {
+    calls.push(destination.name);
+    return results.shift();
+  };
+
+  const result = await fixture.ui.teleportWithFallback({
+    target: { name: "公告版" },
+    fallback: { name: "中心出入口" },
+    fallbackMaxAttempts: 6,
+    cooldownSeconds: 0
+  });
+
+  assert.equal(result.state, "success");
+  assert.deepEqual(calls, [
+    "公告版",
+    "中心出入口",
+    "公告版",
+    "中心出入口",
+    "公告版"
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("第 2/6 次寻路恢复")
+    )
+  );
+});
+
+test("destination recovery never exceeds six center-target cycles", async () => {
+  const fixture = createUi();
+  const calls = [];
+  fixture.ui.attemptTeleport = async (_action, destination) => {
+    calls.push(destination.name);
+    return { state: "nearby", text: "仍未出现交互" };
+  };
+
+  await assert.rejects(
+    fixture.ui.teleportWithFallback({
+      target: { name: "公告版" },
+      fallback: { name: "中心出入口" },
+      fallbackMaxAttempts: 99,
+      cooldownSeconds: 0
+    }),
+    /after 6 recovery attempts/
+  );
+  assert.equal(calls.filter((name) => name === "中心出入口").length, 6);
+  assert.equal(calls.filter((name) => name === "公告版").length, 7);
+});
+
+test("HUD panel close retries with container mouse release until panel text disappears", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("调整", 80, 40)],
+      [observation("调整", 80, 40)],
+      []
+    ],
+    accurateFrames: [[], [], []]
+  });
+  let releases = 0;
+  fixture.adb.releaseGameMouseCapture = async () => {
+    releases += 1;
+  };
+  fixture.adb.touchTap = async (x, y) => {
+    fixture.taps.push({ x, y });
+  };
+
+  await fixture.ui.tapUntilNoneTexts({
+    texts: ["调整", "离开队伍"],
+    region: { left: 0, top: 0, right: 1920, bottom: 1200 },
+    x: 48,
+    y: 327,
+    maxAttempts: 6,
+    intervalMs: 200,
+    mouseReleaseSettleMs: 100,
+    hud: true
+  });
+
+  assert.equal(releases, 2);
+  assert.deepEqual(fixture.taps, [
+    { x: 48, y: 327 },
+    { x: 48, y: 327 }
+  ]);
+});
+
+test("patrol overlay exit stops only after two bottom HUD anchors appear", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("巡逻路线", 900, 200)],
+      [
+        observation("综合", 40, 1080),
+        observation("营地", 220, 1080)
+      ]
+    ],
+    accurateFrames: [[], []]
+  });
+
+  await fixture.ui.tapUntilAnyTexts({
+    texts: ["综合", "世界", "场景", "营地", "队伍"],
+    minimumTexts: 2,
+    region: { left: 0, top: 980, right: 760, bottom: 1200 },
+    x: 75,
+    y: 1120,
+    maxAttempts: 6,
+    intervalMs: 200
+  });
+
+  assert.deepEqual(fixture.taps, [{ x: 75, y: 1120 }]);
 });
 
 test("a stable post-teleport HUD advances to W-based destination verification", async () => {
@@ -605,12 +799,15 @@ test("full patrol team closes through the calibrated flag only when the team UI 
     );
     assert.deepEqual(config.flows.closeTeamPanel, [
       {
-        op: "tapIfAnyText",
+        op: "tapUntilNoneTexts",
         texts: ["调整", "离开队伍"],
         x: 48,
-        y: 327
-      },
-      { op: "sleep", ms: 500 }
+        y: 327,
+        region: { left: 0, top: 0, right: 1920, bottom: 1200 },
+        maxAttempts: 6,
+        intervalMs: 500,
+        hud: true
+      }
     ]);
   }
 });
@@ -667,7 +864,10 @@ function createUi({
 } = {}) {
   const taps = [];
   const keys = [];
+  const keyCalls = [];
   const focusPoints = [];
+  const swipes = [];
+  const holds = [];
   const messages = [];
   let fastIndex = 0;
   let accurateIndex = 0;
@@ -715,11 +915,19 @@ function createUi({
     async mouseTap(x, y) {
       taps.push({ x, y });
     },
-    async key(code) {
+    async key(code, _signal, options = {}) {
       keys.push(code);
+      keyCalls.push({ code, options });
     },
     async focusGameInput(x, y) {
       focusPoints.push({ x, y });
+    },
+    async releaseGameMouseCapture() {},
+    async touchSwipe(from, to, durationMs) {
+      swipes.push({ from, to, durationMs });
+    },
+    async holdKey(code, durationMs) {
+      holds.push({ code, durationMs });
     }
   };
   const ui = new GameUi(
@@ -728,7 +936,17 @@ function createUi({
     vision,
     async (_level, _step, message) => messages.push(message)
   );
-  return { ui, taps, keys, focusPoints, messages };
+  return {
+    ui,
+    adb,
+    taps,
+    keys,
+    keyCalls,
+    focusPoints,
+    swipes,
+    holds,
+    messages
+  };
 }
 
 function observation(text, x, y) {

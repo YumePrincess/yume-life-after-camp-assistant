@@ -53,15 +53,17 @@ export async function withGameSession(
       } catch (error) {
         if (signal.aborted) throw signal.reason || error;
         const deviceState = await adb.state();
-        const health = await adb.gameHealth().catch(() => ({
-          running: false,
+        const health = await adb.gameHealth().catch((healthError) => ({
+          running: null,
           anr: false,
-          detail: ""
+          detail: "",
+          checkFailed: true,
+          error: healthError.message
         }));
         const canRestart =
           watchdog.enabled &&
           restartCount < watchdog.maxRestarts &&
-          isRecoverableGameFailure(error, health);
+          isRecoverableGameFailure(error, health, deviceState);
         if (!canRestart) throw error;
         const hardRestart =
           deviceState !== "device" ||
@@ -89,7 +91,7 @@ export async function withGameSession(
           await report(
             "warning",
             "game_restart",
-            `检测到游戏无响应或界面超时，正在结束进程并重启游戏（${restartCount + 1}/${watchdog.maxRestarts}）`,
+            `已确认游戏进程退出或发生 ANR，正在结束进程并重启游戏（${restartCount + 1}/${watchdog.maxRestarts}）`,
             { reason: error.message, deviceState, health }
           );
           await adb.stopGame();
@@ -386,28 +388,76 @@ export async function waitForGameReady(context, signal) {
       ...promotions.signatureTexts,
       "加入队伍语音频道"
     ];
-    const fastReadyCount = promotions.readyTexts.filter((text) =>
+    let fastReadyCount = promotions.readyTexts.filter((text) =>
       vision.find(frame.observations, text)
     ).length;
-    const fastChannelReadyCount = findReadyTextsInRegion(
+    let fastChannelReadyCount = findReadyTextsInRegion(
       vision,
       frame.observations,
       promotions.channelReadyTexts,
       promotions.channelReadyRegion
     ).length;
-    const fastMatchedKnownState =
-      fastReadyCount >=
-        Math.max(1, Number(promotions.readyMinimumTexts) || 2) ||
-      fastChannelReadyCount >=
-        Math.max(2, Number(promotions.channelReadyMinimumTexts) || 2) ||
-      blockingStateTexts.some((text) =>
-        vision.find(frame.observations, text)
-      );
+    const channelReadyMinimum = Math.max(
+      2,
+      Number(promotions.channelReadyMinimumTexts) || 2
+    );
     const accurateFallbackMs =
       Math.max(
         0.05,
         Number(config.vision?.accurateFallbackSeconds) || 5
       ) * 1000;
+    if (
+      fastChannelReadyCount < channelReadyMinimum &&
+      (loginClicked || fastReadyCount > 0) &&
+      typeof vision.capture === "function" &&
+      typeof vision.ocrRegion === "function" &&
+      Date.now() - lastAccurateOcrAt >= accurateFallbackMs
+    ) {
+      lastAccurateOcrAt = Date.now();
+      try {
+        const channelFrame = await vision.capture(
+          "game-ready-channel-source",
+          signal
+        );
+        const channelObservations = await vision.ocrRegion(
+          channelFrame.path,
+          promotions.channelReadyRegion,
+          "game-ready-channel-accurate",
+          signal,
+          "accurate",
+          0.15,
+          2
+        );
+        const accurateChannelMatches = findReadyTextsInRegion(
+          vision,
+          channelObservations,
+          promotions.channelReadyTexts,
+          promotions.channelReadyRegion
+        );
+        if (accurateChannelMatches.length >= channelReadyMinimum) {
+          frame = {
+            ...frame,
+            observations: [...frame.observations, ...channelObservations]
+          };
+          fastChannelReadyCount = accurateChannelMatches.length;
+          await report(
+            "info",
+            "game_ready_channel_accurate",
+            `已通过左下角频道区域高精度 OCR 确认 HUD：${accurateChannelMatches.map((item) => item.text).join("、")}`
+          );
+        }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+      }
+    }
+    const fastMatchedKnownState =
+      fastReadyCount >=
+        Math.max(1, Number(promotions.readyMinimumTexts) || 2) ||
+      fastChannelReadyCount >=
+        channelReadyMinimum ||
+      blockingStateTexts.some((text) =>
+        vision.find(frame.observations, text)
+      );
     if (
       !fastMatchedKnownState &&
       config.vision?.accurateFallbackEnabled !== false &&
@@ -509,18 +559,24 @@ export async function waitForGameReady(context, signal) {
       readySince ||= Date.now();
       const configuredStableFrames = Number(promotions.readyStableFrames);
       const configuredStableMs = Number(promotions.readyStableMs);
+      const channelStableFrames = Number(promotions.channelReadyStableFrames);
       const stableFrames = Math.max(
         1,
         channelHudReady
-          ? Number(promotions.channelReadyStableFrames) || 2
+          ? Number.isFinite(channelStableFrames)
+            ? channelStableFrames
+            : 2
           : Number.isFinite(configuredStableFrames)
             ? configuredStableFrames
             : 3
       );
+      const channelStableMs = Number(promotions.channelReadyStableMs);
       const stableMs = Math.max(
         0,
         channelHudReady
-          ? Number(promotions.channelReadyStableMs) || 1_000
+          ? Number.isFinite(channelStableMs)
+            ? channelStableMs
+            : 1_000
           : Number.isFinite(configuredStableMs)
             ? configuredStableMs
             : 3_000
@@ -1052,9 +1108,10 @@ async function monitorGame(context, watchdog, signal) {
   }
 }
 
-function isRecoverableGameFailure(error, health) {
-  if (health.anr || !health.running) return true;
-  return /ADB|GAME_PROCESS_EXITED|GAME_ANR|MUMU_DEVICE_|screencap|无响应/i.test(
-    error.message
-  );
+export function isRecoverableGameFailure(error, health, deviceState = "device") {
+  if (deviceState !== "device") return true;
+  if (health?.anr === true || health?.running === false) return true;
+  // UI/OCR timeouts and transient input failures must not restart a healthy game.
+  // The watchdog performs the authoritative process/ANR check above.
+  return false;
 }
