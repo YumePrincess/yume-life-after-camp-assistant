@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Yume Life After Mac Agent</string>
+    <key>CFBundleExecutable</key>
+    <string>YumeLifeAfterMacAgentInputHelper</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIdentifier</key>
+    <string>zone.yume.lifeafter.macagent.input-helper</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>fr</string>
+        <string>ja</string>
+        <string>zh-Hans</string>
+        <string>zh-Hant</string>
+    </array>
+    <key>CFBundleName</key>
+    <string>Yume Life After Mac Agent</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>27.0</string>
+    <key>CFBundleVersion</key>
+    <string>2703</string>
+    <key>LSArchitecturePriority</key>
+    <array><string>arm64</string></array>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSRequiresNativeExecution</key>
+    <true/>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Yume Life After Mac Agent uses System Events to send the configured MuMu mouse-release shortcut.</string>
+</dict>
+</plist>

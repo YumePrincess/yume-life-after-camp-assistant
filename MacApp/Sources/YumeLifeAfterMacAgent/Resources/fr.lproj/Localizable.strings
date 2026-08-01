@@ -72,6 +72,9 @@
 "Allow unsigned local plugins (developer mode)" = "Autoriser les extensions locales non signées (mode développeur)";
 "Workers catalog plugins always require a trusted signature." = "Les extensions du catalogue Workers exigent toujours une signature approuvée.";
 "Save settings" = "Enregistrer";
+"Load saved credentials from Keychain" = "Charger les identifiants du trousseau";
+"No saved credentials were found in Keychain." = "Aucun identifiant enregistré n’a été trouvé dans le trousseau.";
+"Saved credentials loaded" = "Identifiants enregistrés chargés";
 "Settings saved" = "Réglages enregistrés";
 "Apple Silicon required" = "Puce Apple requise";
 "Yume Life After Mac Agent supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Life After Mac Agent prend uniquement en charge les Mac avec puce M. Les Mac Intel et Rosetta ne sont pas pris en charge.";

@@ -255,6 +255,18 @@ actor RuntimeService {
             task.executableURL = URL(fileURLWithPath: executable)
             task.arguments = arguments
             task.currentDirectoryURL = workingDirectory
+            // App launches do not inherit an interactive shell PATH. Always
+            // put the portable toolchain first so management scripts use the
+            // Node/npm/ADB shipped with this exact runtime instead of relying
+            // on Homebrew or a user-installed Node.js.
+            var environment = ProcessInfo.processInfo.environment
+            let portablePaths = [
+                workingDirectory.appending(path: "Toolchain/node/bin").path,
+                workingDirectory.appending(path: "Toolchain/platform-tools").path
+            ]
+            let inheritedPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+            environment["PATH"] = (portablePaths + [inheritedPath]).joined(separator: ":")
+            task.environment = environment
             task.standardOutput = pipe
             task.standardError = pipe
             do {

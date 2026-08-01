@@ -37,8 +37,11 @@ final class AppModel: ObservableObject {
         agentID = storedAgentID == nil || storedAgentID == "mumu-main"
             ? "mac-life-after-agent"
             : storedAgentID!
-        agentToken = KeychainStore.get(account: "agent-token") ?? ""
-        debugToken = KeychainStore.get(account: "debug-token") ?? ""
+        // Do not request access to existing Keychain items while the App is
+        // launching. A newly signed build may need one explicit macOS approval;
+        // that approval belongs to a user-initiated credential action.
+        agentToken = ""
+        debugToken = ""
         mumuInstanceName = defaults.string(forKey: "mumuInstanceName") ?? "Life After CN Auto"
         allowUnsignedPlugins = defaults.bool(forKey: "allowUnsignedPlugins")
         language = defaults.string(forKey: "language") ?? Self.preferredLanguage()
@@ -181,11 +184,27 @@ final class AppModel: ObservableObject {
     }
 
     func saveSettings() async {
+        guard !agentToken.isEmpty, !debugToken.isEmpty else {
+            alertMessage = text("Enter both Agent tokens to continue.")
+            return
+        }
         do {
             try await persistSettings()
             browser.load(baseURL: serverURL)
             statusMessage = text("Settings saved")
         } catch { alertMessage = error.localizedDescription }
+    }
+
+    func loadStoredCredentials() {
+        let storedAgentToken = KeychainStore.get(account: "agent-token")
+        let storedDebugToken = KeychainStore.get(account: "debug-token")
+        guard let storedAgentToken, let storedDebugToken else {
+            alertMessage = text("No saved credentials were found in Keychain.")
+            return
+        }
+        agentToken = storedAgentToken
+        debugToken = storedDebugToken
+        statusMessage = text("Saved credentials loaded")
     }
 
     func openSetupAssistant() {

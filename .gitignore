@@ -11,6 +11,7 @@ logs/
 snapshots/
 downloads/
 Mac/.local-model/
+/Mac/config.json
 *.log
 
 # Diagnostic reports (https://nodejs.org/api/report.html)

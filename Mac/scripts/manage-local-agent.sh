@@ -8,6 +8,29 @@ AGENT_CONTROL="${SCRIPT_DIR}/agent-control.sh"
 INSTALL_AGENT="${SCRIPT_DIR}/install-launch-agent.sh"
 UNINSTALL_AGENT="${SCRIPT_DIR}/uninstall-launch-agent.sh"
 
+# A native .app does not run inside the user's interactive shell and therefore
+# cannot assume Homebrew's npm/node are on PATH. Prefer the portable toolchain
+# bundled by Yume Life After Mac Agent and fall back to system commands only
+# for legacy source-tree installations.
+if [[ -x "${MAC_ROOT}/Toolchain/node/bin/node" ]]; then
+  NODE_BIN="${MAC_ROOT}/Toolchain/node/bin/node"
+  NPM_BIN="${MAC_ROOT}/Toolchain/node/bin/npm"
+  export PATH="${MAC_ROOT}/Toolchain/node/bin:${MAC_ROOT}/Toolchain/platform-tools:${PATH}"
+else
+  NODE_BIN="$(command -v node 2>/dev/null || true)"
+  NPM_BIN="$(command -v npm 2>/dev/null || true)"
+fi
+
+run_node() {
+  [[ -x "${NODE_BIN}" ]] || { echo "Portable Node.js is missing." >&2; return 127; }
+  "${NODE_BIN}" "$@"
+}
+
+run_npm() {
+  [[ -x "${NPM_BIN}" ]] || { echo "Portable npm is missing." >&2; return 127; }
+  "${NPM_BIN}" "$@"
+}
+
 print_usage() {
   cat <<'EOF'
 Yume Life After 本地 Agent 综合管理
@@ -55,7 +78,7 @@ install_dependencies() {
   command -v adb >/dev/null 2>&1 || brew install android-platform-tools
   [[ -x "/opt/homebrew/opt/python@3.12/bin/python3.12" ]] || brew install python@3.12
   cd "${MAC_ROOT}"
-  npm install
+  run_npm install
   "${SCRIPT_DIR}/build-vision.sh"
   "${MODEL_CONTROL}" deps
 }
@@ -64,7 +87,7 @@ install_all() {
   install_dependencies
   "${MODEL_CONTROL}" install
   cd "${MAC_ROOT}"
-  npm run doctor
+  run_npm run doctor
   "${INSTALL_AGENT}"
   wait_for_health
 }
@@ -89,7 +112,7 @@ status_all() {
 
 health_agent() {
   cd "${MAC_ROOT}"
-  node src/agent-health.mjs
+  run_node src/agent-health.mjs
 }
 
 wait_for_health() {
@@ -130,8 +153,9 @@ uninstall_all() {
 }
 
 repair_agent() {
+  install_dependencies
   cd "${MAC_ROOT}"
-  npm run doctor
+  run_npm run doctor
   "${INSTALL_AGENT}"
   wait_for_health
   "${MODEL_CONTROL}" status || true
@@ -141,7 +165,7 @@ run_once() {
   "${MODEL_CONTROL}" start
   trap '"${MODEL_CONTROL}" stop' EXIT INT TERM
   cd "${MAC_ROOT}"
-  npm run once
+  run_npm run once
 }
 
 case "${1:-status}" in
@@ -172,7 +196,7 @@ case "${1:-status}" in
     ;;
   doctor)
     cd "${MAC_ROOT}"
-    npm run doctor
+    run_npm run doctor
     ;;
   once)
     run_once

@@ -72,6 +72,9 @@
 "Allow unsigned local plugins (developer mode)" = "允许未签名本地插件（开发者模式）";
 "Workers catalog plugins always require a trusted signature." = "Workers 插件源始终要求可信签名。";
 "Save settings" = "保存设置";
+"Load saved credentials from Keychain" = "从钥匙串载入已保存凭据";
+"No saved credentials were found in Keychain." = "钥匙串中没有找到已保存的凭据。";
+"Saved credentials loaded" = "已载入保存的凭据";
 "Settings saved" = "设置已保存";
 "Apple Silicon required" = "需要 Apple 芯片";
 "Yume Life After Mac Agent supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Life After Mac Agent 仅支持 M 系列 Mac，不支持 Intel Mac 与 Rosetta。";

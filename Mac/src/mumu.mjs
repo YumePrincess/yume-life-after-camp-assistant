@@ -1,4 +1,12 @@
 import { runFile, delay } from "./process.mjs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+const bundledHostInputHelper = path.resolve(
+  moduleDirectory,
+  "../bin/Yume Life After Mac Agent Input Helper.app/Contents/MacOS/YumeLifeAfterMacAgentInputHelper"
+);
 
 export class MumuLifecycle {
   constructor(config, adb) {
@@ -165,9 +173,53 @@ export class MumuLifecycle {
       0.1,
       Math.min(10, Number(controls.postKeySettleMs) / 1000 || 4)
     );
-    // 创建队伍前必须让这个容器保持前台：先等待窗口实际获得焦点，再发送
-    // Esc 下方物理键（ANSI key code 50，即 ` / ~），然后等待游戏解除锁定。
-    // 不点击 Dock、菜单栏或桌面，也不使用切换空间的快捷键。
+    const configuredHelper = String(controls.helperBinary || "").trim();
+    const helperBinary = configuredHelper
+      ? path.resolve(configuredHelper)
+      : bundledHostInputHelper;
+    const helperArguments = [
+      "--pid",
+      String(processId),
+      "--key-code",
+      String(keyCode),
+      "--foreground-settle-ms",
+      String(Math.round(foregroundSettleSeconds * 1000)),
+      "--post-key-settle-ms",
+      String(Math.round(postKeySettleSeconds * 1000)),
+      "--bring-to-front",
+      bringToFront ? "true" : "false"
+    ];
+    try {
+      const result = await runFile(helperBinary, helperArguments, {
+        timeoutMs: Math.max(
+          15_000,
+          Math.min(
+            180_000,
+            Number(controls.permissionTimeoutSeconds) * 1000 || 120_000
+          )
+        ),
+        signal
+      });
+      const response = JSON.parse(String(result.stdout || "{}"));
+      return {
+        instanceIndex: instance.index,
+        processId,
+        keyCode,
+        bringToFront,
+        foregroundSettleSeconds,
+        postKeySettleSeconds,
+        mouseReleased: response.mouseReleased === true,
+        permissionOwner: "Yume Life After Mac Agent"
+      };
+    } catch (error) {
+      // Source-only development runs do not contain the packaged helper. Keep
+      // the historical System Events path only for that case. A packaged
+      // helper permission failure must never silently fall back to node or
+      // osascript, otherwise macOS would show the wrong permission owner.
+      if (error?.cause?.code !== "ENOENT") throw error;
+    }
+    // Development fallback: still sends the required host ` / ~ through
+    // System Events, but release builds always use the signed helper above.
     const script = [
       'tell application "System Events"',
       `  set targetProcess to first application process whose unix id is ${processId}`,
@@ -190,7 +242,8 @@ export class MumuLifecycle {
       bringToFront,
       foregroundSettleSeconds,
       postKeySettleSeconds,
-      mouseReleased
+      mouseReleased,
+      permissionOwner: "development-fallback"
     };
   }
 

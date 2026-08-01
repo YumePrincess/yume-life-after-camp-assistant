@@ -350,6 +350,10 @@ struct SettingsView: View {
                     TextField("MuMu container name", text: $model.mumuInstanceName)
                     SecureField("Agent token", text: $model.agentToken)
                     SecureField("Local debug token", text: $model.debugToken)
+                    Button("Load saved credentials from Keychain") {
+                        model.loadStoredCredentials()
+                    }
+                    .buttonStyle(GlassButtonStyle())
                     Text("The Agent matches this MuMu container name and discovers its current loopback ADB port automatically.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -488,6 +492,10 @@ struct SetupAssistantView: View {
                 .foregroundStyle(.secondary)
             SecureField("Agent token", text: $model.agentToken).textFieldStyle(.roundedBorder)
             SecureField("Local debug token", text: $model.debugToken).textFieldStyle(.roundedBorder)
+            Button("Load saved credentials from Keychain") {
+                model.loadStoredCredentials()
+            }
+            .buttonStyle(GlassButtonStyle())
         }
     }
 

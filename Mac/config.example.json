@@ -25,6 +25,7 @@
     "hostMouseUnlock": {
       "enabled": true,
       "keyCode": 50,
+      "permissionTimeoutSeconds": 120,
       "foregroundSettleMs": 4000,
       "postKeySettleMs": 4000
     },
