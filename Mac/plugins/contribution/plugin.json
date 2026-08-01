@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "zone.yume.lifeafter.contribution",
+  "version": "1.0.0",
+  "kind": "task",
+  "architectures": ["arm64"],
+  "minimumAgentVersion": "0.2.0",
+  "entry": "plugin.mjs",
+  "export": "run",
+  "task": { "key": "contribution_sync", "positionIndependent": false },
+  "name": { "zh-Hans": "更新贡献", "zh-Hant": "更新貢獻", "en": "Update contributions", "ja": "貢献を更新", "fr": "Mettre à jour les contributions" },
+  "summary": { "zh-Hans": "从市政厅沙盘更新成员贡献", "zh-Hant": "從市政廳沙盤更新成員貢獻", "en": "Update member contributions from the city hall sand table", "ja": "市役所のサンドテーブルからメンバー貢献を更新", "fr": "Mettre à jour les contributions depuis la table de l'hôtel de ville" }
+}

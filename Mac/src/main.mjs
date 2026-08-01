@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { resolve } from "node:path";
 import { loadConfig, MAC_ROOT } from "./config.mjs";
 import { enableExternalFileLogging } from "./file-logger.mjs";
 import { AdbClient } from "./adb.mjs";
@@ -8,17 +9,7 @@ import { Vision } from "./vision.mjs";
 import { GameUi } from "./ui.mjs";
 import { withGameSession } from "./game-session.mjs";
 import { delay } from "./process.mjs";
-import { runTechnology } from "./workflows/technology.mjs";
-import {
-  runContributionSync,
-  runInactivitySync,
-  runMemberProfileSync
-} from "./workflows/member-sync.mjs";
-import { runPatrol } from "./workflows/patrol.mjs";
-import {
-  runKickInactiveMembers,
-  runKickMember
-} from "./workflows/kick-member.mjs";
+import { loadTaskPlugins } from "./plugin-loader.mjs";
 
 enableExternalFileLogging(MAC_ROOT);
 const config = await loadConfig();
@@ -40,15 +31,36 @@ let active = null;
 let stopping = false;
 let nextPollSeconds = config.server.pollSeconds;
 
-const workflows = {
-  tech_switch: runTechnology,
-  contribution_sync: runContributionSync,
-  inactivity_sync: runInactivitySync,
-  member_profile_sync: runMemberProfileSync,
-  patrol: runPatrol,
-  kick_member: runKickMember,
-  kick_inactive_members: runKickInactiveMembers
-};
+const pluginRegistry = await loadTaskPlugins({
+  builtinDirectory: resolve(MAC_ROOT, "plugins"),
+  userDirectory: config.plugins.userDirectory,
+  disabledPluginIds: config.plugins.disabled,
+  uninstalledPluginIds: config.plugins.uninstalled,
+  trustedKeys: config.plugins.trustedKeys,
+  allowUnsignedLocal: config.plugins.allowUnsignedLocal
+});
+const workflows = Object.fromEntries(
+  Object.entries(pluginRegistry.workflows).map(([taskKey, plugin]) => [
+    taskKey,
+    plugin.workflow
+  ])
+);
+for (const error of pluginRegistry.errors) {
+  console.error(JSON.stringify({ event: "plugin_load_failed", ...error }));
+}
+console.log(
+  JSON.stringify({
+    event: "plugins_loaded",
+    count: pluginRegistry.plugins.length,
+    plugins: pluginRegistry.plugins.map(({ manifest, builtin, signature }) => ({
+      id: manifest.id,
+      version: manifest.version,
+      taskKey: manifest.task.key,
+      builtin,
+      signed: signature.verified
+    }))
+  })
+);
 
 const debugServer = createDebugServer();
 debugServer.listen(config.debug.port, config.debug.host, () => {
@@ -167,7 +179,8 @@ function startCommand(command) {
 
 async function executeCommand(command, signal) {
   const taskKey = command.payload?.taskKey;
-  const workflow = workflows[taskKey];
+  const plugin = pluginRegistry.workflows[taskKey];
+  const workflow = plugin?.workflow;
   if (!workflow) {
     await api.completeCommand(command, "failed", `未知任务：${taskKey}`);
     return;
@@ -185,10 +198,7 @@ async function executeCommand(command, signal) {
     await api.updateRun(command.runId, { progress: value, currentStep });
   };
   const ui = new GameUi(config, adb, vision, report, mumu);
-  const positionIndependent = [
-    "tech_switch",
-    "member_profile_sync"
-  ].includes(taskKey);
+  const positionIndependent = plugin.manifest.task.positionIndependent === true;
   const context = {
     config,
     api,
@@ -307,7 +317,13 @@ function createDebugServer() {
           activeRunId: active?.command.runId || null,
           activeTaskKey: active?.command.payload?.taskKey || null,
           adbSerial: config.adb.serial,
-          stopEmulatorAfterTask: config.mumu.stopEmulatorAfterTask
+          stopEmulatorAfterTask: config.mumu.stopEmulatorAfterTask,
+          plugins: pluginRegistry.plugins.map(({ manifest, builtin }) => ({
+            id: manifest.id,
+            version: manifest.version,
+            taskKey: manifest.task.key,
+            builtin
+          }))
         })
       );
       return;

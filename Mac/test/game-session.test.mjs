@@ -161,22 +161,38 @@ test("pre-login announcement closes by its top-right X before clicking login", a
   );
 });
 
-test("a local-model login hallucination never clicks or advances the workflow", async () => {
+test("a very-low-confidence local-model login candidate never clicks", async () => {
   const fixture = createFixture(
     [[], ["背包"]],
     {
       state: "login",
       action: "wait",
-      confidence: 0.99,
+      confidence: 0.2,
       evidence: "误判"
-    }
+    },
+    [],
+    "guarded"
   );
   await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [{ x: 1742, y: 155 }]);
+  assert.deepEqual(fixture.taps, []);
+});
+
+test("a clear local-model login candidate clicks the calibrated login button", async () => {
+  const fixture = createFixture(
+    [[], [], ["背包"]],
+    {
+      state: "login",
+      action: "wait",
+      confidence: 0.45,
+      evidence: "底部登录按钮"
+    },
+    [],
+    "guarded"
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
   assert.ok(
-    fixture.messages.some((message) =>
-      message.includes("不会点击或推动任务流程")
-    )
+    fixture.messages.some((message) => message.includes("固定登录按钮"))
   );
 });
 
@@ -187,11 +203,13 @@ test("accurate OCR recovers a login button missed by fast OCR", async () => {
     [["点击登录游戏"]]
   );
   await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [
-    { x: 1742, y: 155 },
-    { x: 960, y: 945 }
-  ]);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
   assert.equal(fixture.accurateCaptures, 1);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("高精度 OCR 确认“点击登录游戏”")
+    )
+  );
 });
 
 test("a slow local model never blocks the deterministic login loop", async () => {
@@ -202,7 +220,7 @@ test("a slow local model never blocks the deterministic login loop", async () =>
   const startedAt = Date.now();
   await waitForGameReady(fixture.context);
   assert.ok(Date.now() - startedAt < 1_500);
-  assert.deepEqual(fixture.taps, [{ x: 1742, y: 155 }]);
+  assert.deepEqual(fixture.taps, []);
 });
 
 test("an accurate OCR timeout degrades to fast OCR without ending login", async () => {
@@ -212,7 +230,7 @@ test("an accurate OCR timeout degrades to fast OCR without ending login", async 
     [new Error("accurate OCR timed out")]
   );
   await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [{ x: 1742, y: 155 }]);
+  assert.deepEqual(fixture.taps, []);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("已自动退回快速 OCR")
@@ -233,10 +251,7 @@ test("guarded mode permits a fixed login tap at 0.95 confidence", async () => {
     "guarded"
   );
   await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [
-    { x: 1742, y: 155 },
-    { x: 960, y: 945 }
-  ]);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("高置信度")
@@ -371,6 +386,32 @@ test("precise bottom-left channel OCR confirms login when general HUD OCR keeps 
   assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
 });
 
+test("manual login still reaches HUD through bottom-left channel OCR", async () => {
+  const fixture = createFixture(
+    [[], []],
+    null,
+    [],
+    "shadow",
+    {
+      readyMinimumTexts: 2,
+      channelReadyTexts: ["综合", "世界", "场景", "营地", "队伍"],
+      channelReadyRegion: { left: 0, top: 980, right: 760, bottom: 1200 },
+      channelReadyMinimumTexts: 2,
+      channelReadyStableFrames: 1,
+      channelReadyStableMs: 0,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    },
+    [[
+      { text: "综合", x: 30, y: 1090 },
+      { text: "世界", x: 120, y: 1090 },
+      { text: "营地", x: 300, y: 1090 }
+    ]]
+  );
+  await waitForGameReady(fixture.context);
+  assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
+});
+
 function createFixture(
   frames,
   modelAdvice = null,
@@ -484,7 +525,7 @@ function createFixture(
         maxClosures: 2,
         closePoint: { x: 1742, y: 155 },
         fixedCloseIntervalSeconds: 3,
-        texts: ["系统公告", "更新公告", "游戏公告"]
+        texts: ["系统公告", "更新公告", "游戏公告", "经典服", "亲爱的幸存者"]
       },
       vision: { accurateFallbackSeconds: 0.05 }
     },

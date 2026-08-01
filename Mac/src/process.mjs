@@ -13,6 +13,11 @@ export async function runFile(file, args = [], options = {}) {
   try {
     return await execFileAsync(file, args, {
       timeout: timeoutMs,
+      // Apple Vision can become stuck inside a framework call and ignore the
+      // default SIGTERM used by child_process timeout.  SIGKILL guarantees the
+      // helper is reaped instead of accumulating OCR processes that starve the
+      // Agent after a macOS restart or framework regression.
+      killSignal: "SIGKILL",
       signal,
       encoding,
       maxBuffer,

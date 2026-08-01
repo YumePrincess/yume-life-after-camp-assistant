@@ -3,14 +3,26 @@ set -euo pipefail
 
 SCRIPT_DIR=${0:A:h}
 MAC_ROOT=${SCRIPT_DIR:h}
-LABEL="zone.yume.mrzh-agent"
+LABEL="zone.yume.lifeafter.macagent.runtime"
+LEGACY_LABEL="zone.yume.mrzh-agent"
 SERVICE_TARGET="gui/${UID}/${LABEL}"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 LAUNCHER_PATH="${SCRIPT_DIR}/agent-launcher.sh"
-NODE_PATH=$(command -v node)
+if [[ -x "${MAC_ROOT}/Toolchain/node/bin/node" ]]; then
+  NODE_PATH="${MAC_ROOT}/Toolchain/node/bin/node"
+else
+  NODE_PATH=$(command -v node)
+fi
 
 mkdir -p "${HOME}/Library/LaunchAgents" "${MAC_ROOT}/logs"
 chmod 755 "${LAUNCHER_PATH}"
+
+# The native App owns the new runtime label. Retire only the historical
+# script-installed service and plist; its external logs and configuration are
+# deliberately preserved for recovery.
+launchctl bootout "gui/${UID}/${LEGACY_LABEL}" 2>/dev/null || true
+rm -f -- "${HOME}/Library/LaunchAgents/${LEGACY_LABEL}.plist"
+
 /usr/libexec/PlistBuddy -c "Clear dict" "${PLIST_PATH}" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :Label string ${LABEL}" "${PLIST_PATH}"
 /usr/libexec/PlistBuddy -c "Add :ProgramArguments array" "${PLIST_PATH}"
@@ -18,7 +30,7 @@ chmod 755 "${LAUNCHER_PATH}"
 /usr/libexec/PlistBuddy -c "Add :ProgramArguments:1 string ${MAC_ROOT}/src/main.mjs" "${PLIST_PATH}"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "${PLIST_PATH}"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:YUME_AGENT_FILE_LOG string 1" "${PLIST_PATH}"
-/usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PATH string /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "${PLIST_PATH}"
+/usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PATH string ${MAC_ROOT}/Toolchain/node/bin:${MAC_ROOT}/Toolchain/platform-tools:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "${PLIST_PATH}"
 /usr/libexec/PlistBuddy -c "Add :RunAtLoad bool true" "${PLIST_PATH}"
 /usr/libexec/PlistBuddy -c "Add :KeepAlive bool true" "${PLIST_PATH}"
 /usr/libexec/PlistBuddy -c "Add :ThrottleInterval integer 10" "${PLIST_PATH}"
@@ -49,5 +61,5 @@ if [[ "${bootstrap_succeeded}" != true ]]; then
 fi
 launchctl kickstart -k "${SERVICE_TARGET}"
 
-echo "Installed ${LABEL}; launcher and logs remain on the external project volume."
+echo "Installed ${LABEL}; runtime and logs remain with this managed Agent installation."
 "${SCRIPT_DIR}/agent-control.sh" status

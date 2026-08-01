@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "zone.yume.lifeafter.kick-inactive",
+  "version": "1.0.0",
+  "kind": "task",
+  "architectures": ["arm64"],
+  "minimumAgentVersion": "0.2.0",
+  "entry": "plugin.mjs",
+  "export": "run",
+  "task": { "key": "kick_inactive_members", "positionIndependent": false },
+  "name": { "zh-Hans": "移出离线成员", "zh-Hant": "移出離線成員", "en": "Remove inactive members", "ja": "非アクティブメンバーを除名", "fr": "Exclure les membres inactifs" },
+  "summary": { "zh-Hans": "按管理员策略执行受保护的离线成员移出", "zh-Hant": "按管理員策略執行受保護的離線成員移出", "en": "Protected removal of inactive members under admin policy", "ja": "管理ポリシーに基づく保護された非アクティブ除名", "fr": "Exclusion protégée selon la politique d'inactivité" }
+}

@@ -35,8 +35,20 @@ EOF
 }
 
 install_dependencies() {
+  if [[ -x "${MAC_ROOT}/Toolchain/node/bin/node" && -x "${MAC_ROOT}/Toolchain/platform-tools/adb" ]]; then
+    export PATH="${MAC_ROOT}/Toolchain/node/bin:${MAC_ROOT}/Toolchain/platform-tools:${PATH}"
+    if [[ ! -x "${MAC_ROOT}/bin/mrzh-vision-ocr" ]]; then
+      echo "Portable runtime is missing its prebuilt arm64 OCR helper." >&2
+      exit 1
+    fi
+    if [[ ! -f "${MAC_ROOT}/package-lock.json" ]]; then
+      echo "Portable runtime is incomplete." >&2
+      exit 1
+    fi
+    return
+  fi
   if ! command -v brew >/dev/null 2>&1; then
-    echo "Homebrew is required. Install it from https://brew.sh first." >&2
+    echo "Portable toolchain is missing and Homebrew is unavailable." >&2
     exit 1
   fi
   command -v node >/dev/null 2>&1 || brew install node
@@ -102,7 +114,7 @@ update_all() {
   fi
   install_dependencies
   "${MODEL_CONTROL}" update
-  if [[ -f "${HOME}/Library/LaunchAgents/zone.yume.mrzh-agent.plist" ]]; then
+  if [[ -f "${HOME}/Library/LaunchAgents/zone.yume.lifeafter.macagent.runtime.plist" ]]; then
     "${INSTALL_AGENT}"
     should_restart="yes"
   fi

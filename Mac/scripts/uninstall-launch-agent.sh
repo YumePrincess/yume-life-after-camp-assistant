@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-LABEL="zone.yume.mrzh-agent"
+LABEL="zone.yume.lifeafter.macagent.runtime"
 SERVICE_TARGET="gui/${UID}/${LABEL}"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "zone.yume.lifeafter.member-profile",
+  "version": "1.0.0",
+  "kind": "task",
+  "architectures": ["arm64"],
+  "minimumAgentVersion": "0.2.0",
+  "entry": "plugin.mjs",
+  "export": "run",
+  "task": { "key": "member_profile_sync", "positionIndependent": true },
+  "name": { "zh-Hans": "更新成员资料", "zh-Hant": "更新成員資料", "en": "Update member profiles", "ja": "メンバー情報を更新", "fr": "Mettre à jour les profils" },
+  "summary": { "zh-Hans": "读取成员、公职、职业、庄园与同居资料", "zh-Hant": "讀取成員、公職、職業、莊園與同居資料", "en": "Read members, officers, roles, manor and cohabitation data", "ja": "メンバー、役職、職業、荘園、同居情報を読み取る", "fr": "Lire les membres, fonctions, métiers, manoirs et cohabitations" }
+}

@@ -17,6 +17,10 @@ python_bin() {
     echo "${VENV_DIR}/bin/python"
     return
   fi
+  if [[ -x "${MAC_ROOT}/Toolchain/python/bin/python3" ]]; then
+    echo "${MAC_ROOT}/Toolchain/python/bin/python3"
+    return
+  fi
   if [[ -x "/opt/homebrew/opt/python@3.12/bin/python3.12" ]]; then
     echo "/opt/homebrew/opt/python@3.12/bin/python3.12"
     return
@@ -29,6 +33,13 @@ server_running() {
 }
 
 install_dependencies() {
+  if [[ -x "${MAC_ROOT}/Toolchain/python/bin/python3" ]]; then
+    mkdir -p "${STATE_DIR}" "${STATE_DIR}/models"
+    "${MAC_ROOT}/Toolchain/python/bin/python3" -c 'import mlx_vlm, huggingface_hub' 2>/dev/null || {
+      "${MAC_ROOT}/Toolchain/python/bin/python3" -m pip install --upgrade mlx-vlm huggingface_hub
+    }
+    return
+  fi
   if [[ ! -x "/opt/homebrew/opt/python@3.12/bin/python3.12" ]]; then
     if ! command -v brew >/dev/null 2>&1; then
       echo "Homebrew is required to install Python 3.12." >&2
@@ -47,8 +58,10 @@ install_dependencies() {
 download_model() {
   install_dependencies
   mkdir -p "${MODEL_DIR}"
+  local python
+  python=$(python_bin)
   HF_HUB_DISABLE_XET=1 MODEL_REPO="${MODEL_REPO}" MODEL_DIR="${MODEL_DIR}" \
-    "${VENV_DIR}/bin/python" -c \
+    "${python}" -c \
     'import os; from huggingface_hub import snapshot_download; snapshot_download(repo_id=os.environ["MODEL_REPO"], local_dir=os.environ["MODEL_DIR"], max_workers=1)'
   echo "Model is available at ${MODEL_DIR}"
 }
@@ -58,13 +71,17 @@ start_server() {
     echo "Local vision model is already running at http://${HOST}:${PORT}"
     return
   fi
-  if [[ ! -x "${VENV_DIR}/bin/mlx_vlm.server" || ! -f "${MODEL_DIR}/config.json" ]]; then
+  local model_server="${VENV_DIR}/bin/mlx_vlm.server"
+  if [[ -x "${MAC_ROOT}/Toolchain/python/bin/mlx_vlm.server" ]]; then
+    model_server="${MAC_ROOT}/Toolchain/python/bin/mlx_vlm.server"
+  fi
+  if [[ ! -x "${model_server}" || ! -f "${MODEL_DIR}/config.json" ]]; then
     echo "Local model is not installed. Run: $0 install" >&2
     exit 1
   fi
   mkdir -p "${STATE_DIR}"
   stop_server
-  nohup "${VENV_DIR}/bin/mlx_vlm.server" \
+  nohup "${model_server}" \
     --host "${HOST}" \
     --port "${PORT}" \
     --model "${MODEL_DIR}" \

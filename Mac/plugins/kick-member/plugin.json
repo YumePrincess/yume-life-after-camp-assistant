@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "zone.yume.lifeafter.kick-member",
+  "version": "1.0.0",
+  "kind": "task",
+  "architectures": ["arm64"],
+  "minimumAgentVersion": "0.2.0",
+  "entry": "plugin.mjs",
+  "export": "run",
+  "task": { "key": "kick_member", "positionIndependent": false },
+  "name": { "zh-Hans": "移出指定成员", "zh-Hant": "移出指定成員", "en": "Remove a member", "ja": "メンバーを除名", "fr": "Exclure un membre" },
+  "summary": { "zh-Hans": "受保护的单成员移出流程", "zh-Hant": "受保護的單成員移出流程", "en": "Protected single-member removal workflow", "ja": "保護された単一メンバー除名フロー", "fr": "Flux protégé d'exclusion d'un membre" }
+}

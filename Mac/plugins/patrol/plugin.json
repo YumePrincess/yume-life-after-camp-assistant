@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "zone.yume.lifeafter.patrol",
+  "version": "1.0.0",
+  "kind": "task",
+  "architectures": ["arm64"],
+  "minimumAgentVersion": "0.2.0",
+  "entry": "plugin.mjs",
+  "export": "run",
+  "task": { "key": "patrol", "positionIndependent": false },
+  "name": { "zh-Hans": "营地巡逻", "zh-Hant": "營地巡邏", "en": "Camp patrol", "ja": "キャンプ巡回", "fr": "Patrouille du camp" },
+  "summary": { "zh-Hans": "组建巡逻队、接取困难巡逻并分享保卫古籍队伍", "zh-Hant": "組建巡邏隊、接取困難巡邏並分享保衛古籍隊伍", "en": "Form a patrol team, accept hard patrol and share book defense", "ja": "巡回隊を編成し高難度巡回と古籍防衛を共有", "fr": "Former l'équipe, accepter la patrouille difficile et partager la défense" }
+}

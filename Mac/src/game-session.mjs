@@ -307,7 +307,14 @@ export async function waitForGameReady(context, signal) {
     maxFixedCloseAttempts: 2,
     closePoint: { x: 1742, y: 155 },
     fixedCloseIntervalSeconds: 3,
-    texts: ["系统公告", "更新公告", "游戏公告"],
+    // 登录前公告必须由其固定文字锚点确认，不能把普通登录页当成公告盲点。
+    texts: [
+      "系统公告",
+      "更新公告",
+      "游戏公告",
+      "经典服",
+      "亲爱的幸存者"
+    ],
     ...config.preLoginAnnouncements
   };
   let deadline = Date.now() + config.timeouts.gameLaunchSeconds * 1000;
@@ -317,6 +324,7 @@ export async function waitForGameReady(context, signal) {
   let loginClicked = false;
   let loginClickedAt = 0;
   let lastLoginClickAt = 0;
+  let lastLoginAccurateOcrAt = 0;
   let updateObserved = false;
   let lastUpdateState = "";
   let lastUpdateReportAt = 0;
@@ -408,7 +416,6 @@ export async function waitForGameReady(context, signal) {
       ) * 1000;
     if (
       fastChannelReadyCount < channelReadyMinimum &&
-      (loginClicked || fastReadyCount > 0) &&
       typeof vision.capture === "function" &&
       typeof vision.ocrRegion === "function" &&
       Date.now() - lastAccurateOcrAt >= accurateFallbackMs
@@ -461,7 +468,7 @@ export async function waitForGameReady(context, signal) {
     if (
       !fastMatchedKnownState &&
       config.vision?.accurateFallbackEnabled !== false &&
-      typeof vision.captureAccurateTransient === "function" &&
+      typeof vision.captureAccurate === "function" &&
       Date.now() - lastAccurateOcrAt >= accurateFallbackMs
     ) {
       lastAccurateOcrAt = Date.now();
@@ -622,6 +629,132 @@ export async function waitForGameReady(context, signal) {
       readySince = 0;
       readyStabilizingReported = false;
     }
+    // 登录是已校准的固定安全点击。它的文本在新版登录页中偶尔会被快速
+    // OCR 漏掉；必须在“关闭未知公告”之前先做一次登录区域高精度确认，
+    // 否则会把正常登录页误当公告而一直不点登录。
+    let login = ["点击登录游戏", "登录游戏"]
+      .map((text) => ({ text, match: vision.find(frame.observations, text) }))
+      .find((item) => item.match);
+    let announcementText = announcements.texts.find((text) =>
+      vision.find(frame.observations, text)
+    );
+    const captureAccurateLogin =
+      vision.captureAccurate || vision.captureAccurateTransient;
+    if (
+      !login &&
+      !loginClicked &&
+      typeof captureAccurateLogin === "function" &&
+      Date.now() - lastLoginAccurateOcrAt >= 2_000
+    ) {
+      lastLoginAccurateOcrAt = Date.now();
+      try {
+        const accurateLoginFrame = await captureAccurateLogin.call(
+          vision,
+          "game-login-button-accurate",
+          signal
+        );
+        let loginObservations = accurateLoginFrame.observations;
+        if (
+          accurateLoginFrame.path &&
+          typeof vision.ocrRegion === "function"
+        ) {
+          const loginPoint = config.adb.loginButton || { x: 960, y: 945 };
+          const loginRegion = config.adb.loginButtonRegion || {
+            left: Math.max(0, loginPoint.x - 600),
+            top: Math.max(0, loginPoint.y - 150),
+            right: Math.min(config.adb.screenWidth || 1920, loginPoint.x + 600),
+            bottom: Math.min(config.adb.screenHeight || 1200, loginPoint.y + 150)
+          };
+          const regionObservations = await vision.ocrRegion(
+            accurateLoginFrame.path,
+            loginRegion,
+            "game-login-button-region-accurate",
+            signal,
+            "accurate",
+            0.08,
+            2
+          );
+          loginObservations = [...loginObservations, ...regionObservations];
+        }
+        login = ["点击登录游戏", "登录游戏"]
+          .map((text) => ({
+            text,
+            match: vision.find(loginObservations, text)
+          }))
+          .find((item) => item.match);
+        announcementText ||= announcements.texts.find((text) =>
+          vision.find(loginObservations, text)
+        );
+        if (login) {
+          await report(
+            "info",
+            "accurate_login_button_verified",
+            `快速 OCR 漏读后，已通过高精度 OCR 确认“${login.text}”，正在点击校准登录按钮`
+          );
+        }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        if (!accurateOcrFailureReported) {
+          accurateOcrFailureReported = true;
+          await report(
+            "warning",
+            "accurate_ocr_unavailable",
+            "登录按钮区域高精度 OCR 本次未能及时返回，已自动退回快速 OCR 与本地模型，任务继续执行",
+            { reason: error.message }
+          );
+        }
+      }
+    }
+    if (login && Date.now() - lastLoginClickAt >= 5_000) {
+      await ui.tap(config.adb.loginButton, signal);
+      loginClicked = true;
+      loginClickedAt = Date.now();
+      lastLoginClickAt = Date.now();
+      dismissedPages = 0;
+      promotionDismissAttempts.clear();
+      newspaperSeen = false;
+      continue;
+    }
+
+    // 登录页仅在启动阶段处理，点击位置是经过校准的固定登录按钮。模型明确
+    // 判为 login 时使用单独的较低门槛，不能沿用功能页面的 0.95 高风险门槛，
+    // 否则会出现“已识别 login、却持续不点击”的死循环。
+    const advisorConfig = vision.advisor?.config;
+    const actionableAdvice =
+      advisorConfig?.mode === "guarded" &&
+      guardedAdvice &&
+      Date.now() - guardedAdvice.acceptedAt <=
+        Math.max(
+          2,
+          guardedAdvice.state === "login"
+            ? Math.max(
+                120,
+                Number(advisorConfig.maxLoginAdviceAgeSeconds) || 120
+              )
+            : Number(advisorConfig.maxAdviceAgeSeconds) || 8
+        ) * 1000
+        ? guardedAdvice
+        : null;
+    if (
+      actionableAdvice?.state === "login" &&
+      !loginClicked &&
+      Date.now() - lastLoginClickAt >= 5_000
+    ) {
+      guardedAdvice = null;
+      await report(
+        "info",
+        "local_model_guarded_login",
+        "本地模型以高置信度确认登录页，正在点击已校准的固定登录按钮"
+      );
+      await ui.tap(config.adb.loginButton, signal);
+      loginClicked = true;
+      loginClickedAt = Date.now();
+      lastLoginClickAt = Date.now();
+      dismissedPages = 0;
+      promotionDismissAttempts.clear();
+      newspaperSeen = false;
+      continue;
+    }
     const fixedAnnouncementCloseIntervalMs =
       Math.max(
         0.5,
@@ -636,6 +769,7 @@ export async function waitForGameReady(context, signal) {
       !loginClicked &&
       !ready &&
       !blocksReady &&
+      announcementText &&
       announcementCloseAttempts < maxFixedCloseAttempts &&
       Date.now() - lastAnnouncementCloseAt >=
         fixedAnnouncementCloseIntervalMs
@@ -644,9 +778,13 @@ export async function waitForGameReady(context, signal) {
       lastAnnouncementCloseAt = Date.now();
       await report(
         "info",
-        "prelogin_announcement_fixed_close",
-        "当前尚未识别到登录、加载或 HUD，正在尝试关闭登录前未知公告",
-        { attempt: announcementCloseAttempts, maxFixedCloseAttempts }
+        "prelogin_announcement_ocr_close",
+        `OCR 已确认登录前系统公告锚点“${announcementText}”，正在点击右上角 X`,
+        {
+          anchor: announcementText,
+          attempt: announcementCloseAttempts,
+          maxFixedCloseAttempts
+        }
       );
       await ui.tap(announcements.closePoint, signal);
       await ui.afterAction(signal);
@@ -694,20 +832,6 @@ export async function waitForGameReady(context, signal) {
         processMissingSince = null;
         continue;
       }
-    }
-
-    const login = ["点击登录游戏", "登录游戏"]
-      .map((text) => ({ text, match: vision.find(frame.observations, text) }))
-      .find((item) => item.match);
-    if (login && Date.now() - lastLoginClickAt >= 5_000) {
-      await ui.tap(config.adb.loginButton, signal);
-      loginClicked = true;
-      loginClickedAt = Date.now();
-      lastLoginClickAt = Date.now();
-      dismissedPages = 0;
-      promotionDismissAttempts.clear();
-      newspaperSeen = false;
-      continue;
     }
 
     const announcement = announcements.enabled && !loginClicked
@@ -792,7 +916,6 @@ export async function waitForGameReady(context, signal) {
       continue;
     }
 
-    const advisorConfig = vision.advisor?.config;
     if (
       unknownRecoveryRequested &&
       !unknownRecoveryAttempted &&
@@ -814,16 +937,6 @@ export async function waitForGameReady(context, signal) {
       );
       return;
     }
-    const actionableAdvice =
-      advisorConfig?.mode === "guarded" &&
-      guardedAdvice &&
-      Date.now() - guardedAdvice.acceptedAt <=
-        Math.max(
-          2,
-          Number(advisorConfig.maxAdviceAgeSeconds) || 8
-        ) * 1000
-        ? guardedAdvice
-        : null;
     if (actionableAdvice?.state === "hud") {
       guardedAdvice = null;
       await report(
@@ -831,26 +944,6 @@ export async function waitForGameReady(context, signal) {
         "local_model_guarded_hud",
         "本地模型以连续极高置信度确认 HUD；仍等待 OCR 连续稳定后再开始任务点击"
       );
-    }
-    if (
-      actionableAdvice?.state === "login" &&
-      !loginClicked &&
-      Date.now() - lastLoginClickAt >= 5_000
-    ) {
-      guardedAdvice = null;
-      await report(
-        "info",
-        "local_model_guarded_login",
-        "本地模型以高置信度确认登录页，正在点击已校准的固定登录按钮"
-      );
-      await ui.tap(config.adb.loginButton, signal);
-      loginClicked = true;
-      loginClickedAt = Date.now();
-      lastLoginClickAt = Date.now();
-      dismissedPages = 0;
-      promotionDismissAttempts.clear();
-      newspaperSeen = false;
-      continue;
     }
     if (
       loginClicked &&
@@ -933,15 +1026,22 @@ export async function waitForGameReady(context, signal) {
           const guardedCandidateAccepted =
             guardedCandidate &&
             Number(advice?.confidence) >=
-              Math.max(
-                0.9,
-                Number(advisorConfig.minimumActionConfidence) || 0.95
-              ) &&
+              (advice?.state === "login" && !loginClicked
+                ? Math.max(
+                    0.35,
+                    Number(advisorConfig.minimumLoginActionConfidence) || 0.45
+                  )
+                : Math.max(
+                    0.9,
+                    Number(advisorConfig.minimumActionConfidence) || 0.95
+                  )) &&
             repeatedAdvice >=
-              Math.max(
-                1,
-                Number(advisorConfig.consecutiveMatches) || 1
-              );
+              (advice?.state === "login" && !loginClicked
+                ? 1
+                : Math.max(
+                    1,
+                    Number(advisorConfig.consecutiveMatches) || 1
+                  ));
           if (guardedCandidateAccepted) {
             guardedAdvice = {
               ...advice,

@@ -12,7 +12,19 @@ export class Vision {
     this.sequence = 0;
     this.snapshotDir = resolve(MAC_ROOT, "snapshots");
     this.taskPaths = new Set();
+    this.ocrFailureStreak = 0;
+    this.ocrDisabledUntil = 0;
+    this.lastOcrFailure = null;
     this.advisor = new LocalVisionAdvisor(config.localVisionModel);
+  }
+
+  ocrHealth() {
+    return {
+      available: Date.now() >= this.ocrDisabledUntil,
+      disabledUntil: this.ocrDisabledUntil || null,
+      failureStreak: this.ocrFailureStreak,
+      reason: this.lastOcrFailure
+    };
   }
 
   beginTask() {
@@ -516,6 +528,7 @@ export class Vision {
     minimumConfidence = this.config.vision.minimumConfidence,
     scale = 1
   ) {
+    this.#assertOcrAvailable();
     const width = Math.max(1, Math.round(region.right - region.left));
     const height = Math.max(1, Math.round(region.bottom - region.top));
     const cropPath = resolve(
@@ -561,18 +574,26 @@ export class Vision {
         );
         inputPath = scaledPath;
       }
-      const result = await runFile(
-        this.config.vision.binary,
-        [inputPath, mode],
-        {
-          timeoutMs:
-            Math.max(
-              5,
-              Number(this.config.vision.accurateTimeoutSeconds) || 15
-            ) * 1000,
-          signal
-        }
-      );
+      let result;
+      try {
+        result = await runFile(
+          this.config.vision.binary,
+          [inputPath, mode],
+          {
+            timeoutMs:
+              Math.max(
+                5,
+                Number(this.config.vision.accurateTimeoutSeconds) || 15
+              ) * 1000,
+            signal
+          }
+        );
+        this.#recordOcrSuccess();
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        this.#recordOcrFailure(error);
+        throw error;
+      }
       return JSON.parse(result.stdout)
         .filter(
           (item) =>
@@ -607,6 +628,7 @@ export class Vision {
     try {
       let observations = [];
       try {
+        this.#assertOcrAvailable();
         const result = await runFile(
           this.config.vision.binary,
           [path, mode],
@@ -635,8 +657,10 @@ export class Vision {
         observations = JSON.parse(result.stdout).filter(
           (item) => item.confidence >= minimumConfidence
         );
+        this.#recordOcrSuccess();
       } catch (error) {
         if (signal?.aborted) throw error;
+        this.#recordOcrFailure(error);
         // Vision framework failures must degrade to the guarded local model;
         // a single OCR subprocess crash must never terminate the game task.
       }
@@ -646,6 +670,31 @@ export class Vision {
         this.taskPaths.delete(path);
         await rm(path, { force: true });
       }
+    }
+  }
+
+  #assertOcrAvailable() {
+    if (Date.now() < this.ocrDisabledUntil) {
+      throw new Error(
+        `VISION_OCR_CIRCUIT_OPEN: ${this.lastOcrFailure || "native OCR unavailable"}`
+      );
+    }
+  }
+
+  #recordOcrSuccess() {
+    this.ocrFailureStreak = 0;
+    this.ocrDisabledUntil = 0;
+    this.lastOcrFailure = null;
+  }
+
+  #recordOcrFailure(error) {
+    if (String(error?.message || "").startsWith("VISION_OCR_CIRCUIT_OPEN")) {
+      return;
+    }
+    this.ocrFailureStreak += 1;
+    this.lastOcrFailure = String(error?.message || error).slice(0, 500);
+    if (this.ocrFailureStreak >= 2) {
+      this.ocrDisabledUntil = Date.now() + 5 * 60_000;
     }
   }
 
