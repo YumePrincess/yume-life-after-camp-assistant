@@ -184,7 +184,7 @@ async function executeCommand(command, signal) {
   const progress = async (value, currentStep) => {
     await api.updateRun(command.runId, { progress: value, currentStep });
   };
-  const ui = new GameUi(config, adb, vision, report);
+  const ui = new GameUi(config, adb, vision, report, mumu);
   const positionIndependent = [
     "tech_switch",
     "member_profile_sync"

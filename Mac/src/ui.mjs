@@ -2,11 +2,12 @@ import { delay } from "./process.mjs";
 import { center } from "./vision.mjs";
 
 export class GameUi {
-  constructor(config, adb, vision, report = async () => {}) {
+  constructor(config, adb, vision, report = async () => {}, mumu = null) {
     this.config = config;
     this.adb = adb;
     this.vision = vision;
     this.report = report;
+    this.mumu = mumu;
     this.runtimeAutomation = null;
     this.lastConfirmedDestination = null;
   }
@@ -705,7 +706,7 @@ export class GameUi {
       await this.report(
         attempt === 0 ? "info" : "warning",
         "hud_panel_close_attempt",
-        `第 ${attempt + 1}/${attempts} 次关闭 HUD 面板；点击前先释放容器鼠标并在点击后重新识别`
+        `第 ${attempt + 1}/${attempts} 次关闭 HUD 面板；${action.controlLabel ? `点击已校准的${action.controlLabel}` : "点击前先释放容器鼠标"}并在点击后重新识别`
       );
       await this.tapAction(action, signal);
       await delay(Math.max(200, Number(action.intervalMs) || 500), signal);
@@ -724,6 +725,11 @@ export class GameUi {
       1,
       Math.min((action.texts || []).length, Number(action.minimumTexts) || 1)
     );
+    const minimumTapsBeforeSuccess = Math.max(
+      0,
+      Math.min(attempts, Number(action.minimumTapsBeforeSuccess) || 0)
+    );
+    let performedTaps = 0;
     for (let attempt = 0; attempt <= attempts; attempt += 1) {
       const screen = await this.captureFlowObservations(
         `tap-until-any-${attempt + 1}`,
@@ -731,7 +737,7 @@ export class GameUi {
         signal
       );
       const matched = this.countFlowTexts(screen.observations, action);
-      if (matched >= minimumTexts) {
+      if (matched >= minimumTexts && performedTaps >= minimumTapsBeforeSuccess) {
         await this.report(
           "info",
           "hud_return_verified",
@@ -743,9 +749,12 @@ export class GameUi {
       await this.report(
         "info",
         "overlay_exit_attempt",
-        `正在逐层退出遮挡页面（${attempt + 1}/${attempts}），返回 HUD 后立即停止`
+        matched >= minimumTexts
+          ? `已出现 HUD 锚点，但巡逻结果页至少需返回 ${minimumTapsBeforeSuccess} 次；继续第 ${performedTaps + 1}/${minimumTapsBeforeSuccess} 次左下角返回`
+          : `正在逐层退出遮挡页面（${attempt + 1}/${attempts}），返回 HUD 后立即停止`
       );
       await this.tapAction(action, signal);
+      performedTaps += 1;
       await delay(Math.max(200, Number(action.intervalMs) || 500), signal);
     }
     throw new Error(
@@ -1281,7 +1290,7 @@ export class GameUi {
 
   async openCampPanelViaChat(action, signal) {
     await this.closeMapBeforeCampPanel(action, signal);
-    const attempts = Math.max(1, Math.min(5, Number(action.attempts) || 3));
+    const attempts = Math.max(1, Math.min(6, Number(action.attempts) || 6));
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       if (signal?.aborted) throw signal.reason || new Error("Interrupted");
       const before = await this.vision.captureTransient(
@@ -1312,6 +1321,14 @@ export class GameUi {
       );
       await this.hudTap(action.chatButton || { x: 250, y: 1060 }, signal);
       await delay(action.chatDelayMs || 500, signal);
+      if (attempt > 1) {
+        await this.releaseHostMouseForCampChannelRetry(
+          action,
+          attempt,
+          attempts,
+          signal
+        );
+      }
       await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
       await delay(action.channelDelayMs || 500, signal);
       await this.tap(action.campIconButton || { x: 980, y: 65 }, signal);
@@ -1354,6 +1371,43 @@ export class GameUi {
     throw new Error(
       "CAMP_PANEL_DID_NOT_OPEN: 已重试聊天→营地频道→市政厅图标，但未识别到营地首页"
     );
+  }
+
+  async releaseHostMouseForCampChannelRetry(action, attempt, attempts, signal) {
+    if (action.hostMouseUnlockOnCampChannelRetry !== true) return false;
+    if (typeof this.mumu?.releaseContainerMouseCapture !== "function") {
+      await this.report(
+        "warning",
+        "camp_channel_host_mouse_unlock_unavailable",
+        `第 ${attempt}/${attempts} 次打开营地频道前需要补发 ~，但 MuMu 容器控制器不可用；保留正常 ADB 点击继续验证`
+      );
+      return false;
+    }
+    await this.report(
+      "warning",
+      "camp_channel_host_mouse_unlock_retry",
+      `前一轮聊天→营地频道→市政厅未确认营地首页；第 ${attempt}/${attempts} 次点击营地频道前发送 Esc 下方的 ~ 键释放游戏鼠标，并在本轮后重新 OCR 验证`
+    );
+    const result = await this.mumu
+      .releaseContainerMouseCapture(signal, { bringToFront: true })
+      .catch(async (error) => {
+        await this.report(
+          "warning",
+          "camp_channel_host_mouse_unlock_failed",
+          `第 ${attempt}/${attempts} 次 ~ 鼠标恢复失败：${error.message || error}；保留正常 ADB 点击继续验证`
+        );
+        return null;
+      });
+    if (!result?.mouseReleased) {
+      await this.report(
+        "warning",
+        "camp_channel_host_mouse_unlock_unverified",
+        `第 ${attempt}/${attempts} 次 ~ 已发送但未确认鼠标按钮状态；仍以本轮营地页面 OCR 结果为准`
+      );
+      return false;
+    }
+    await delay(Math.max(100, Number(action.hostMouseUnlockDelayMs) || 250), signal);
+    return true;
   }
 
   async closeMapBeforeCampPanel(action, signal) {

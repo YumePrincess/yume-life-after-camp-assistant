@@ -1,10 +1,50 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  closePatrolPanelBeforeExit,
   createPatrolTeam,
   patrolTeamIsFull,
+  removeFirstPatrolMemberOutsideCamp,
   sharePatrolTeam
 } from "../src/workflows/patrol.mjs";
+
+test("patrol deadline closes the team panel before the session returns to center", async () => {
+  const flows = [];
+  const reports = [];
+  let captures = 0;
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async executeFlow(name) {
+        flows.push(name);
+      }
+    },
+    vision: {
+      async capture() {
+        captures += 1;
+        return {
+          path: "team.png",
+          observations: captures === 1
+            ? [observation("调整", 80, 40), observation("离开队伍", 1520, 1080)]
+            : []
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await closePatrolPanelBeforeExit(context);
+
+  assert.deepEqual(flows, ["closeTeamPanel"]);
+  assert.ok(reports.includes("patrol_deadline_team_closed"));
+});
 
 test("patrol team creation follows only region-verified live-device steps", async () => {
   const taps = [];
@@ -165,7 +205,7 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
   assert.deepEqual(taps[0], { x: 48, y: 327 });
 });
 
-test("patrol create-menu retains the acquired mouse focus for up to six retries", async () => {
+test("patrol create-menu uses bounded late host mouse release retries after its verified entry click fails", async () => {
   let mouseTapCount = 0;
   let hostUnlockCount = 0;
   const config = patrolConfig();
@@ -212,9 +252,49 @@ test("patrol create-menu retains the acquired mouse focus for up to six retries"
     createPatrolTeam(context),
     /PATROL_TEAM_CREATOR_DID_NOT_OPEN/
   );
-  // The initial capture already has the flag menu open; retry only the create entry.
+  // The initial capture already has the flag menu open, so no pre-flag release is
+  // permitted. Each failed create-entry retry may use the shared late recovery
+  // path, but never before the first verified click and never beyond its limit.
   assert.equal(mouseTapCount, 6);
-  assert.equal(hostUnlockCount, 6);
+  assert.equal(hostUnlockCount, 5);
+});
+
+test("patrol flag opens directly without toggling host mouse release", async () => {
+  let hostUnlockCount = 0;
+  const config = patrolConfig();
+  config.patrolTeamUi.hostMouseUnlockBeforeCreate = true;
+  const context = {
+    config,
+    ui: { async tap() {} },
+    adb: { async key() {} },
+    mumu: {
+      async releaseContainerMouseCapture() {
+        hostUnlockCount += 1;
+        return { mouseReleased: true };
+      }
+    },
+    vision: {
+      async capture(label) {
+        return {
+          path: `${label}.png`,
+          observations: observationsFor(label)
+        };
+      },
+      async captureAccurateTransient() {
+        return { path: null, observations: [] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await createPatrolTeam(context);
+  assert.equal(hostUnlockCount, 0);
 });
 
 test("an existing patrol team is recognized without toggling the flag", async () => {
@@ -500,7 +580,7 @@ test("Ctrl+Q fallback stops after six recognition attempts", async () => {
 
 test("patrol share uses calibrated recruit and camp-channel points and verifies success", async () => {
   const taps = [];
-  const hudTaps = [];
+  let mouseReleases = 0;
   const reports = [];
   const sleeps = [];
   const context = {
@@ -508,9 +588,11 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
     ui: {
       async tap(point) {
         taps.push(point);
-      },
-      async hudTap(point) {
-        hudTaps.push(point);
+      }
+    },
+    adb: {
+      async releaseGameMouseCapture() {
+        mouseReleases += 1;
       }
     },
     vision: {
@@ -559,10 +641,11 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
   await sharePatrolTeam(context);
 
   assert.deepEqual(taps, [
-    { x: 416, y: 895 }
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 }
   ]);
-  assert.deepEqual(hudTaps, [{ x: 343, y: 1128 }]);
-  assert.equal(sleeps[0], 3_000);
+  assert.equal(mouseReleases, 1);
+  assert.ok(sleeps.includes(3_000));
   assert.ok(reports.includes("patrol_share_camp_channel_verified"));
   assert.ok(reports.includes("patrol_share_success"));
 });
@@ -624,7 +707,7 @@ test("book-defense patrol share verifies and clicks the fixed camp-channel row",
   assert.deepEqual(taps, [
     { x: 343, y: 1128 },
     { x: 343, y: 1128 },
-    { x: 416, y: 895 }
+    { x: 420, y: 890 }
   ]);
 });
 
@@ -743,6 +826,110 @@ test("patrol team becomes full when all three member cards are occupied", async 
   );
   assert.equal(full, true);
   assert.ok(reports.includes("patrol_team_full_verified"));
+});
+
+test("an out-of-camp member is removed from the leftmost member slot by OCR", async () => {
+  const taps = [];
+  const sleeps = [];
+  const reports = [];
+  const removed = await removeFirstPatrolMemberOutsideCamp(
+    {
+      config: { patrolTeamUi: patrolUiConfig() },
+      ui: {
+        async tap(point) {
+          taps.push(point);
+        }
+      },
+      vision: {
+        async capture(label) {
+          if (label === "patrol-member-remove-confirm-slot-2") {
+            return {
+              path: "member-confirm.png",
+              observations: [observation("确认(F)", 950, 590)]
+            };
+          }
+          assert.equal(label, "patrol-member-remove-menu-slot-2");
+          return {
+            path: "member-menu.png",
+            observations: [observation("移出队伍", 700, 900)]
+          };
+        },
+        find(observations, query, mode) {
+          return observations.find((item) =>
+            mode === "exact" ? item.text === query : item.text.includes(query)
+          );
+        }
+      },
+      async sleep(ms) {
+        sleeps.push(ms);
+      },
+      async report(_level, step) {
+        reports.push(step);
+      }
+    },
+    {
+      observations: [
+        observation("翎音", 650, 800),
+        observation("密斯卡镇", 650, 860),
+        observation("雨梦", 1050, 800),
+        observation("愿", 1050, 860),
+        observation("玩家丙", 1450, 800),
+        observation("愿", 1450, 860)
+      ]
+    },
+    undefined,
+    "愿"
+  );
+
+  assert.equal(removed, true);
+  assert.deepEqual(taps, [
+    { x: 758, y: 625 },
+    { x: 770, y: 920 },
+    { x: 1020, y: 610 }
+  ]);
+  assert.deepEqual(sleeps, [3_000, 500, 800]);
+  assert.ok(reports.includes("patrol_member_outside_camp"));
+  assert.ok(reports.includes("patrol_member_remove_confirmed"));
+  assert.ok(reports.includes("patrol_member_remove_final_confirmed"));
+});
+
+test("members whose card-bottom location is the camp are never removed", async () => {
+  const reports = [];
+  const removed = await removeFirstPatrolMemberOutsideCamp(
+    {
+      config: { patrolTeamUi: patrolUiConfig() },
+      ui: {
+        async tap() {
+          throw new Error("should not remove an in-camp member");
+        }
+      },
+      vision: {
+        find(observations, query, mode) {
+          return observations.find((item) =>
+            mode === "exact" ? item.text === query : item.text.includes(query)
+          );
+        }
+      },
+      async report(_level, step) {
+        reports.push(step);
+      }
+    },
+    {
+      observations: [
+        observation("玩家甲", 650, 800),
+        observation("愿", 650, 860),
+        observation("玩家乙", 1050, 800),
+        observation("愿", 1050, 860),
+        observation("玩家丙", 1450, 800),
+        observation("愿", 1450, 860)
+      ]
+    },
+    undefined,
+    "愿"
+  );
+
+  assert.equal(removed, false);
+  assert.ok(reports.includes("patrol_member_locations_verified"));
 });
 
 function observationsFor(label) {

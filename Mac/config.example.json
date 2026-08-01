@@ -237,6 +237,13 @@
       { "left": 960, "top": 290, "right": 1355, "bottom": 960 },
       { "left": 1360, "top": 290, "right": 1750, "bottom": 960 }
     ],
+    "teamMemberLocationRegions": [
+      { "left": 560, "top": 840, "right": 955, "bottom": 925 },
+      { "left": 960, "top": 840, "right": 1355, "bottom": 925 },
+      { "left": 1360, "top": 840, "right": 1750, "bottom": 925 }
+    ],
+    "removeTeamButtonRegion": { "left": 450, "top": 400, "right": 1450, "bottom": 1180 },
+    "removeTeamConfirmRegion": { "left": 850, "top": 500, "right": 1350, "bottom": 800 },
     "focusAcquiredTexts": ["创建队伍", "自动匹配", "暂无队员加入", "调整", "离开队伍"],
     "focusAcquiredRegion": { "left": 0, "top": 0, "right": 620, "bottom": 1180 },
     "comboFallbackAttempts": 6,
@@ -251,9 +258,8 @@
       "recruitTextRegion": { "left": 220, "top": 1040, "right": 480, "bottom": 1180 },
       "recruitAttempts": 6,
       "recruitMenuWaitMs": 3000,
-      "channelMenuRegion": { "left": 280, "top": 760, "right": 550, "bottom": 1080 },
-      "campChannelTextRegion": { "left": 280, "top": 840, "right": 550, "bottom": 960 },
-      "campChannelPoint": { "x": 416, "y": 895 },
+      "channelMenuRegion": { "left": 380, "top": 580, "right": 720, "bottom": 1150 },
+      "campChannelTextRegion": { "left": 380, "top": 580, "right": 720, "bottom": 1150 },
       "channelAttempts": 6,
       "successTexts": ["成功分享至营地频道", "分享成功"],
       "successRegion": { "left": 650, "top": 150, "right": 1300, "bottom": 330 },
@@ -385,7 +391,9 @@
         "readyTabRegion": { "left": 350, "top": 150, "right": 1550, "bottom": 270 },
         "readyBodyRegion": { "left": 120, "top": 250, "right": 1820, "bottom": 1000 },
         "readyMinimumTabs": 2,
-        "attempts": 3,
+        "attempts": 6,
+        "hostMouseUnlockOnCampChannelRetry": true,
+        "hostMouseUnlockDelayMs": 250,
         "verifySeconds": 5
       }
     ],
@@ -506,32 +514,40 @@
         "x": 1125,
         "y": 680
       },
-      { "op": "waitAnyText", "texts": ["巡逻进度", "困难巡逻", "营地巡逻"], "timeoutSeconds": 15 }
+      {
+        "op": "waitAnyText",
+        "texts": ["已经拥有巡逻路线"],
+        "timeoutSeconds": 15
+      }
     ],
     "exitPatrolPages": [
       {
         "op": "tapUntilAnyTexts",
         "texts": ["综合", "世界", "场景", "营地", "队伍"],
         "minimumTexts": 2,
+        "minimumTapsBeforeSuccess": 2,
         "region": { "left": 0, "top": 980, "right": 760, "bottom": 1200 },
         "x": 75,
         "y": 1120,
         "maxAttempts": 6,
-        "intervalMs": 500
+        "intervalMs": 500,
+        "hud": true,
+        "controlLabel": "巡逻页左下角返回箭头"
       }
     ],
     "switchToBookDefense": [
       { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
       {
-        "op": "clickText",
-        "text": "调整",
-        "mode": "exact",
-        "region": { "left": 0, "top": 0, "right": 220, "bottom": 130 },
-        "regionOcrScale": 2,
-        "timeoutSeconds": 10,
-        "hud": true
+        "op": "tapUntilAnyTexts",
+        "texts": ["调整队伍目标"],
+        "minimumTexts": 1,
+        "x": 105,
+        "y": 49,
+        "maxAttempts": 4,
+        "intervalMs": 700,
+        "hud": true,
+        "controlLabel": "队伍页左上角调整按钮"
       },
-      { "op": "waitAnyText", "texts": ["调整队伍目标"], "timeoutSeconds": 10 },
       { "op": "clickText", "text": "限时活动", "timeoutSeconds": 8, "hud": true },
       { "op": "clickText", "text": "保卫古籍", "timeoutSeconds": 8, "hud": true },
       { "op": "clickText", "text": "修改队伍", "timeoutSeconds": 8, "hud": true },
@@ -551,8 +567,9 @@
       {
         "op": "tapUntilNoneTexts",
         "texts": ["调整", "离开队伍"],
-        "x": 48,
-        "y": 327,
+        "x": 74,
+        "y": 1110,
+        "controlLabel": "队伍页左下角返回箭头",
         "region": { "left": 0, "top": 0, "right": 1920, "bottom": 1200 },
         "maxAttempts": 6,
         "intervalMs": 500,

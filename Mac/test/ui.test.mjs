@@ -105,6 +105,42 @@ test("a map blocking the camp panel is closed before any chat click", async () =
   );
 });
 
+test("camp channel retries release host mouse only after the first unverified attempt", async () => {
+  let releases = 0;
+  const fixture = createUi({
+    transientCapture(label) {
+      if (label === "camp-panel-verify-2") {
+        return [
+          observation("营地", 150, 145),
+          observation("市长：雨梦", 260, 450)
+        ];
+      }
+      return [];
+    },
+    mumu: {
+      async releaseContainerMouseCapture() {
+        releases += 1;
+        return { mouseReleased: true };
+      }
+    }
+  });
+
+  await fixture.ui.openCampPanelViaChat({
+    attempts: 2,
+    hostMouseUnlockOnCampChannelRetry: true,
+    chatDelayMs: 1,
+    channelDelayMs: 1,
+    verifySeconds: 1
+  });
+
+  assert.equal(releases, 1);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("点击营地频道前发送 Esc 下方的 ~ 键")
+    )
+  );
+});
+
 test("map preparation closes the camp page, collapses chat, then confirms HUD", async () => {
   const fixture = createUi({
     fastFrames: [
@@ -652,10 +688,14 @@ test("HUD panel close retries with container mouse release until panel text disa
   ]);
 });
 
-test("patrol overlay exit stops only after two bottom HUD anchors appear", async () => {
+test("patrol result exit uses the calibrated HUD return arrow until bottom HUD anchors appear", async () => {
   const fixture = createUi({
     fastFrames: [
       [observation("巡逻路线", 900, 200)],
+      [
+        observation("综合", 40, 1080),
+        observation("营地", 220, 1080)
+      ],
       [
         observation("综合", 40, 1080),
         observation("营地", 220, 1080)
@@ -667,14 +707,19 @@ test("patrol overlay exit stops only after two bottom HUD anchors appear", async
   await fixture.ui.tapUntilAnyTexts({
     texts: ["综合", "世界", "场景", "营地", "队伍"],
     minimumTexts: 2,
+    minimumTapsBeforeSuccess: 2,
     region: { left: 0, top: 980, right: 760, bottom: 1200 },
     x: 75,
     y: 1120,
     maxAttempts: 6,
-    intervalMs: 200
+    intervalMs: 200,
+    hud: true
   });
 
-  assert.deepEqual(fixture.taps, [{ x: 75, y: 1120 }]);
+  assert.deepEqual(fixture.taps, [
+    { x: 75, y: 1120 },
+    { x: 75, y: 1120 }
+  ]);
 });
 
 test("a stable post-teleport HUD advances to W-based destination verification", async () => {
@@ -843,6 +888,11 @@ test("hard patrol flow clicks the difficult-row accept button and confirms it", 
     assert.equal(flow[5].op, "clickIfText");
     assert.equal(flow[5].text, "确定");
     assert.equal(flow[5].mode, "includes");
+    assert.deepEqual(flow.at(-1), {
+      op: "waitAnyText",
+      texts: ["已经拥有巡逻路线"],
+      timeoutSeconds: 15
+    });
     assert.deepEqual(flow[1].region, {
       left: 1450,
       top: 820,
@@ -858,7 +908,41 @@ test("hard patrol flow clicks the difficult-row accept button and confirms it", 
   }
 });
 
-test("full patrol team closes through the calibrated flag only when the team UI is visible", async () => {
+test("patrol result exit and book-defense adjustment use calibrated HUD controls", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    assert.deepEqual(config.flows.exitPatrolPages, [
+      {
+        op: "tapUntilAnyTexts",
+        texts: ["综合", "世界", "场景", "营地", "队伍"],
+        minimumTexts: 2,
+        minimumTapsBeforeSuccess: 2,
+        region: { left: 0, top: 980, right: 760, bottom: 1200 },
+        x: 75,
+        y: 1120,
+        maxAttempts: 6,
+        intervalMs: 500,
+        hud: true,
+        controlLabel: "巡逻页左下角返回箭头"
+      }
+    ]);
+    assert.deepEqual(config.flows.switchToBookDefense[1], {
+      op: "tapUntilAnyTexts",
+      texts: ["调整队伍目标"],
+      minimumTexts: 1,
+      x: 105,
+      y: 49,
+      maxAttempts: 4,
+      intervalMs: 700,
+      hud: true,
+      controlLabel: "队伍页左上角调整按钮"
+    });
+  }
+});
+
+test("full patrol team closes through the calibrated bottom-left return arrow", async () => {
   for (const file of ["config.json", "config.example.json"]) {
     const config = JSON.parse(
       await readFile(new URL(`../${file}`, import.meta.url), "utf8")
@@ -867,8 +951,9 @@ test("full patrol team closes through the calibrated flag only when the team UI 
       {
         op: "tapUntilNoneTexts",
         texts: ["调整", "离开队伍"],
-        x: 48,
-        y: 327,
+        x: 74,
+        y: 1110,
+        controlLabel: "队伍页左下角返回箭头",
         region: { left: 0, top: 0, right: 1920, bottom: 1200 },
         maxAttempts: 6,
         intervalMs: 500,
@@ -924,6 +1009,8 @@ test("notice-board recovery accepts a stable fallback HUD without an impossible 
 function createUi({
   fastFrames = [[]],
   accurateFrames = [[]],
+  transientCapture = null,
+  mumu = null,
   overlayAdvice = null,
   generalAdvice = null,
   minimumActionConfidence = 0.95
@@ -948,7 +1035,10 @@ function createUi({
           }
         }
       : undefined,
-    async captureTransient() {
+    async captureTransient(label) {
+      if (typeof transientCapture === "function") {
+        return { observations: transientCapture(label) || [] };
+      }
       return {
         observations:
           fastFrames[Math.min(fastIndex++, fastFrames.length - 1)] || []
@@ -1004,7 +1094,8 @@ function createUi({
     { timeouts: { actionDelayMs: 0 } },
     adb,
     vision,
-    async (_level, _step, message) => messages.push(message)
+    async (_level, _step, message) => messages.push(message),
+    mumu
   );
   return {
     ui,
