@@ -670,8 +670,11 @@
       const summary = document.querySelector(`[data-schedule-summary="${taskKey}"]`);
       if (summary) {
         summary.textContent = taskKey === "patrol"
-          ? `启动时间：${times[0] || "未设置"}`
-          : `执行 ${times.length || 1} 次：${times.join("、") || "未设置"}`;
+          ? window.MrzhI18n.format("启动时间：{time}", { time: times[0] || window.MrzhI18n.t("未设置") })
+          : window.MrzhI18n.format("执行 {count} 次：{times}", {
+              count: times.length || 1,
+              times: times.join("、") || window.MrzhI18n.t("未设置")
+            });
       }
       if (times[0]) setField(field.time, times[0]);
     }
@@ -688,7 +691,7 @@
     times.forEach((time, index) => {
       const row = create("div", "schedule-time-row");
       const label = create("label", "field");
-      label.append(create("span", "", `第 ${index + 1} 次执行时间`));
+      label.append(create("span", "", window.MrzhI18n.format("第 {number} 次执行时间", { number: index + 1 })));
       const control = document.createElement("input");
       control.type = "time";
       control.value = time || "";
@@ -697,7 +700,7 @@
       label.append(control);
       row.append(label);
       if (taskKey !== "tech_switch" && taskKey !== "patrol" && times.length > 1) {
-        const remove = create("button", "button button-quiet", "删除");
+        const remove = create("button", "button button-quiet", window.MrzhI18n.t("删除"));
         remove.type = "button";
         remove.addEventListener("click", () => {
           state.scheduleDrafts[taskKey].splice(index, 1);
@@ -720,13 +723,21 @@
     if (!field || !dialog) return;
     state.scheduleDialogTaskKey = taskKey;
     state.scheduleDrafts[taskKey] = scheduleTimes(taskKey).slice();
-    byId("schedule-dialog-title").textContent = `${field.title}：配置执行计划`;
+    byId("schedule-dialog-title").textContent = `${window.MrzhI18n.t(field.title)}：${window.MrzhI18n.t("配置执行计划")}`;
     byId("schedule-dialog-note").textContent = taskKey === "patrol"
-      ? "巡逻任务只支持一个启动时间。"
+      ? window.MrzhI18n.t("巡逻任务只支持一个启动时间。")
       : taskKey === "tech_switch"
-        ? "科技切换任务只支持一个执行时间。"
-      : "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。";
+        ? window.MrzhI18n.t("科技切换任务只支持一个执行时间。")
+        : window.MrzhI18n.t("默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。");
     byId("schedule-dialog-enabled").checked = Boolean(getField(field.enabled));
+    const patrolFields = byId("schedule-patrol-fields");
+    if (patrolFields) {
+      patrolFields.hidden = taskKey !== "patrol";
+      byId("schedule-dialog-patrol-ready").value = getField("patrolReadyTime") || "";
+      byId("schedule-dialog-patrol-deadline").value = getField("patrolDeadline") || "";
+      byId("schedule-dialog-share-interval").value = getField("shareInterval") || "";
+      byId("schedule-dialog-chat-poll").value = getField("chatPollSeconds") || "";
+    }
     byId("schedule-dialog-feedback").textContent = "";
     renderScheduleTimeInputs();
     if (typeof dialog.showModal === "function") dialog.showModal();
@@ -760,13 +771,19 @@
       .map((control) => control.value.trim());
     const invalid = times.some((value) => !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(value));
     if (!times.length || invalid) {
-      byId("schedule-dialog-feedback").textContent = "请为每次执行填写有效时间。";
+      byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("请为每次执行填写有效时间。");
       return;
     }
     const normalized = taskKey === "tech_switch" || taskKey === "patrol" ? [times[0]] : times;
     state.scheduleDrafts[taskKey] = normalized;
     setField(field.time, normalized[0]);
     setField(field.enabled, byId("schedule-dialog-enabled").checked);
+    if (taskKey === "patrol") {
+      setField("patrolReadyTime", byId("schedule-dialog-patrol-ready").value);
+      setField("patrolDeadline", byId("schedule-dialog-patrol-deadline").value);
+      setField("shareInterval", byId("schedule-dialog-share-interval").value);
+      setField("chatPollSeconds", byId("schedule-dialog-chat-poll").value);
+    }
     renderScheduleSummaries();
     state.dirtySections.add("tasks");
     document.querySelector('.config-form[data-config-section="tasks"] [data-save-feedback]')?.replaceChildren(document.createTextNode("有未保存修改"));

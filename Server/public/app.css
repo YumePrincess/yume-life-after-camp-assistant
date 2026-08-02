@@ -2003,8 +2003,8 @@ select option {
   grid-column: 1 / -1;
 }
 
-.schedule-card > .field:not(.field-checkbox),
-.schedule-card > .form-grid {
+.schedule-card-repeat > .field:not(.field-checkbox),
+.schedule-card-repeat > .form-grid {
   display: none;
 }
 
@@ -2038,6 +2038,36 @@ select option {
 
 .schedule-time-row .field {
   flex: 1;
+}
+
+.schedule-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.schedule-dialog-actions .action-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  margin-top: 0;
+}
+
+.schedule-dialog-actions .feedback {
+  margin-left: auto;
+}
+
+.schedule-patrol-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.schedule-patrol-fields[hidden] {
+  display: none;
 }
 
 .form-grid-compact {

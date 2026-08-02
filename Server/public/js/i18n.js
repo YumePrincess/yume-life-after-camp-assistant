@@ -2454,6 +2454,76 @@
     Object.assign(translations[language], additions);
   }
 
+  const scheduleTranslations = {
+    en: {
+      "定时任务失败重试次数（手动任务不重试）": "Scheduled-task retries (manual tasks are not retried)",
+      "配置执行计划": "Configure execution plan",
+      "增加一次执行时间": "Add execution time",
+      "保存此任务计划": "Save this task plan",
+      "执行 {count} 次：{times}": "{count} executions: {times}",
+      "启动时间：{time}": "Start time: {time}",
+      "未设置": "Not set",
+      "第 {number} 次执行时间": "Execution {number}",
+      "删除": "Delete",
+      "巡逻任务只支持一个启动时间。": "Patrol supports one start time only.",
+      "科技切换任务只支持一个执行时间。": "Technology switching supports one execution time only.",
+      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。":
+        "The current time is kept by default. Set each time after adding executions. Manual tasks are not retried.",
+      "请为每次执行填写有效时间。": "Enter a valid time for every execution."
+    },
+    fr: {
+      "定时任务失败重试次数（手动任务不重试）": "Nouvelles tentatives planifiées (les tâches manuelles ne sont pas relancées)",
+      "配置执行计划": "Configurer le plan d’exécution",
+      "增加一次执行时间": "Ajouter une heure",
+      "保存此任务计划": "Enregistrer ce plan",
+      "执行 {count} 次：{times}": "{count} exécutions : {times}",
+      "启动时间：{time}": "Heure de début : {time}",
+      "未设置": "Non défini",
+      "第 {number} 次执行时间": "Exécution {number}",
+      "删除": "Supprimer",
+      "巡逻任务只支持一个启动时间。": "La patrouille ne prend qu’une heure de début.",
+      "科技切换任务只支持一个执行时间。": "Le changement de technologie ne prend qu’une heure.",
+      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。":
+        "L’heure actuelle est conservée par défaut. Définissez chaque heure ajoutée. Les tâches manuelles ne sont pas relancées.",
+      "请为每次执行填写有效时间。": "Saisissez une heure valide pour chaque exécution."
+    },
+    ja: {
+      "定时任务失败重试次数（手动任务不重试）": "定期タスクの失敗リトライ回数（手動タスクはリトライしません）",
+      "配置执行计划": "実行計画を設定",
+      "增加一次执行时间": "実行時刻を追加",
+      "保存此任务计划": "この計画を保存",
+      "执行 {count} 次：{times}": "{count} 回実行：{times}",
+      "启动时间：{time}": "開始時刻：{time}",
+      "未设置": "未設定",
+      "第 {number} 次执行时间": "{number} 回目の実行時刻",
+      "删除": "削除",
+      "巡逻任务只支持一个启动时间。": "巡回タスクは開始時刻を1つだけ設定できます。",
+      "科技切换任务只支持一个执行时间。": "科技切替は実行時刻を1つだけ設定できます。",
+      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。":
+        "現在の時刻を既定値として保持します。回数を追加したら各時刻を設定してください。手動タスクはリトライしません。",
+      "请为每次执行填写有效时间。": "各実行に有効な時刻を入力してください。"
+    },
+    "zh-tw": {
+      "定时任务失败重试次数（手动任务不重试）": "定時任務失敗重試次數（手動任務不重試）",
+      "配置执行计划": "設定執行計畫",
+      "增加一次执行时间": "增加一次執行時間",
+      "保存此任务计划": "儲存此任務計畫",
+      "执行 {count} 次：{times}": "執行 {count} 次：{times}",
+      "启动时间：{time}": "啟動時間：{time}",
+      "未设置": "未設定",
+      "第 {number} 次执行时间": "第 {number} 次執行時間",
+      "删除": "刪除",
+      "巡逻任务只支持一个启动时间。": "巡邏任務只支援一個啟動時間。",
+      "科技切换任务只支持一个执行时间。": "科技切換任務只支援一個執行時間。",
+      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。":
+        "預設保留目前時間。增加執行次數後，請分別設定每次執行時間。手動發起任務不使用失敗重試。",
+      "请为每次执行填写有效时间。": "請為每次執行填寫有效時間。"
+    }
+  };
+  for (const [language, additions] of Object.entries(scheduleTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+
   function translate(source, language = currentLanguage()) {
     return translations[language]?.[source] || source;
   }
