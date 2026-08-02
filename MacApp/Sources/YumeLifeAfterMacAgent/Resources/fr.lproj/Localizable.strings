@@ -120,6 +120,7 @@
 "Enter both Agent tokens to continue." = "Saisissez les deux jetons Agent pour continuer.";
 "Setup completed" = "Configuration terminée";
 "Close" = "Fermer";
+"Operation status" = "État de l’opération";
 "Copyright © 2026 Yume Internet LLC. All rights reserved." = "Copyright © 2026 Yume Internet LLC. Tous droits réservés.";
 "The bundled runtime configuration template is missing." = "Le modèle de configuration de l’environnement inclus est absent.";
 "Import legacy Keychain credentials…" = "Importer les anciens identifiants du Trousseau…";

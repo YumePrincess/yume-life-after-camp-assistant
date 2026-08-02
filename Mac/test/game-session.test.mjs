@@ -280,8 +280,8 @@ test("login percentage blocks HUD readiness even when HUD anchors are visible", 
   const fixture = createFixture(
     [
       ["登录游戏"],
-      ["背包", "营地", "76.4％"],
-      ["背包", "营地", "100%"],
+      ["背包", "营地", { text: "76.4％", x: 900, y: 1050 }],
+      ["背包", "营地", { text: "100%", x: 900, y: 1050 }],
       ["背包", "营地"],
       ["背包", "营地"]
     ],
@@ -299,6 +299,31 @@ test("login percentage blocks HUD readiness even when HUD anchors are visible", 
   await waitForGameReady(fixture.context);
   assert.equal(fixture.captures, 5);
   assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+});
+
+test("HUD distance and status numbers outside the loading bar never reset readiness", async () => {
+  const hudFrame = [
+    { text: "综合", x: 30, y: 1090 },
+    { text: "世界", x: 120, y: 1090 },
+    { text: "场景", x: 210, y: 1090 },
+    { text: "97%", x: 390, y: 620 },
+    { text: "16/27", x: 70, y: 700 }
+  ];
+  const fixture = createFixture(
+    [hudFrame, hudFrame],
+    null,
+    [],
+    "shadow",
+    {
+      channelReadyStableFrames: 2,
+      channelReadyStableMs: 0,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    }
+  );
+  await waitForGameReady(fixture.context);
+  assert.ok(fixture.captures >= 2 && fixture.captures <= 3);
+  assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
 });
 
 test("two bottom-left chat channel anchors confirm HUD without local-model classification", async () => {
@@ -383,6 +408,35 @@ test("precise bottom-left channel OCR confirms login when general HUD OCR keeps 
       message.includes("稳定多帧高精度 OCR 确认 HUD")
     )
   );
+  assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
+});
+
+test("channel OCR uses its own fast probe interval instead of the full-frame cooldown", async () => {
+  const channelFrame = [
+    { text: "综合", x: 30, y: 1090 },
+    { text: "世界", x: 120, y: 1090 },
+    { text: "场景", x: 210, y: 1090 }
+  ];
+  const fixture = createFixture(
+    [[], []],
+    null,
+    [],
+    "shadow",
+    {
+      readyMinimumTexts: 2,
+      channelReadyStableFrames: 2,
+      channelReadyStableMs: 0,
+      channelReadyProbeMs: 250,
+      accurateFallbackSeconds: 5,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    },
+    [channelFrame, channelFrame]
+  );
+
+  await waitForGameReady(fixture.context);
+
+  assert.ok(fixture.captures >= 2);
   assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
 });
 
@@ -566,7 +620,10 @@ function createFixture(
         fixedCloseIntervalSeconds: 3,
         texts: ["系统公告", "更新公告", "游戏公告", "经典服", "亲爱的幸存者"]
       },
-      vision: { accurateFallbackSeconds: 0.05 }
+      vision: {
+        accurateFallbackSeconds:
+          Number(readyPolicy.accurateFallbackSeconds) || 0.05
+      }
     },
     adb: {
       async key() {},

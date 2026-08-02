@@ -43,6 +43,7 @@ import {
   replaceStaffSnapshot,
   removeCurrentMembers,
   registerAgentDevice,
+  reconcileTerminalRunCommands,
   updateActivitySnapshot,
   updateContributionSnapshot,
   updateMemberProfiles,
@@ -1649,6 +1650,10 @@ async function buildPublicBootstrap(
   locale: unknown
 ): Promise<Record<string, unknown>> {
   const bundle = await getConfigBundle(env);
+  // Repair historical runs whose Agent command reached a terminal state while
+  // the separate run-update request was interrupted. This preserves all rows
+  // and events; it only fills the missing run terminal state.
+  await reconcileTerminalRunCommands(env);
   const plugins = await effectiveWorkerPlugins(env);
   const pluginEnabled = new Map(plugins.map((plugin) => [plugin.id, plugin.enabled]));
   const [voteSummary, staff, members, warnings, recentRuns] = await Promise.all([
@@ -1756,10 +1761,9 @@ async function buildAdminBootstrap(
     recentRuns: recentRuns.filter(isCurrentFeatureRun),
     staffAssignments: canMembers ? staff : [],
     members: canMembers ? members : [],
-    agentOnlineThresholdSeconds: Math.max(
-      45,
-      bundle.automationConfig.agentPolling.idleSeconds * 2 + 30
-    ),
+    // Agent heartbeats are independent from the (potentially five-minute)
+    // idle command poll. A stopped device should therefore expire quickly.
+    agentOnlineThresholdSeconds: 45,
     temporaryKeys: [],
     nextTechnologyTargetDate: nextTechnologyTargetDate(
       new Date(),

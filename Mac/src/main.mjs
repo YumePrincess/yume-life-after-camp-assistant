@@ -30,6 +30,8 @@ const once = process.argv.includes("--once");
 let active = null;
 let stopping = false;
 let nextPollSeconds = config.server.pollSeconds;
+const shutdownController = new AbortController();
+const HEARTBEAT_INTERVAL_MS = 15_000;
 
 const pluginRegistry = await loadTaskPlugins({
   builtinDirectory: resolve(MAC_ROOT, "plugins"),
@@ -76,32 +78,13 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
     stopping = true;
     active?.controller.abort(new Error(`Agent received ${signal}`));
+    shutdownController.abort(new Error(`Agent received ${signal}`));
   });
 }
 
 do {
   try {
-    const heartbeat = await api.heartbeat({
-      activeRunId: active?.command.runId || null,
-      activeTaskKey: active?.command.payload?.taskKey || null,
-      status: active ? "running" : "idle",
-      capabilities: {
-        backgroundAdbMouse: true,
-        visionOcr: true,
-        unicodeChat: true,
-        stopEmulatorAfterTask: config.mumu.stopEmulatorAfterTask
-      },
-      detail: {
-        adbSerial: config.adb.serial,
-        emulatorInstance:
-          mumu.currentInstance()?.index ?? config.mumu.instanceIndex,
-        emulatorName:
-          mumu.currentInstance()?.name ?? config.mumu.instanceName ?? null
-      }
-    });
-    if (active && heartbeat.cancelRequested === true) {
-      active.controller.abort(new Error("管理员请求中断"));
-    }
+    await sendHeartbeat(shutdownController.signal);
 
     const pollResponse = await api.nextCommand(Boolean(active));
     const { command } = pollResponse;
@@ -141,11 +124,80 @@ do {
       break;
     }
   }
-  if (!once) await delay(nextPollSeconds * 1000).catch(() => undefined);
+  if (!once && !stopping) {
+    await waitForNextPoll(nextPollSeconds).catch(() => undefined);
+  }
 } while (!stopping);
 
+if (stopping) await sendOfflineHeartbeat();
 if (active) await active.promise.catch(() => undefined);
 await closeDebugServer(debugServer);
+
+function heartbeatPayload(status = active ? "running" : "idle") {
+  return {
+    activeRunId: active?.command.runId || null,
+    activeTaskKey: active?.command.payload?.taskKey || null,
+    status,
+    capabilities: {
+      backgroundAdbMouse: true,
+      visionOcr: true,
+      unicodeChat: true,
+      stopEmulatorAfterTask: config.mumu.stopEmulatorAfterTask
+    },
+    detail: {
+      adbSerial: config.adb.serial,
+      emulatorInstance:
+        mumu.currentInstance()?.index ?? config.mumu.instanceIndex,
+      emulatorName:
+        mumu.currentInstance()?.name ?? config.mumu.instanceName ?? null
+    }
+  };
+}
+
+async function sendHeartbeat(signal) {
+  const heartbeat = await api.heartbeat(heartbeatPayload(), signal);
+  if (active && heartbeat.cancelRequested === true) {
+    active.controller.abort(new Error("管理员请求中断"));
+  }
+}
+
+async function sendOfflineHeartbeat() {
+  try {
+    await api.heartbeat(
+      {
+        ...heartbeatPayload("offline"),
+        activeRunId: null,
+        activeTaskKey: null
+      }
+    );
+  } catch (error) {
+    console.error(
+      JSON.stringify({ event: "offline_heartbeat_failed", message: error.message })
+    );
+  }
+}
+
+async function waitForNextPoll(seconds) {
+  const deadline = Date.now() + Math.max(1, seconds) * 1000;
+  while (!stopping) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return;
+    await delay(
+      Math.min(remaining, HEARTBEAT_INTERVAL_MS),
+      shutdownController.signal
+    );
+    if (Date.now() < deadline && !stopping) {
+      try {
+        await sendHeartbeat(shutdownController.signal);
+      } catch (error) {
+        if (shutdownController.signal.aborted) return;
+        console.error(
+          JSON.stringify({ event: "heartbeat_refresh_failed", message: error.message })
+        );
+      }
+    }
+  }
+}
 
 async function closeDebugServer(server) {
   await new Promise((resolve) => {
@@ -187,15 +239,37 @@ async function executeCommand(command, signal) {
   }
   let terminalState = "succeeded";
   let terminalMessage = "任务完成";
+  const updateRunSafely = async (update, phase, detached = false) => {
+    try {
+      // Terminal reporting must outlive task cancellation. Reusing the task's
+      // already-aborted signal here prevents the interrupted state from ever
+      // reaching Workers and leaves the web UI stuck at `cancelling`.
+      await api.updateRun(command.runId, update, detached ? undefined : signal);
+      return true;
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "run_update_failed",
+          runId: command.runId,
+          phase,
+          message: error.message
+        })
+      );
+      return false;
+    }
+  };
   const report = async (level, step, message, detail = {}) => {
-    await api.updateRun(command.runId, {
+    await updateRunSafely({
       currentStep: step,
       message,
       event: { level, step, message, detail }
-    });
+    }, `event:${step}`);
   };
   const progress = async (value, currentStep) => {
-    await api.updateRun(command.runId, { progress: value, currentStep });
+    await updateRunSafely(
+      { progress: value, currentStep },
+      `progress:${currentStep || "unknown"}`
+    );
   };
   const ui = new GameUi(config, adb, vision, report, mumu);
   const positionIndependent = plugin.manifest.task.positionIndependent === true;
@@ -218,7 +292,7 @@ async function executeCommand(command, signal) {
     context.runtimeAutomation = bootstrap.configBundle.automationConfig;
     ui.setRuntimeAutomation(bootstrap.configBundle.automationConfig);
     if (bootstrap.run?.cancel_requested) throw new Error("任务在开始前已被中断");
-    await api.updateRun(command.runId, {
+    await updateRunSafely({
       state: "running",
       message: "本地 Agent 已开始执行",
       currentStep: "starting",
@@ -228,7 +302,7 @@ async function executeCommand(command, signal) {
         step: "starting",
         message: "本地 Agent 已领取任务"
       }
-    });
+    }, "starting");
     const sessionResult = await withGameSession(
       context,
       (attemptSignal) =>
@@ -239,7 +313,7 @@ async function executeCommand(command, signal) {
     if (sessionResult?.cleanupCompleted === false) {
       terminalState = "partially_succeeded";
       terminalMessage = `核心数据已更新，但收尾未完全完成：${sessionResult.cleanupIssues.join("；")}`;
-      await api.updateRun(command.runId, {
+      await updateRunSafely({
         state: terminalState,
         message: terminalMessage,
         currentStep: null,
@@ -250,11 +324,13 @@ async function executeCommand(command, signal) {
           message: terminalMessage,
           detail: { cleanupIssues: sessionResult.cleanupIssues }
         }
-      });
+      }, "finished:partially_succeeded", true);
     } else {
-      await api.updateRun(command.runId, {
+      terminalState = "succeeded";
+      terminalMessage = "任务已成功完成，游戏与模拟器已停止";
+      await updateRunSafely({
         state: "succeeded",
-        message: "任务已成功完成，游戏与模拟器已停止",
+        message: terminalMessage,
         currentStep: null,
         progress: 1,
         event: {
@@ -262,13 +338,13 @@ async function executeCommand(command, signal) {
           step: "finished",
           message: "任务成功；已完成资源清理"
         }
-      });
+      }, "finished:succeeded", true);
     }
   } catch (error) {
     const interrupted = signal.aborted;
     terminalState = interrupted ? "interrupted" : "failed";
     terminalMessage = interrupted ? "任务已由管理员中断" : error.message;
-    await api.updateRun(command.runId, {
+    await updateRunSafely({
       state: terminalState,
       message: terminalMessage,
       currentStep: null,
@@ -277,7 +353,7 @@ async function executeCommand(command, signal) {
         step: "finished",
         message: terminalMessage
       }
-    }).catch(() => undefined);
+    }, `finished:${terminalState}`, true);
   } finally {
     const removedScreenshots = await vision.cleanupTask().catch(() => 0);
     if (removedScreenshots) {

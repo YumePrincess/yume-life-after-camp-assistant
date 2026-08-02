@@ -120,6 +120,7 @@
 "Enter both Agent tokens to continue." = "Enter both Agent tokens to continue.";
 "Setup completed" = "Setup completed";
 "Close" = "Close";
+"Operation status" = "Operation status";
 "Copyright © 2026 Yume Internet LLC. All rights reserved." = "Copyright © 2026 Yume Internet LLC. All rights reserved.";
 "The bundled runtime configuration template is missing." = "The bundled runtime configuration template is missing.";
 "Import legacy Keychain credentials…" = "Import legacy Keychain credentials…";

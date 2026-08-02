@@ -120,6 +120,7 @@
 "Enter both Agent tokens to continue." = "続けるには 2 つの Agent トークンを入力してください。";
 "Setup completed" = "設定が完了しました";
 "Close" = "閉じる";
+"Operation status" = "操作状況";
 "Copyright © 2026 Yume Internet LLC. All rights reserved." = "Copyright © 2026 Yume Internet LLC. All rights reserved.";
 "The bundled runtime configuration template is missing." = "同梱ランタイムの設定テンプレートがありません。";
 "Import legacy Keychain credentials…" = "旧キーチェーン認証情報を読み込む…";

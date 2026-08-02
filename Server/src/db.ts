@@ -1483,14 +1483,91 @@ export async function completeCommand(
     message: string;
   }
 ): Promise<boolean> {
+  const now = isoNow();
+  const terminalRunState =
+    input.state === "completed"
+      ? "succeeded"
+      : input.state === "cancelled"
+        ? "interrupted"
+        : "failed";
+  const [commandResult] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE command_queue SET
+         state = ?, message = ?, finished_at = ?, lease_expires_at = NULL
+       WHERE id = ? AND state = 'claimed' AND lease_token = ?`
+    ).bind(input.state, input.message, now, input.commandId, input.leaseToken),
+    env.DB.prepare(
+      `UPDATE task_runs SET
+         state = ?,
+         message = ?,
+         current_step = NULL,
+         finished_at = ?,
+         updated_at = ?
+       WHERE id = (
+         SELECT run_id
+         FROM command_queue
+         WHERE id = ?
+           AND lease_token = ?
+           AND type = 'run_task'
+           AND state = ?
+       )
+         AND state IN ('queued', 'claimed', 'running', 'cancelling')`
+    ).bind(
+      terminalRunState,
+      input.message,
+      now,
+      now,
+      input.commandId,
+      input.leaseToken,
+      input.state
+    )
+  ]);
+  return (commandResult?.meta.changes ?? 0) > 0;
+}
+
+export async function reconcileTerminalRunCommands(env: Env): Promise<number> {
+  const now = isoNow();
   const result = await env.DB.prepare(
-    `UPDATE command_queue SET
-       state = ?, message = ?, finished_at = ?, lease_expires_at = NULL
-     WHERE id = ? AND state = 'claimed' AND lease_token = ?`
+    `UPDATE task_runs SET
+       state = CASE (
+         SELECT state
+         FROM command_queue
+         WHERE run_id = task_runs.id AND type = 'run_task'
+         ORDER BY created_at DESC
+         LIMIT 1
+       )
+         WHEN 'completed' THEN 'succeeded'
+         WHEN 'cancelled' THEN 'interrupted'
+         ELSE 'failed'
+       END,
+       message = COALESCE((
+         SELECT message
+         FROM command_queue
+         WHERE run_id = task_runs.id AND type = 'run_task'
+         ORDER BY created_at DESC
+         LIMIT 1
+       ), message),
+       current_step = NULL,
+       finished_at = COALESCE(finished_at, (
+         SELECT finished_at
+         FROM command_queue
+         WHERE run_id = task_runs.id AND type = 'run_task'
+         ORDER BY created_at DESC
+         LIMIT 1
+       ), ?),
+       updated_at = ?
+     WHERE state IN ('queued', 'claimed', 'running', 'cancelling')
+       AND EXISTS (
+         SELECT 1
+         FROM command_queue
+         WHERE run_id = task_runs.id
+           AND type = 'run_task'
+           AND state IN ('completed', 'failed', 'cancelled')
+       )`
   )
-    .bind(input.state, input.message, isoNow(), input.commandId, input.leaseToken)
+    .bind(now, now)
     .run();
-  return (result.meta.changes ?? 0) > 0;
+  return result.meta.changes ?? 0;
 }
 
 export async function touchHeartbeat(

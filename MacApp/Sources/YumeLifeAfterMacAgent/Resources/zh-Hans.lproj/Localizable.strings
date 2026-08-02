@@ -120,6 +120,7 @@
 "Enter both Agent tokens to continue." = "请输入两个 Agent 令牌后继续。";
 "Setup completed" = "配置已完成";
 "Close" = "关闭";
+"Operation status" = "操作状态";
 "Copyright © 2026 Yume Internet LLC. All rights reserved." = "版权所有 © 2026 Yume Internet LLC. 保留所有权利。";
 "The bundled runtime configuration template is missing." = "随附的运行环境配置模板缺失。";
 "Import legacy Keychain credentials…" = "导入旧版钥匙串凭据…";

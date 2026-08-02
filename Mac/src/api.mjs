@@ -65,19 +65,26 @@ export class AgentApi {
     return this.request(
       "/api/agent/bootstrap",
       { agentId: this.agentId, runId },
-      signal
+      signal,
+      { maximumAttempts: 3 }
     );
   }
 
   updateRun(runId, update, signal) {
-    return this.request("/api/agent/run-update", { runId, ...update }, signal);
+    return this.request(
+      "/api/agent/run-update",
+      { runId, ...update },
+      signal,
+      { maximumAttempts: 4 }
+    );
   }
 
   snapshot(runId, type, payload, capturedAt, signal) {
     return this.request(
       "/api/agent/snapshot",
       { runId, type, payload, capturedAt },
-      signal
+      signal,
+      { maximumAttempts: 3 }
     );
   }
 
@@ -90,7 +97,8 @@ export class AgentApi {
         state,
         message
       },
-      signal
+      signal,
+      { maximumAttempts: 4 }
     );
   }
 }

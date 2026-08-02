@@ -449,6 +449,9 @@
     for (const item of heartbeats) {
       const age = Date.now() - Date.parse(item.updated_at);
       const online =
+        item.status !== "offline" &&
+        Number.isFinite(age) &&
+        age >= 0 &&
         age < (state.bootstrap?.agentOnlineThresholdSeconds || 45) * 1000;
       const card = create("article", "agent-card");
       if (item.agent_id === activeAgentId) card.dataset.active = "true";

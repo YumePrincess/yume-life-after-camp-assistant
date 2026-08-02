@@ -346,6 +346,7 @@ export async function waitForGameReady(context, signal) {
   let accurateOcrFailureReported = false;
   let channelAccurateOcrFailureReported = false;
   let lastAccurateOcrAt = Date.now();
+  let lastChannelAccurateOcrAt = 0;
   let readyStreak = 0;
   let readySince = 0;
   let readyStabilizingReported = false;
@@ -417,14 +418,22 @@ export async function waitForGameReady(context, signal) {
         0.05,
         Number(config.vision?.accurateFallbackSeconds) || 5
       ) * 1000;
+    // The small bottom-left channel crop is the most reliable HUD signal on
+    // macOS 27. It must not share the much slower full-frame accurate-OCR
+    // cooldown: otherwise one successful “世界/场景” frame is followed by an
+    // empty cooldown frame, resetting the stable-frame counter forever.
+    const channelAccurateProbeMs = Math.max(
+      250,
+      Number(promotions.channelReadyProbeMs) || 800
+    );
     if (
       fastChannelReadyCount < channelReadyMinimum &&
       (typeof vision.captureSource === "function" ||
         typeof vision.capture === "function") &&
       typeof vision.ocrRegion === "function" &&
-      Date.now() - lastAccurateOcrAt >= accurateFallbackMs
+      Date.now() - lastChannelAccurateOcrAt >= channelAccurateProbeMs
     ) {
-      lastAccurateOcrAt = Date.now();
+      lastChannelAccurateOcrAt = Date.now();
       try {
         const channelFrame = typeof vision.captureSource === "function"
           ? await vision.captureSource("game-ready-channel-source", signal)
@@ -514,14 +523,24 @@ export async function waitForGameReady(context, signal) {
       promotions.channelReadyRegion
     );
     const ready = readyMatches[0]?.text || null;
+    const loadingProgressRegion = promotions.loadingProgressRegion || {
+      left: 360,
+      top: 900,
+      right: 1560,
+      bottom: 1200
+    };
     const loadingProgressVisible = frame.observations.some((item) => {
       const text = String(item.text || "").replace(/\s+/g, "");
-      return (
-        /^(?:100|[0-9]{1,2})(?:\.[0-9]+)?[%％]$/.test(text) ||
-        /(?:加载|登录|进入|场景|资源).{0,12}(?:100|[0-9]{1,2})(?:\.[0-9]+)?[%％]/.test(
-          text
-        )
-      );
+      const centerX = Number(item.x || 0) + Number(item.width || 0) / 2;
+      const centerY = Number(item.y || 0) + Number(item.height || 0) / 2;
+      const inLoadingBarRegion =
+        centerX >= loadingProgressRegion.left &&
+        centerX <= loadingProgressRegion.right &&
+        centerY >= loadingProgressRegion.top &&
+        centerY <= loadingProgressRegion.bottom;
+      if (!inLoadingBarRegion) return false;
+      return /^(?:100|[0-9]{1,2})(?:\.[0-9]+)?[%％]$/.test(text) ||
+        /(?:加载|登录|进入|场景|资源).{0,12}(?:100|[0-9]{1,2})(?:\.[0-9]+)?[%％]/.test(text);
     });
     const blocksReady = [
       ...promotions.loadingTexts,

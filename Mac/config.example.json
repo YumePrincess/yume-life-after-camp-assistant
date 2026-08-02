@@ -94,6 +94,8 @@
     "channelReadyMinimumTexts": 2,
     "channelReadyStableFrames": 2,
     "channelReadyStableMs": 1000,
+    "channelReadyProbeMs": 800,
+    "loadingProgressRegion": { "left": 360, "top": 900, "right": 1560, "bottom": 1200 },
     "loadingTexts": ["场景加载中", "正在加载", "加载中", "网络连接中"],
     "readyMinimumTexts": 2,
     "readyStableFrames": 5,

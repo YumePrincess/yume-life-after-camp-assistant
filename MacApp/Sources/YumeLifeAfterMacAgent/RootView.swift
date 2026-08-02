@@ -14,6 +14,9 @@ struct RootView: View {
                         .navigationSplitViewColumnWidth(min: 210, ideal: 236, max: 270)
                 } detail: {
                     detail
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            GlobalOperationStatusBar()
+                        }
                 }
                 .background(.clear)
             } else {
@@ -139,20 +142,15 @@ struct OverviewView: View {
                         }
                         .disabled(model.isBusy)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 214, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220, alignment: .topLeading)
                     .glassPanel()
                     VStack(spacing: 10) {
                         MetricCard(title: "Installed plugins", value: "\(model.plugins.count)", symbol: "puzzlepiece.extension")
                         MetricCard(title: "Enabled plugins", value: "\(model.plugins.filter { $0.enabled != false && $0.invalid != true }.count)", symbol: "checkmark.circle")
                         MetricCard(title: "Current task", value: model.health?.activeTaskKey == nil ? model.text("None") : "1", symbol: "play.circle")
                     }
-                    .frame(maxWidth: .infinity, alignment: .top)
-                }
-                if !model.statusMessage.isEmpty {
-                    Text(model.statusMessage)
-                        .font(.callout.monospaced())
-                        .textSelection(.enabled)
-                        .glassPanel(radius: 18, padding: 14)
+                    .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220, alignment: .center)
+                    .glassPanel()
                 }
             }
             .padding(30)
@@ -209,7 +207,62 @@ struct MetricCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassPanel(radius: 20, padding: 16)
+        .glassPanel(radius: 18, padding: 12)
+    }
+}
+
+private struct GlobalOperationStatusBar: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        if !model.statusMessage.isEmpty {
+            HStack(spacing: 12) {
+                Group {
+                    if model.isBusy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+                .frame(width: 22, height: 22)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Operation status")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(model.statusMessage)
+                        .font(.callout.monospaced())
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        model.statusMessage = ""
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .background(.thinMaterial, in: Circle())
+                .help(model.text("Close"))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(.white.opacity(0.18), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+            .padding(.horizontal, 30)
+            .padding(.bottom, 18)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 }
 
