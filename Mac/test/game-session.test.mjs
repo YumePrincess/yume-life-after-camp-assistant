@@ -457,7 +457,7 @@ function createFixture(
     },
     ...(regionalFrames.length
       ? {
-          async capture() {
+          async captureSource() {
             return { path: "/tmp/mock-game-ready-channel.png", observations: [] };
           },
           async ocrRegion() {

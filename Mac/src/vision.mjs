@@ -12,18 +12,34 @@ export class Vision {
     this.sequence = 0;
     this.snapshotDir = resolve(MAC_ROOT, "snapshots");
     this.taskPaths = new Set();
-    this.ocrFailureStreak = 0;
-    this.ocrDisabledUntil = 0;
-    this.lastOcrFailure = null;
+    this.ocrModeHealth = new Map();
     this.advisor = new LocalVisionAdvisor(config.localVisionModel);
   }
 
   ocrHealth() {
+    const modes = Object.fromEntries(
+      ["fast", "accurate"].map((mode) => {
+        const state = this.#ocrState(mode);
+        return [mode, {
+          available: Date.now() >= state.disabledUntil,
+          disabledUntil: state.disabledUntil || null,
+          failureStreak: state.failureStreak,
+          reason: state.lastFailure
+        }];
+      })
+    );
     return {
-      available: Date.now() >= this.ocrDisabledUntil,
-      disabledUntil: this.ocrDisabledUntil || null,
-      failureStreak: this.ocrFailureStreak,
-      reason: this.lastOcrFailure
+      available: modes.fast.available || modes.accurate.available,
+      disabledUntil:
+        modes.fast.available || modes.accurate.available
+          ? null
+          : Math.min(modes.fast.disabledUntil, modes.accurate.disabledUntil),
+      failureStreak: Math.max(
+        modes.fast.failureStreak,
+        modes.accurate.failureStreak
+      ),
+      reason: modes.accurate.reason || modes.fast.reason,
+      modes
     };
   }
 
@@ -45,6 +61,18 @@ export class Vision {
 
   async captureAccurate(label = "screen", signal) {
     return this.#capture(label, signal, false, "accurate");
+  }
+
+  async captureSource(label = "screen", signal) {
+    await mkdir(this.snapshotDir, { recursive: true });
+    const stamp = new Date().toISOString().replaceAll(":", "-");
+    const path = resolve(
+      this.snapshotDir,
+      `${stamp}-${String(++this.sequence).padStart(4, "0")}-${safe(label)}.png`
+    );
+    await this.adb.screenshot(path);
+    this.taskPaths.add(path);
+    return { path, observations: [] };
   }
 
   async startAdvisor(signal) {
@@ -528,7 +556,7 @@ export class Vision {
     minimumConfidence = this.config.vision.minimumConfidence,
     scale = 1
   ) {
-    this.#assertOcrAvailable();
+    this.#assertOcrAvailable(mode);
     const width = Math.max(1, Math.round(region.right - region.left));
     const height = Math.max(1, Math.round(region.bottom - region.top));
     const cropPath = resolve(
@@ -588,10 +616,10 @@ export class Vision {
             signal
           }
         );
-        this.#recordOcrSuccess();
+        this.#recordOcrSuccess(mode);
       } catch (error) {
         if (signal?.aborted) throw error;
-        this.#recordOcrFailure(error);
+        this.#recordOcrFailure(error, mode);
         throw error;
       }
       return JSON.parse(result.stdout)
@@ -628,7 +656,7 @@ export class Vision {
     try {
       let observations = [];
       try {
-        this.#assertOcrAvailable();
+        this.#assertOcrAvailable(mode);
         const result = await runFile(
           this.config.vision.binary,
           [path, mode],
@@ -657,10 +685,10 @@ export class Vision {
         observations = JSON.parse(result.stdout).filter(
           (item) => item.confidence >= minimumConfidence
         );
-        this.#recordOcrSuccess();
+        this.#recordOcrSuccess(mode);
       } catch (error) {
         if (signal?.aborted) throw error;
-        this.#recordOcrFailure(error);
+        this.#recordOcrFailure(error, mode);
         // Vision framework failures must degrade to the guarded local model;
         // a single OCR subprocess crash must never terminate the game task.
       }
@@ -673,28 +701,43 @@ export class Vision {
     }
   }
 
-  #assertOcrAvailable() {
-    if (Date.now() < this.ocrDisabledUntil) {
+  #ocrState(mode) {
+    const key = mode === "accurate" ? "accurate" : "fast";
+    if (!this.ocrModeHealth.has(key)) {
+      this.ocrModeHealth.set(key, {
+        failureStreak: 0,
+        disabledUntil: 0,
+        lastFailure: null
+      });
+    }
+    return this.ocrModeHealth.get(key);
+  }
+
+  #assertOcrAvailable(mode) {
+    const state = this.#ocrState(mode);
+    if (Date.now() < state.disabledUntil) {
       throw new Error(
-        `VISION_OCR_CIRCUIT_OPEN: ${this.lastOcrFailure || "native OCR unavailable"}`
+        `VISION_OCR_CIRCUIT_OPEN_${String(mode || "fast").toUpperCase()}: ${state.lastFailure || "native OCR unavailable"}`
       );
     }
   }
 
-  #recordOcrSuccess() {
-    this.ocrFailureStreak = 0;
-    this.ocrDisabledUntil = 0;
-    this.lastOcrFailure = null;
+  #recordOcrSuccess(mode) {
+    const state = this.#ocrState(mode);
+    state.failureStreak = 0;
+    state.disabledUntil = 0;
+    state.lastFailure = null;
   }
 
-  #recordOcrFailure(error) {
+  #recordOcrFailure(error, mode) {
     if (String(error?.message || "").startsWith("VISION_OCR_CIRCUIT_OPEN")) {
       return;
     }
-    this.ocrFailureStreak += 1;
-    this.lastOcrFailure = String(error?.message || error).slice(0, 500);
-    if (this.ocrFailureStreak >= 2) {
-      this.ocrDisabledUntil = Date.now() + 5 * 60_000;
+    const state = this.#ocrState(mode);
+    state.failureStreak += 1;
+    state.lastFailure = String(error?.message || error).slice(0, 500);
+    if (state.failureStreak >= 2) {
+      state.disabledUntil = Date.now() + 5 * 60_000;
     }
   }
 

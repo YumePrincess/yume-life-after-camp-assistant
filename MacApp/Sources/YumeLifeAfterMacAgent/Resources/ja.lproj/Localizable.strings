@@ -17,6 +17,8 @@
 "Stop" = "停止";
 "Restart" = "再起動";
 "Install / Repair" = "インストール / 修復";
+"Repair Agent" = "Agent を修復";
+"Repair Agent help" = "ユーザー用バックグラウンド Agent を再登録して動作確認します。設定は保持され、MuMu は起動しません。";
 "Apple Silicon" = "Apple シリコン";
 "arm64 native runtime" = "arm64 ネイティブランタイム";
 "Intel and Rosetta are intentionally unsupported." = "Intel Mac と Rosetta は意図的にサポートしていません。";
@@ -135,3 +137,7 @@
 "Installation stopped. Review the error and try again." = "インストールを停止しました。エラーを確認して再試行してください。";
 "The Workers URL is invalid." = "Workers URL が無効です。";
 "The Agent could not be registered with Workers." = "Agent を Workers に登録できませんでした。";
+"Agent device name" = "Agent デバイス名";
+"Device ID" = "デバイス ID";
+"Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "公開 HTTPS サイト、デバイス名、正確な MuMu コンテナ名を入力してください。固定デバイス ID は自動生成されます。";
+"Enter a valid Workers URL, device name and MuMu container name." = "有効な Workers URL、デバイス名、MuMu コンテナ名を入力してください。";

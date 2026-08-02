@@ -69,6 +69,7 @@ for localization in en fr ja zh-Hans zh-Hant; do
 done
 
 rsync -a \
+  --prune-empty-dirs \
   --exclude '.DS_Store' --exclude '.local-model' --exclude 'config.json' \
   --exclude 'logs' --exclude 'snapshots' --exclude 'node_modules' \
   "${MAC_ROOT}/" "${APP_BUNDLE}/Contents/Resources/Runtime/"

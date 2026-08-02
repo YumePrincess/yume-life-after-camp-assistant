@@ -217,11 +217,13 @@ export interface CommandRow {
 
 export interface AgentHeartbeat {
   agent_id: string;
+  display_name: string | null;
   active_run_id: string | null;
   active_task_key: TaskKey | null;
   status: string;
   capabilities_json: string | null;
   detail_json: string | null;
+  first_seen_at: string | null;
   updated_at: string;
 }
 

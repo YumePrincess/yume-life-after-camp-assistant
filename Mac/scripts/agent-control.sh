@@ -31,14 +31,18 @@ wait_until_unloaded() {
 }
 
 bootstrap_agent() {
-  local attempt
-  for attempt in 1 2 3; do
-    if launchctl bootstrap "gui/${UID}" "${PLIST_PATH}"; then
+  local attempt bootstrap_error=""
+  for attempt in {1..40}; do
+    if bootstrap_error=$(launchctl bootstrap "gui/${UID}" "${PLIST_PATH}" 2>&1); then
+      return 0
+    fi
+    if is_loaded; then
       return 0
     fi
     sleep 0.5
   done
-  echo "Failed to bootstrap ${LABEL} after 3 attempts." >&2
+  [[ -n "${bootstrap_error}" ]] && echo "${bootstrap_error}" >&2
+  echo "Failed to register ${LABEL} after waiting for the previous launchd transition." >&2
   return 1
 }
 

@@ -104,7 +104,7 @@ export async function saveConfigBundle(env: Env, bundle: ConfigBundle): Promise<
   ]);
 }
 
-export async function registerAgentIdentity(
+export async function activateAgentIdentity(
   env: Env,
   bundle: ConfigBundle,
   agentId: string
@@ -120,12 +120,36 @@ export async function registerAgentIdentity(
     ).bind("camp_config", JSON.stringify(next.campConfig), now),
     env.DB.prepare(
       "UPDATE command_queue SET agent_id = ? WHERE agent_id <> ? AND state = 'queued'"
-    ).bind(agentId, agentId),
-    env.DB.prepare(
-      "DELETE FROM agent_heartbeats WHERE agent_id <> ?"
-    ).bind(agentId)
+    ).bind(agentId, agentId)
   ]);
   return next;
+}
+
+export async function registerAgentDevice(
+  env: Env,
+  input: { agentId: string; displayName: string }
+): Promise<{ activeAgentId: string; enabled: boolean }> {
+  const now = isoNow();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO agent_heartbeats(
+         agent_id, display_name, active_run_id, active_task_key, status,
+         capabilities_json, detail_json, first_seen_at, updated_at
+       ) VALUES(?, ?, NULL, NULL, 'registered', '{}', '{}', ?, ?)
+       ON CONFLICT(agent_id) DO UPDATE SET
+         display_name = excluded.display_name,
+         updated_at = excluded.updated_at`
+    ).bind(input.agentId, input.displayName, now, now),
+    env.DB.prepare(
+      `UPDATE settings SET
+         value = json_set(value, '$.agentId', ?),
+         updated_at = ?
+       WHERE key = 'camp_config'
+         AND COALESCE(json_extract(value, '$.agentId'), '') = ''`
+    ).bind(input.agentId, now)
+  ]);
+  const activeAgentId = (await getConfigBundle(env)).campConfig.agentId;
+  return { activeAgentId, enabled: activeAgentId === input.agentId };
 }
 
 export interface SessionRow {
@@ -1423,6 +1447,7 @@ export async function touchHeartbeat(
   env: Env,
   input: {
     agentId: string;
+    displayName: string;
     activeRunId: string | null;
     activeTaskKey: TaskKey | null;
     status: string;
@@ -1430,29 +1455,45 @@ export async function touchHeartbeat(
     detail: unknown;
   }
 ): Promise<void> {
-  await env.DB.prepare(
-    `INSERT INTO agent_heartbeats(
-       agent_id, active_run_id, active_task_key, status,
-       capabilities_json, detail_json, updated_at
-     ) VALUES(?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(agent_id) DO UPDATE SET
-       active_run_id = excluded.active_run_id,
-       active_task_key = excluded.active_task_key,
-       status = excluded.status,
-       capabilities_json = excluded.capabilities_json,
-       detail_json = excluded.detail_json,
-       updated_at = excluded.updated_at`
-  )
-    .bind(
+  const now = isoNow();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO agent_heartbeats(
+         agent_id, display_name, active_run_id, active_task_key, status,
+         capabilities_json, detail_json, first_seen_at, updated_at
+       ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(agent_id) DO UPDATE SET
+         display_name = CASE
+           WHEN agent_heartbeats.display_name IS NULL
+             OR agent_heartbeats.display_name = agent_heartbeats.agent_id
+           THEN excluded.display_name
+           ELSE agent_heartbeats.display_name
+         END,
+         active_run_id = excluded.active_run_id,
+         active_task_key = excluded.active_task_key,
+         status = excluded.status,
+         capabilities_json = excluded.capabilities_json,
+         detail_json = excluded.detail_json,
+         updated_at = excluded.updated_at`
+    ).bind(
       input.agentId,
+      input.displayName,
       input.activeRunId,
       input.activeTaskKey,
       input.status,
       JSON.stringify(input.capabilities),
       JSON.stringify(input.detail),
-      isoNow()
-    )
-    .run();
+      now,
+      now
+    ),
+    env.DB.prepare(
+      `UPDATE settings SET
+         value = json_set(value, '$.agentId', ?),
+         updated_at = ?
+       WHERE key = 'camp_config'
+         AND COALESCE(json_extract(value, '$.agentId'), '') = ''`
+    ).bind(input.agentId, now)
+  ]);
 }
 
 export async function listHeartbeats(env: Env): Promise<AgentHeartbeat[]> {
@@ -1469,4 +1510,17 @@ export async function getHeartbeat(
   return env.DB.prepare("SELECT * FROM agent_heartbeats WHERE agent_id = ?")
     .bind(agentId)
     .first<AgentHeartbeat>();
+}
+
+export async function deleteAgentHeartbeat(
+  env: Env,
+  agentId: string,
+  activeAgentId: string
+): Promise<boolean> {
+  const result = await env.DB.prepare(
+    "DELETE FROM agent_heartbeats WHERE agent_id = ? AND agent_id <> ?"
+  )
+    .bind(agentId, activeAgentId)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
 }

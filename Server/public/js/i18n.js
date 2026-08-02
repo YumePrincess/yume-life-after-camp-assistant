@@ -15,6 +15,8 @@
   };
   const translations = {
     en: {
+      "查看多台本地执行器、选择唯一启用设备，并按需启动任务。":
+        "View local Agents, choose the single enabled device, and start tasks on demand.",
       "明日之后“愿”营地助手": "LifeAfter “Wish” Camp Assistant",
       "管理后台": "Admin console",
       "营地管理后台": "Camp admin console",
@@ -339,6 +341,8 @@
       "{task}已入队": "{task} queued"
     },
     fr: {
+      "查看多台本地执行器、选择唯一启用设备，并按需启动任务。":
+        "Consultez les Agents locaux, choisissez l’unique appareil activé et lancez les tâches à la demande.",
       "明日之后“愿”营地助手": "Assistant du camp « Vœu » LifeAfter",
       "管理后台": "Administration",
       "营地管理后台": "Administration du camp",
@@ -667,6 +671,8 @@
       "{task}已入队": "{task} mis en file"
     },
     ja: {
+      "查看多台本地执行器、选择唯一启用设备，并按需启动任务。":
+        "複数のローカル Agent を確認し、唯一の有効デバイスを選択して必要なタスクを開始します。",
       "明日之后“愿”营地助手": "ライフアフター「願」野営地アシスタント",
       "管理后台": "管理画面",
       "营地管理后台": "野営地管理画面",
@@ -987,6 +993,8 @@
       "{task}已入队": "{task}をキューに追加しました"
     },
     "zh-tw": {
+      "查看多台本地执行器、选择唯一启用设备，并按需启动任务。":
+        "查看多台本機執行器、選擇唯一啟用裝置，並視需要啟動任務。",
       "明日之后“愿”营地助手": "明日之後「願」營地助手",
       "管理后台": "管理後台",
       "营地管理后台": "營地管理後台",
@@ -2393,6 +2401,56 @@
     }
   };
   for (const [language, additions] of Object.entries(identityLifecycleTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+
+  const multiAgentTranslations = {
+    en: {
+      "已启用": "Enabled",
+      "待命": "Standby",
+      "启用设备": "Enable device",
+      "删除设备": "Delete device",
+      "设备 ID：{id}": "Device ID: {id}",
+      "已启用设备 {name}": "Enabled device {name}",
+      "已删除设备 {name}": "Deleted device {name}",
+      "确认删除设备 {name}？设备再次上线后会自动重新出现。":
+        "Delete device {name}? It will reappear automatically when it comes online again."
+    },
+    fr: {
+      "已启用": "Activé",
+      "待命": "En attente",
+      "启用设备": "Activer l’appareil",
+      "删除设备": "Supprimer l’appareil",
+      "设备 ID：{id}": "ID de l’appareil : {id}",
+      "已启用设备 {name}": "Appareil {name} activé",
+      "已删除设备 {name}": "Appareil {name} supprimé",
+      "确认删除设备 {name}？设备再次上线后会自动重新出现。":
+        "Supprimer l’appareil {name} ? Il réapparaîtra automatiquement lors de sa prochaine connexion."
+    },
+    ja: {
+      "已启用": "有効",
+      "待命": "待機",
+      "启用设备": "デバイスを有効化",
+      "删除设备": "デバイスを削除",
+      "设备 ID：{id}": "デバイス ID：{id}",
+      "已启用设备 {name}": "デバイス {name} を有効にしました",
+      "已删除设备 {name}": "デバイス {name} を削除しました",
+      "确认删除设备 {name}？设备再次上线后会自动重新出现。":
+        "デバイス {name} を削除しますか？再びオンラインになると自動的に再表示されます。"
+    },
+    "zh-tw": {
+      "已启用": "已啟用",
+      "待命": "待命",
+      "启用设备": "啟用裝置",
+      "删除设备": "刪除裝置",
+      "设备 ID：{id}": "裝置 ID：{id}",
+      "已启用设备 {name}": "已啟用裝置 {name}",
+      "已删除设备 {name}": "已刪除裝置 {name}",
+      "确认删除设备 {name}？设备再次上线后会自动重新出现。":
+        "確認刪除裝置 {name}？裝置再次上線後會自動重新出現。"
+    }
+  };
+  for (const [language, additions] of Object.entries(multiAgentTranslations)) {
     Object.assign(translations[language], additions);
   }
 

@@ -46,30 +46,34 @@ trap 'rm -f -- "${PLIST_STAGING}"' EXIT
 trap - EXIT
 
 launchctl bootout "${SERVICE_TARGET}" 2>/dev/null || true
-for _ in {1..20}; do
+for _ in {1..80}; do
   if ! launchctl print "${SERVICE_TARGET}" >/dev/null 2>&1; then
     break
   fi
-  sleep 0.1
+  sleep 0.25
 done
 
 bootstrap_succeeded=false
-for attempt in {1..3}; do
-  if launchctl bootstrap "gui/${UID}" "${PLIST_PATH}"; then
+bootstrap_error=""
+for attempt in {1..40}; do
+  if bootstrap_error=$(launchctl bootstrap "gui/${UID}" "${PLIST_PATH}" 2>&1); then
     bootstrap_succeeded=true
     break
   fi
-  if (( attempt < 3 )); then
-    launchctl bootout "${SERVICE_TARGET}" 2>/dev/null || true
-    sleep 1
+  if launchctl print "${SERVICE_TARGET}" >/dev/null 2>&1; then
+    bootstrap_succeeded=true
+    break
   fi
+  sleep 0.5
 done
 if [[ "${bootstrap_succeeded}" != true ]]; then
-  echo "Unable to bootstrap ${LABEL} after 3 attempts in the current GUI login session." >&2
-  echo "Do not retry as root; log out and back in if launchd still retains a stale per-user service." >&2
+  [[ -n "${bootstrap_error}" ]] && echo "${bootstrap_error}" >&2
+  echo "Unable to register ${LABEL} after waiting for launchd to finish the previous per-user service transition." >&2
+  echo "Do not retry as root. Wait a moment and use Repair Agent again; if launchd remains stuck, log out and back in once." >&2
   exit 1
 fi
-launchctl kickstart -k "${SERVICE_TARGET}"
-
 echo "Installed ${LABEL}; runtime and logs remain with this managed Agent installation."
-"${SCRIPT_DIR}/agent-control.sh" status
+# A successful bootstrap can still need a few moments before launchd exposes
+# the process state. Reuse the bounded start/wait path instead of sampling
+# `status` immediately and reporting a false repair failure.
+"${SCRIPT_DIR}/agent-control.sh" start

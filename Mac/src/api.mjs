@@ -3,6 +3,7 @@ export class AgentApi {
     this.baseUrl = config.server.baseUrl.replace(/\/+$/, "");
     this.token = config.server.agentToken;
     this.agentId = config.server.agentId;
+    this.displayName = config.server.agentName || this.agentId;
   }
 
   async request(path, body, signal) {
@@ -43,7 +44,7 @@ export class AgentApi {
   heartbeat(input, signal) {
     return this.request(
       "/api/agent/heartbeat",
-      { agentId: this.agentId, ...input },
+      { agentId: this.agentId, displayName: this.displayName, ...input },
       signal
     );
   }

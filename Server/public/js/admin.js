@@ -344,17 +344,46 @@
       root.append(create("p", "empty-state", "尚未收到本地 Agent 心跳。"));
       return;
     }
+    const activeAgentId = state.bootstrap?.configBundle?.campConfig?.agentId || "";
     for (const item of heartbeats) {
       const age = Date.now() - Date.parse(item.updated_at);
       const online =
         age < (state.bootstrap?.agentOnlineThresholdSeconds || 45) * 1000;
       const card = create("article", "agent-card");
-      card.append(
+      if (item.agent_id === activeAgentId) card.dataset.active = "true";
+      const heading = create("div", "agent-card-heading");
+      heading.append(
+        create("strong", "", item.display_name || item.agent_id),
         create(
-          "strong",
-          "",
+          "span",
+          item.agent_id === activeAgentId ? "agent-enabled-badge" : "agent-standby-badge",
+          item.agent_id === activeAgentId ? "已启用" : "待命"
+        )
+      );
+      const actions = create("div", "agent-card-actions");
+      if (item.agent_id !== activeAgentId) {
+        const activate = create("button", "button button-primary", "启用设备");
+        activate.type = "button";
+        activate.disabled = !hasPermission("config:write");
+        activate.addEventListener("click", () => activateAgent(item, activate));
+        const remove = create("button", "button button-danger", "删除设备");
+        remove.type = "button";
+        remove.disabled = !hasPermission("config:write");
+        remove.addEventListener("click", () => deleteAgent(item, remove));
+        actions.append(activate, remove);
+      }
+      card.append(
+        heading,
+        create(
+          "span",
+          "agent-device-id",
+          window.MrzhI18n.format("设备 ID：{id}", { id: item.agent_id })
+        ),
+        create(
+          "span",
+          "agent-online-state",
           window.MrzhI18n.format("{agent} · {state}", {
-            agent: item.agent_id,
+            agent: item.status,
             state: window.MrzhI18n.t(online ? "在线" : "离线")
           })
         ),
@@ -366,9 +395,52 @@
             : window.MrzhI18n.format("空闲 / {date}", {
                 date: formatDate(item.updated_at)
               })
-        )
+        ),
+        actions
       );
       root.append(card);
+    }
+  }
+
+  async function activateAgent(item, button) {
+    button.disabled = true;
+    try {
+      await request(
+        `/api/admin/agents/${encodeURIComponent(item.agent_id)}/activate`,
+        { method: "POST", body: "{}" }
+      );
+      byId("save-state").textContent = window.MrzhI18n.format(
+        "已启用设备 {name}",
+        { name: item.display_name || item.agent_id }
+      );
+      await refresh(false);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function deleteAgent(item, button) {
+    const name = item.display_name || item.agent_id;
+    if (!confirm(window.MrzhI18n.format(
+      "确认删除设备 {name}？设备再次上线后会自动重新出现。",
+      { name }
+    ))) return;
+    button.disabled = true;
+    try {
+      await request(`/api/admin/agents/${encodeURIComponent(item.agent_id)}`, {
+        method: "DELETE"
+      });
+      byId("save-state").textContent = window.MrzhI18n.format(
+        "已删除设备 {name}",
+        { name }
+      );
+      await refresh(false);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    } finally {
+      button.disabled = false;
     }
   }
 

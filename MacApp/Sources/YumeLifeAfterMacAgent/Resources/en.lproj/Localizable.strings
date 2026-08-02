@@ -17,6 +17,8 @@
 "Stop" = "Stop";
 "Restart" = "Restart";
 "Install / Repair" = "Install / Repair";
+"Repair Agent" = "Repair Agent";
+"Repair Agent help" = "Re-register the per-user background Agent and verify its health. Settings are preserved and MuMu is not started.";
 "Apple Silicon" = "Apple Silicon";
 "arm64 native runtime" = "arm64 native runtime";
 "Intel and Rosetta are intentionally unsupported." = "Intel and Rosetta are intentionally unsupported.";
@@ -135,3 +137,7 @@
 "Installation stopped. Review the error and try again." = "Installation stopped. Review the error and try again.";
 "The Workers URL is invalid." = "The Workers URL is invalid.";
 "The Agent could not be registered with Workers." = "The Agent could not be registered with Workers.";
+"Agent device name" = "Agent device name";
+"Device ID" = "Device ID";
+"Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically.";
+"Enter a valid Workers URL, device name and MuMu container name." = "Enter a valid Workers URL, device name and MuMu container name.";

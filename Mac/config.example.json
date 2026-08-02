@@ -3,6 +3,7 @@
     "baseUrl": "https://lifeafter.yume.zone",
     "agentToken": "REPLACE_WITH_AGENT_SHARED_TOKEN",
     "agentId": "mac-life-after-agent",
+    "agentName": "Mac Agent",
     "pollSeconds": 5
   },
   "debug": {

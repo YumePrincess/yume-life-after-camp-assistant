@@ -116,7 +116,10 @@ export function validateCampConfig(value: unknown): CampConfig {
     voteWindowStart,
     voteWindowEnd,
     currentCampType: category(source.currentCampType, "campConfig.currentCampType"),
-    agentId: text(source.agentId, "campConfig.agentId", { max: 80 }),
+    agentId: text(source.agentId, "campConfig.agentId", {
+      max: 80,
+      allowEmpty: true
+    }),
     publicSiteName: text(source.publicSiteName, "campConfig.publicSiteName", { max: 80 }),
     campName: text(source.campName, "campConfig.campName", { max: 80 }),
     serverName: text(source.serverName, "campConfig.serverName", { max: 80 }),

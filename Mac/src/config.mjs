@@ -61,6 +61,7 @@ export async function loadConfig(options = {}) {
   config.plugins.uninstalled ||= [];
   config.plugins.trustedKeys ||= {};
   config.plugins.allowUnsignedLocal ??= false;
+  config.server.agentName ||= config.server.agentId;
   validate(config, { validateCredentials });
   return config;
 }
@@ -130,6 +131,20 @@ function validate(config, { validateCredentials = true } = {}) {
     validateCredentials && config.server.agentToken.startsWith("REPLACE_WITH")
   ) {
     throw new Error("Set server.agentToken in Mac/config.json");
+  }
+  if (
+    typeof config.server?.agentId !== "string" ||
+    !config.server.agentId.trim() ||
+    config.server.agentId.length > 80
+  ) {
+    throw new Error("server.agentId must be a stable identifier of at most 80 characters");
+  }
+  if (
+    typeof config.server?.agentName !== "string" ||
+    !config.server.agentName.trim() ||
+    config.server.agentName.length > 80
+  ) {
+    throw new Error("server.agentName must be a device name of at most 80 characters");
   }
   if (
     config.adb?.serial !== "auto" &&

@@ -344,6 +344,7 @@ export async function waitForGameReady(context, signal) {
   let unknownRecoveryRequested = false;
   let unknownRecoveryAttempted = false;
   let accurateOcrFailureReported = false;
+  let channelAccurateOcrFailureReported = false;
   let lastAccurateOcrAt = Date.now();
   let readyStreak = 0;
   let readySince = 0;
@@ -416,16 +417,16 @@ export async function waitForGameReady(context, signal) {
       ) * 1000;
     if (
       fastChannelReadyCount < channelReadyMinimum &&
-      typeof vision.capture === "function" &&
+      (typeof vision.captureSource === "function" ||
+        typeof vision.capture === "function") &&
       typeof vision.ocrRegion === "function" &&
       Date.now() - lastAccurateOcrAt >= accurateFallbackMs
     ) {
       lastAccurateOcrAt = Date.now();
       try {
-        const channelFrame = await vision.capture(
-          "game-ready-channel-source",
-          signal
-        );
+        const channelFrame = typeof vision.captureSource === "function"
+          ? await vision.captureSource("game-ready-channel-source", signal)
+          : await vision.capture("game-ready-channel-source", signal);
         const channelObservations = await vision.ocrRegion(
           channelFrame.path,
           promotions.channelReadyRegion,
@@ -455,6 +456,15 @@ export async function waitForGameReady(context, signal) {
         }
       } catch (error) {
         if (signal?.aborted) throw error;
+        if (!channelAccurateOcrFailureReported) {
+          channelAccurateOcrFailureReported = true;
+          await report(
+            "warning",
+            "game_ready_channel_accurate_unavailable",
+            "左下角频道区域高精度 OCR 本次未能返回；将继续尝试完整画面与本地模型，不会禁用其他 OCR 模式",
+            { reason: error.message }
+          );
+        }
       }
     }
     const fastMatchedKnownState =

@@ -17,6 +17,8 @@
 "Stop" = "停止";
 "Restart" = "重新启动";
 "Install / Repair" = "安装 / 修复";
+"Repair Agent" = "修复 Agent";
+"Repair Agent help" = "重新注册当前用户的后台 Agent 并检查运行状态；保留现有设置，不会启动 MuMu。";
 "Apple Silicon" = "Apple 芯片";
 "arm64 native runtime" = "arm64 原生运行环境";
 "Intel and Rosetta are intentionally unsupported." = "明确不支持 Intel Mac 与 Rosetta 转译环境。";
@@ -135,3 +137,7 @@
 "Installation stopped. Review the error and try again." = "安装已停止，请检查错误后重试。";
 "The Workers URL is invalid." = "Workers 地址无效。";
 "The Agent could not be registered with Workers." = "无法在 Workers 注册 Agent。";
+"Agent device name" = "Agent 设备名称";
+"Device ID" = "设备 ID";
+"Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "请输入公开 HTTPS 站点、设备名称和准确的 MuMu 容器名称。稳定的设备 ID 会自动生成。";
+"Enter a valid Workers URL, device name and MuMu container name." = "请输入有效的 Workers 地址、设备名称和 MuMu 容器名称。";

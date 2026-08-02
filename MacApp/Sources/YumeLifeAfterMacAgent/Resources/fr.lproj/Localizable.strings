@@ -17,6 +17,8 @@
 "Stop" = "Arrêter";
 "Restart" = "Redémarrer";
 "Install / Repair" = "Installer / Réparer";
+"Repair Agent" = "Réparer l’Agent";
+"Repair Agent help" = "Réenregistre l’Agent d’arrière-plan de l’utilisateur et vérifie son état. Les réglages sont conservés et MuMu n’est pas lancé.";
 "Apple Silicon" = "Puce Apple";
 "arm64 native runtime" = "Environnement arm64 natif";
 "Intel and Rosetta are intentionally unsupported." = "Les Mac Intel et Rosetta ne sont volontairement pas pris en charge.";
@@ -135,3 +137,7 @@
 "Installation stopped. Review the error and try again." = "Installation interrompue. Vérifiez l’erreur et réessayez.";
 "The Workers URL is invalid." = "L’URL Workers n’est pas valide.";
 "The Agent could not be registered with Workers." = "L’Agent n’a pas pu être enregistré auprès de Workers.";
+"Agent device name" = "Nom de l’appareil Agent";
+"Device ID" = "ID de l’appareil";
+"Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "Saisissez le site HTTPS public, un nom d’appareil et le nom exact du conteneur MuMu. L’ID stable de l’appareil est généré automatiquement.";
+"Enter a valid Workers URL, device name and MuMu container name." = "Saisissez une URL Workers, un nom d’appareil et un nom de conteneur MuMu valides.";

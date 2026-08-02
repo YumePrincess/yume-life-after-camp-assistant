@@ -9,6 +9,7 @@ mkdir -p "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/module-cache"
 xcrun swiftc \
   -O \
+  -parse-as-library \
   -module-cache-path "${OUTPUT_DIR}/module-cache" \
   -framework Vision \
   -framework CoreGraphics \

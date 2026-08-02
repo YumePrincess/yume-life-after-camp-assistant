@@ -102,6 +102,7 @@ async function listInstalled() {
           signatureReason: inspected.signature.reason
         });
       } catch (error) {
+        if (builtin && error.code === "ENOENT") continue;
         effective.set(entry.name, { id: entry.name, builtin, invalid: true, error: error.message });
       }
     }

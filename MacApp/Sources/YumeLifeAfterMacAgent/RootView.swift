@@ -135,10 +135,14 @@ struct OverviewView: View {
                             OverviewActionButton("Start", primary: true) { await model.performAgentAction("start") }
                             OverviewActionButton("Stop") { await model.performAgentAction("stop") }
                             OverviewActionButton("Restart") { await model.performAgentAction("restart") }
-                            OverviewActionButton("Install / Repair") { await model.performAgentAction("repair") }
+                            OverviewActionButton(
+                                "Repair Agent",
+                                help: model.text("Repair Agent help")
+                            ) { await model.performAgentAction("repair") }
                             OverviewActionButton("Update runtime") { await model.performAgentAction("update") }
                             OverviewActionButton("Uninstall Agent") { await model.performAgentAction("uninstall") }
                         }
+                        .disabled(model.isBusy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 214, alignment: .topLeading)
                     .glassPanel()
@@ -174,15 +178,18 @@ struct OverviewView: View {
 private struct OverviewActionButton: View {
     let title: LocalizedStringKey
     let primary: Bool
+    let help: String?
     let action: () async -> Void
 
     init(
         _ title: LocalizedStringKey,
         primary: Bool = false,
+        help: String? = nil,
         action: @escaping () async -> Void
     ) {
         self.title = title
         self.primary = primary
+        self.help = help
         self.action = action
     }
 
@@ -197,8 +204,10 @@ private struct OverviewActionButton: View {
     private var button: some View {
         Button { Task { await action() } } label: {
             Text(title)
-                .frame(maxWidth: .infinity, minHeight: 36)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: 40)
         }
+        .help(help ?? "")
     }
 }
 
@@ -372,7 +381,10 @@ struct SettingsView: View {
             Form {
                 Section("Connection") {
                     TextField("Workers URL", text: $model.serverURL)
-                    TextField("Agent ID", text: $model.agentID)
+                    TextField("Agent device name", text: $model.agentName)
+                    LabeledContent("Device ID") {
+                        Text(model.agentID).font(.caption.monospaced()).textSelection(.enabled)
+                    }
                     TextField("MuMu container name", text: $model.mumuInstanceName)
                     SecureField("Agent token", text: $model.agentToken)
                     SecureField("Local debug token", text: $model.debugToken)
@@ -503,10 +515,10 @@ struct SetupAssistantView: View {
     private var connectionStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Connect to Workers and MuMu").font(.title.bold())
-            Text("Enter the public HTTPS site, Agent identifier and the exact MuMu container name. The ADB port is discovered automatically.")
+            Text("Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically.")
                 .foregroundStyle(.secondary)
             TextField("Workers URL", text: $model.serverURL).textFieldStyle(.roundedBorder)
-            TextField("Agent ID", text: $model.agentID).textFieldStyle(.roundedBorder)
+            TextField("Agent device name", text: $model.agentName).textFieldStyle(.roundedBorder)
             TextField("MuMu container name", text: $model.mumuInstanceName).textFieldStyle(.roundedBorder)
         }
     }
@@ -531,7 +543,9 @@ struct SetupAssistantView: View {
             Text("The assistant will create config.json, register the launch agent and verify the bundled arm64 runtime.")
                 .foregroundStyle(.secondary)
             Label(model.serverURL, systemImage: "network")
-            Label(model.agentID, systemImage: "desktopcomputer")
+            Label(model.agentName, systemImage: "desktopcomputer")
+            Label(model.agentID, systemImage: "number")
+                .font(.caption.monospaced())
             Label(model.mumuInstanceName, systemImage: "square.stack.3d.up")
             Label("5 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
             if model.isBusy {

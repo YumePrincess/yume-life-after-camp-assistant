@@ -91,6 +91,12 @@ actor RuntimeService {
                 server["agentId"] = "mac-life-after-agent"
                 changed = true
             }
+            let storedAgentName = server["agentName"] as? String
+            if storedAgentName?
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+                server["agentName"] = Host.current().localizedName ?? "Mac Agent"
+                changed = true
+            }
             if server["agentToken"] as? String == "KEYCHAIN" {
                 server["agentToken"] = "CREDENTIALS_FILE"
                 changed = true
@@ -152,7 +158,12 @@ actor RuntimeService {
         return try JSONDecoder().decode(AgentHealth.self, from: data)
     }
 
-    func registerAgent(baseURL: String, agentID: String, agentToken: String) async throws {
+    func registerAgent(
+        baseURL: String,
+        agentID: String,
+        agentName: String,
+        agentToken: String
+    ) async throws {
         guard let endpoint = URL(string: baseURL)?.appending(path: "api/agent/register") else {
             throw RuntimeError.failed(String(localized: "The Workers URL is invalid."))
         }
@@ -161,7 +172,10 @@ actor RuntimeService {
         request.timeoutInterval = 20
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(agentToken)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["agentId": agentID])
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "agentId": agentID,
+            "displayName": agentName
+        ])
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
@@ -189,6 +203,7 @@ actor RuntimeService {
     func saveConnection(
         baseURL: String,
         agentID: String,
+        agentName: String,
         agentToken: String,
         debugToken: String,
         mumuInstanceName: String
@@ -203,6 +218,7 @@ actor RuntimeService {
         var server = object["server"] as? [String: Any] ?? [:]
         server["baseUrl"] = baseURL
         server["agentId"] = agentID
+        server["agentName"] = agentName
         server["agentToken"] = "CREDENTIALS_FILE"
         object["server"] = server
         var mumu = object["mumu"] as? [String: Any] ?? [:]
@@ -315,7 +331,29 @@ actor RuntimeService {
         }
         let importedConfig = payload.appending(path: "config.json")
         if fileManager.fileExists(atPath: importedConfig.path) {
-            try fileManager.copyItemReplacing(at: importedConfig, to: runtimeRoot.appending(path: "config.json"))
+            let targetConfig = runtimeRoot.appending(path: "config.json")
+            let currentObject = (try? JSONSerialization.jsonObject(
+                with: Data(contentsOf: targetConfig)
+            )) as? [String: Any]
+            let currentServer = currentObject?["server"] as? [String: Any]
+            try fileManager.copyItemReplacing(at: importedConfig, to: targetConfig)
+            if let currentAgentID = currentServer?["agentId"] as? String,
+               !currentAgentID.isEmpty {
+                var importedObject = try JSONSerialization.jsonObject(
+                    with: Data(contentsOf: targetConfig)
+                ) as! [String: Any]
+                var importedServer = importedObject["server"] as? [String: Any] ?? [:]
+                importedServer["agentId"] = currentAgentID
+                if let currentAgentName = currentServer?["agentName"] as? String,
+                   !currentAgentName.isEmpty {
+                    importedServer["agentName"] = currentAgentName
+                }
+                importedObject["server"] = importedServer
+                try JSONSerialization.data(
+                    withJSONObject: importedObject,
+                    options: [.prettyPrinted, .sortedKeys]
+                ).write(to: targetConfig, options: .atomic)
+            }
             try ensureRuntimeConfig(at: runtimeRoot)
         }
     }

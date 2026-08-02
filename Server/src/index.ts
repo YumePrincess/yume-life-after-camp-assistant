@@ -18,18 +18,21 @@ import {
   updateTemporaryKeyPermissions
 } from "./auth";
 import {
+  activateAgentIdentity,
   appendRunEvent,
   claimNextCommand,
   clearFinishedRunHistory,
   clearPublicRateLimits,
   completeCommand,
   createCommand,
+  deleteAgentHeartbeat,
   expireUnclaimedRuns,
   getConfigBundle,
   getHeartbeat,
   getRun,
   getTechnologyVoteHistory,
   listActivityWarnings,
+  listHeartbeats,
   listMembers,
   listRecordedTechnologyVoteHistoryDates,
   listRecentRuns,
@@ -40,7 +43,7 @@ import {
   replaceMemberSnapshot,
   replaceStaffSnapshot,
   removeCurrentMembers,
-  registerAgentIdentity,
+  registerAgentDevice,
   updateActivitySnapshot,
   updateContributionSnapshot,
   updateMemberProfiles,
@@ -779,6 +782,55 @@ async function handleAdminApi(
       )
     );
   }
+  const agentMatch = /^\/api\/admin\/agents\/([^/]+)(?:\/(activate))?$/.exec(path);
+  if (agentMatch) {
+    let agentId: string;
+    try {
+      agentId = boundedText(
+        decodeURIComponent(agentMatch[1] ?? ""),
+        "agentId",
+        80
+      );
+    } catch (error) {
+      return problem(errorMessage(error), 400, "invalid_agent_id");
+    }
+    const bundle = await getConfigBundle(env);
+    if (agentMatch[2] === "activate" && method === "POST") {
+      const heartbeat = await getHeartbeat(env, agentId);
+      if (!heartbeat) return problem("Agent not found", 404, "agent_not_found");
+      if (agentId !== bundle.campConfig.agentId) {
+        const current = bundle.campConfig.agentId
+          ? await getHeartbeat(env, bundle.campConfig.agentId)
+          : null;
+        if (current?.active_run_id) {
+          return problem(
+            "当前启用 Agent 仍在执行任务，请先结束任务再切换",
+            409,
+            "active_agent_busy"
+          );
+        }
+      }
+      const next = await activateAgentIdentity(env, bundle, agentId);
+      return json({ ok: true, activeAgentId: next.campConfig.agentId });
+    }
+    if (!agentMatch[2] && method === "DELETE") {
+      if (agentId === bundle.campConfig.agentId) {
+        return problem(
+          "不能删除当前启用的 Agent；请先启用另一台设备",
+          409,
+          "active_agent_delete_forbidden"
+        );
+      }
+      const deleted = await deleteAgentHeartbeat(
+        env,
+        agentId,
+        bundle.campConfig.agentId
+      );
+      return deleted
+        ? json({ ok: true, deleted: true })
+        : problem("Agent not found", 404, "agent_not_found");
+    }
+  }
   if (path === "/api/admin/technology-history" && method === "GET") {
     const bundle = await getConfigBundle(env);
     const dates = await ensureTechnologyVoteHistory(env, bundle);
@@ -1245,12 +1297,12 @@ async function handleAgentApi(
   if (path === "/api/agent/register" && method === "POST") {
     const body = await readJsonObject(request, 16_000);
     const agentId = boundedText(body.agentId, "agentId", 80);
-    const bundle = await registerAgentIdentity(
-      env,
-      await getConfigBundle(env),
-      agentId
-    );
-    return json({ ok: true, agentId: bundle.campConfig.agentId });
+    const displayName =
+      typeof body.displayName === "string"
+        ? boundedText(body.displayName, "displayName", 80)
+        : agentId;
+    const registered = await registerAgentDevice(env, { agentId, displayName });
+    return json({ ok: true, agentId, ...registered });
   }
   if (path === "/api/agent/heartbeat" && method === "POST") {
     const body = await readJsonObject(request, 64_000);
@@ -1260,8 +1312,13 @@ async function handleAgentApi(
       typeof body.activeTaskKey === "string" ? body.activeTaskKey : null;
     const activeTaskKey: TaskKey | null =
       activeTaskValue && isTaskKey(activeTaskValue) ? activeTaskValue : null;
+    const agentId = boundedText(body.agentId, "agentId", 80);
     await touchHeartbeat(env, {
-      agentId: boundedText(body.agentId, "agentId", 80),
+      agentId,
+      displayName:
+        typeof body.displayName === "string"
+          ? boundedText(body.displayName, "displayName", 80)
+          : agentId,
       activeRunId,
       activeTaskKey,
       status: boundedText(body.status, "status", 40),
@@ -1269,23 +1326,33 @@ async function handleAgentApi(
       detail: body.detail ?? {}
     });
     const activeRun = activeRunId ? await getRun(env, activeRunId) : null;
+    const bundle = await getConfigBundle(env);
     return json({
       ok: true,
+      enabled: bundle.campConfig.agentId === agentId,
+      activeAgentId: bundle.campConfig.agentId || null,
       cancelRequested: activeRun?.cancel_requested === 1
     });
   }
   if (path === "/api/agent/next-command" && method === "POST") {
     const body = await readJsonObject(request, 16_000);
     const bundle = await getConfigBundle(env);
+    const agentId = boundedText(body.agentId, "agentId", 80);
+    const enabled = Boolean(bundle.campConfig.agentId) &&
+      bundle.campConfig.agentId === agentId;
     await expireUnclaimedRuns(
       env,
       bundle.automationConfig.agentPolling.claimTimeoutMinutes
     );
-    const command = await claimNextCommand(env, {
-      agentId: boundedText(body.agentId, "agentId", 80),
-      busy: body.busy === true
-    });
+    const command = enabled
+      ? await claimNextCommand(env, {
+          agentId,
+          busy: body.busy === true
+        })
+      : null;
     return json({
+      enabled,
+      activeAgentId: bundle.campConfig.agentId || null,
       command: command
         ? {
             id: command.id,
@@ -1307,9 +1374,11 @@ async function handleAgentApi(
     const body = await readJsonObject(request, 16_000);
     const agentId = boundedText(body.agentId, "agentId", 80);
     const runId = typeof body.runId === "string" ? body.runId : null;
+    const bundle = await getConfigBundle(env);
     return json({
-      configBundle: await getConfigBundle(env),
+      configBundle: bundle,
       heartbeat: await getHeartbeat(env, agentId),
+      enabled: bundle.campConfig.agentId === agentId,
       run: runId ? await getRun(env, runId) : null
     });
   }
@@ -1515,9 +1584,7 @@ async function buildAdminBootstrap(
   const [voteSummary, heartbeats, recentRuns, staff, members] = await Promise.all([
     buildVoteSummary(env, bundle),
     canOverview
-      ? getHeartbeat(env, bundle.campConfig.agentId).then((heartbeat) =>
-          heartbeat ? [heartbeat] : []
-        )
+      ? listHeartbeats(env)
       : Promise.resolve([]),
     canHistory ? listRecentRuns(env, 100) : Promise.resolve([]),
     canMembers ? listStaff(env) : Promise.resolve([]),
@@ -1685,6 +1752,7 @@ function permissionForAdminRequest(
   }
   if (method === "PUT" && path === "/api/admin/config") return null;
   if (method === "POST" && path === "/api/admin/run") return "task:run";
+  if (path.startsWith("/api/admin/agents/")) return "config:write";
   if (method === "POST" && path === "/api/admin/interrupt") return "task:interrupt";
   if (method === "DELETE" && path.startsWith("/api/admin/maintenance/")) {
     return "admin:history";

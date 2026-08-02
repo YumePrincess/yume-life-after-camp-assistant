@@ -31,9 +31,13 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .lineLimit(1)
-            .padding(.horizontal, 18)
-            .frame(minHeight: 36)
+            .lineLimit(2)
+            .minimumScaleFactor(0.76)
+            .allowsTightening(true)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 2)
+            .frame(minHeight: 40)
             .foregroundStyle(.black.opacity(0.82))
             .background(
                 LinearGradient(
@@ -53,9 +57,13 @@ struct GlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .medium))
-            .lineLimit(1)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 34)
+            .lineLimit(2)
+            .minimumScaleFactor(0.76)
+            .allowsTightening(true)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 2)
+            .frame(minHeight: 40)
             .background(.thinMaterial, in: Capsule())
             .overlay(Capsule().stroke(.white.opacity(0.16)))
             .opacity(configuration.isPressed ? 0.72 : 1)

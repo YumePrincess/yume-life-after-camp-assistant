@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     @Published var pluginImporterPresented = false
     @Published var serverURL: String
     @Published var agentID: String
+    @Published var agentName: String
     @Published var agentToken: String
     @Published var debugToken: String
     @Published var mumuInstanceName: String
@@ -35,9 +36,17 @@ final class AppModel: ObservableObject {
         let defaults = UserDefaults.standard
         serverURL = defaults.string(forKey: "serverURL") ?? "https://lifeafter.yume.zone"
         let storedAgentID = defaults.string(forKey: "agentID")
-        agentID = storedAgentID == nil || storedAgentID == "mumu-main"
-            ? "mac-life-after-agent"
-            : storedAgentID!
+        if let storedAgentID, !storedAgentID.isEmpty,
+           !["mumu-main", "main-mumu"].contains(storedAgentID) {
+            agentID = storedAgentID
+        } else if defaults.bool(forKey: "setupCompleted") || storedAgentID != nil {
+            agentID = "mac-life-after-agent"
+        } else {
+            agentID = "mac-\(UUID().uuidString.lowercased())"
+        }
+        agentName = defaults.string(forKey: "agentName")
+            ?? Host.current().localizedName
+            ?? "Mac Agent"
         // Do not request access to existing Keychain items while the App is
         // launching. A newly signed build may need one explicit macOS approval;
         // that approval belongs to a user-initiated credential action.
@@ -98,7 +107,12 @@ final class AppModel: ObservableObject {
         statusMessage = text("Working…")
         defer { isBusy = false }
         do {
-            let output = try await runtime.run([action], timeout: action == "install" ? 1800 : 180)
+            let timeout: TimeInterval = switch action {
+            case "install": 1800
+            case "repair", "update", "uninstall": 300
+            default: 180
+            }
+            let output = try await runtime.run([action], timeout: timeout)
             statusMessage = output.trimmingCharacters(in: .whitespacesAndNewlines)
             await refreshAll()
         } catch {
@@ -191,6 +205,13 @@ final class AppModel: ObservableObject {
     }
 
     func saveSettings() async {
+        guard URL(string: serverURL)?.scheme == "https",
+              !agentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              agentName.count <= 80,
+              !mumuInstanceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            alertMessage = text("Enter a valid Workers URL, device name and MuMu container name.")
+            return
+        }
         guard !agentToken.isEmpty, !debugToken.isEmpty else {
             alertMessage = text("Enter both Agent tokens to continue.")
             return
@@ -231,9 +252,10 @@ final class AppModel: ObservableObject {
 
     func completeSetup() async {
         guard URL(string: serverURL)?.scheme == "https",
-              !agentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !agentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              agentName.count <= 80,
               !mumuInstanceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            alertMessage = text("Enter a valid Workers URL, Agent ID and MuMu container name.")
+            alertMessage = text("Enter a valid Workers URL, device name and MuMu container name.")
             setupStep = 0
             return
         }
@@ -268,6 +290,7 @@ final class AppModel: ObservableObject {
         try await runtime.saveConnection(
             baseURL: serverURL,
             agentID: agentID,
+            agentName: agentName,
             agentToken: agentToken,
             debugToken: debugToken,
             mumuInstanceName: mumuInstanceName
@@ -275,11 +298,13 @@ final class AppModel: ObservableObject {
         try await runtime.registerAgent(
             baseURL: serverURL,
             agentID: agentID,
+            agentName: agentName,
             agentToken: agentToken
         )
         let defaults = UserDefaults.standard
         defaults.set(serverURL, forKey: "serverURL")
         defaults.set(agentID, forKey: "agentID")
+        defaults.set(agentName, forKey: "agentName")
         defaults.set(mumuInstanceName, forKey: "mumuInstanceName")
         defaults.set(allowUnsignedPlugins, forKey: "allowUnsignedPlugins")
         defaults.set(language, forKey: "language")
