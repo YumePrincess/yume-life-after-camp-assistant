@@ -1,5 +1,10 @@
 import { delay } from "../process.mjs";
 
+// This is the fixed title/control at the top of the 1920x1200 technology
+// configuration screen. Clicking it collapses the slot detail drawer without
+// changing the selected technology.
+const TECHNOLOGY_CONFIG_HEADER_POINT = { x: 959, y: 208 };
+
 export async function runTechnology(context, command, bundle, signal) {
   const plan = command.payload?.detail?.technologyPlan;
   if (!plan) throw new Error("Technology task has no generated plan");
@@ -55,6 +60,13 @@ export async function runTechnology(context, command, bundle, signal) {
       await selectTechnology(context, lane, slotIndex, technology.uiLabel, signal);
       index += 1;
       await context.progress(0.2 + (index / Math.max(all.length, 1)) * 0.65, "tech_add");
+      if (index < all.length) {
+        await dismissTechnologyDetail(
+          context,
+          `technology-add-${lane}-${slotIndex + 1}`,
+          signal
+        );
+      }
     }
   }
 
@@ -96,6 +108,7 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
       { attempts: 1 }
     );
     const expectedFilled = Boolean(slot.expectedTechnology);
+    const isLastSlot = slots.indexOf(slot) === slots.length - 1;
     if (state.occupied !== expectedFilled) {
       mismatches.push({
         lane: slot.lane,
@@ -104,6 +117,13 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
         expectedFilled,
         detectedFilled: state.occupied
       });
+      if (!isLastSlot) {
+        await dismissTechnologyDetail(
+          context,
+          `technology-final-${slot.lane}-${slot.index + 1}`,
+          signal
+        );
+      }
       continue;
     }
     if (!expectedFilled) {
@@ -111,6 +131,13 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
         "info",
         "tech_final_empty_slot_verified",
         `${laneLabel}第 ${slot.index + 1} 格已点击，详情未出现“卸下”，确认为空`
+      );
+    }
+    if (!isLastSlot) {
+      await dismissTechnologyDetail(
+        context,
+        `technology-final-${slot.lane}-${slot.index + 1}`,
+        signal
       );
     }
   }
@@ -133,6 +160,10 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
 
 export async function clearAllConfiguredSlots(context, signal) {
   const { config, ui, vision, report } = context;
+  const allSlots = ["core", "general"].flatMap((lane) =>
+    config.technology.slots[lane].map((point, index) => ({ ...point, lane, index }))
+  );
+  let processedSlots = 0;
   let configuredCount = 0;
   for (const lane of ["core", "general"]) {
     const laneSlots = config.technology.slots[lane]
@@ -179,6 +210,14 @@ export async function clearAllConfiguredSlots(context, signal) {
           `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格经详情 OCR 与槽位像素双重检查为空，继续下一格`,
           { pixel: pixelBefore }
         );
+        processedSlots += 1;
+        if (processedSlots < allSlots.length) {
+          await dismissTechnologyDetail(
+            context,
+            `technology-clear-${lane}-${slot.index + 1}`,
+            signal
+          );
+        }
         continue;
       }
       if (!before.occupied && pixelFallbackOccupied) {
@@ -208,6 +247,14 @@ export async function clearAllConfiguredSlots(context, signal) {
         "tech_slot_unloaded",
         `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已在详情明确显示“卸下”后点击，并等待 ${Math.round(settleMs / 1000)} 秒确认按钮消失；继续下一个槽位`
       );
+      processedSlots += 1;
+      if (processedSlots < allSlots.length) {
+        await dismissTechnologyDetail(
+          context,
+          `technology-clear-${lane}-${slot.index + 1}`,
+          signal
+        );
+      }
     }
   }
   await report(
@@ -230,6 +277,47 @@ export async function clearAllConfiguredSlots(context, signal) {
     signal
   );
   context.technologyEmptySlotBaseline = { slots, probes };
+}
+
+async function dismissTechnologyDetail(context, label, signal) {
+  const { config, ui, vision, report } = context;
+  if (config.technology.dismissDetailBetweenSlots === false) return;
+  const settleMs = 2_000;
+  const maximumAttempts = 6;
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    await ui.tap(TECHNOLOGY_CONFIG_HEADER_POINT, signal);
+    await (context.sleep || delay)(settleMs, signal);
+    const frame = await vision.capture(
+      `${label}-dismiss-check-${attempt}`,
+      signal
+    );
+    const detailAction = findTechnologyText(
+      vision,
+      frame.observations,
+      "卸下",
+      config.technology.detailsRegion
+    );
+    if (!detailAction) {
+      await report(
+        "info",
+        "tech_detail_dismissed",
+        `已点击顶部“科技配置中”并等待 ${Math.round(settleMs / 1000)} 秒，确认详情框已关闭；继续下一个槽位`,
+        { label, point: TECHNOLOGY_CONFIG_HEADER_POINT, attempt, maximumAttempts }
+      );
+      return;
+    }
+    if (attempt < maximumAttempts) {
+      await report(
+        "warning",
+        "tech_detail_dismiss_retry",
+        `点击“科技配置中”并等待 ${Math.round(settleMs / 1000)} 秒后仍检测到详情遮挡，重试第 ${attempt + 1}/${maximumAttempts} 次`,
+        { label, point: TECHNOLOGY_CONFIG_HEADER_POINT, attempt, maximumAttempts }
+      );
+    }
+  }
+  throw new Error(
+    `科技详情框关闭校验失败：点击“科技配置中”重试 ${maximumAttempts} 次并每次等待 ${Math.round(settleMs / 1000)} 秒后仍检测到“卸下”，已停止以避免遮挡下一个槽位`
+  );
 }
 
 async function probeTechnologySlotOccupancy(

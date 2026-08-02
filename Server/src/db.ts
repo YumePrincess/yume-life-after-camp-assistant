@@ -1483,6 +1483,19 @@ export async function completeCommand(
     message: string;
   }
 ): Promise<boolean> {
+  const commandQuery = env.DB.prepare(
+    `SELECT * FROM command_queue
+     WHERE id = ? AND state = 'claimed' AND lease_token = ?`
+  );
+  // Some lightweight test doubles only implement bind/batch. The lookup is
+  // optional for terminal cancellation/completion, while production D1 always
+  // provides first().
+  const command = typeof (commandQuery as D1PreparedStatement).first === "function"
+    ? await (commandQuery as D1PreparedStatement)
+        .bind(input.commandId, input.leaseToken)
+        .first<CommandRow>()
+    : null;
+  const completedRun = command?.run_id ? await getRun(env, command.run_id) : null;
   const now = isoNow();
   const terminalRunState =
     input.state === "completed"
@@ -1522,7 +1535,73 @@ export async function completeCommand(
       input.state
     )
   ]);
-  return (commandResult?.meta.changes ?? 0) > 0;
+  const completed = (commandResult?.meta.changes ?? 0) > 0;
+  if (
+    completed &&
+    input.state === "failed" &&
+    command?.type === "run_task" &&
+    completedRun?.trigger_mode === "scheduled"
+  ) {
+    const detail = safeJsonObject(completedRun.detail_json);
+    const retryLimit = Math.max(0, Math.min(6, Number(detail.scheduledRetryLimit) || 0));
+    const retryAttempt = Math.max(0, Number(detail.scheduledRetryAttempt) || 0);
+    if (retryAttempt < retryLimit) {
+      const nextAttempt = retryAttempt + 1;
+      const retryDetail = {
+        ...detail,
+        scheduledRetryAttempt: nextAttempt,
+        retryOfRunId: completedRun.id,
+        retryReason: input.message
+      };
+      const retryRun = await createRun(env, {
+        taskKey: completedRun.task_key,
+        scheduleKey: `${completedRun.schedule_key ?? completedRun.id}:retry:${nextAttempt}`,
+        triggerMode: "scheduled",
+        message: `定时任务失败，已发起第 ${nextAttempt}/${retryLimit} 次重试`,
+        detail: retryDetail,
+        localDate: completedRun.local_date
+      });
+      if (retryRun && command) {
+        const payload = safeJsonObject(command.payload_json);
+        await createCommand(env, {
+          runId: retryRun.id,
+          agentId: command.agent_id,
+          type: "run_task",
+          payload: {
+            ...payload,
+            runId: retryRun.id,
+            triggerMode: "scheduled",
+            detail: retryDetail
+          }
+        });
+        await appendRunEvent(env, {
+          runId: completedRun.id,
+          level: "warning",
+          step: "scheduled_retry",
+          message: `任务失败，已发起第 ${nextAttempt}/${retryLimit} 次定时重试`,
+          detail: { retryRunId: retryRun.id, retryAttempt: nextAttempt, retryLimit }
+        });
+        await appendRunEvent(env, {
+          runId: retryRun.id,
+          level: "info",
+          step: "scheduled_retry",
+          message: `这是第 ${nextAttempt}/${retryLimit} 次定时重试`,
+          detail: { retryOfRunId: completedRun.id, retryAttempt: nextAttempt, retryLimit }
+        });
+      }
+    }
+  }
+  return completed;
+}
+
+function safeJsonObject(value: string | null): Record<string, any> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 export async function reconcileTerminalRunCommands(env: Env): Promise<number> {

@@ -147,7 +147,13 @@ struct OverviewView: View {
                     VStack(spacing: 10) {
                         MetricCard(title: "Installed plugins", value: "\(model.plugins.count)", symbol: "puzzlepiece.extension")
                         MetricCard(title: "Enabled plugins", value: "\(model.plugins.filter { $0.enabled != false && $0.invalid != true }.count)", symbol: "checkmark.circle")
-                        MetricCard(title: "Current task", value: model.health?.activeTaskKey == nil ? model.text("None") : "1", symbol: "play.circle")
+                        Button {
+                            model.openCurrentTaskLogs()
+                        } label: {
+                            MetricCard(title: "Current task", value: model.health?.activeTaskKey == nil ? model.text("None") : "1", symbol: "play.circle")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.health?.activeRunId == nil)
                     }
                     .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220, alignment: .center)
                     .glassPanel()
@@ -308,18 +314,26 @@ struct LogsView: View {
             HStack {
                 PageHeader(eyebrow: "OBSERVABILITY", title: "Runtime logs", summary: "The latest Agent output refreshes automatically.")
                 Spacer()
+                if model.logRunIdFilter != nil {
+                    Button("Current task only") { }
+                        .buttonStyle(GlassButtonStyle())
+                    Button("All logs") { model.showAllLogs() }
+                        .buttonStyle(GlassButtonStyle())
+                }
+                Button("Clear logs") { Task { await model.clearLogs() } }
+                    .buttonStyle(GlassButtonStyle())
                 Button("Refresh") { Task { await model.refreshStatusAndLogs() } }.buttonStyle(GlassButtonStyle())
             }
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(model.logText.isEmpty ? model.text("No log entries yet.") : model.logText)
+                    Text(model.visibleLogText.isEmpty ? model.text("No log entries yet.") : model.visibleLogText)
                         .font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                         .id("bottom")
                 }
                 .glassPanel(radius: 20, padding: 16)
-                .onChange(of: model.logText) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                .onChange(of: model.visibleLogText) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
             }
         }
         .padding(30)

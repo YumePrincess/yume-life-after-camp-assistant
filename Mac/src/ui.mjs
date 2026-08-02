@@ -234,6 +234,7 @@ export class GameUi {
       }
       if (
         Date.now() >= nextAdvisorAt &&
+        this.vision.advisor?.config.waitTextVerificationEnabled === true &&
         this.vision.advisor?.enabled &&
         this.vision.advisor.config.mode === "guarded"
       ) {
@@ -1314,6 +1315,25 @@ export class GameUi {
           return;
         }
       }
+      const mouseReleaseRequired =
+        action.hostMouseUnlockBeforeCampChannel === true ||
+        action.hostMouseUnlockOnCampChannelRetry === true;
+      if (mouseReleaseRequired) {
+        const released = await this.releaseHostMouseForCampChannelRetry(
+          action,
+          attempt,
+          attempts,
+          signal
+        );
+        if (!released) {
+          if (attempt >= attempts) {
+            throw new Error(
+              "MUMU_HOST_MOUSE_UNLOCK_NOT_CONFIRMED: 已达到 6 次释放鼠标上限，未确认 ~ 释放成功；未点击营地频道"
+            );
+          }
+          continue;
+        }
+      }
       await this.report(
         "info",
         "open_camp_panel_attempt",
@@ -1321,14 +1341,6 @@ export class GameUi {
       );
       await this.hudTap(action.chatButton || { x: 250, y: 1060 }, signal);
       await delay(action.chatDelayMs || 500, signal);
-      if (attempt > 1) {
-        await this.releaseHostMouseForCampChannelRetry(
-          action,
-          attempt,
-          attempts,
-          signal
-        );
-      }
       await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
       await delay(action.channelDelayMs || 500, signal);
       await this.tap(action.campIconButton || { x: 980, y: 65 }, signal);
@@ -1374,7 +1386,21 @@ export class GameUi {
   }
 
   async releaseHostMouseForCampChannelRetry(action, attempt, attempts, signal) {
-    if (action.hostMouseUnlockOnCampChannelRetry !== true) return false;
+    if (
+      action.hostMouseUnlockBeforeCampChannel !== true &&
+      action.hostMouseUnlockOnCampChannelRetry !== true
+    ) {
+      return true;
+    }
+    // Preserve the legacy opt-in semantics for external/custom flows. The
+    // built-in technology/member flow uses the new flag and releases before
+    // its first channel click.
+    if (
+      action.hostMouseUnlockBeforeCampChannel !== true &&
+      attempt === 1
+    ) {
+      return true;
+    }
     if (typeof this.mumu?.releaseContainerMouseCapture !== "function") {
       await this.report(
         "warning",
@@ -1386,7 +1412,9 @@ export class GameUi {
     await this.report(
       "warning",
       "camp_channel_host_mouse_unlock_retry",
-      `前一轮聊天→营地频道→市政厅未确认营地首页；第 ${attempt}/${attempts} 次点击营地频道前发送 Esc 下方的 ~ 键释放游戏鼠标，并在本轮后重新 OCR 验证`
+        attempt === 1
+          ? `点击营地频道前先发送 Esc 下方的 ~ 键释放游戏鼠标（第 ${attempt}/${attempts} 次），释放成功后才会点击并 OCR 验证`
+          : `前一轮聊天→营地频道→市政厅未确认营地首页；第 ${attempt}/${attempts} 次点击营地频道前发送 Esc 下方的 ~ 键重新释放鼠标，释放成功后才会点击并 OCR 验证`
     );
     const result = await this.mumu
       .releaseContainerMouseCapture(signal, { bringToFront: true })
@@ -1398,6 +1426,13 @@ export class GameUi {
         );
         return null;
       });
+    await this.report(
+      "info",
+      "camp_channel_host_mouse_unlock_checked",
+      result?.skippedBecauseAlreadyReleased
+        ? `第 ${attempt}/${attempts} 次检查确认鼠标已释放，不发送 ~，直接继续营地频道流程`
+        : `第 ${attempt}/${attempts} 次 ~ 释放结果已复核：释放前鼠标按钮${result?.mouseButtonsReleasedBefore ? "已松开" : "仍有按下或不可读"}，释放后${result?.mouseButtonsReleasedAfter ? "已松开" : "仍有按下或不可读"}；继续用营地页面 OCR 验证`
+    );
     if (!result?.mouseReleased) {
       await this.report(
         "warning",

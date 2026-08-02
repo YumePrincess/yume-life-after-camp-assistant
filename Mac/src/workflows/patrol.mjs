@@ -223,6 +223,11 @@ export async function createPatrolTeam(context, signal) {
     const unlock = await mumu.releaseContainerMouseCapture(signal, {
       bringToFront: true
     });
+    await report(
+      "info",
+      "patrol_host_mouse_unlock_checked",
+      `~ 释放结果已复核：释放前鼠标按钮${unlock?.mouseButtonsReleasedBefore ? "已松开" : "仍有按下或不可读"}，释放后${unlock?.mouseButtonsReleasedAfter ? "已松开" : "仍有按下或不可读"}；随后重新识别旗帜/队伍入口`
+    );
     if (!unlock?.mouseReleased) {
       throw new Error(
         "MUMU_HOST_MOUSE_STILL_CAPTURED: 旗帜或创建队伍点击未生效，尝试释放游戏鼠标后仍未确认成功，停止以避免角色攻击"

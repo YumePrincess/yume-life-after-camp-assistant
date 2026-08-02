@@ -42,11 +42,11 @@ describe("five-task automation configuration", () => {
     });
 
     expect(config.tasks).toMatchObject({
-      tech_switch: { enabled: true, time: "02:00" },
-      contribution_sync: { enabled: true, time: "02:30" },
-      inactivity_sync: { enabled: true, time: "02:45" },
-      member_profile_sync: { enabled: true, time: "02:15" },
-      patrol: { enabled: true, time: "19:20" }
+      tech_switch: { enabled: true, time: "02:00", times: ["02:00"] },
+      contribution_sync: { enabled: true, time: "02:30", times: ["02:30"] },
+      inactivity_sync: { enabled: true, time: "02:45", times: ["02:45"] },
+      member_profile_sync: { enabled: true, time: "02:15", times: ["02:15"] },
+      patrol: { enabled: true, time: "19:20", times: ["19:20"] }
     });
     expect(config.tasks).not.toHaveProperty("member_sync");
     expect(config.routines).toEqual([]);
@@ -83,5 +83,59 @@ describe("five-task automation configuration", () => {
       }
     });
     expect(config.agentPolling.claimTimeoutMinutes).toBe(90);
+  });
+
+  it("supports multiple daytime executions but keeps technology and patrol single-run", () => {
+    const config = validateAutomationConfig({
+      timezone: "Asia/Shanghai",
+      schedulerGraceMinutes: 5,
+      scheduledRetryCount: 4,
+      agentPolling: { activeSeconds: 2, idleSeconds: 300, windows: [] },
+      gameWatchdog: {
+        enabled: true,
+        healthCheckSeconds: 10,
+        actionTimeoutSeconds: 45,
+        frozenScreenSeconds: 90,
+        maxRestarts: 2,
+        restartCooldownSeconds: 8
+      },
+      tasks: {
+        tech_switch: { enabled: true, time: "02:00", times: ["02:00"] },
+        contribution_sync: { enabled: true, time: "02:30", times: ["02:30", "12:30"] },
+        inactivity_sync: { enabled: true, time: "02:45", times: ["02:45", "13:45"] },
+        member_profile_sync: { enabled: true, time: "02:15", times: ["02:15", "14:15"] },
+        patrol: {
+          enabled: true,
+          time: "19:20",
+          teamReadyTime: "19:30",
+          shareIntervalMinutes: 10,
+          chatPollSeconds: 5,
+          deadline: "21:25"
+        }
+      }
+    });
+    expect(config.scheduledRetryCount).toBe(4);
+    expect(config.tasks.contribution_sync.times).toEqual(["02:30", "12:30"]);
+    expect(config.tasks.inactivity_sync.times).toEqual(["02:45", "13:45"]);
+    expect(config.tasks.member_profile_sync.times).toEqual(["02:15", "14:15"]);
+    expect(config.tasks.tech_switch.times).toEqual(["02:00"]);
+    expect(config.tasks.patrol.times).toEqual(["19:20"]);
+  });
+
+  it("rejects multiple technology execution times", () => {
+    expect(() => validateAutomationConfig({
+      timezone: "Asia/Shanghai",
+      schedulerGraceMinutes: 5,
+      agentPolling: { activeSeconds: 2, idleSeconds: 300, windows: [] },
+      gameWatchdog: {
+        enabled: true,
+        healthCheckSeconds: 10,
+        actionTimeoutSeconds: 45,
+        frozenScreenSeconds: 90,
+        maxRestarts: 2,
+        restartCooldownSeconds: 8
+      },
+      tasks: { tech_switch: { enabled: true, time: "02:00", times: ["02:00", "12:00"] } }
+    })).toThrow("tech_switch.times supports only one time");
   });
 });

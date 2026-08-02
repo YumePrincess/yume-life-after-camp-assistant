@@ -188,6 +188,11 @@ export async function enqueueTask(
   const detail: Record<string, unknown> = {
     requestedAt: now.toISOString(),
     requestedBy: input.requestedBy?.email ?? input.triggerMode,
+    scheduledRetryLimit:
+      input.triggerMode === "scheduled"
+        ? input.bundle.automationConfig.scheduledRetryCount
+        : 0,
+    scheduledRetryAttempt: 0,
     ...(input.payloadDetail ?? {})
   };
   if (input.taskKey === "tech_switch") {

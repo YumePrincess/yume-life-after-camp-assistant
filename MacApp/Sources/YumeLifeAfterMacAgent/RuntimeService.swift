@@ -296,6 +296,17 @@ actor RuntimeService {
             .joined(separator: "\n")
     }
 
+    /// Truncate both streams in place so a running Agent can continue writing
+    /// to the same paths without needing a restart or leaving stale handles.
+    func clearLogs() throws {
+        let logDirectory = runtimeRoot.appending(path: "logs", directoryHint: .isDirectory)
+        try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)
+        for name in ["agent.log", "agent-error.log"] {
+            let file = logDirectory.appending(path: name)
+            try Data().write(to: file, options: .atomic)
+        }
+    }
+
     func saveConnection(
         baseURL: String,
         agentID: String,

@@ -387,6 +387,7 @@ export async function capturePagedTable(
     ? Math.max(1, Number(options.expectedCount))
     : null;
   for (let page = 0; page < definition.pagination.maxPages; page += 1) {
+    const pageStartedAt = Date.now();
     let frame;
     let rows = [];
     const minimumRowsPerPage = Math.max(
@@ -399,18 +400,26 @@ export async function capturePagedTable(
           ? `${label}-${page + 1}`
           : `${label}-${page + 1}-retry-${readAttempt}`;
       const attemptFrame = await vision.capture(attemptLabel, signal);
-      let attemptRows =
-        definition.extractionMode === "hybrid"
-          ? []
-          : parseTable(attemptFrame.observations, definition).filter(
-              (row) =>
-                row.name &&
-                !definition.headerPattern.some((value) =>
-                  row.name.includes(value)
-                )
-            );
+      // The fast native parser is only available for definitions carrying
+      // calibrated regions/columns. Test doubles and plugin-defined tables
+      // may intentionally provide capture observations without that layout;
+      // let those tables use the existing extractor fallback instead of
+      // throwing while reading an undefined region.
+      const canParseNative =
+        Array.isArray(attemptFrame.observations) &&
+        definition.region &&
+        Array.isArray(definition.columns);
+      let attemptRows = canParseNative
+        ? parseTable(attemptFrame.observations, definition).filter(
+            (row) =>
+              row.name &&
+              !definition.headerPattern.some((value) => row.name.includes(value))
+          )
+        : [];
       if (
-        (!attemptRows.length || definition.extractionMode === "hybrid") &&
+        (!attemptRows.length ||
+          (definition.extractionMode === "hybrid" &&
+            attemptRows.length < minimumRowsPerPage)) &&
         typeof vision.extractTableRows === "function"
       ) {
         attemptRows = await vision.extractTableRows(
@@ -545,14 +554,16 @@ export async function capturePagedTable(
           : { ...current, ...row }
       );
     }
+    const elapsedMs = Date.now() - pageStartedAt;
     await report(
       "info",
       `${label}_page`,
-      `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${byName.size} 名成员`,
+      `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${byName.size} 名成员（耗时 ${elapsedMs}ms）`,
       {
         screenshot: frame.path,
         expectedCount,
-        rejectedAfterExpectedCount
+        rejectedAfterExpectedCount,
+        elapsedMs
       }
     );
     if (reachedActivityBoundary) {

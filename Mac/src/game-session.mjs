@@ -136,7 +136,7 @@ export async function withGameSession(
             "warning",
             "game_stop_failed",
             "核心任务已完成，但关闭游戏进程失败",
-            { reason: error.message }
+            { reason: conciseError(error, 500) }
           ).catch(() => undefined);
         });
         if (config.mumu.stopEmulatorAfterTask) {
@@ -352,6 +352,7 @@ export async function waitForGameReady(context, signal) {
   let readyStabilizingReported = false;
   let readyAccurateChannelSeen = false;
   let lastLoadingEvidenceAt = 0;
+  let lastReadyDiagnosticsAt = 0;
   const reservePromotionDismissAttempt = (state) => {
     const previous = promotionDismissAttempts.get(state);
     const now = Date.now();
@@ -387,6 +388,14 @@ export async function waitForGameReady(context, signal) {
     return nextAttempt;
   };
   while (Date.now() < deadline) {
+    const loopStartedAt = Date.now();
+    let channelProbe = {
+      status: "not_needed",
+      elapsedMs: 0,
+      texts: [],
+      matches: [],
+      reason: ""
+    };
     let frame = await vision.captureTransient("game-login-state", signal);
     let accurateChannelCandidate = false;
     const blockingStateTexts = [
@@ -434,6 +443,8 @@ export async function waitForGameReady(context, signal) {
       Date.now() - lastChannelAccurateOcrAt >= channelAccurateProbeMs
     ) {
       lastChannelAccurateOcrAt = Date.now();
+      const channelProbeStartedAt = Date.now();
+      channelProbe.status = "running";
       try {
         const channelFrame = typeof vision.captureSource === "function"
           ? await vision.captureSource("game-ready-channel-source", signal)
@@ -453,6 +464,21 @@ export async function waitForGameReady(context, signal) {
           promotions.channelReadyTexts,
           promotions.channelReadyRegion
         );
+        channelProbe = {
+          status: "success",
+          elapsedMs: Date.now() - channelProbeStartedAt,
+          texts: channelObservations.map((item) => item.text).slice(0, 12),
+          matches: accurateChannelMatches.map((item) => item.text),
+          reason: ""
+        };
+        if (channelAccurateOcrFailureReported) {
+          channelAccurateOcrFailureReported = false;
+          await report(
+            "info",
+            "game_ready_channel_accurate_recovered",
+            `左下角频道 OCR 已恢复（${channelProbe.elapsedMs}ms）：${channelProbe.matches.join("、") || channelProbe.texts.join(" | ") || "未命中频道词"}`
+          );
+        }
         if (accurateChannelMatches.length >= channelReadyMinimum) {
           frame = {
             ...frame,
@@ -466,13 +492,20 @@ export async function waitForGameReady(context, signal) {
         }
       } catch (error) {
         if (signal?.aborted) throw error;
+        channelProbe = {
+          status: "failed",
+          elapsedMs: Date.now() - channelProbeStartedAt,
+          texts: [],
+          matches: [],
+          reason: conciseError(error)
+        };
         if (!channelAccurateOcrFailureReported) {
           channelAccurateOcrFailureReported = true;
           await report(
             "warning",
             "game_ready_channel_accurate_unavailable",
-            "左下角频道区域高精度 OCR 本次未能返回；将继续尝试完整画面与本地模型，不会禁用其他 OCR 模式",
-            { reason: error.message }
+            `左下角频道区域高精度 OCR 失败（${channelProbe.elapsedMs}ms）：${channelProbe.reason}；将在短暂冷却后自动重试`,
+            { reason: conciseError(error, 500) }
           );
         }
       }
@@ -542,7 +575,7 @@ export async function waitForGameReady(context, signal) {
       return /^(?:100|[0-9]{1,2})(?:\.[0-9]+)?[%％]$/.test(text) ||
         /(?:加载|登录|进入|场景|资源).{0,12}(?:100|[0-9]{1,2})(?:\.[0-9]+)?[%％]/.test(text);
     });
-    const blocksReady = [
+    const readyBlockingTexts = [
       ...promotions.loadingTexts,
       ...updates.stateTexts,
       ...updates.restartButtonTexts,
@@ -552,8 +585,11 @@ export async function waitForGameReady(context, signal) {
       "明日希望报",
       ...promotions.signatureTexts,
       "加入队伍语音频道"
-    ].some((text) => vision.find(frame.observations, text)) ||
-      loadingProgressVisible;
+    ];
+    const blockingMatches = readyBlockingTexts.filter((text) =>
+      vision.find(frame.observations, text)
+    );
+    const blocksReady = blockingMatches.length > 0 || loadingProgressVisible;
     if (blocksReady) lastLoadingEvidenceAt = Date.now();
     const readyMinimumTexts = Math.max(
       1,
@@ -586,6 +622,39 @@ export async function waitForGameReady(context, signal) {
     const loadingQuietSatisfied =
       !lastLoadingEvidenceAt ||
       Date.now() - lastLoadingEvidenceAt >= loadingQuietMs;
+    if (
+      loginClicked &&
+      Date.now() - lastReadyDiagnosticsAt >= 10_000
+    ) {
+      lastReadyDiagnosticsAt = Date.now();
+      const health = typeof vision.ocrHealth === "function"
+        ? vision.ocrHealth()
+        : null;
+      const accurateHealth = health?.modes?.accurate;
+      const retrySeconds = accurateHealth?.disabledUntil > Date.now()
+        ? Math.ceil((accurateHealth.disabledUntil - Date.now()) / 1000)
+        : 0;
+      const channelSummary = channelReadyMatches.length
+        ? channelReadyMatches.map((item) => item.text).join("、")
+        : "无";
+      const probeSummary = channelProbe.status === "success"
+        ? `${channelProbe.elapsedMs}ms / ${channelProbe.matches.join("、") || channelProbe.texts.join(" | ") || "无文字"}`
+        : channelProbe.status === "failed"
+          ? `${channelProbe.elapsedMs}ms / ${channelProbe.reason}`
+          : channelProbe.status;
+      const blockSummary = [
+        ...blockingMatches,
+        ...(loadingProgressVisible ? ["底部登录/加载百分比"] : [])
+      ].join("、") || "无";
+      const healthSummary = retrySeconds > 0
+        ? `冷却 ${retrySeconds}s / ${conciseError(accurateHealth?.reason || "未知错误", 120)}`
+        : "可用";
+      await report(
+        "info",
+        "game_ready_probe",
+        `HUD 探测：频道锚点=${channelSummary}；频道高精度OCR=${probeSummary}；阻塞=${blockSummary}；登录等待=${postLoginWaitSatisfied ? "完成" : "未完成"}；加载静默=${loadingQuietSatisfied ? "完成" : "未完成"}；连续帧=${readyStreak}；OCR状态=${healthSummary}；本轮=${Date.now() - loopStartedAt}ms`
+      );
+    }
     if (
       (readyMatches.length >= readyMinimumTexts || channelHudReady) &&
       !blocksReady &&
@@ -1239,6 +1308,15 @@ function normalizeChannelLabel(value) {
     .normalize("NFKC")
     .replace(/\s+/g, "")
     .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+}
+
+function conciseError(error, limit = 240) {
+  const message = String(error?.message || error || "未知错误")
+    .replace(/\s+/g, " ")
+    .trim();
+  return message.length > limit
+    ? `${message.slice(0, Math.max(1, limit - 1))}…`
+    : message;
 }
 
 async function runWithWatchdog(context, work, parentSignal, watchdog) {

@@ -44,6 +44,10 @@
 "The latest Agent output refreshes automatically." = "The latest Agent output refreshes automatically.";
 "Refresh" = "Refresh";
 "No log entries yet." = "No log entries yet.";
+"Clear logs" = "Clear logs";
+"Current task only" = "Current task only";
+"All logs" = "All logs";
+"Logs cleared" = "Logs cleared";
 "Add plugin…" = "Add plugin…";
 "Check for updates" = "Check for updates";
 "Built-in" = "Built-in";

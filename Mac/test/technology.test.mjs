@@ -257,7 +257,7 @@ test("technology selection configures the exact target without re-clicking its s
     }
   };
   await selectTechnology(context, "core", 0, "温室大棚");
-  assert.deepEqual(taps, [
+  assert.deepEqual(taps.map(({ x, y }) => ({ x, y })), [
     { x: 800, y: 400 },
     { x: 178, y: 470 },
     { x: 745, y: 638 }
@@ -328,7 +328,7 @@ test("a mismatched right-side technology name is reselected and never configured
 
   await selectTechnology(context, "core", 0, "生物多样性");
 
-  assert.deepEqual(taps, [
+  assert.deepEqual(taps.map(({ x, y }) => ({ x, y })), [
     { x: 800, y: 400 },
     { x: 178, y: 465 },
     { x: 178, y: 465 },
@@ -628,6 +628,38 @@ test("formal technology workflow verifies every expected filled and empty slot",
   assert.ok(reports.some((item) => item.step === "tech_final_empty_slot_verified"));
 });
 
+test("technology detail is collapsed before the next final slot is inspected", async () => {
+  const taps = [];
+  const waits = [];
+  const config = technologyConfig();
+  config.technology.dismissDetailBetweenSlots = true;
+  config.technology.slots = {
+    core: [{ x: 800, y: 400 }, { x: 900, y: 400 }],
+    general: []
+  };
+  const context = {
+    config,
+    ui: { async tap(point) { taps.push(point); } },
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      }
+    },
+    async sleep(ms) { waits.push(ms); },
+    async report() {}
+  };
+  await verifyFinalConfiguredSlots(context, { core: [], general: [] });
+  assert.deepEqual(taps.map(({ x, y }) => ({ x, y })), [
+    { x: 800, y: 400 },
+    { x: 959, y: 208 },
+    { x: 900, y: 400 }
+  ]);
+  assert.deepEqual(waits, [1200, 2000, 1200]);
+});
+
 test("final empty slots are clicked and verified by detail OCR, not pixels", async () => {
   const taps = [];
   const reports = [];
@@ -705,6 +737,7 @@ test("formal technology workflow aborts when a final slot has the wrong state", 
 function technologyConfig() {
   return {
     technology: {
+      dismissDetailBetweenSlots: false,
       slots: {
         core: [{ x: 800, y: 400 }],
         general: [{ x: 800, y: 550 }]

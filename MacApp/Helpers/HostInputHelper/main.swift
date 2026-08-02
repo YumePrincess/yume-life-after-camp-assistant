@@ -7,6 +7,9 @@ private struct HelperResult: Encodable {
     let keyCode: Int
     let bringToFront: Bool
     let mouseReleased: Bool
+    let mouseButtonsReleasedBefore: Bool
+    let mouseButtonsReleasedAfter: Bool
+    let skippedBecauseAlreadyReleased: Bool
 }
 
 private struct PermissionResult: Encodable {
@@ -143,6 +146,27 @@ do {
         Thread.sleep(forTimeInterval: foregroundDelay)
     }
 
+    // Foreground activation must happen before this check. MuMu's private
+    // cursor capture is meaningful only while its Android container owns the
+    // active window; never send `~` when the already-foreground container is
+    // demonstrably released, because `~` is a toggle and would recapture it.
+    let releasedBefore = mouseButtonsReleased()
+    if releasedBefore {
+        try emit(
+            HelperResult(
+                processId: processId,
+                keyCode: keyCode,
+                bringToFront: bringToFront,
+                mouseReleased: true,
+                mouseButtonsReleasedBefore: true,
+                mouseButtonsReleasedAfter: true,
+                skippedBecauseAlreadyReleased: true
+            ),
+            arguments: arguments
+        )
+        exit(0)
+    }
+
     let eventSource = CGEventSource(stateID: .combinedSessionState)
     guard
         let keyDown = CGEvent(
@@ -161,11 +185,15 @@ do {
     keyUp.postToPid(processId)
     Thread.sleep(forTimeInterval: postKeyDelay)
 
+    let releasedAfter = mouseButtonsReleased()
     let result = HelperResult(
         processId: processId,
         keyCode: keyCode,
         bringToFront: bringToFront,
-        mouseReleased: mouseButtonsReleased()
+        mouseReleased: releasedAfter,
+        mouseButtonsReleasedBefore: releasedBefore,
+        mouseButtonsReleasedAfter: releasedAfter,
+        skippedBecauseAlreadyReleased: false
     )
     try emit(result, arguments: arguments)
 } catch {

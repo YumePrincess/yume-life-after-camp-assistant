@@ -259,6 +259,14 @@ async function executeCommand(command, signal) {
     }
   };
   const report = async (level, step, message, detail = {}) => {
+    console.info(JSON.stringify({
+      event: "task_event",
+      runId: command.runId,
+      level,
+      step,
+      message,
+      detail
+    }));
     await updateRunSafely({
       currentStep: step,
       message,

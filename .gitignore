@@ -178,5 +178,6 @@ frontend/public/pwa/generated/
 docker-compose.local.yml
 
 **/.DS_Store
+/.build/
 .idea
 worker-configuration.d.ts

@@ -44,6 +44,10 @@
 "The latest Agent output refreshes automatically." = "自动刷新 Agent 的最新输出。";
 "Refresh" = "刷新";
 "No log entries yet." = "暂无日志。";
+"Clear logs" = "清空日志";
+"Current task only" = "仅显示当前任务";
+"All logs" = "全部日志";
+"Logs cleared" = "运行日志已清空";
 "Add plugin…" = "添加插件…";
 "Check for updates" = "检查更新";
 "Built-in" = "内置";

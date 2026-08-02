@@ -79,15 +79,29 @@ function assetUrl(value: unknown, field: string): string {
 
 function taskSchedule(
   value: unknown,
-  field: string
-): { source: Record<string, unknown>; enabled: boolean; time: string } {
+  field: string,
+  allowMultiple = true
+): { source: Record<string, unknown>; enabled: boolean; time: string; times: string[] } {
   const source = object(value, field);
   const time = text(source.time, `${field}.time`, { max: 5 });
   assertClock(time, `${field}.time`);
+  const rawTimes = source.times === undefined ? [time] : source.times;
+  if (!Array.isArray(rawTimes) || rawTimes.length < 1 || rawTimes.length > 12) {
+    throw new Error(`${field}.times must contain between 1 and 12 times`);
+  }
+  if (!allowMultiple && rawTimes.length > 1) {
+    throw new Error(`${field}.times supports only one time`);
+  }
+  const times = rawTimes.map((item, index) => {
+    const parsed = text(item, `${field}.times[${index}]`, { max: 5 });
+    assertClock(parsed, `${field}.times[${index}]`);
+    return parsed;
+  });
   return {
     source,
     enabled: boolean(source.enabled, `${field}.enabled`),
-    time
+    time: times[0] ?? time,
+    times
   };
 }
 
@@ -302,7 +316,8 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
   const tasks = object(source.tasks, "automationConfig.tasks");
   const tech = taskSchedule(
     tasks.tech_switch ?? { enabled: true, time: "02:00" },
-    "automationConfig.tasks.tech_switch"
+    "automationConfig.tasks.tech_switch",
+    false
   );
   const contribution = taskSchedule(
     tasks.contribution_sync ?? { enabled: true, time: "02:30" },
@@ -316,7 +331,7 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     tasks.member_profile_sync ?? { enabled: true, time: "02:15" },
     "automationConfig.tasks.member_profile_sync"
   );
-  const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol");
+  const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol", false);
 
   const patrolTeamReadyTime = text(
     patrol.source.teamReadyTime,
@@ -395,6 +410,10 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
       1,
       15
     ),
+    scheduledRetryCount:
+      source.scheduledRetryCount === undefined
+        ? 2
+        : integer(source.scheduledRetryCount, "automationConfig.scheduledRetryCount", 0, 6),
     agentPolling: {
       activeSeconds:
         pollingSource.activeSeconds === undefined
@@ -477,16 +496,18 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
             )
     },
     tasks: {
-      tech_switch: { enabled: tech.enabled, time: tech.time },
+      tech_switch: { enabled: tech.enabled, time: tech.time, times: tech.times },
       contribution_sync: {
         enabled: contribution.enabled,
-        time: contribution.time
+        time: contribution.time,
+        times: contribution.times
       },
-      inactivity_sync: { enabled: inactivity.enabled, time: inactivity.time },
-      member_profile_sync: { enabled: profile.enabled, time: profile.time },
+      inactivity_sync: { enabled: inactivity.enabled, time: inactivity.time, times: inactivity.times },
+      member_profile_sync: { enabled: profile.enabled, time: profile.time, times: profile.times },
       patrol: {
         enabled: patrol.enabled,
         time: patrol.time,
+        times: [patrol.time],
         teamReadyTime: patrolTeamReadyTime,
         shareIntervalMinutes: integer(
           patrol.source.shareIntervalMinutes,

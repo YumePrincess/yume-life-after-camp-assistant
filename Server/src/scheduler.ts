@@ -52,23 +52,29 @@ export async function runScheduler(
       result.skipped.push(`${taskKey}:plugin-disabled`);
       continue;
     }
-    await maybeEnqueueDaily(
-      env,
-      bundle,
-      now,
-      localDate,
-      taskKey,
-      result,
-      taskKey === "tech_switch"
-        ? {
-            targetDate: targetDateForTechnologyRun(
-              now,
-              timezone,
-              bundle.campConfig.gameResetTime
-            )
-          }
-        : {}
-    );
+    const schedule = bundle.automationConfig.tasks[taskKey];
+    const times = taskKey === "patrol" ? [schedule.time] : schedule.times;
+    for (let slot = 0; slot < times.length; slot += 1) {
+      await maybeEnqueueDaily(
+        env,
+        bundle,
+        now,
+        localDate,
+        taskKey,
+        times[slot] ?? schedule.time,
+        slot,
+        result,
+        taskKey === "tech_switch"
+          ? {
+              targetDate: targetDateForTechnologyRun(
+                now,
+                timezone,
+                bundle.campConfig.gameResetTime
+              )
+            }
+          : {}
+      );
+    }
   }
 
   return result;
@@ -80,6 +86,8 @@ async function maybeEnqueueDaily(
   now: Date,
   localDate: string,
   taskKey: keyof ConfigBundle["automationConfig"]["tasks"],
+  scheduledTime: string,
+  slot: number,
   result: SchedulerResult,
   options: { targetDate?: string } = {}
 ): Promise<void> {
@@ -92,7 +100,7 @@ async function maybeEnqueueDaily(
     !isWithinDueWindow(
       now,
       bundle.automationConfig.timezone,
-      schedule.time,
+      scheduledTime,
       bundle.automationConfig.schedulerGraceMinutes
     )
   ) {
@@ -103,10 +111,13 @@ async function maybeEnqueueDaily(
     bundle,
     taskKey,
     triggerMode: "scheduled",
-    scheduleKey: `${taskKey}:${keyDate}`,
+    // Keep the legacy key for the first execution so deploying this feature
+    // cannot enqueue today's already-completed single-run task again.
+    scheduleKey: slot === 0 ? `${taskKey}:${keyDate}` : `${taskKey}:${keyDate}:${slot}`,
     localDate,
     targetDate: options.targetDate,
-    now
+    now,
+    payloadDetail: { scheduleSlot: slot, scheduledTime }
   });
   if (queued.run) result.enqueued.push(taskKey);
 }

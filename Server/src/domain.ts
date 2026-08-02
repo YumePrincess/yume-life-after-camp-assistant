@@ -79,11 +79,13 @@ export interface TechnologyConfig {
 export interface TaskSchedule {
   enabled: boolean;
   time: string;
+  times: string[];
 }
 
 export interface AutomationConfig {
   timezone: string;
   schedulerGraceMinutes: number;
+  scheduledRetryCount: number;
   agentPolling: {
     activeSeconds: number;
     idleSeconds: number;

@@ -6,7 +6,10 @@ APP_ROOT=${SCRIPT_DIR:h}
 PROJECT_ROOT=${APP_ROOT:h}
 MAC_ROOT="${PROJECT_ROOT}/Mac"
 PORTABLE_ROOT="${APP_ROOT}/.portable"
-DIST_ROOT="${APP_ROOT}/dist"
+# Match the DMG installation result by default: a build is placed directly in
+# /Applications. Override with YLA_DIST_ROOT for CI or a non-destructive local
+# build (for example YLA_DIST_ROOT="${APP_ROOT}/dist").
+DIST_ROOT="${YLA_DIST_ROOT:-/Applications}"
 APP_BUNDLE="${DIST_ROOT}/Yume Life After Mac Agent.app"
 SWIFT_SCRATCH="/private/tmp/yla-mac-app-build"
 BUILD_CONFIGURATION="${YLA_BUILD_CONFIGURATION:-release}"
@@ -98,7 +101,7 @@ HOST_INPUT_APP="${APP_BUNDLE}/Contents/Resources/Runtime/bin/Yume Life After Mac
 HOST_INPUT_EXECUTABLE="${HOST_INPUT_APP}/Contents/MacOS/YumeLifeAfterMacAgentInputHelper"
 mkdir -p "${HOST_INPUT_APP}/Contents/MacOS" "${HOST_INPUT_APP}/Contents/Resources"
 env CLANG_MODULE_CACHE_PATH=/private/tmp/yla-clang-cache \
-  /usr/bin/swiftc -O -target arm64-apple-macos14 \
+  /usr/bin/swiftc -O -target arm64-apple-macos26 \
   "${HOST_INPUT_SOURCE}/main.swift" -o "${HOST_INPUT_EXECUTABLE}"
 cp "${HOST_INPUT_SOURCE}/Info.plist" "${HOST_INPUT_APP}/Contents/Info.plist"
 cp "${APP_ROOT}/AppIcon.icns" "${HOST_INPUT_APP}/Contents/Resources/AppIcon.icns"

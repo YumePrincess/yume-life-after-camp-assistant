@@ -141,6 +141,46 @@ test("camp channel retries release host mouse only after the first unverified at
   );
 });
 
+test("built-in camp flow releases host mouse before the first channel click and blocks unverified clicks", async () => {
+  const order = [];
+  let releases = 0;
+  const fixture = createUi({
+    transientCapture(label) {
+      if (label === "camp-panel-verify-2") {
+        return [
+          observation("营地", 150, 145),
+          observation("市长：雨梦", 260, 450)
+        ];
+      }
+      return [];
+    },
+    mumu: {
+      async releaseContainerMouseCapture() {
+        releases += 1;
+        order.push("release");
+        return releases === 1
+          ? { mouseReleased: false }
+          : { mouseReleased: true, mouseButtonsReleasedBefore: true, mouseButtonsReleasedAfter: true };
+      }
+    }
+  });
+  const originalTap = fixture.ui.tap.bind(fixture.ui);
+  fixture.ui.tap = async (point, signal) => {
+    if (point.x === 1740 && point.y === 355) order.push("channel");
+    return originalTap(point, signal);
+  };
+
+  await fixture.ui.openCampPanelViaChat({
+    attempts: 2,
+    hostMouseUnlockBeforeCampChannel: true,
+    chatDelayMs: 1,
+    channelDelayMs: 1,
+    verifySeconds: 1
+  });
+  assert.equal(releases, 2);
+  assert.deepEqual(order, ["release", "release", "channel"]);
+});
+
 test("map preparation closes the camp page, collapses chat, then confirms HUD", async () => {
   const fixture = createUi({
     fastFrames: [

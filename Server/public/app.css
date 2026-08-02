@@ -2003,6 +2003,43 @@ select option {
   grid-column: 1 / -1;
 }
 
+.schedule-card > .field:not(.field-checkbox),
+.schedule-card > .form-grid {
+  display: none;
+}
+
+.schedule-card .schedule-summary {
+  min-height: 2.8em;
+  margin: 12px 0;
+  color: var(--muted, #9caab2);
+  white-space: pre-line;
+}
+
+.schedule-open-button {
+  width: 100%;
+}
+
+.schedule-retry-setting {
+  max-width: 360px;
+  margin-top: 16px;
+}
+
+.schedule-time-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.schedule-time-row {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.schedule-time-row .field {
+  flex: 1;
+}
+
 .form-grid-compact {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

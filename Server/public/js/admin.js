@@ -73,6 +73,8 @@
     smtpConfigLoading: false,
     smtpDraftRevision: 0,
     smtpDirty: false,
+    scheduleDrafts: {},
+    scheduleDialogTaskKey: null,
     maintenanceAction: null,
     loadedPluginClientModules: new Set()
   };
@@ -584,7 +586,9 @@
       }
     }
     if (sections.includes("tasks")) {
+      state.scheduleDrafts = {};
       for (const [name, value] of Object.entries({
+        scheduledRetryCount: automation.scheduledRetryCount ?? 2,
         techEnabled: tasks.tech_switch.enabled,
         techTime: tasks.tech_switch.time,
         contributionEnabled: tasks.contribution_sync.enabled,
@@ -602,6 +606,10 @@
       })) {
         setField(name, value);
       }
+      for (const [taskKey, schedule] of Object.entries(tasks)) {
+        state.scheduleDrafts[taskKey] = (schedule.times || [schedule.time]).slice();
+      }
+      renderScheduleSummaries();
     }
     if (sections.includes("agent")) {
       for (const [name, value] of Object.entries({
@@ -639,6 +647,131 @@
       const feedback = form?.querySelector("[data-save-feedback]");
       if (feedback) feedback.textContent = "当前配置已同步";
     }
+  }
+
+  const SCHEDULE_FIELDS = {
+    tech_switch: { enabled: "techEnabled", time: "techTime", title: "科技切换" },
+    contribution_sync: { enabled: "contributionEnabled", time: "contributionTime", title: "更新贡献" },
+    inactivity_sync: { enabled: "inactivityEnabled", time: "inactivityTime", title: "更新斩杀预警" },
+    member_profile_sync: { enabled: "profileEnabled", time: "profileTime", title: "更新成员资料" },
+    patrol: { enabled: "patrolEnabled", time: "patrolTime", title: "营地巡逻" }
+  };
+
+  function scheduleTimes(taskKey) {
+    const field = SCHEDULE_FIELDS[taskKey];
+    const values = state.scheduleDrafts[taskKey];
+    if (Array.isArray(values) && values.length) return values;
+    return [String(getField(field?.time) || "").trim()];
+  }
+
+  function renderScheduleSummaries() {
+    for (const [taskKey, field] of Object.entries(SCHEDULE_FIELDS)) {
+      const times = scheduleTimes(taskKey).filter(Boolean);
+      const summary = document.querySelector(`[data-schedule-summary="${taskKey}"]`);
+      if (summary) {
+        summary.textContent = taskKey === "patrol"
+          ? `启动时间：${times[0] || "未设置"}`
+          : `执行 ${times.length || 1} 次：${times.join("、") || "未设置"}`;
+      }
+      if (times[0]) setField(field.time, times[0]);
+    }
+  }
+
+  function renderScheduleTimeInputs() {
+    const list = byId("schedule-time-list");
+    const add = byId("schedule-add-time");
+    const taskKey = state.scheduleDialogTaskKey;
+    const field = SCHEDULE_FIELDS[taskKey];
+    if (!list || !field) return;
+    const times = scheduleTimes(taskKey);
+    list.replaceChildren();
+    times.forEach((time, index) => {
+      const row = create("div", "schedule-time-row");
+      const label = create("label", "field");
+      label.append(create("span", "", `第 ${index + 1} 次执行时间`));
+      const control = document.createElement("input");
+      control.type = "time";
+      control.value = time || "";
+      control.dataset.scheduleTime = "true";
+      control.required = true;
+      label.append(control);
+      row.append(label);
+      if (taskKey !== "tech_switch" && taskKey !== "patrol" && times.length > 1) {
+        const remove = create("button", "button button-quiet", "删除");
+        remove.type = "button";
+        remove.addEventListener("click", () => {
+          state.scheduleDrafts[taskKey].splice(index, 1);
+          renderScheduleTimeInputs();
+        });
+        row.append(remove);
+      }
+      list.append(row);
+    });
+    if (add) {
+      const singleRun = taskKey === "tech_switch" || taskKey === "patrol";
+      add.hidden = singleRun;
+      add.disabled = singleRun || times.length >= 12;
+    }
+  }
+
+  function openScheduleDialog(taskKey) {
+    const field = SCHEDULE_FIELDS[taskKey];
+    const dialog = byId("schedule-dialog");
+    if (!field || !dialog) return;
+    state.scheduleDialogTaskKey = taskKey;
+    state.scheduleDrafts[taskKey] = scheduleTimes(taskKey).slice();
+    byId("schedule-dialog-title").textContent = `${field.title}：配置执行计划`;
+    byId("schedule-dialog-note").textContent = taskKey === "patrol"
+      ? "巡逻任务只支持一个启动时间。"
+      : taskKey === "tech_switch"
+        ? "科技切换任务只支持一个执行时间。"
+      : "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。";
+    byId("schedule-dialog-enabled").checked = Boolean(getField(field.enabled));
+    byId("schedule-dialog-feedback").textContent = "";
+    renderScheduleTimeInputs();
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+  }
+
+  function closeScheduleDialog() {
+    const dialog = byId("schedule-dialog");
+    if (!dialog) return;
+    if (typeof dialog.close === "function") dialog.close();
+    else dialog.removeAttribute("open");
+    state.scheduleDialogTaskKey = null;
+  }
+
+  function addScheduleTime() {
+    const taskKey = state.scheduleDialogTaskKey;
+    if (!taskKey || taskKey === "tech_switch" || taskKey === "patrol") return;
+    const times = scheduleTimes(taskKey);
+    if (times.length >= 12) return;
+    times.push("");
+    state.scheduleDrafts[taskKey] = times;
+    renderScheduleTimeInputs();
+  }
+
+  function saveScheduleDialog(event) {
+    event.preventDefault();
+    const taskKey = state.scheduleDialogTaskKey;
+    const field = SCHEDULE_FIELDS[taskKey];
+    if (!field) return;
+    const times = [...byId("schedule-time-list").querySelectorAll("input[data-schedule-time]")]
+      .map((control) => control.value.trim());
+    const invalid = times.some((value) => !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(value));
+    if (!times.length || invalid) {
+      byId("schedule-dialog-feedback").textContent = "请为每次执行填写有效时间。";
+      return;
+    }
+    const normalized = taskKey === "tech_switch" || taskKey === "patrol" ? [times[0]] : times;
+    state.scheduleDrafts[taskKey] = normalized;
+    setField(field.time, normalized[0]);
+    setField(field.enabled, byId("schedule-dialog-enabled").checked);
+    renderScheduleSummaries();
+    state.dirtySections.add("tasks");
+    document.querySelector('.config-form[data-config-section="tasks"] [data-save-feedback]')?.replaceChildren(document.createTextNode("有未保存修改"));
+    updateSaveState();
+    closeScheduleDialog();
   }
 
   function renderVote(summary) {
@@ -1417,6 +1550,10 @@
           (state.saving && field.matches('button[type="submit"]'));
       }
     }
+    const canManageTasks = hasPermission("admin:tasks");
+    for (const control of byId("schedule-dialog-form")?.querySelectorAll("input, button") || []) {
+      control.disabled = !canManageTasks || state.saving;
+    }
   }
 
   function setModuleActionState() {
@@ -1746,26 +1883,41 @@
       };
       next.automationConfig.timezone = timezone;
     } else if (section === "tasks") {
+      const timesFor = (taskKey, fieldName) => {
+        const values = scheduleTimes(taskKey).filter(Boolean);
+        return values.length ? values : [String(getField(fieldName) || "")];
+      };
+      const techTimes = timesFor("tech_switch", "techTime");
+      const contributionTimes = timesFor("contribution_sync", "contributionTime");
+      const inactivityTimes = timesFor("inactivity_sync", "inactivityTime");
+      const profileTimes = timesFor("member_profile_sync", "profileTime");
+      const patrolTime = String(getField("patrolTime") || "");
+      next.automationConfig.scheduledRetryCount = Number(getField("scheduledRetryCount"));
       next.automationConfig.tasks = {
         tech_switch: {
           enabled: getField("techEnabled"),
-          time: getField("techTime")
+          time: techTimes[0],
+          times: techTimes
         },
         contribution_sync: {
           enabled: getField("contributionEnabled"),
-          time: getField("contributionTime")
+          time: contributionTimes[0],
+          times: contributionTimes
         },
         inactivity_sync: {
           enabled: getField("inactivityEnabled"),
-          time: getField("inactivityTime")
+          time: inactivityTimes[0],
+          times: inactivityTimes
         },
         member_profile_sync: {
           enabled: getField("profileEnabled"),
-          time: getField("profileTime")
+          time: profileTimes[0],
+          times: profileTimes
         },
         patrol: {
           enabled: getField("patrolEnabled"),
-          time: getField("patrolTime"),
+          time: patrolTime,
+          times: [patrolTime],
           teamReadyTime: getField("patrolReadyTime"),
           shareIntervalMinutes: Number(getField("shareInterval")),
           chatPollSeconds: Number(getField("chatPollSeconds")),
@@ -2479,6 +2631,12 @@
     });
     form.addEventListener("submit", saveConfig);
   }
+  for (const button of document.querySelectorAll("[data-schedule-open]")) {
+    button.addEventListener("click", () => openScheduleDialog(button.dataset.scheduleOpen));
+  }
+  byId("schedule-dialog-close")?.addEventListener("click", closeScheduleDialog);
+  byId("schedule-add-time")?.addEventListener("click", addScheduleTime);
+  byId("schedule-dialog-form")?.addEventListener("submit", saveScheduleDialog);
   for (const link of document.querySelectorAll("[data-nav-target]")) {
     link.addEventListener("click", () => {
       activateView(link.dataset.navTarget);

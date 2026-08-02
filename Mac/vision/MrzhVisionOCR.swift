@@ -133,20 +133,13 @@ func normalizedPixelBuffer(at url: URL) throws -> CVPixelBuffer {
 }
 
 func effectiveRecognitionMode(_ requestedMode: String) -> String {
-    // The macOS 27 beta `.fast` recognizer traps in SwiftNativeNSArray before
-    // returning a result. Keep the public revision-3 request but use its safe
-    // accurate level until Apple fixes that framework path.
-    if requestedMode == "fast" &&
-        ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 {
-        return "accurate"
-    }
-    return requestedMode
+    requestedMode == "fast" ? "fast" : "accurate"
 }
 
 func configureLegacyRequest(_ request: VNRecognizeTextRequest, recognitionMode: String) throws {
     request.recognitionLevel = recognitionMode == "fast" ? .fast : .accurate
     if recognitionMode != "fast" {
-        let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+        let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP"]
         let supportedLanguages = try request.supportedRecognitionLanguages()
         request.recognitionLanguages = preferredLanguages.filter(supportedLanguages.contains)
     }
@@ -272,18 +265,31 @@ struct MrzhVisionOCR {
                 : "accurate"
             let recognitionMode = effectiveRecognitionMode(requestedMode)
             let observations: [OCRObservation]
-            if #available(macOS 15.0, *) {
-                observations = try await modernRecognize(
-                    imageURL: imageURL,
-                    dimensions: dimensions,
-                    recognitionMode: recognitionMode
-                )
-            } else {
+            do {
+                // Legacy Vision is the stable low-latency path for both modes
+                // on macOS 26+. It avoids the macOS 27 revision-3 fast crash
+                // and does not require CVPixelBuffer conversion.
                 observations = try legacyRecognize(
                     imageURL: imageURL,
                     dimensions: dimensions,
                     recognitionMode: recognitionMode
                 )
+            } catch let legacyError {
+                guard #available(macOS 15.0, *) else { throw legacyError }
+                // Keep revision-3 as a guarded fallback for images the legacy
+                // recognizer cannot decode (for example unusual PNG metadata).
+                do {
+                    observations = try await modernRecognize(
+                        imageURL: imageURL,
+                        dimensions: dimensions,
+                        recognitionMode: recognitionMode == "fast" ? "accurate" : recognitionMode
+                    )
+                } catch let modernError {
+                    throw OCRFailure.visionStageFailed(
+                        "legacy and modern recognition",
+                        "legacy=\(legacyError); modern=\(modernError)"
+                    )
+                }
             }
 
             let encoder = JSONEncoder()

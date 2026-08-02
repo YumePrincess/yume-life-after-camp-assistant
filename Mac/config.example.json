@@ -27,8 +27,8 @@
       "enabled": true,
       "keyCode": 50,
       "permissionTimeoutSeconds": 120,
-      "foregroundSettleMs": 4000,
-      "postKeySettleMs": 4000
+      "foregroundSettleMs": 1200,
+      "postKeySettleMs": 800
     },
     "hardRestartDelaySeconds": 4,
     "returnToCenterAfterTask": true,
@@ -54,7 +54,10 @@
     "quickTravelPrecheckEnabled": false,
     "accurateFallbackEnabled": true,
     "accurateFallbackSeconds": 1,
-    "accurateTimeoutSeconds": 15
+    "fastTimeoutSeconds": 2,
+    "accurateTimeoutSeconds": 2,
+    "memberTableTimeoutSeconds": 2,
+    "ocrCircuitCooldownSeconds": 15
   },
   "localVisionModel": {
     "enabled": true,
@@ -65,6 +68,7 @@
     "pythonBinary": "./.local-model/venv/bin/python",
     "timeoutSeconds": 180,
     "minimumConfidence": 0.9,
+    "waitTextVerificationEnabled": false,
     "minimumActionConfidence": 0.95,
     "minimumLoginActionConfidence": 0.45,
     "consecutiveMatches": 1,
@@ -170,6 +174,7 @@
     "selectorRegion": { "left": 60, "top": 110, "right": 560, "bottom": 1050 },
       "selectorItemTapX": 178,
       "configurePageSettleMs": 5000,
+      "dismissDetailBetweenSlots": true,
       "slotOpenSettleMs": 1200,
       "slotOpenAttempts": 3,
       "slotRetrySettleMs": 1000,
@@ -398,7 +403,7 @@
         "readyBodyRegion": { "left": 120, "top": 250, "right": 1820, "bottom": 1000 },
         "readyMinimumTabs": 2,
         "attempts": 6,
-        "hostMouseUnlockOnCampChannelRetry": true,
+        "hostMouseUnlockBeforeCampChannel": true,
         "hostMouseUnlockDelayMs": 250,
         "verifySeconds": 5
       }

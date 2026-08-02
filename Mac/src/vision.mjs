@@ -281,7 +281,9 @@ export class Vision {
       `${label}-values`,
       signal,
       "accurate",
-      0.25
+      0.25,
+      1,
+      Math.max(1, Number(this.config.vision?.memberTableTimeoutSeconds) || 2)
     );
     const rows = parseTable(observations, definition);
     const region = definition.region;
@@ -299,20 +301,16 @@ export class Vision {
     );
     this.taskPaths.add(cropPath);
     try {
-      await runFile(
-        "/usr/bin/sips",
-        [
-          "-c",
-          String(height),
-          String(width),
-          "--cropOffset",
-          String(Math.round(region.top)),
-          String(Math.round(region.left)),
-          imagePath,
-          "--out",
-          cropPath
-        ],
-        { timeoutMs: 30_000, signal }
+      await this.#cropImage(
+        imagePath,
+        {
+          left: region.left,
+          top: region.top,
+          right: region.left + width,
+          bottom: region.top + height
+        },
+        cropPath,
+        signal
       );
       const advisedNames = await this.advisor.extractNames(cropPath, signal);
       const namesByRow = new Map(
@@ -367,45 +365,26 @@ export class Vision {
       )
       .map((item) => centerY(item))
       .sort((left, right) => left - right);
-    if (!anchors.length) {
-      const fallback = await runFile(
-        this.config.vision.binary,
-        [imagePath, "accurate"],
-        {
-          timeoutMs:
-            Math.max(
-              5,
-              Number(this.config.vision.accurateTimeoutSeconds) || 15
-            ) * 1000,
-          signal
-        }
-      );
-      observations = JSON.parse(fallback.stdout).filter((item) => {
-        const x = centerX(item);
-        const y = centerY(item);
-        return (
-          item.confidence >= 0.25 &&
-          x >= region.left &&
-          x < region.right &&
-          y >= region.top &&
-          y < region.bottom
-        );
-      });
-      anchors = observations
-        .filter(
-          (item) =>
-            centerX(item) >= onlineBounds.left &&
-            centerX(item) < onlineBounds.right &&
-            centerY(item) >= (definition.rowAnchorTop || region.top) &&
-            /在线|离线/.test(item.text)
-        )
-        .map((item) => centerY(item))
-        .sort((left, right) => left - right);
-    }
     const rowsPerPage = Math.max(
       1,
       Number(definition.pagination?.rowsPerPage) || anchors.length
     );
+    // Avoid a second full-screen OCR when the regional pass omitted the
+    // online-state anchor. That fallback caused intermittent 30s stalls.
+    // The table has a stable configured row count, so infer row centers from
+    // the existing regional observations instead.
+    if (!anchors.length && observations.length && rowsPerPage > 0) {
+      const first = Math.max(
+        region.top,
+        Number(definition.rowAnchorTop) || region.top
+      );
+      const available = Math.max(1, region.bottom - first);
+      const spacing = rowsPerPage > 1 ? available / rowsPerPage : available / 2;
+      anchors = Array.from(
+        { length: rowsPerPage },
+        (_, index) => first + spacing * index
+      );
+    }
     if (anchors.length > rowsPerPage) {
       anchors = anchors.slice(-rowsPerPage);
     }
@@ -464,20 +443,16 @@ export class Vision {
         region.bottom,
         Math.ceil(anchors.at(-1) + rowSpacing / 2)
       );
-      await runFile(
-        "/usr/bin/sips",
-        [
-          "-c",
-          String(Math.round(cropBottom - cropTop)),
-          String(Math.round(region.right - region.left)),
-          "--cropOffset",
-          String(Math.round(cropTop)),
-          String(Math.round(region.left)),
-          imagePath,
-          "--out",
-          cropPath
-        ],
-        { timeoutMs: 30_000, signal }
+      await this.#cropImage(
+        imagePath,
+        {
+          left: region.left,
+          top: cropTop,
+          right: region.right,
+          bottom: cropBottom
+        },
+        cropPath,
+        signal
       );
       const advised = await this.advisor.extractMemberDetails(
         cropPath,
@@ -554,9 +529,11 @@ export class Vision {
     signal,
     mode = "accurate",
     minimumConfidence = this.config.vision.minimumConfidence,
-    scale = 1
+    scale = 1,
+    timeoutSeconds = null
   ) {
     this.#assertOcrAvailable(mode);
+    await mkdir(this.snapshotDir, { recursive: true });
     const width = Math.max(1, Math.round(region.right - region.left));
     const height = Math.max(1, Math.round(region.bottom - region.top));
     const cropPath = resolve(
@@ -567,20 +544,11 @@ export class Vision {
     let inputPath = cropPath;
     let scaledPath = null;
     try {
-      await runFile(
-        "/usr/bin/sips",
-        [
-          "-c",
-          String(height),
-          String(width),
-          "--cropOffset",
-          String(Math.round(region.top)),
-          String(Math.round(region.left)),
-          imagePath,
-          "--out",
-          cropPath
-        ],
-        { timeoutMs: 30_000, signal }
+      const crop = await this.#cropImage(
+        imagePath,
+        region,
+        cropPath,
+        signal
       );
       const safeScale = Math.max(1, Math.min(8, Number(scale) || 1));
       if (safeScale > 1) {
@@ -600,6 +568,15 @@ export class Vision {
           ],
           { timeoutMs: 30_000, signal }
         );
+        if (crop.adjusted) {
+          await this.#assertImageDimensions(
+            scaledPath,
+            Math.round(width * safeScale),
+            Math.round(height * safeScale),
+            signal,
+            label
+          );
+        }
         inputPath = scaledPath;
       }
       let result;
@@ -610,8 +587,11 @@ export class Vision {
           {
             timeoutMs:
               Math.max(
-                5,
-                Number(this.config.vision.accurateTimeoutSeconds) || 15
+                1,
+                Number(timeoutSeconds) ||
+                  (mode === "fast"
+                    ? Number(this.config.vision.fastTimeoutSeconds) || 2
+                    : Number(this.config.vision.accurateTimeoutSeconds) || 2)
               ) * 1000,
             signal
           }
@@ -629,8 +609,8 @@ export class Vision {
         )
         .map((item) => ({
           ...item,
-          x: item.x / safeScale + Math.round(region.left),
-          y: item.y / safeScale + Math.round(region.top),
+          x: item.x / safeScale + crop.left,
+          y: item.y / safeScale + crop.top,
           width: item.width / safeScale,
           height: item.height / safeScale
         }));
@@ -641,6 +621,58 @@ export class Vision {
         this.taskPaths.delete(scaledPath);
         await rm(scaledPath, { force: true });
       }
+    }
+  }
+
+  async #cropImage(imagePath, region, outputPath, signal) {
+    const sourceWidth = Math.max(
+      1,
+      Number(this.config.adb?.screenWidth) || Math.round(region.right)
+    );
+    const sourceHeight = Math.max(
+      1,
+      Number(this.config.adb?.screenHeight) || Math.round(region.bottom)
+    );
+    const crop = safeSipsCropRegion(region, sourceWidth, sourceHeight);
+    await runFile(
+      "/usr/bin/sips",
+      [
+        "-c",
+        String(crop.height),
+        String(crop.width),
+        "--cropOffset",
+        String(crop.top),
+        String(crop.left),
+        imagePath,
+        "--out",
+        outputPath
+      ],
+      { timeoutMs: 30_000, signal }
+    );
+    if (crop.adjusted) {
+      await this.#assertImageDimensions(
+        outputPath,
+        crop.width,
+        crop.height,
+        signal,
+        "crop"
+      );
+    }
+    return crop;
+  }
+
+  async #assertImageDimensions(path, expectedWidth, expectedHeight, signal, label) {
+    const result = await runFile(
+      "/usr/bin/sips",
+      ["-g", "pixelWidth", "-g", "pixelHeight", path],
+      { timeoutMs: 30_000, signal }
+    );
+    const width = Number(/pixelWidth:\s*(\d+)/.exec(result.stdout)?.[1]);
+    const height = Number(/pixelHeight:\s*(\d+)/.exec(result.stdout)?.[1]);
+    if (width !== expectedWidth || height !== expectedHeight) {
+      throw new Error(
+        `VISION_CROP_DIMENSION_MISMATCH: ${label} expected ${expectedWidth}x${expectedHeight}, got ${width || "?"}x${height || "?"}; sips=${JSON.stringify({ stdout: result.stdout, stderr: result.stderr }).slice(0, 500)}`
+      );
     }
   }
 
@@ -661,12 +693,13 @@ export class Vision {
           this.config.vision.binary,
           [path, mode],
           {
-            timeoutMs: mode === "accurate"
-              ? Math.max(
-                  5,
-                  Number(this.config.vision.accurateTimeoutSeconds) || 15
-                ) * 1000
-              : 30_000,
+            timeoutMs:
+              Math.max(
+                1,
+                mode === "fast"
+                  ? Number(this.config.vision.fastTimeoutSeconds) || 2
+                  : Number(this.config.vision.accurateTimeoutSeconds) || 2
+              ) * 1000,
             signal
           }
         );
@@ -737,7 +770,11 @@ export class Vision {
     state.failureStreak += 1;
     state.lastFailure = String(error?.message || error).slice(0, 500);
     if (state.failureStreak >= 2) {
-      state.disabledUntil = Date.now() + 5 * 60_000;
+      const cooldownSeconds = Math.max(
+        5,
+        Number(this.config.vision?.ocrCircuitCooldownSeconds) || 15
+      );
+      state.disabledUntil = Date.now() + cooldownSeconds * 1000;
     }
   }
 
@@ -785,6 +822,29 @@ export class Vision {
     );
     return JSON.parse(result.stdout);
   }
+}
+
+export function safeSipsCropRegion(region, sourceWidth, sourceHeight) {
+  const width = Math.max(1, Math.round(region.right - region.left));
+  const height = Math.max(1, Math.round(region.bottom - region.top));
+  let left = Math.max(0, Math.round(region.left));
+  let top = Math.max(0, Math.round(region.top));
+  // macOS 27 sips silently returns the original image when a crop ends exactly
+  // at its bottom or right edge. Shift the same-size crop inward by one pixel.
+  if (width < sourceWidth && left + width >= sourceWidth) {
+    left = Math.max(0, sourceWidth - width - 1);
+  }
+  if (height < sourceHeight && top + height >= sourceHeight) {
+    top = Math.max(0, sourceHeight - height - 1);
+  }
+  return {
+    left,
+    top,
+    width,
+    height,
+    adjusted:
+      left !== Math.round(region.left) || top !== Math.round(region.top)
+  };
 }
 
 export function center(observation) {

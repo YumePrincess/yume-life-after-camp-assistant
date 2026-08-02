@@ -36,6 +36,7 @@ export class LocalVisionAdvisor {
       pythonBinary: resolve(MAC_ROOT, ".local-model/venv/bin/python"),
       timeoutSeconds: 180,
       minimumConfidence: 0.9,
+      waitTextVerificationEnabled: false,
       consecutiveMatches: 2,
       intervalSeconds: 3,
       resizeShape: [384, 672],

@@ -219,6 +219,11 @@ export class MumuLifecycle {
         signal
       );
       if (response.error) throw new Error(response.error);
+      const mouseButtonsReleasedAfter = await this.hostMouseButtonsReleased(
+        signal
+      );
+      const mouseButtonsReleasedBefore =
+        response.mouseButtonsReleasedBefore === true;
       return {
         instanceIndex: instance.index,
         processId,
@@ -226,7 +231,13 @@ export class MumuLifecycle {
         bringToFront,
         foregroundSettleSeconds,
         postKeySettleSeconds,
-        mouseReleased: response.mouseReleased === true,
+        helperMouseReleased: response.mouseReleased === true,
+        mouseReleased:
+          response.mouseReleased === true && mouseButtonsReleasedAfter === true,
+        mouseButtonsReleasedBefore,
+        mouseButtonsReleasedAfter,
+        skippedBecauseAlreadyReleased:
+          response.skippedBecauseAlreadyReleased === true,
         permissionOwner: "Yume Life After Mac Agent Input Helper"
       };
     } catch (error) {

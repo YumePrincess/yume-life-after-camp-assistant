@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
     @Published var health: AgentHealth?
     @Published var plugins: [AgentPlugin] = []
     @Published var logText = ""
+    @Published var logRunIdFilter: String?
     @Published var isBusy = false
     @Published var statusMessage = ""
     @Published var alertMessage: String?
@@ -55,6 +56,7 @@ final class AppModel: ObservableObject {
         language = defaults.string(forKey: "language") ?? Self.preferredLanguage()
         theme = AppTheme(rawValue: defaults.string(forKey: "theme") ?? "system") ?? .system
         setupCompleted = defaults.bool(forKey: "setupCompleted")
+        logRunIdFilter = nil
         isAppleSilicon = Self.platformIsAppleSilicon()
     }
 
@@ -102,6 +104,34 @@ final class AppModel: ObservableObject {
             health = nil
         }
         logText = await runtime.logs()
+    }
+
+    var visibleLogText: String {
+        guard let runId = logRunIdFilter, !runId.isEmpty else { return logText }
+        return logText
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { $0.contains(runId) }
+            .joined(separator: "\n")
+    }
+
+    func openCurrentTaskLogs() {
+        logRunIdFilter = health?.activeRunId
+        selection = .logs
+    }
+
+    func showAllLogs() {
+        logRunIdFilter = nil
+    }
+
+    func clearLogs() async {
+        do {
+            try await runtime.clearLogs()
+            logText = ""
+            logRunIdFilter = nil
+            statusMessage = text("Logs cleared")
+        } catch {
+            alertMessage = error.localizedDescription
+        }
     }
 
     func performAgentAction(_ action: String) async {
