@@ -141,3 +141,10 @@
 "Device ID" = "裝置 ID";
 "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "請輸入公開 HTTPS 網站、裝置名稱與正確的 MuMu 容器名稱。穩定的裝置 ID 會自動產生。";
 "Enter a valid Workers URL, device name and MuMu container name." = "請輸入有效的 Workers 網址、裝置名稱和 MuMu 容器名稱。";
+"MuMu input permission" = "MuMu 輸入權限";
+"The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient." = "背景輸入輔助程式需要獨立的「輔助使用」權限才能釋放 MuMu 滑鼠擷取；只授權主 App 並不足夠。";
+"Request input permission" = "請求輸入權限";
+"Waiting for input permission…" = "正在等待輸入權限…";
+"Input helper permission granted" = "輸入輔助程式權限已授予";
+"Input helper permission was not granted" = "輸入輔助程式權限未授予";
+"The bundled input helper is missing." = "內置輸入輔助程式缺失。";

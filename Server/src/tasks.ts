@@ -25,6 +25,7 @@ import {
   zonedDateKey,
   zonedDateTimeToIso
 } from "./time";
+import { builtPluginForTask, isWorkerPluginEnabled } from "./plugin-system";
 
 export async function buildVoteSummary(
   env: Env,
@@ -177,6 +178,10 @@ export async function enqueueTask(
     payloadDetail?: Record<string, unknown>;
   }
 ): Promise<{ run: Awaited<ReturnType<typeof createRun>>; commandId: string | null }> {
+  const owningPlugin = builtPluginForTask(input.taskKey);
+  if (owningPlugin && !(await isWorkerPluginEnabled(env, owningPlugin.id))) {
+    throw new Error(`Workers plugin ${owningPlugin.id} is disabled`);
+  }
   const now = input.now ?? new Date();
   const localDate =
     input.localDate ?? zonedDateKey(now, input.bundle.automationConfig.timezone);

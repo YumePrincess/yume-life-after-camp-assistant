@@ -1,5 +1,4 @@
 import {
-  ADMIN_PERMISSIONS,
   canViewAdminModule,
   getAuthenticatedSession,
   handleOidcSilentStart,
@@ -122,6 +121,15 @@ import {
   recordValueRateLimitAttempt,
   type RateLimitPolicy
 } from "./rate-limit";
+import {
+  builtPluginForTask,
+  dispatchWorkerPluginRequest,
+  enabledPermissionCatalog,
+  enabledPluginForTask,
+  effectiveWorkerPlugins,
+  isWorkerPluginEnabled,
+  setWorkerPluginEnabled
+} from "./plugin-system";
 
 const TERMINAL_RUN_STATES = new Set<RunState>([
   "interrupted",
@@ -322,6 +330,16 @@ async function handlePublicApi(
   method: string
 ): Promise<Response> {
   const cors = publicCors(request);
+  const pluginResponse = await dispatchWorkerPluginRequest({
+    request, env, path, method, scope: "public"
+  });
+  if (pluginResponse) return pluginResponse;
+  if (
+    path === "/api/public/tech-vote" &&
+    !(await isWorkerPluginEnabled(env, "technology"))
+  ) {
+    return problem("科技插件当前未启用", 404, "plugin_disabled");
+  }
   if (path === "/api/public/bootstrap" && method === "GET") {
     const payload = await buildPublicBootstrap(
       env,
@@ -773,6 +791,10 @@ async function handleAdminApi(
   method: string,
   session: SessionRow
 ): Promise<Response> {
+  const pluginResponse = await dispatchWorkerPluginRequest({
+    request, env, path, method, scope: "admin"
+  });
+  if (pluginResponse) return pluginResponse;
   if (path === "/api/admin/bootstrap" && method === "GET") {
     return json(
       await buildAdminBootstrap(
@@ -781,6 +803,29 @@ async function handleAdminApi(
         new URL(request.url).searchParams.get("locale")
       )
     );
+  }
+  const pluginStateMatch = /^\/api\/admin\/plugins\/([^/]+)$/.exec(path);
+  if (pluginStateMatch && method === "PATCH") {
+    const pluginId = decodeURIComponent(pluginStateMatch[1] ?? "");
+    const body = await readJsonObject(request, 8_000);
+    if (typeof body.enabled !== "boolean") {
+      return problem("enabled must be a boolean", 400, "invalid_plugin_state");
+    }
+    if (!(await setWorkerPluginEnabled(env, pluginId, body.enabled))) {
+      return problem("Workers 插件不存在", 404, "plugin_not_found");
+    }
+    return json({
+      ok: true,
+      plugins: await effectiveWorkerPlugins(env),
+      permissionCatalog: await enabledPermissionCatalog(env)
+    });
+  }
+  if (
+    (path.startsWith("/api/admin/technology-history") ||
+      (path === "/api/admin/config" && request.headers.get("X-Admin-Section") === "technology")) &&
+    !(await isWorkerPluginEnabled(env, "technology"))
+  ) {
+    return problem("科技插件当前未启用", 409, "plugin_disabled");
   }
   const agentMatch = /^\/api\/admin\/agents\/([^/]+)(?:\/(activate))?$/.exec(path);
   if (agentMatch) {
@@ -1094,7 +1139,7 @@ async function handleAdminApi(
     if (!Array.isArray(body.permissions)) {
       return problem("permissions must be an array", 400);
     }
-    const allowed = new Set<string>(ADMIN_PERMISSIONS);
+    const allowed = new Set((await enabledPermissionCatalog(env)).map((item) => item.key));
     const permissions = [
       ...new Set(body.permissions.map(String).filter((item) => allowed.has(item)))
     ];
@@ -1140,7 +1185,7 @@ async function handleAdminApi(
     if (!Array.isArray(body.permissions)) {
       return problem("permissions must be an array", 400);
     }
-    const allowed = new Set<string>(ADMIN_PERMISSIONS);
+    const allowed = new Set((await enabledPermissionCatalog(env)).map((item) => item.key));
     const permissions = [
       ...new Set(body.permissions.map(String).filter((item) => allowed.has(item)))
     ];
@@ -1166,9 +1211,15 @@ async function handleAdminApi(
       tasks: "admin:tasks",
       agent: "admin:agent",
       technology: "admin:technology"
-    }[section] as (typeof ADMIN_PERMISSIONS)[number] | undefined;
+    }[section] as string | undefined;
     if (!sectionPermission || !hasPermission(session, sectionPermission)) {
       return problem("当前登录凭据没有修改此模块的权限", 403, "permission_denied");
+    }
+    if (
+      section === "technology" &&
+      !(await isWorkerPluginEnabled(env, "technology"))
+    ) {
+      return problem("科技插件当前未启用", 409, "plugin_disabled");
     }
     const current = await getConfigBundle(env);
     const submitted = validateConfigBundle(await readJsonObject(request, 300_000));
@@ -1214,16 +1265,13 @@ async function handleAdminApi(
     const body = await readJsonObject(request, 16_000);
     const taskKeyValue = boundedText(body.taskKey, "taskKey", 80);
     if (!isTaskKey(taskKeyValue)) return problem("Unknown taskKey", 400, "unknown_task");
-    if (
-      ![
-        "tech_switch",
-        "contribution_sync",
-        "inactivity_sync",
-        "member_profile_sync",
-        "patrol"
-      ].includes(taskKeyValue)
-    ) {
-      return problem("该任务不在管理员通用流程列表中", 400, "task_not_available");
+    const plugin = await enabledPluginForTask(env, taskKeyValue);
+    const pluginTask = plugin?.tasks.find((task) => task.key === taskKeyValue);
+    if (!plugin || !pluginTask) {
+      return problem("该任务对应的 Workers 插件未安装或未启用", 409, "plugin_disabled");
+    }
+    if (!hasPermission(session, pluginTask.runPermission)) {
+      return problem("当前 Key 没有执行此插件任务的权限", 403, "permission_denied");
     }
     const bundle = await getConfigBundle(env);
     const result = await enqueueTask(env, {
@@ -1294,6 +1342,10 @@ async function handleAgentApi(
   path: string,
   method: string
 ): Promise<Response> {
+  const pluginResponse = await dispatchWorkerPluginRequest({
+    request, env, path, method, scope: "agent"
+  });
+  if (pluginResponse) return pluginResponse;
   if (path === "/api/agent/register" && method === "POST") {
     const body = await readJsonObject(request, 16_000);
     const agentId = boundedText(body.agentId, "agentId", 80);
@@ -1344,12 +1396,41 @@ async function handleAgentApi(
       env,
       bundle.automationConfig.agentPolling.claimTimeoutMinutes
     );
-    const command = enabled
+    let command = enabled
       ? await claimNextCommand(env, {
           agentId,
           busy: body.busy === true
         })
       : null;
+    if (command?.type === "run_task") {
+      const payload = safeParseJson(command.payload_json, {}) as Record<string, unknown>;
+      const pluginTasks = taskKeysFromCommandPayload(payload).filter((taskKey) =>
+        builtPluginForTask(taskKey)
+      );
+      const activeTasks = new Set(
+        (await effectiveWorkerPlugins(env))
+          .filter((plugin) => plugin.enabled)
+          .flatMap((plugin) => plugin.tasks.map((task) => task.key))
+      );
+      const disabledTasks = pluginTasks.filter((taskKey) => !activeTasks.has(taskKey));
+      if (disabledTasks.length && command.lease_token) {
+        await completeCommand(env, {
+          commandId: command.id,
+          leaseToken: command.lease_token,
+          state: "cancelled",
+          message: `Workers 插件已停用：${disabledTasks.join(", ")}`
+        });
+        if (command.run_id) {
+          await updateRun(env, {
+            runId: command.run_id,
+            state: "interrupted",
+            message: `对应 Workers 插件已停用：${disabledTasks.join(", ")}`,
+            currentStep: null
+          });
+        }
+        command = null;
+      }
+    }
     return json({
       enabled,
       activeAgentId: bundle.campConfig.agentId || null,
@@ -1375,8 +1456,33 @@ async function handleAgentApi(
     const agentId = boundedText(body.agentId, "agentId", 80);
     const runId = typeof body.runId === "string" ? body.runId : null;
     const bundle = await getConfigBundle(env);
+    const plugins = await effectiveWorkerPlugins(env);
+    const enabledTaskKeys = new Set(
+      plugins.filter((plugin) => plugin.enabled).flatMap((plugin) =>
+        plugin.tasks.map((task) => task.key)
+      )
+    );
+    const configBundle = {
+      ...bundle,
+      automationConfig: {
+        ...bundle.automationConfig,
+        tasks: Object.fromEntries(
+          Object.entries(bundle.automationConfig.tasks).map(([key, schedule]) => [
+            key,
+            enabledTaskKeys.has(key) ? schedule : { ...schedule, enabled: false }
+          ])
+        ),
+        routines: bundle.automationConfig.routines.map((routine) => ({
+          ...routine,
+          groups: routine.groups
+            .map((group) => group.filter((taskKey) => enabledTaskKeys.has(taskKey)))
+            .filter((group) => group.length)
+        })).filter((routine) => routine.groups.length)
+      }
+    };
     return json({
-      configBundle: bundle,
+      configBundle,
+      plugins,
       heartbeat: await getHeartbeat(env, agentId),
       enabled: bundle.campConfig.agentId === agentId,
       run: runId ? await getRun(env, runId) : null
@@ -1419,6 +1525,20 @@ async function handleAgentApi(
     const runId = boundedText(body.runId, "runId", 80);
     const capturedAt =
       typeof body.capturedAt === "string" ? body.capturedAt : new Date().toISOString();
+    const snapshotPlugin = {
+      members: "member-profile",
+      profiles: "member-profile",
+      departed: "member-profile",
+      staff: "member-profile",
+      contribution: "contribution",
+      activity: "inactivity"
+    }[type];
+    if (
+      snapshotPlugin &&
+      !(await isWorkerPluginEnabled(env, snapshotPlugin))
+    ) {
+      return problem("该快照对应的 Workers 插件未启用", 409, "plugin_disabled");
+    }
     if (type === "members") {
       const members = sanitizeMembers(body.payload);
       const bundle = await getConfigBundle(env);
@@ -1529,14 +1649,19 @@ async function buildPublicBootstrap(
   locale: unknown
 ): Promise<Record<string, unknown>> {
   const bundle = await getConfigBundle(env);
+  const plugins = await effectiveWorkerPlugins(env);
+  const pluginEnabled = new Map(plugins.map((plugin) => [plugin.id, plugin.enabled]));
   const [voteSummary, staff, members, warnings, recentRuns] = await Promise.all([
     buildVoteSummary(env, bundle),
     listStaff(env),
-    bundle.campConfig.publicMembersEnabled ? listMembers(env) : Promise.resolve([]),
-    listActivityWarnings(env),
+    bundle.campConfig.publicMembersEnabled && pluginEnabled.get("member-profile")
+      ? listMembers(env)
+      : Promise.resolve([]),
+    pluginEnabled.get("inactivity") ? listActivityWarnings(env) : Promise.resolve([]),
     listRecentRuns(env, 10)
   ]);
   return {
+    plugins,
     siteName: bundle.campConfig.publicSiteName,
     publicOverview:
       bundle.publicOverview.localized[normalizeLocale(locale)] ?? bundle.publicOverview,
@@ -1574,12 +1699,18 @@ async function buildAdminBootstrap(
   locale: unknown = "zh-cn"
 ): Promise<Record<string, unknown>> {
   const bundle = await getConfigBundle(env);
+  const plugins = await effectiveWorkerPlugins(env);
+  const pluginEnabled = new Map(plugins.map((plugin) => [plugin.id, plugin.enabled]));
   // Deployment/backfill special case: the first admin bootstrap organizes every
   // history entry whose technology effective day has already crossed daily reset.
-  await ensureTechnologyVoteHistory(env, bundle);
+  if (pluginEnabled.get("technology")) {
+    await ensureTechnologyVoteHistory(env, bundle);
+  }
   const canOverview = canViewAdminModule(session, "admin:overview");
-  const canTechnology = canViewAdminModule(session, "admin:technology");
-  const canMembers = canViewAdminModule(session, "admin:members");
+  const canTechnology = Boolean(pluginEnabled.get("technology")) &&
+    canViewAdminModule(session, "admin:technology");
+  const canMembers = Boolean(pluginEnabled.get("member-profile")) &&
+    canViewAdminModule(session, "admin:members");
   const canHistory = canViewAdminModule(session, "admin:history");
   const [voteSummary, heartbeats, recentRuns, staff, members] = await Promise.all([
     buildVoteSummary(env, bundle),
@@ -1598,6 +1729,8 @@ async function buildAdminBootstrap(
       )
     : [];
   return {
+    plugins,
+    permissionCatalog: await enabledPermissionCatalog(env),
     session: {
       email: session.email,
       displayName: session.display_name,
@@ -1744,15 +1877,15 @@ function pollingIntervalSeconds(
 function permissionForAdminRequest(
   path: string,
   method: string
-): (typeof ADMIN_PERMISSIONS)[number] | null {
+): string | null {
+  if (path.startsWith("/api/admin/plugins/")) return "plugins:manage";
   if (path === "/api/admin/technology-history") {
     return method === "DELETE"
       ? "technology-history:manage"
       : "admin:technology-history";
   }
   if (method === "PUT" && path === "/api/admin/config") return null;
-  if (method === "POST" && path === "/api/admin/run") return "task:run";
-  if (path.startsWith("/api/admin/agents/")) return "config:write";
+  if (path.startsWith("/api/admin/agents/")) return "admin:agent";
   if (method === "POST" && path === "/api/admin/interrupt") return "task:interrupt";
   if (method === "DELETE" && path.startsWith("/api/admin/maintenance/")) {
     return "admin:history";
@@ -1849,6 +1982,23 @@ function safeParseJson(value: string | null, fallback: unknown): unknown {
   } catch {
     return fallback;
   }
+}
+
+function taskKeysFromCommandPayload(payload: Record<string, unknown>): string[] {
+  const direct = typeof payload.taskKey === "string" ? [payload.taskKey] : [];
+  const detail = payload.detail && typeof payload.detail === "object"
+    ? payload.detail as Record<string, unknown>
+    : null;
+  const routine = detail?.routine && typeof detail.routine === "object"
+    ? detail.routine as Record<string, unknown>
+    : null;
+  const groups = Array.isArray(routine?.groups) ? routine.groups : [];
+  return [...new Set([
+    ...direct,
+    ...groups.flatMap((group) =>
+      Array.isArray(group) ? group.filter((item): item is string => typeof item === "string") : []
+    )
+  ])];
 }
 
 function errorMessage(error: unknown): string {

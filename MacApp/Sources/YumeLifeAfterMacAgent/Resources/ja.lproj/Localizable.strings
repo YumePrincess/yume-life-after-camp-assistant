@@ -141,3 +141,10 @@
 "Device ID" = "デバイス ID";
 "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "公開 HTTPS サイト、デバイス名、正確な MuMu コンテナ名を入力してください。固定デバイス ID は自動生成されます。";
 "Enter a valid Workers URL, device name and MuMu container name." = "有効な Workers URL、デバイス名、MuMu コンテナ名を入力してください。";
+"MuMu input permission" = "MuMu 入力権限";
+"The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient." = "MuMu のマウスキャプチャを解除するには、バックグラウンド入力ヘルパー独自のアクセシビリティ権限が必要です。メイン App だけの許可では動作しません。";
+"Request input permission" = "入力権限を要求";
+"Waiting for input permission…" = "入力権限を待っています…";
+"Input helper permission granted" = "入力ヘルパーの権限を許可しました";
+"Input helper permission was not granted" = "入力ヘルパーの権限が許可されませんでした";
+"The bundled input helper is missing." = "内蔵入力ヘルパーが見つかりません。";

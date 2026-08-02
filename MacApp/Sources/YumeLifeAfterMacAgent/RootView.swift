@@ -412,6 +412,15 @@ struct SettingsView: View {
                     Text("Workers catalog plugins always require a trusted signature.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Section("MuMu input permission") {
+                    Text("The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Request input permission") {
+                        Task { await model.requestHostInputPermission() }
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                    .disabled(model.isBusy)
+                }
                 Section("Migration") {
                     Text("The migration archive includes settings and user plugins, but never credentials.")
                         .font(.caption).foregroundStyle(.secondary)

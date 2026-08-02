@@ -223,6 +223,20 @@ final class AppModel: ObservableObject {
         } catch { alertMessage = error.localizedDescription }
     }
 
+    func requestHostInputPermission() async {
+        guard !isBusy else { return }
+        isBusy = true
+        statusMessage = text("Waiting for input permission…")
+        defer { isBusy = false }
+        do {
+            _ = try await runtime.requestHostInputPermission()
+            statusMessage = text("Input helper permission granted")
+        } catch {
+            alertMessage = error.localizedDescription
+            statusMessage = text("Input helper permission was not granted")
+        }
+    }
+
     func loadStoredCredentials() async {
         if let credentials = try? await runtime.loadCredentials() {
             agentToken = credentials.agentToken

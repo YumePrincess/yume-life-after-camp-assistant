@@ -38,6 +38,56 @@ async function getSetting(env: Env, key: string): Promise<unknown> {
   return JSON.parse(row.value) as unknown;
 }
 
+export async function getWorkerPluginStateMap(env: Env): Promise<Record<string, boolean>> {
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?")
+    .bind("worker_plugin_states")
+    .first<{ value: string }>();
+  const parsed = parseJson<unknown>(row?.value, {});
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      (entry): entry is [string, boolean] => typeof entry[1] === "boolean"
+    )
+  );
+}
+
+export async function saveWorkerPluginStateMap(
+  env: Env,
+  states: Record<string, boolean>
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
+  )
+    .bind("worker_plugin_states", JSON.stringify(states), isoNow())
+    .run();
+}
+
+export async function cancelQueuedRunsForTaskKeys(
+  env: Env,
+  taskKeys: string[]
+): Promise<void> {
+  const unique = [...new Set(taskKeys.filter(Boolean))];
+  if (!unique.length) return;
+  const placeholders = unique.map(() => "?").join(", ");
+  const now = isoNow();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE command_queue
+       SET state = 'cancelled', finished_at = ?, message = '对应 Workers 插件已停用'
+       WHERE state = 'queued'
+         AND run_id IN (
+           SELECT id FROM task_runs WHERE task_key IN (${placeholders}) AND state = 'queued'
+         )`
+    ).bind(now, ...unique),
+    env.DB.prepare(
+      `UPDATE task_runs
+       SET state = 'interrupted', message = '对应 Workers 插件已停用',
+           finished_at = ?, updated_at = ?
+       WHERE state = 'queued' AND task_key IN (${placeholders})`
+    ).bind(now, now, ...unique)
+  ]);
+}
+
 export async function getConfigBundle(env: Env): Promise<ConfigBundle> {
   const [camp, auth, overview, technology, automation] = await Promise.all([
     getSetting(env, "camp_config"),

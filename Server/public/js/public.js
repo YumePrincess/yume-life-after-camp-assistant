@@ -86,6 +86,30 @@
     return source ? window.MrzhI18n.t(source) : value;
   }
 
+  function pluginEnabled(id) {
+    return (state.data?.plugins || []).some(
+      (plugin) => plugin.id === id && plugin.enabled
+    );
+  }
+
+  function applyPluginVisibility() {
+    const sections = {
+      technology: ["vote"],
+      inactivity: ["warnings"],
+      "member-profile": ["members", "staff"]
+    };
+    for (const [pluginId, ids] of Object.entries(sections)) {
+      const enabled = pluginEnabled(pluginId);
+      for (const id of ids) {
+        const section = byId(id);
+        if (section) section.hidden = !enabled;
+        for (const link of document.querySelectorAll(`[href="#${id}"]`)) {
+          link.hidden = !enabled;
+        }
+      }
+    }
+  }
+
   function stateName(value) {
     const source = {
       queued: "排队",
@@ -454,6 +478,7 @@
 
   function render(data) {
     state.data = data;
+    applyPluginVisibility();
     document.documentElement.dataset.timezone =
       data.campConfig?.timezone || "Asia/Shanghai";
     const siteName = data.siteName || "明日之后“愿”营地助手";
@@ -518,7 +543,7 @@
   }
 
   async function refreshVoteSummary() {
-    if (document.hidden || !state.data) return;
+    if (document.hidden || !state.data || !pluginEnabled("technology")) return;
     try {
       const summary = await request(
         `/api/public/tech-vote?t=${Date.now()}&locale=${encodeURIComponent(window.MrzhI18n.language())}`

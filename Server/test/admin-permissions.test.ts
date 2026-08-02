@@ -60,4 +60,14 @@ describe("admin permissions", () => {
     expect(hasPermission(legacy, "admin:identity-review")).toBe(true);
     expect(hasPermission(legacy, "identity:review")).toBe(true);
   });
+
+  it("keeps plugin task grants scoped while overview can run every enabled plugin", () => {
+    const patrolOnly = session("temporary_key", ["plugin:patrol:run"]);
+    const overview = session("temporary_key", ["admin:overview"]);
+
+    expect(hasPermission(patrolOnly, "plugin:patrol:run")).toBe(true);
+    expect(hasPermission(patrolOnly, "plugin:technology:run")).toBe(false);
+    expect(hasPermission(overview, "plugin:patrol:run")).toBe(true);
+    expect(hasPermission(overview, "plugin:technology:run")).toBe(true);
+  });
 });

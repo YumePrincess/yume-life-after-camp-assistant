@@ -53,7 +53,7 @@ for localization in en fr ja zh-Hans zh-Hant; do
 done
 
 display_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "${HELPER}/Contents/Info.plist")
-[[ "${display_name}" == "Yume Life After Mac Agent" ]] || {
+[[ "${display_name}" == "Yume Life After Mac Agent Input Helper" ]] || {
   echo "Unexpected permission helper display name: ${display_name}" >&2
   exit 1
 }

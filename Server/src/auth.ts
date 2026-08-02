@@ -13,6 +13,7 @@ import {
   type SessionRow
 } from "./db";
 import { json, problem, redirect } from "./response";
+import { builtPermissionCatalog } from "./plugin-system";
 
 const SESSION_COOKIE = "mrzh_session";
 const STATE_COOKIE = "mrzh_oidc_state";
@@ -20,54 +21,14 @@ const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 const STATE_DURATION_MS = 10 * 60 * 1000;
 const DEFAULT_SESSION_CHECK_SECONDS = 5;
 
-export const ADMIN_PERMISSIONS = [
-  "demo:preview",
-  "admin:overview",
-  "admin:general",
-  "admin:tasks",
-  "admin:agent",
-  "admin:technology",
-  "admin:technology-history",
-  "admin:identity-review",
-  "admin:identity-codes",
-  "admin:smtp",
-  "admin:access",
-  "admin:members",
-  "admin:history",
-  // Legacy action permissions remain valid for previously issued keys.
-  "config:write",
-  "technology-history:manage",
-  "task:run",
-  "task:interrupt",
-  "keys:manage",
-  "identity:review",
-  "identity:manage",
-  "smtp:manage"
-] as const;
-export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
+export const ADMIN_PERMISSIONS = builtPermissionCatalog().map((item) => item.key);
+export type AdminPermission = string;
 
-const MODULE_PERMISSION_ALIASES: Partial<
-  Record<AdminPermission, readonly AdminPermission[]>
-> = {
-  "admin:overview": ["task:run"],
-  "admin:general": ["config:write"],
-  "admin:tasks": ["config:write"],
-  "admin:agent": ["config:write"],
-  "admin:technology": ["config:write"],
-  "admin:technology-history": ["technology-history:manage"],
-  "admin:identity-review": ["identity:review"],
-  "admin:identity-codes": ["identity:manage"],
-  "admin:smtp": ["smtp:manage"],
-  "admin:access": ["keys:manage"],
-  "admin:history": ["task:interrupt"],
-  "task:run": ["admin:overview"],
-  "task:interrupt": ["admin:history"],
-  "keys:manage": ["admin:access"],
-  "identity:review": ["admin:identity-review"],
-  "identity:manage": ["admin:identity-codes"],
-  "smtp:manage": ["admin:smtp"],
-  "technology-history:manage": ["admin:technology-history"]
-};
+const MODULE_PERMISSION_ALIASES = (() => {
+  return new Map(
+    builtPermissionCatalog().map((item) => [item.key, item.aliases as readonly string[]])
+  );
+})();
 type OidcMode = "login" | "silent" | "check";
 
 interface DiscoveryDocument {
@@ -227,7 +188,7 @@ export function hasPermission(
 ): boolean {
   const permissions = sessionPermissions(session);
   if (permissions.includes("*") || permissions.includes(permission)) return true;
-  return (MODULE_PERMISSION_ALIASES[permission] ?? []).some((alias) =>
+  return (MODULE_PERMISSION_ALIASES.get(permission) ?? []).some((alias) =>
     permissions.includes(alias)
   );
 }

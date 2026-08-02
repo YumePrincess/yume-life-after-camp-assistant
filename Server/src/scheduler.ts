@@ -1,6 +1,7 @@
 import { expireUnclaimedRuns, getConfigBundle } from "./db";
 import type { ConfigBundle } from "./domain";
 import { archiveTechnologyVoteHistoryAtDailyReset, enqueueTask } from "./tasks";
+import { effectiveWorkerPlugins } from "./plugin-system";
 import {
   dateKey,
   isWithinDueWindow,
@@ -36,19 +37,39 @@ export async function runScheduler(
     bundle.automationConfig.agentPolling.claimTimeoutMinutes,
     now
   );
-  await archiveTechnologyVoteHistoryAtDailyReset(env, bundle, now);
-
-  await maybeEnqueueDaily(env, bundle, now, localDate, "tech_switch", result, {
-    targetDate: targetDateForTechnologyRun(
+  const enabledTaskKeys = new Set(
+    (await effectiveWorkerPlugins(env))
+      .filter((plugin) => plugin.enabled)
+      .flatMap((plugin) => plugin.tasks.map((task) => task.key))
+  );
+  if (enabledTaskKeys.has("tech_switch")) {
+    await archiveTechnologyVoteHistoryAtDailyReset(env, bundle, now);
+  }
+  for (const taskKey of Object.keys(bundle.automationConfig.tasks) as Array<
+    keyof ConfigBundle["automationConfig"]["tasks"]
+  >) {
+    if (!enabledTaskKeys.has(taskKey)) {
+      result.skipped.push(`${taskKey}:plugin-disabled`);
+      continue;
+    }
+    await maybeEnqueueDaily(
+      env,
+      bundle,
       now,
-      timezone,
-      bundle.campConfig.gameResetTime
-    )
-  });
-  await maybeEnqueueDaily(env, bundle, now, localDate, "contribution_sync", result);
-  await maybeEnqueueDaily(env, bundle, now, localDate, "inactivity_sync", result);
-  await maybeEnqueueDaily(env, bundle, now, localDate, "member_profile_sync", result);
-  await maybeEnqueueDaily(env, bundle, now, localDate, "patrol", result);
+      localDate,
+      taskKey,
+      result,
+      taskKey === "tech_switch"
+        ? {
+            targetDate: targetDateForTechnologyRun(
+              now,
+              timezone,
+              bundle.campConfig.gameResetTime
+            )
+          }
+        : {}
+    );
+  }
 
   return result;
 }

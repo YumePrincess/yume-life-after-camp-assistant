@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "inactivity",
+  "version": "27.0.0",
+  "displayName": "更新斩杀预警",
+  "description": "更新成员离线时间与公共斩杀预警数据。",
+  "builtin": true,
+  "defaultEnabled": true,
+  "tasks": [
+    { "key": "inactivity_sync", "name": "更新斩杀预警", "description": "仅从市政厅沙盘活跃页更新离线时间", "runPermission": "plugin:inactivity:run" }
+  ],
+  "permissions": [
+    { "key": "plugin:inactivity:run", "label": "执行更新斩杀预警", "aliases": ["task:run", "admin:overview"] }
+  ],
+  "adminModules": []
+}

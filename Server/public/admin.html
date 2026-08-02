@@ -39,13 +39,14 @@
           <a class="admin-nav-item" href="#general" data-nav-target="general" hidden>基础设置</a>
           <a class="admin-nav-item" href="#tasks" data-nav-target="tasks" hidden>任务计划</a>
           <a class="admin-nav-item" href="#agent" data-nav-target="agent" hidden>执行策略</a>
-          <a class="admin-nav-item" href="#technology" data-nav-target="technology" hidden>科技管理</a>
-          <a class="admin-nav-item" href="#technology-history" data-nav-target="technology-history" hidden>科技投票历史</a>
+          <a class="admin-nav-item" href="#plugins" data-nav-target="plugins" hidden>Workers 插件</a>
+          <a class="admin-nav-item" href="#technology" data-nav-target="technology" data-worker-plugin="technology" hidden>科技管理</a>
+          <a class="admin-nav-item" href="#technology-history" data-nav-target="technology-history" data-worker-plugin="technology" hidden>科技投票历史</a>
           <a class="admin-nav-item" href="#identity-applications" data-nav-target="identity-applications" hidden>识别码审批</a>
           <a class="admin-nav-item" href="#identity-codes" data-nav-target="identity-codes" hidden>身份识别码</a>
           <a class="admin-nav-item" href="#smtp" data-nav-target="smtp" hidden>SMTP 发信</a>
           <a class="admin-nav-item" href="#access" data-nav-target="access" hidden>访问密钥</a>
-          <a class="admin-nav-item" href="#members" data-nav-target="members" hidden>成员管理</a>
+          <a class="admin-nav-item" href="#members" data-nav-target="members" data-worker-plugin="member-profile" hidden>成员管理</a>
           <a class="admin-nav-item" href="#history" data-nav-target="history" hidden>运行记录</a>
         </nav>
 
@@ -266,27 +267,27 @@
                 </div>
               </div>
               <div class="schedule-grid">
-                <fieldset class="schedule-card">
+                <fieldset class="schedule-card" data-plugin-task="tech_switch">
                   <legend>科技切换</legend>
                   <label class="field field-checkbox"><input name="techEnabled" type="checkbox" /><span>启用</span></label>
                   <label class="field"><span>执行时间</span><input name="techTime" type="time" /></label>
                 </fieldset>
-                <fieldset class="schedule-card">
+                <fieldset class="schedule-card" data-plugin-task="contribution_sync">
                   <legend>更新贡献</legend>
                   <label class="field field-checkbox"><input name="contributionEnabled" type="checkbox" /><span>启用</span></label>
                   <label class="field"><span>执行时间</span><input name="contributionTime" type="time" /></label>
                 </fieldset>
-                <fieldset class="schedule-card">
+                <fieldset class="schedule-card" data-plugin-task="inactivity_sync">
                   <legend>更新斩杀预警</legend>
                   <label class="field field-checkbox"><input name="inactivityEnabled" type="checkbox" /><span>启用</span></label>
                   <label class="field"><span>执行时间</span><input name="inactivityTime" type="time" /></label>
                 </fieldset>
-                <fieldset class="schedule-card">
+                <fieldset class="schedule-card" data-plugin-task="member_profile_sync">
                   <legend>更新成员资料</legend>
                   <label class="field field-checkbox"><input name="profileEnabled" type="checkbox" /><span>启用</span></label>
                   <label class="field"><span>执行时间</span><input name="profileTime" type="time" /></label>
                 </fieldset>
-                <fieldset class="schedule-card schedule-card-wide">
+                <fieldset class="schedule-card schedule-card-wide" data-plugin-task="patrol">
                   <legend>营地巡逻</legend>
                   <div class="form-grid form-grid-compact">
                     <label class="field field-checkbox"><input name="patrolEnabled" type="checkbox" /><span>启用</span></label>
@@ -304,6 +305,17 @@
               </div>
             </section>
           </form>
+
+          <section class="panel admin-view" data-admin-view="plugins" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">WORKER PLUGINS</p>
+                <h1>Workers 插件</h1>
+                <p class="section-intro">插件由构建时扫描 Server/plugins 目录注册；停用会同步停止定时任务、手工任务、快照写入和对应权限。</p>
+              </div>
+            </div>
+            <div id="worker-plugin-list" class="agent-status"></div>
+          </section>
 
           <form class="config-form" data-config-section="agent" data-admin-view="agent" hidden>
             <section class="panel">
@@ -336,7 +348,7 @@
             </section>
           </form>
 
-          <form class="config-form" data-config-section="technology" data-admin-view="technology" hidden>
+          <form class="config-form" data-config-section="technology" data-admin-view="technology" data-worker-plugin="technology" hidden>
             <section class="panel technology-panel">
               <div class="section-heading">
                 <div>
@@ -403,7 +415,7 @@
             </section>
           </form>
 
-          <section class="panel admin-view technology-history" data-admin-view="technology-history" aria-labelledby="technology-history-title" hidden>
+          <section class="panel admin-view technology-history" data-admin-view="technology-history" data-worker-plugin="technology" aria-labelledby="technology-history-title" hidden>
             <div class="technology-history-heading">
               <div>
                 <p class="eyebrow">VOTE ARCHIVE</p>
@@ -482,22 +494,7 @@
               </label>
               <fieldset class="permission-fieldset">
                 <legend>权限（Demo 为后台全部模块只读预览）</legend>
-                <div class="permission-options">
-                  <label><input type="checkbox" name="keyPermission" value="demo:preview" /><span>Demo · 全后台只读</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:overview" /><span>控制台 · 查看与执行任务</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:general" /><span>基础设置</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:tasks" /><span>任务计划</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:agent" /><span>执行策略</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:technology" /><span>科技管理</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:technology-history" /><span>科技投票历史 · 查询</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="technology-history:manage" /><span>科技投票历史 · 删除</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:identity-review" /><span>识别码审批</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:identity-codes" /><span>身份识别码</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:smtp" /><span>SMTP 发信</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:access" /><span>访问密钥</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:members" /><span>成员管理</span></label>
-                  <label><input type="checkbox" name="keyPermission" value="admin:history" /><span>运行记录</span></label>
-                </div>
+                <div id="key-permission-options" class="permission-options"></div>
               </fieldset>
               <button class="button button-primary" type="submit">生成 Key</button>
             </form>
@@ -533,7 +530,7 @@
             </div>
           </section>
 
-          <section class="panel admin-view" data-admin-view="members" hidden>
+          <section class="panel admin-view" data-admin-view="members" data-worker-plugin="member-profile" hidden>
             <div class="section-heading">
               <div>
                 <p class="eyebrow">CURRENT ROSTER</p>
@@ -657,22 +654,7 @@
         <p id="temporary-key-permissions-note" class="section-intro">保存后，该 Key 当前的登录会话会失效；下次登录即使用新权限。</p>
         <fieldset class="permission-fieldset key-permissions-editor">
           <legend>权限（Demo 为后台全部模块只读预览）</legend>
-          <div class="permission-options">
-            <label><input type="checkbox" name="keyEditPermission" value="demo:preview" /><span>Demo · 全后台只读</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:overview" /><span>控制台 · 查看与执行任务</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:general" /><span>基础设置</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:tasks" /><span>任务计划</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:agent" /><span>执行策略</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:technology" /><span>科技管理</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:technology-history" /><span>科技投票历史 · 查询</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="technology-history:manage" /><span>科技投票历史 · 删除</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:identity-review" /><span>识别码审批</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:identity-codes" /><span>身份识别码</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:smtp" /><span>SMTP 发信</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:access" /><span>访问密钥</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:members" /><span>成员管理</span></label>
-            <label><input type="checkbox" name="keyEditPermission" value="admin:history" /><span>运行记录</span></label>
-          </div>
+          <div id="key-edit-permission-options" class="permission-options"></div>
         </fieldset>
         <div class="action-row">
           <button id="temporary-key-permissions-save" class="button button-primary" type="submit">保存权限</button>

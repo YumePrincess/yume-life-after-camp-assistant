@@ -89,10 +89,10 @@ if [[ "${YLA_REQUIRE_BUNDLED_MODEL:-1}" == "1" ]]; then
   }
 fi
 
-# Host-level ` / ~ cannot be delivered by ADB. Package the System Events call
-# in a signed, localized helper App so macOS attributes Automation and
-# Accessibility permission to “Yume Life After Mac Agent”, never to node or
-# osascript. The helper remains part of the portable runtime after installation.
+# Host-level ` / ~ cannot be delivered by ADB. Package direct Core Graphics
+# event posting in a signed, localized helper App so macOS attributes the
+# minimum PostEvent permission to the named input helper, never to node,
+# Terminal, System Events, or osascript. The helper remains portable.
 HOST_INPUT_SOURCE="${APP_ROOT}/Helpers/HostInputHelper"
 HOST_INPUT_APP="${APP_BUNDLE}/Contents/Resources/Runtime/bin/Yume Life After Mac Agent Input Helper.app"
 HOST_INPUT_EXECUTABLE="${HOST_INPUT_APP}/Contents/MacOS/YumeLifeAfterMacAgentInputHelper"

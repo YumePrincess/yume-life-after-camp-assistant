@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const TASKS = [
+  const FALLBACK_TASKS = [
     ["tech_switch", "更新科技", "按固定科技与投票结果开启次日科技"],
     ["contribution_sync", "更新贡献", "仅从市政厅沙盘更新三项贡献数据"],
     ["inactivity_sync", "更新斩杀预警", "仅从市政厅沙盘活跃页更新离线时间"],
@@ -18,6 +18,7 @@
     general: "admin:general",
     tasks: "admin:tasks",
     agent: "admin:agent",
+    plugins: "admin:plugins",
     technology: "admin:technology",
     "technology-history": "admin:technology-history",
     "identity-applications": "admin:identity-review",
@@ -27,28 +28,8 @@
     members: "admin:members",
     history: "admin:history"
   };
-  const PERMISSION_ALIASES = {
-    "admin:overview": ["task:run"],
-    "admin:general": ["config:write"],
-    "admin:tasks": ["config:write"],
-    "admin:agent": ["config:write"],
-    "admin:technology": ["config:write"],
-    "admin:technology-history": ["technology-history:manage"],
-    "admin:identity-review": ["identity:review"],
-    "admin:identity-codes": ["identity:manage"],
-    "admin:smtp": ["smtp:manage"],
-    "admin:access": ["keys:manage"],
-    "admin:history": ["task:interrupt"],
-    "task:run": ["admin:overview"],
-    "task:interrupt": ["admin:history"],
-    "keys:manage": ["admin:access"],
-    "identity:review": ["admin:identity-review"],
-    "identity:manage": ["admin:identity-codes"],
-    "smtp:manage": ["admin:smtp"],
-    "technology-history:manage": ["admin:technology-history"]
-  };
   const TASK_NAMES = {
-    ...Object.fromEntries(TASKS.map(([key, name]) => [key, name])),
+    ...Object.fromEntries(FALLBACK_TASKS.map(([key, name]) => [key, name])),
     member_sync: "成员同步",
     automation_routine: "任务例程"
   };
@@ -92,7 +73,8 @@
     smtpConfigLoading: false,
     smtpDraftRevision: 0,
     smtpDirty: false,
-    maintenanceAction: null
+    maintenanceAction: null,
+    loadedPluginClientModules: new Set()
   };
 
   function byId(id) {
@@ -154,17 +136,21 @@
   }
 
   function taskName(value) {
-    return TASK_NAMES[value] || value;
+    const task = (state.bootstrap?.plugins || [])
+      .flatMap((plugin) => plugin.tasks || [])
+      .find((item) => item.key === value);
+    return task?.name || TASK_NAMES[value] || value;
   }
 
   function permissionName(value) {
-    return (
+    return state.bootstrap?.permissionCatalog?.find((item) => item.key === value)?.label || (
       {
         "demo:preview": "Demo · 全后台只读",
         "admin:overview": "控制台",
         "admin:general": "基础设置",
         "admin:tasks": "任务计划",
         "admin:agent": "执行策略",
+        "admin:plugins": "Workers 插件",
         "admin:technology": "科技管理",
         "admin:technology-history": "科技投票历史",
         "admin:identity-review": "识别码审批",
@@ -185,12 +171,17 @@
     );
   }
 
+  function permissionAliases(permission) {
+    const catalog = state.bootstrap?.permissionCatalog || [];
+    return catalog.find((item) => item.key === permission)?.aliases || [];
+  }
+
   function hasPermission(permission) {
     const permissions = state.bootstrap?.session?.permissions || [];
     return (
       permissions.includes("*") ||
       permissions.includes(permission) ||
-      (PERMISSION_ALIASES[permission] || []).some((alias) =>
+      permissionAliases(permission).some((alias) =>
         permissions.includes(alias)
       )
     );
@@ -198,10 +189,26 @@
 
   function canView(view) {
     const permissions = state.bootstrap?.session?.permissions || [];
+    const declaredOwner = document.querySelector(
+      `[data-admin-view="${CSS.escape(view)}"][data-worker-plugin], [data-nav-target="${CSS.escape(view)}"][data-worker-plugin]`
+    )?.dataset.workerPlugin;
+    if (declaredOwner) {
+      const declaredPlugin = (state.bootstrap?.plugins || []).find(
+        (plugin) => plugin.id === declaredOwner
+      );
+      if (!declaredPlugin?.enabled) return false;
+    }
+    const owner = (state.bootstrap?.plugins || []).find((plugin) =>
+      (plugin.adminModules || []).some((module) => module.view === view)
+    );
+    if (owner && !owner.enabled) return false;
+    const pluginPermission = owner?.adminModules?.find(
+      (module) => module.view === view
+    )?.permission;
     return (
       permissions.includes("*") ||
       permissions.includes("demo:preview") ||
-      hasPermission(VIEW_PERMISSIONS[view])
+      hasPermission(pluginPermission || VIEW_PERMISSIONS[view])
     );
   }
 
@@ -326,14 +333,108 @@
   function renderTaskActions() {
     const root = byId("task-actions");
     root.replaceChildren();
-    for (const [key, name, copy] of TASKS) {
+    const tasks = (state.bootstrap?.plugins || [])
+      .filter((plugin) => plugin.enabled)
+      .flatMap((plugin) => plugin.tasks || []);
+    for (const task of tasks) {
+      const { key, name, description: copy, runPermission } = task;
       const card = create("article", "task-card");
       const button = create("button", "button button-primary", "立即执行");
       button.type = "button";
-      button.disabled = !hasPermission("task:run");
+      button.disabled = !hasPermission(runPermission);
       button.addEventListener("click", () => runTask(key, button));
       card.append(create("h3", "", name), create("p", "", copy), button);
       root.append(card);
+    }
+  }
+
+  function renderPermissionOptions() {
+    const catalog = state.bootstrap?.permissionCatalog || [];
+    for (const [rootId, name] of [
+      ["key-permission-options", "keyPermission"],
+      ["key-edit-permission-options", "keyEditPermission"]
+    ]) {
+      const root = byId(rootId);
+      if (!root) continue;
+      root.replaceChildren();
+      for (const permission of catalog.filter((item) =>
+        item.key === "demo:preview" || item.key.startsWith("admin:") || item.key.startsWith("plugin:") || item.key === "technology-history:manage"
+      )) {
+        const label = create("label");
+        const checkbox = create("input");
+        checkbox.type = "checkbox";
+        checkbox.name = name;
+        checkbox.value = permission.key;
+        label.append(checkbox, create("span", "", permission.label));
+        root.append(label);
+      }
+    }
+  }
+
+  function renderWorkerPlugins() {
+    const root = byId("worker-plugin-list");
+    if (!root) return;
+    root.replaceChildren();
+    for (const plugin of state.bootstrap?.plugins || []) {
+      const card = create("article", "agent-card");
+      const heading = create("div", "agent-card-heading");
+      heading.append(
+        create("strong", "", `${plugin.displayName} · ${plugin.version}`),
+        create("span", plugin.enabled ? "agent-enabled-badge" : "agent-standby-badge", plugin.enabled ? "已启用" : "已停用")
+      );
+      const actions = create("div", "agent-card-actions");
+      const toggle = create("button", plugin.enabled ? "button button-danger" : "button button-primary", plugin.enabled ? "停用" : "启用");
+      toggle.type = "button";
+      toggle.disabled = !hasPermission("plugins:manage");
+      toggle.addEventListener("click", () => toggleWorkerPlugin(plugin, toggle));
+      actions.append(toggle);
+      card.append(
+        heading,
+        create("span", "agent-device-id", plugin.id),
+        create("p", "", plugin.description),
+        create("span", "muted", `${(plugin.tasks || []).length} 个任务 · ${(plugin.permissions || []).length} 项权限`),
+        actions
+      );
+      root.append(card);
+    }
+  }
+
+  async function toggleWorkerPlugin(plugin, button) {
+    button.disabled = true;
+    try {
+      await request(`/api/admin/plugins/${encodeURIComponent(plugin.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !plugin.enabled })
+      });
+      await refresh(false);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+      button.disabled = false;
+    }
+  }
+
+  async function loadPluginClientModules() {
+    for (const plugin of state.bootstrap?.plugins || []) {
+      if (
+        !plugin.enabled ||
+        !plugin.clientModule ||
+        state.loadedPluginClientModules.has(plugin.id)
+      ) continue;
+      try {
+        const module = await import(plugin.clientModule);
+        if (typeof module.mount === "function") {
+          await module.mount({
+            plugin,
+            request,
+            refresh: () => refresh(false),
+            adminContent: document.querySelector(".admin-content"),
+            adminNav: document.querySelector(".admin-nav")
+          });
+        }
+        state.loadedPluginClientModules.add(plugin.id);
+      } catch (error) {
+        console.error(`Worker plugin client module failed: ${plugin.id}`, error);
+      }
     }
   }
 
@@ -364,11 +465,11 @@
       if (item.agent_id !== activeAgentId) {
         const activate = create("button", "button button-primary", "启用设备");
         activate.type = "button";
-        activate.disabled = !hasPermission("config:write");
+        activate.disabled = !hasPermission("admin:agent");
         activate.addEventListener("click", () => activateAgent(item, activate));
         const remove = create("button", "button button-danger", "删除设备");
         remove.type = "button";
-        remove.disabled = !hasPermission("config:write");
+        remove.disabled = !hasPermission("admin:agent");
         remove.addEventListener("click", () => deleteAgent(item, remove));
         actions.append(activate, remove);
       }
@@ -1260,7 +1361,18 @@
     document.documentElement.dataset.timezone =
       data.configBundle?.campConfig?.timezone || "Asia/Shanghai";
     state.csrfToken = data.session.csrfToken;
+    renderPermissionOptions();
     renderTaskActions();
+    renderWorkerPlugins();
+    void loadPluginClientModules();
+    const enabledTasks = new Set(
+      (data.plugins || [])
+        .filter((plugin) => plugin.enabled)
+        .flatMap((plugin) => (plugin.tasks || []).map((task) => task.key))
+    );
+    for (const card of document.querySelectorAll("[data-plugin-task]")) {
+      card.hidden = !enabledTasks.has(card.dataset.pluginTask);
+    }
     byId("session-email").textContent =
       data.session.displayName || data.session.email;
     document.body.dataset.readonly = String(
@@ -1357,6 +1469,12 @@
         } catch {
           permissions = [];
         }
+        const availablePermissions = new Set(
+          (state.bootstrap?.permissionCatalog || []).map((permission) => permission.key)
+        );
+        permissions = permissions.filter((permission) =>
+          availablePermissions.has(permission)
+        );
         const row = create("article", "key-item");
         const identity = create("div");
         identity.append(

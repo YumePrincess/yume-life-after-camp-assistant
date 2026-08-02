@@ -11,14 +11,17 @@ private struct HelperResult: Encodable {
 
 private enum HelperFailure: Error, CustomStringConvertible {
     case invalidArguments(String)
-    case automationDenied(String)
+    case accessibilityDenied(String)
+    case eventCreationFailed
 
     var description: String {
         switch self {
         case .invalidArguments(let message):
             return "YLA_HOST_INPUT_INVALID_ARGUMENTS: \(message)"
-        case .automationDenied(let message):
+        case .accessibilityDenied(let message):
             return "YLA_HOST_INPUT_PERMISSION_DENIED: \(message)"
+        case .eventCreationFailed:
+            return "YLA_HOST_INPUT_EVENT_FAILED: macOS could not create the keyboard event"
         }
     }
 }
@@ -41,8 +44,32 @@ private func mouseButtonsReleased() -> Bool {
         && !CGEventSource.buttonState(source, button: .center)
 }
 
+private func waitForPostEventPermission(timeoutMilliseconds: Int) -> Bool {
+    if CGPreflightPostEventAccess() { return true }
+    _ = CGRequestPostEventAccess()
+    let deadline = Date().addingTimeInterval(Double(timeoutMilliseconds) / 1_000)
+    while Date() < deadline {
+        if CGPreflightPostEventAccess() { return true }
+        Thread.sleep(forTimeInterval: 0.5)
+    }
+    return CGPreflightPostEventAccess()
+}
+
 do {
     let arguments = Array(CommandLine.arguments.dropFirst())
+    let permissionTimeoutMilliseconds = max(
+        5_000,
+        min(170_000, Int(argument("--permission-timeout-ms", in: arguments) ?? "120000") ?? 120_000)
+    )
+    if arguments.contains("--request-permission-only") {
+        guard waitForPostEventPermission(timeoutMilliseconds: permissionTimeoutMilliseconds) else {
+            throw HelperFailure.accessibilityDenied(
+                "Enable ‘Yume Life After Mac Agent Input Helper’ in System Settings > Privacy & Security > Accessibility."
+            )
+        }
+        FileHandle.standardOutput.write(Data("{\"permissionGranted\":true}\n".utf8))
+        exit(0)
+    }
     guard let pidText = argument("--pid", in: arguments),
           let processId = Int32(pidText),
           processId > 0
@@ -54,23 +81,36 @@ do {
     let postKeyDelay = boundedDelay(Int(argument("--post-key-settle-ms", in: arguments) ?? "4000") ?? 4000)
     let bringToFront = argument("--bring-to-front", in: arguments) != "false"
 
-    let source = [
-        "tell application \"System Events\"",
-        "  set targetProcess to first application process whose unix id is \(processId)",
-        bringToFront ? "  set frontmost of targetProcess to true" : nil,
-        bringToFront ? "  delay \(foregroundDelay)" : nil,
-        "  key code \(keyCode)",
-        "  delay \(postKeyDelay)",
-        "end tell"
-    ].compactMap { $0 }.joined(separator: "\n")
-
-    var error: NSDictionary?
-    guard NSAppleScript(source: source)?.executeAndReturnError(&error) != nil else {
-        let number = error?[NSAppleScript.errorNumber] as? Int ?? 0
-        let message = error?[NSAppleScript.errorMessage] as? String
-            ?? "macOS did not allow the signed App helper to control System Events"
-        throw HelperFailure.automationDenied("\(message) (\(number))")
+    guard waitForPostEventPermission(timeoutMilliseconds: permissionTimeoutMilliseconds) else {
+        throw HelperFailure.accessibilityDenied(
+            "Enable ‘Yume Life After Mac Agent Input Helper’ in System Settings > Privacy & Security > Accessibility. Permission granted only to the main App does not authorize the helper's separate keyboard-event permission."
+        )
     }
+    if bringToFront {
+        guard let target = NSRunningApplication(processIdentifier: processId) else {
+            throw HelperFailure.invalidArguments("MuMu process \(processId) is no longer running")
+        }
+        _ = target.activate(options: [.activateAllWindows])
+        Thread.sleep(forTimeInterval: foregroundDelay)
+    }
+
+    let eventSource = CGEventSource(stateID: .combinedSessionState)
+    guard
+        let keyDown = CGEvent(
+            keyboardEventSource: eventSource,
+            virtualKey: CGKeyCode(keyCode),
+            keyDown: true
+        ),
+        let keyUp = CGEvent(
+            keyboardEventSource: eventSource,
+            virtualKey: CGKeyCode(keyCode),
+            keyDown: false
+        )
+    else { throw HelperFailure.eventCreationFailed }
+    keyDown.postToPid(processId)
+    Thread.sleep(forTimeInterval: 0.08)
+    keyUp.postToPid(processId)
+    Thread.sleep(forTimeInterval: postKeyDelay)
 
     let result = HelperResult(
         processId: processId,

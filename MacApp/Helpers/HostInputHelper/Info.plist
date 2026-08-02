@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Yume Life After Mac Agent</string>
+	<string>Yume Life After Mac Agent Input Helper</string>
     <key>CFBundleExecutable</key>
     <string>YumeLifeAfterMacAgentInputHelper</string>
     <key>CFBundleIconFile</key>
@@ -29,7 +29,7 @@
     <key>CFBundleShortVersionString</key>
     <string>27.0</string>
     <key>CFBundleVersion</key>
-    <string>2707</string>
+    <string>2708</string>
     <key>LSArchitecturePriority</key>
     <array><string>arm64</string></array>
     <key>LSMinimumSystemVersion</key>
@@ -38,7 +38,5 @@
     <true/>
     <key>LSUIElement</key>
     <true/>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>Yume Life After Mac Agent uses System Events to send the configured MuMu mouse-release shortcut.</string>
 </dict>
 </plist>

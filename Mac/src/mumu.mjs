@@ -186,16 +186,27 @@ export class MumuLifecycle {
       String(Math.round(foregroundSettleSeconds * 1000)),
       "--post-key-settle-ms",
       String(Math.round(postKeySettleSeconds * 1000)),
+      "--permission-timeout-ms",
+      String(
+        Math.max(
+          5_000,
+          Math.min(
+            170_000,
+            Number(controls.permissionTimeoutSeconds) * 1000 || 120_000
+          )
+        )
+      ),
       "--bring-to-front",
       bringToFront ? "true" : "false"
     ];
     try {
       const result = await runFile(helperBinary, helperArguments, {
         timeoutMs: Math.max(
-          15_000,
+          20_000,
           Math.min(
-            180_000,
-            Number(controls.permissionTimeoutSeconds) * 1000 || 120_000
+            185_000,
+            (Number(controls.permissionTimeoutSeconds) * 1000 || 120_000) +
+              10_000
           )
         ),
         signal
@@ -209,9 +220,15 @@ export class MumuLifecycle {
         foregroundSettleSeconds,
         postKeySettleSeconds,
         mouseReleased: response.mouseReleased === true,
-        permissionOwner: "Yume Life After Mac Agent"
+        permissionOwner: "Yume Life After Mac Agent Input Helper"
       };
     } catch (error) {
+      if (String(error?.message || error).includes("YLA_HOST_INPUT_PERMISSION_DENIED")) {
+        throw new Error(
+          "MUMU_HOST_MOUSE_UNLOCK_PERMISSION_DENIED: 请在“系统设置 > 隐私与安全性 > 辅助功能”中启用“Yume Life After Mac Agent Input Helper”。只给主 App 授权不会授权独立的后台输入助手；授权后可在 App 设置中点击“请求输入权限”验证。",
+          { cause: error }
+        );
+      }
       // Source-only development runs do not contain the packaged helper. Keep
       // the historical System Events path only for that case. A packaged
       // helper permission failure must never silently fall back to node or

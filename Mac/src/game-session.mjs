@@ -349,6 +349,7 @@ export async function waitForGameReady(context, signal) {
   let readyStreak = 0;
   let readySince = 0;
   let readyStabilizingReported = false;
+  let readyAccurateChannelSeen = false;
   let lastLoadingEvidenceAt = 0;
   const reservePromotionDismissAttempt = (state) => {
     const previous = promotionDismissAttempts.get(state);
@@ -386,6 +387,7 @@ export async function waitForGameReady(context, signal) {
   };
   while (Date.now() < deadline) {
     let frame = await vision.captureTransient("game-login-state", signal);
+    let accurateChannelCandidate = false;
     const blockingStateTexts = [
       ...announcements.texts,
       ...updates.stateTexts,
@@ -448,11 +450,10 @@ export async function waitForGameReady(context, signal) {
             observations: [...frame.observations, ...channelObservations]
           };
           fastChannelReadyCount = accurateChannelMatches.length;
-          await report(
-            "info",
-            "game_ready_channel_accurate",
-            `已通过左下角频道区域高精度 OCR 确认 HUD：${accurateChannelMatches.map((item) => item.text).join("、")}`
-          );
+          // A single accurate-OCR frame is still only a candidate. The final
+          // confirmation below requires multiple stable frames and no login,
+          // loading, announcement, or promotion evidence.
+          accurateChannelCandidate = true;
         }
       } catch (error) {
         if (signal?.aborted) throw error;
@@ -574,11 +575,12 @@ export async function waitForGameReady(context, signal) {
     ) {
       readyStreak += 1;
       readySince ||= Date.now();
+      readyAccurateChannelSeen ||= accurateChannelCandidate;
       const configuredStableFrames = Number(promotions.readyStableFrames);
       const configuredStableMs = Number(promotions.readyStableMs);
       const channelStableFrames = Number(promotions.channelReadyStableFrames);
       const stableFrames = Math.max(
-        1,
+        channelHudReady ? 2 : 1,
         channelHudReady
           ? Number.isFinite(channelStableFrames)
             ? channelStableFrames
@@ -589,7 +591,7 @@ export async function waitForGameReady(context, signal) {
       );
       const channelStableMs = Number(promotions.channelReadyStableMs);
       const stableMs = Math.max(
-        0,
+        channelHudReady ? 1_000 : 0,
         channelHudReady
           ? Number.isFinite(channelStableMs)
             ? channelStableMs
@@ -619,6 +621,13 @@ export async function waitForGameReady(context, signal) {
           );
         }
       } else {
+        if (channelHudReady && readyAccurateChannelSeen) {
+          await report(
+            "info",
+            "game_ready_channel_accurate",
+            `已通过左下角独立频道标签的稳定多帧高精度 OCR 确认 HUD：${channelReadyMatches.map((item) => item.text).join("、")}`
+          );
+        }
         await report(
           "info",
           "game_ready",
@@ -638,6 +647,7 @@ export async function waitForGameReady(context, signal) {
       readyStreak = 0;
       readySince = 0;
       readyStabilizingReported = false;
+      readyAccurateChannelSeen = false;
     }
     // 登录是已校准的固定安全点击。它的文本在新版登录页中偶尔会被快速
     // OCR 漏掉；必须在“关闭未知公告”之前先做一次登录区域高精度确认，
@@ -1182,9 +1192,29 @@ function findReadyTextsInRegion(vision, observations, texts = [], region) {
       centerY <= region.bottom
     );
   });
-  return texts
-    .map((text) => ({ text, match: vision.find(bounded, text) }))
-    .filter((item) => item.match);
+  // Channel tabs are short, independent labels. Never use substring matching
+  // here: the login/loading page legal disclaimer contains both “世界观” and
+  // “角色场景”, which previously allowed one sentence to impersonate two HUD
+  // anchors. Each label must occupy its own OCR observation.
+  const claimed = new Set();
+  return texts.flatMap((text) => {
+    const expected = normalizeChannelLabel(text);
+    const index = bounded.findIndex(
+      (item, candidateIndex) =>
+        !claimed.has(candidateIndex) &&
+        normalizeChannelLabel(item.text) === expected
+    );
+    if (index < 0) return [];
+    claimed.add(index);
+    return [{ text, match: bounded[index] }];
+  });
+}
+
+function normalizeChannelLabel(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
 }
 
 async function runWithWatchdog(context, work, parentSignal, watchdog) {

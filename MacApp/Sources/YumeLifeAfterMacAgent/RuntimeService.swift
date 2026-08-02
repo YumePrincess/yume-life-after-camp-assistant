@@ -147,6 +147,22 @@ actor RuntimeService {
         return try await process(node, [manager] + arguments, workingDirectory: root, timeout: timeout)
     }
 
+    func requestHostInputPermission() async throws -> String {
+        let root = runtimeRoot
+        let helper = root.appending(
+            path: "bin/Yume Life After Mac Agent Input Helper.app/Contents/MacOS/YumeLifeAfterMacAgentInputHelper"
+        )
+        guard fileManager.isExecutableFile(atPath: helper.path) else {
+            throw RuntimeError.failed(String(localized: "The bundled input helper is missing."))
+        }
+        return try await process(
+            helper.path,
+            ["--request-permission-only", "--permission-timeout-ms", "120000"],
+            workingDirectory: root,
+            timeout: 130
+        )
+    }
+
     func health(debugToken: String) async throws -> AgentHealth {
         var request = URLRequest(url: URL(string: "http://127.0.0.1:8091/health")!)
         request.timeoutInterval = 3

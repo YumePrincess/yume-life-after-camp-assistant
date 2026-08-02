@@ -334,7 +334,7 @@ test("two bottom-left chat channel anchors confirm HUD without local-model class
     }
   );
   await waitForGameReady(fixture.context);
-  assert.equal(fixture.captures, 2);
+  assert.ok(fixture.captures >= 2);
   assert.deepEqual(fixture.taps, []);
   assert.ok(
     fixture.messages.some((message) =>
@@ -380,8 +380,47 @@ test("precise bottom-left channel OCR confirms login when general HUD OCR keeps 
 
   assert.ok(
     fixture.messages.some((message) =>
-      message.includes("左下角频道区域高精度 OCR 确认 HUD")
+      message.includes("稳定多帧高精度 OCR 确认 HUD")
     )
+  );
+  assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
+});
+
+test("login legal disclaimer cannot impersonate standalone HUD channel labels", async () => {
+  const legalDisclaimer = [{
+    text: "本游戏世界观、故事情节及相关角色场景纯属虚构",
+    x: 30,
+    y: 1040,
+    width: 680,
+    height: 28
+  }];
+  const channelFrame = [
+    { text: "综合", x: 30, y: 1090 },
+    { text: "世界", x: 120, y: 1090 },
+    { text: "场景", x: 210, y: 1090 }
+  ];
+  const fixture = createFixture(
+    [["点击登录游戏"], [], []],
+    null,
+    [],
+    "shadow",
+    {
+      channelReadyStableFrames: 2,
+      channelReadyStableMs: 1_000,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    },
+    [legalDisclaimer, channelFrame, channelFrame]
+  );
+
+  await waitForGameReady(fixture.context);
+
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+  assert.equal(
+    fixture.messages.some((message) =>
+      message.includes("确认 HUD：世界、场景")
+    ),
+    false
   );
   assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
 });
