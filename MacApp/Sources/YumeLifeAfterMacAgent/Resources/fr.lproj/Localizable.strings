@@ -44,7 +44,6 @@
 "The latest Agent output refreshes automatically." = "La dernière sortie de l’Agent est actualisée automatiquement.";
 "Refresh" = "Actualiser";
 "No log entries yet." = "Aucune entrée de journal.";
-"Install a signed file or update from the Workers catalog." = "Installez un fichier signé ou mettez à jour depuis le catalogue Workers.";
 "Add plugin…" = "Ajouter une extension…";
 "Check for updates" = "Rechercher des mises à jour";
 "Built-in" = "Intégrée";
@@ -72,7 +71,6 @@
 "Dark" = "Sombre";
 "Plugin security" = "Sécurité des extensions";
 "Allow unsigned local plugins (developer mode)" = "Autoriser les extensions locales non signées (mode développeur)";
-"Workers catalog plugins always require a trusted signature." = "Les extensions du catalogue Workers exigent toujours une signature approuvée.";
 "Save settings" = "Enregistrer";
 "Load saved credentials from Keychain" = "Charger les identifiants du trousseau";
 "No saved credentials were found in Keychain." = "Aucun identifiant enregistré n’a été trouvé dans le trousseau.";
@@ -148,3 +146,8 @@
 "Input helper permission granted" = "Autorisation de l’assistant de saisie accordée";
 "Input helper permission was not granted" = "Autorisation de l’assistant de saisie refusée";
 "The bundled input helper is missing." = "L’assistant de saisie intégré est manquant.";
+"Enabled plugins" = "Extensions activées";
+"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "Cinq extensions sont intégrées à l’App. Ajoutez les extensions supplémentaires depuis Application Support.";
+"Open plugin folder" = "Ouvrir le dossier des extensions";
+"Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced." = "Les extensions supplémentaires sont chargées depuis Application Support. Les extensions intégrées ne peuvent être ni supprimées ni remplacées.";
+"Bundled plugins cannot be removed. Disable the plugin instead." = "Les extensions intégrées ne peuvent pas être supprimées. Désactivez-les à la place.";

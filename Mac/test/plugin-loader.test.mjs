@@ -45,7 +45,7 @@ test("a trusted Ed25519 signature verifies the complete plugin payload", async (
   }
 });
 
-test("a user plugin atomically overrides the same built-in plugin id", async () => {
+test("a bundled plugin cannot be overridden by a local folder with the same id", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "yla-plugin-test-"));
   try {
     const builtins = resolve(root, "builtins");
@@ -58,7 +58,7 @@ test("a user plugin atomically overrides the same built-in plugin id", async () 
       allowUnsignedLocal: true
     });
     assert.equal(loaded.plugins.length, 1);
-    assert.equal(loaded.plugins[0].manifest.version, "1.1.0");
+    assert.equal(loaded.plugins[0].manifest.version, "1.0.0");
     assert.equal(typeof loaded.workflows.test_task.workflow, "function");
   } finally {
     await rm(root, { recursive: true, force: true });

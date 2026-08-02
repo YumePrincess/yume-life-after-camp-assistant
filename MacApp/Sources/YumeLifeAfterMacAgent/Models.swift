@@ -47,6 +47,7 @@ struct AgentHealth: Decodable {
 struct HealthPlugin: Decodable, Identifiable {
     let id: String
     let version: String
+    let build: Int?
     let taskKey: String
     let builtin: Bool
 }
@@ -54,14 +55,13 @@ struct HealthPlugin: Decodable, Identifiable {
 struct PluginEnvelope: Decodable {
     let ok: Bool
     let plugins: [AgentPlugin]?
-    let updates: [RemotePlugin]?
-    let catalog: PluginCatalog?
     let error: String?
 }
 
 struct AgentPlugin: Decodable, Identifiable {
     let id: String
     let version: String?
+    let build: Int?
     let builtin: Bool?
     let enabled: Bool?
     let signatureVerified: Bool?
@@ -77,27 +77,15 @@ struct AgentPlugin: Decodable, Identifiable {
     func localizedSummary(_ locale: String) -> String {
         summary?[locale] ?? summary?["en"] ?? ""
     }
+    var versionDescription: String {
+        guard let version else { return "—" }
+        return build.map { "\(version) (Build \($0))" } ?? version
+    }
 }
 
 struct PluginTask: Decodable {
     let key: String
     let positionIndependent: Bool?
-}
-
-struct PluginCatalog: Decodable {
-    let schemaVersion: Int
-    let generatedAt: String?
-    let plugins: [RemotePlugin]
-}
-
-struct RemotePlugin: Decodable, Identifiable {
-    let id: String
-    let version: String
-    let architectures: [String]
-    let url: String
-    let sha256: String
-    let name: [String: String]?
-    let summary: [String: String]?
 }
 
 struct ManualTask: Identifiable {

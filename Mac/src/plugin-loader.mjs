@@ -10,15 +10,13 @@ export async function loadTaskPlugins({
   builtinDirectory,
   userDirectory,
   disabledPluginIds = [],
-  uninstalledPluginIds = [],
   trustedKeys = {},
   allowUnsignedLocal = false
 }) {
   const disabled = new Set(disabledPluginIds);
-  const uninstalled = new Set(uninstalledPluginIds);
   const sources = [
-    { directory: builtinDirectory, builtin: true },
-    { directory: userDirectory, builtin: false }
+    { directory: userDirectory, builtin: false },
+    { directory: builtinDirectory, builtin: true }
   ];
   const pluginById = new Map();
   const errors = [];
@@ -31,10 +29,10 @@ export async function loadTaskPlugins({
           trustedKeys,
           allowUnsignedLocal
         });
-        // User plugins are loaded after built-ins and intentionally replace the
-        // same plugin id. This is what lets a signed catalog release update a
-        // built-in workflow without modifying the read-only app bundle.
-        if (!disabled.has(plugin.manifest.id) && !uninstalled.has(plugin.manifest.id)) {
+        // Bundled plugins load last and always win an id collision. This keeps
+        // the five official workflows immutable while still allowing extra
+        // folder plugins from Application Support.
+        if (!disabled.has(plugin.manifest.id)) {
           pluginById.set(plugin.manifest.id, plugin);
         }
       } catch (error) {
@@ -124,6 +122,11 @@ function validateManifest(manifest, { builtin }) {
   }
   if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(manifest.version || "")) {
     throw new Error(`${manifest.id} version must use semantic versioning`);
+  }
+  const expectedBuildPrefix = Number(String(manifest.version).split(".")[0]);
+  if (manifest.build !== undefined &&
+      (!Number.isSafeInteger(manifest.build) || Math.floor(manifest.build / 1000) !== expectedBuildPrefix)) {
+    throw new Error(`${manifest.id} build must be a five-digit number prefixed by its major version`);
   }
   if (manifest.kind !== "task") throw new Error(`${manifest.id} kind must be task`);
   if (!Array.isArray(manifest.architectures) || !manifest.architectures.length) {

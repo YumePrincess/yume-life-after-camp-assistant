@@ -44,7 +44,6 @@
 "The latest Agent output refreshes automatically." = "The latest Agent output refreshes automatically.";
 "Refresh" = "Refresh";
 "No log entries yet." = "No log entries yet.";
-"Install a signed file or update from the Workers catalog." = "Install a signed file or update from the Workers catalog.";
 "Add plugin…" = "Add plugin…";
 "Check for updates" = "Check for updates";
 "Built-in" = "Built-in";
@@ -72,7 +71,6 @@
 "Dark" = "Dark";
 "Plugin security" = "Plugin security";
 "Allow unsigned local plugins (developer mode)" = "Allow unsigned local plugins (developer mode)";
-"Workers catalog plugins always require a trusted signature." = "Workers catalog plugins always require a trusted signature.";
 "Save settings" = "Save settings";
 "Load saved credentials from Keychain" = "Load saved credentials from Keychain";
 "No saved credentials were found in Keychain." = "No saved credentials were found in Keychain.";
@@ -148,3 +146,8 @@
 "Input helper permission granted" = "Input helper permission granted";
 "Input helper permission was not granted" = "Input helper permission was not granted";
 "The bundled input helper is missing." = "The bundled input helper is missing.";
+"Enabled plugins" = "Enabled plugins";
+"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "Five plugins are bundled with the App. Add extra folder plugins from Application Support.";
+"Open plugin folder" = "Open plugin folder";
+"Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced." = "Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced.";
+"Bundled plugins cannot be removed. Disable the plugin instead." = "Bundled plugins cannot be removed. Disable the plugin instead.";

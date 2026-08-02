@@ -1,10 +1,5 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import AppKit
-
-extension UTType {
-    static let ylaPlugin = UTType(exportedAs: "zone.yume.lifeafter.plugin", conformingTo: .zip)
-}
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
@@ -146,22 +141,12 @@ struct OverviewView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 214, alignment: .topLeading)
                     .glassPanel()
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Apple Silicon", systemImage: "cpu")
-                            .font(.headline)
-                        Text("arm64 native runtime")
-                            .font(.title3.weight(.semibold))
-                        Text("Intel and Rosetta are intentionally unsupported.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                    VStack(spacing: 10) {
+                        MetricCard(title: "Installed plugins", value: "\(model.plugins.count)", symbol: "puzzlepiece.extension")
+                        MetricCard(title: "Enabled plugins", value: "\(model.plugins.filter { $0.enabled != false && $0.invalid != true }.count)", symbol: "checkmark.circle")
+                        MetricCard(title: "Current task", value: model.health?.activeTaskKey == nil ? model.text("None") : "1", symbol: "play.circle")
                     }
-                    .frame(maxWidth: .infinity, minHeight: 214, alignment: .topLeading)
-                    .glassPanel()
-                }
-                HStack(spacing: 14) {
-                    MetricCard(title: "Installed plugins", value: "\(model.plugins.count)", symbol: "puzzlepiece.extension")
-                    MetricCard(title: "Available updates", value: "\(model.updates.count)", symbol: "arrow.down.circle")
-                    MetricCard(title: "Current task", value: model.health?.activeTaskKey == nil ? model.text("None") : "1", symbol: "play.circle")
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
                 if !model.statusMessage.isEmpty {
                     Text(model.statusMessage)
@@ -294,11 +279,10 @@ struct PluginsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .bottom) {
-                    PageHeader(eyebrow: "EXTENSIONS", title: "Plugins", summary: "Install a signed file or update from the Workers catalog.")
+                    PageHeader(eyebrow: "EXTENSIONS", title: "Plugins", summary: "Five plugins are bundled with the App. Add extra folder plugins from Application Support.")
                     Spacer()
-                    Button("Add plugin…") { model.pluginImporterPresented = true }.buttonStyle(PrimaryButtonStyle())
-                    Button("Check for updates") { Task { await model.checkPluginUpdates() } }.buttonStyle(GlassButtonStyle())
-                    Button("Restore bundled plugins") { Task { await model.restoreBundledPlugins() } }.buttonStyle(GlassButtonStyle())
+                    Button("Open plugin folder") { model.openPluginDirectory() }.buttonStyle(PrimaryButtonStyle())
+                    Button("Refresh") { Task { await model.refreshPlugins() } }.buttonStyle(GlassButtonStyle())
                 }
                 ForEach(model.plugins) { plugin in
                     HStack(spacing: 16) {
@@ -310,7 +294,7 @@ struct PluginsView: View {
                             Text(plugin.localizedName(model.language)).font(.headline)
                             Text(plugin.localizedSummary(model.language)).font(.callout).foregroundStyle(.secondary)
                             HStack {
-                                Text(plugin.version ?? "—")
+                                Text(plugin.versionDescription)
                                 Text(plugin.builtin == true ? "Built-in" : "Installed")
                                 if plugin.builtin != true {
                                     Label(plugin.signatureVerified == true ? "Verified" : "Unverified", systemImage: plugin.signatureVerified == true ? "checkmark.seal.fill" : "exclamationmark.shield")
@@ -322,34 +306,14 @@ struct PluginsView: View {
                             Task { await model.setPlugin(plugin, enabled: plugin.enabled == false) }
                         }
                         .buttonStyle(GlassButtonStyle())
-                        Button(plugin.builtin == true ? "Uninstall" : "Remove") {
-                            Task { await model.removePlugin(plugin) }
-                        }.buttonStyle(GlassButtonStyle())
+                        if plugin.builtin != true {
+                            Button("Remove") { Task { await model.removePlugin(plugin) } }
+                                .buttonStyle(GlassButtonStyle())
+                        }
                     }
                     .glassPanel(radius: 20, padding: 16)
                 }
-                if !model.updates.isEmpty {
-                    Text("Available updates").font(.title2.bold()).padding(.top, 8)
-                    ForEach(model.updates) { plugin in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(plugin.name?[model.language] ?? plugin.name?["en"] ?? plugin.id).font(.headline)
-                                Text(plugin.version).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("Install update") { Task { await model.installRemotePlugin(plugin) } }
-                                .buttonStyle(PrimaryButtonStyle())
-                        }
-                        .glassPanel(radius: 18, padding: 14)
-                    }
-                }
             }.padding(30)
-        }
-        .fileImporter(isPresented: $model.pluginImporterPresented, allowedContentTypes: [.ylaPlugin, .zip]) { result in
-            switch result {
-            case .success(let url): Task { await model.installPlugin(from: url) }
-            case .failure(let error): model.alertMessage = error.localizedDescription
-            }
         }
     }
 }
@@ -409,7 +373,7 @@ struct SettingsView: View {
                 }
                 Section("Plugin security") {
                     Toggle("Allow unsigned local plugins (developer mode)", isOn: $model.allowUnsignedPlugins)
-                    Text("Workers catalog plugins always require a trusted signature.")
+                    Text("Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("MuMu input permission") {
@@ -456,6 +420,15 @@ struct UnsupportedPlatformView: View {
 
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
+    private var versionDescription: String {
+        let version = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "—"
+        let build = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? "—"
+        return "\(version) (Build \(build)) · Apple Silicon · arm64"
+    }
     var body: some View {
         VStack(spacing: 14) {
             HStack {
@@ -466,7 +439,7 @@ struct AboutView: View {
             }
             Image(nsImage: NSApp.applicationIconImage).resizable().scaledToFit().frame(width: 72, height: 72)
             Text("Yume Life After Mac Agent").font(.title.bold())
-            Text("Version 27.0 · Apple Silicon · arm64").foregroundStyle(.secondary)
+            Text(versionDescription).foregroundStyle(.secondary)
             Text("A local control center for the LifeAfter camp assistant.").multilineTextAlignment(.center)
             Text("Copyright © 2026 Yume Internet LLC. All rights reserved.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -557,6 +530,10 @@ struct SetupAssistantView: View {
                 .font(.caption.monospaced())
             Label(model.mumuInstanceName, systemImage: "square.stack.3d.up")
             Label("5 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
+            Label("MuMu input permission", systemImage: "keyboard.badge.ellipsis")
+            Text("The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             if model.isBusy {
                 ProgressView(model.setupProgressMessage.isEmpty ? model.text("Preparing installation…") : model.setupProgressMessage)
             } else if !model.setupProgressMessage.isEmpty {

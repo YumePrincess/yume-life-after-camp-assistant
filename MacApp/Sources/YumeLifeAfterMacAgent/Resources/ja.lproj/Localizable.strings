@@ -44,7 +44,6 @@
 "The latest Agent output refreshes automatically." = "Agent の最新出力を自動更新します。";
 "Refresh" = "更新";
 "No log entries yet." = "ログはまだありません。";
-"Install a signed file or update from the Workers catalog." = "署名済みファイルを追加するか Workers カタログから更新します。";
 "Add plugin…" = "プラグインを追加…";
 "Check for updates" = "更新を確認";
 "Built-in" = "内蔵";
@@ -72,7 +71,6 @@
 "Dark" = "ダーク";
 "Plugin security" = "プラグインセキュリティ";
 "Allow unsigned local plugins (developer mode)" = "未署名ローカルプラグインを許可（開発者モード）";
-"Workers catalog plugins always require a trusted signature." = "Workers カタログのプラグインには常に信頼済み署名が必要です。";
 "Save settings" = "設定を保存";
 "Load saved credentials from Keychain" = "キーチェーンから保存済み認証情報を読み込む";
 "No saved credentials were found in Keychain." = "キーチェーンに保存済みの認証情報が見つかりませんでした。";
@@ -148,3 +146,8 @@
 "Input helper permission granted" = "入力ヘルパーの権限を許可しました";
 "Input helper permission was not granted" = "入力ヘルパーの権限が許可されませんでした";
 "The bundled input helper is missing." = "内蔵入力ヘルパーが見つかりません。";
+"Enabled plugins" = "有効なプラグイン";
+"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "5 個のプラグインが App に内蔵されています。追加プラグインは Application Support フォルダに配置します。";
+"Open plugin folder" = "プラグインフォルダを開く";
+"Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced." = "追加プラグインは Application Support のプラグインフォルダから読み込まれます。内蔵プラグインは削除・置換できません。";
+"Bundled plugins cannot be removed. Disable the plugin instead." = "内蔵プラグインは削除できません。無効にしてください。";

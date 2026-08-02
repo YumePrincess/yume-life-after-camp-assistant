@@ -28,6 +28,7 @@ export interface WorkerPluginManifest {
   schemaVersion: 1;
   id: string;
   version: string;
+  build: number;
   displayName: string;
   description: string;
   builtin: boolean;

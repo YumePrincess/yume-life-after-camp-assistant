@@ -6,10 +6,10 @@ APP_ROOT=${SCRIPT_DIR:h}
 DIST_ROOT="${APP_ROOT}/dist"
 APP_NAME="Yume Life After Mac Agent.app"
 APP_BUNDLE="${DIST_ROOT}/${APP_NAME}"
-VOLUME_NAME="Yume Life After Mac Agent 27.0"
+VOLUME_NAME="Yume Life After Mac Agent 27.0.0"
 STAGING="/private/tmp/yla-dmg-root"
 RW_IMAGE="/private/tmp/Yume-Life-After-Mac-Agent-rw.dmg"
-FINAL_IMAGE="${DIST_ROOT}/Yume Life After Mac Agent 27.0.dmg"
+FINAL_IMAGE="${DIST_ROOT}/Yume Life After Mac Agent 27.0.0.dmg"
 PYTHON_BIN="${APP_ROOT}/.portable/Toolchain/python/bin/python3"
 
 [[ -d "${APP_BUNDLE}" ]] || { echo "Build the App first: ./scripts/build-app.sh" >&2; exit 1; }
@@ -60,4 +60,3 @@ codesign --force --sign "${YLA_CODESIGN_IDENTITY:--}" "${FINAL_IMAGE}"
 rm -rf -- "${STAGING}"
 rm -f -- "${RW_IMAGE}"
 echo "Built ${FINAL_IMAGE}"
-

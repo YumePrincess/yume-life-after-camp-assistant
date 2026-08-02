@@ -1,11 +1,13 @@
 import { runFile, delay } from "./process.mjs";
+import { randomUUID } from "node:crypto";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
-const bundledHostInputHelper = path.resolve(
+const bundledHostInputHelperApp = path.resolve(
   moduleDirectory,
-  "../bin/Yume Life After Mac Agent Input Helper.app/Contents/MacOS/YumeLifeAfterMacAgentInputHelper"
+  "../bin/Yume Life After Mac Agent Input Helper.app"
 );
 
 export class MumuLifecycle {
@@ -174,9 +176,17 @@ export class MumuLifecycle {
       Math.min(10, Number(controls.postKeySettleMs) / 1000 || 4)
     );
     const configuredHelper = String(controls.helperBinary || "").trim();
-    const helperBinary = configuredHelper
-      ? path.resolve(configuredHelper)
-      : bundledHostInputHelper;
+    const helperApp = hostInputHelperAppPath(
+      configuredHelper ? path.resolve(configuredHelper) : bundledHostInputHelperApp
+    );
+    const permissionTimeoutMs = Math.max(
+      1_000,
+      Math.min(
+        5_000,
+        Number(controls.permissionTimeoutSeconds) * 1000 || 5_000
+      )
+    );
+    const resultPath = `/private/tmp/yume-life-after-input-${randomUUID()}.json`;
     const helperArguments = [
       "--pid",
       String(processId),
@@ -187,31 +197,28 @@ export class MumuLifecycle {
       "--post-key-settle-ms",
       String(Math.round(postKeySettleSeconds * 1000)),
       "--permission-timeout-ms",
-      String(
-        Math.max(
-          5_000,
-          Math.min(
-            170_000,
-            Number(controls.permissionTimeoutSeconds) * 1000 || 120_000
-          )
-        )
-      ),
+      String(permissionTimeoutMs),
       "--bring-to-front",
-      bringToFront ? "true" : "false"
+      bringToFront ? "true" : "false",
+      "--result-path",
+      resultPath
     ];
     try {
-      const result = await runFile(helperBinary, helperArguments, {
-        timeoutMs: Math.max(
-          20_000,
-          Math.min(
-            185_000,
-            (Number(controls.permissionTimeoutSeconds) * 1000 || 120_000) +
-              10_000
-          )
-        ),
+      await runFile("/usr/bin/open", [
+        "-n",
+        helperApp,
+        "--args",
+        ...helperArguments
+      ], {
+        timeoutMs: permissionTimeoutMs + 25_000,
         signal
       });
-      const response = JSON.parse(String(result.stdout || "{}"));
+      const response = await waitForHostInputResult(
+        resultPath,
+        permissionTimeoutMs + 15_000,
+        signal
+      );
+      if (response.error) throw new Error(response.error);
       return {
         instanceIndex: instance.index,
         processId,
@@ -229,39 +236,16 @@ export class MumuLifecycle {
           { cause: error }
         );
       }
-      // Source-only development runs do not contain the packaged helper. Keep
-      // the historical System Events path only for that case. A packaged
-      // helper permission failure must never silently fall back to node or
-      // osascript, otherwise macOS would show the wrong permission owner.
-      if (error?.cause?.code !== "ENOENT") throw error;
+      if (error?.cause?.code === "ENOENT") {
+        throw new Error(
+          "MUMU_HOST_MOUSE_UNLOCK_HELPER_MISSING: 当前 Runtime 缺少签名 Input Helper，请在 App 首页执行安装/修复。Node 不会代替 Helper 请求权限。",
+          { cause: error }
+        );
+      }
+      throw error;
+    } finally {
+      await rm(resultPath, { force: true }).catch(() => undefined);
     }
-    // Development fallback: still sends the required host ` / ~ through
-    // System Events, but release builds always use the signed helper above.
-    const script = [
-      'tell application "System Events"',
-      `  set targetProcess to first application process whose unix id is ${processId}`,
-      ...(bringToFront
-        ? ["  set frontmost of targetProcess to true", `  delay ${foregroundSettleSeconds}`]
-        : []),
-      `  key code ${keyCode}`,
-      `  delay ${postKeySettleSeconds}`,
-      "end tell"
-    ].join("\n");
-    await runFile("/usr/bin/osascript", ["-e", script], {
-      timeoutMs: 15_000,
-      signal
-    });
-    const mouseReleased = await this.hostMouseButtonsReleased(signal);
-    return {
-      instanceIndex: instance.index,
-      processId,
-      keyCode,
-      bringToFront,
-      foregroundSettleSeconds,
-      postKeySettleSeconds,
-      mouseReleased,
-      permissionOwner: "development-fallback"
-    };
   }
 
   async hostMouseButtonsReleased(signal) {
@@ -387,4 +371,35 @@ function normalizeInstance(instance) {
     pid: instance.pid === undefined ? null : Number(instance.pid),
     bundlePath: instance.bundle_path || null
   };
+}
+
+function hostInputHelperAppPath(configuredPath) {
+  const normalized = path.resolve(configuredPath);
+  if (normalized.endsWith(".app")) return normalized;
+  const bundleMarker = ".app/Contents/MacOS/";
+  const executableOffset = normalized.indexOf(bundleMarker);
+  if (executableOffset >= 0) {
+    return normalized.slice(0, executableOffset + ".app".length);
+  }
+  throw new Error(
+    `MUMU_HOST_MOUSE_UNLOCK_HELPER_INVALID: Input Helper must be a macOS .app bundle: ${normalized}`
+  );
+}
+
+async function waitForHostInputResult(resultPath, timeoutMs, signal) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      return JSON.parse(await readFile(resultPath, "utf8"));
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason || error;
+      if (error?.code !== "ENOENT" && !(error instanceof SyntaxError)) {
+        throw error;
+      }
+      await delay(250, signal);
+    }
+  }
+  throw new Error(
+    `YLA_HOST_INPUT_RESULT_TIMEOUT: Input Helper did not return within ${timeoutMs} ms`
+  );
 }

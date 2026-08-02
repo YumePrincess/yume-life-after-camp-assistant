@@ -44,7 +44,6 @@
 "The latest Agent output refreshes automatically." = "自動重新整理 Agent 的最新輸出。";
 "Refresh" = "重新整理";
 "No log entries yet." = "暫無記錄。";
-"Install a signed file or update from the Workers catalog." = "匯入已簽名檔案，或從 Workers 外掛來源更新。";
 "Add plugin…" = "加入外掛…";
 "Check for updates" = "檢查更新";
 "Built-in" = "內建";
@@ -72,7 +71,6 @@
 "Dark" = "深色";
 "Plugin security" = "外掛安全";
 "Allow unsigned local plugins (developer mode)" = "允許未簽名本機外掛（開發者模式）";
-"Workers catalog plugins always require a trusted signature." = "Workers 外掛來源一律要求可信簽名。";
 "Save settings" = "儲存設定";
 "Load saved credentials from Keychain" = "從鑰匙圈載入已儲存憑證";
 "No saved credentials were found in Keychain." = "鑰匙圈中找不到已儲存的憑證。";
@@ -148,3 +146,8 @@
 "Input helper permission granted" = "輸入輔助程式權限已授予";
 "Input helper permission was not granted" = "輸入輔助程式權限未授予";
 "The bundled input helper is missing." = "內置輸入輔助程式缺失。";
+"Enabled plugins" = "已啟用外掛";
+"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "App 內建 5 個外掛；額外外掛可從 Application Support 資料夾加入。";
+"Open plugin folder" = "開啟外掛目錄";
+"Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced." = "額外外掛從 Application Support 外掛目錄載入；內建外掛不能刪除或取代。";
+"Bundled plugins cannot be removed. Disable the plugin instead." = "內建外掛不能刪除，請改為停用。";

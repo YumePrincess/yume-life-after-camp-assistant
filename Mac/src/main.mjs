@@ -35,7 +35,6 @@ const pluginRegistry = await loadTaskPlugins({
   builtinDirectory: resolve(MAC_ROOT, "plugins"),
   userDirectory: config.plugins.userDirectory,
   disabledPluginIds: config.plugins.disabled,
-  uninstalledPluginIds: config.plugins.uninstalled,
   trustedKeys: config.plugins.trustedKeys,
   allowUnsignedLocal: config.plugins.allowUnsignedLocal
 });
@@ -55,6 +54,7 @@ console.log(
     plugins: pluginRegistry.plugins.map(({ manifest, builtin, signature }) => ({
       id: manifest.id,
       version: manifest.version,
+      build: manifest.build,
       taskKey: manifest.task.key,
       builtin,
       signed: signature.verified
@@ -321,6 +321,7 @@ function createDebugServer() {
           plugins: pluginRegistry.plugins.map(({ manifest, builtin }) => ({
             id: manifest.id,
             version: manifest.version,
+            build: manifest.build,
             taskKey: manifest.task.key,
             builtin
           }))

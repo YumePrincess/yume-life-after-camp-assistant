@@ -1,6 +1,6 @@
 {
   "name": "mrzh-mac-agent",
-  "version": "0.2.0",
+  "version": "27.0.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -39,10 +39,6 @@
     "model:status": "./scripts/local-model.sh status",
     "model:update": "./scripts/local-model.sh update",
     "model:uninstall": "./scripts/local-model.sh uninstall",
-    "plugins": "node src/plugin-manager.mjs list",
-    "plugin:install": "node src/plugin-manager.mjs install",
-    "plugin:updates": "node src/plugin-manager.mjs updates",
-    "plugin:package": "node scripts/package-plugin.mjs",
-    "plugin:catalog:build": "node scripts/build-plugin-catalog.mjs"
+    "plugins": "node src/plugin-manager.mjs list"
   }
 }

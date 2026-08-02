@@ -9,6 +9,14 @@ private struct HelperResult: Encodable {
     let mouseReleased: Bool
 }
 
+private struct PermissionResult: Encodable {
+    let permissionGranted: Bool
+}
+
+private struct HelperErrorResult: Encodable {
+    let error: String
+}
+
 private enum HelperFailure: Error, CustomStringConvertible {
     case invalidArguments(String)
     case accessibilityDenied(String)
@@ -47,6 +55,7 @@ private func mouseButtonsReleased() -> Bool {
 private func waitForPostEventPermission(timeoutMilliseconds: Int) -> Bool {
     if CGPreflightPostEventAccess() { return true }
     _ = CGRequestPostEventAccess()
+    openAccessibilitySettings()
     let deadline = Date().addingTimeInterval(Double(timeoutMilliseconds) / 1_000)
     while Date() < deadline {
         if CGPreflightPostEventAccess() { return true }
@@ -55,19 +64,59 @@ private func waitForPostEventPermission(timeoutMilliseconds: Int) -> Bool {
     return CGPreflightPostEventAccess()
 }
 
+private let launchArguments = Array(CommandLine.arguments.dropFirst())
+
+private func resultURL(in arguments: [String]) -> URL? {
+    guard let resultPath = argument("--result-path", in: arguments) else { return nil }
+    let url = URL(fileURLWithPath: resultPath).standardizedFileURL
+    guard
+        url.deletingLastPathComponent().path == "/private/tmp",
+        url.lastPathComponent.hasPrefix("yume-life-after-input-"),
+        url.pathExtension == "json"
+    else { return nil }
+    return url
+}
+
+private func emit<T: Encodable>(_ value: T, arguments: [String]) throws {
+    let data = try JSONEncoder().encode(value)
+    if let url = resultURL(in: arguments) {
+        try data.write(to: url, options: .atomic)
+    }
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data("\n".utf8))
+}
+
+private func openAccessibilitySettings() {
+    guard let url = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    ) else { return }
+    let opener = Process()
+    opener.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    opener.arguments = [url.absoluteString]
+    try? opener.run()
+    opener.waitUntilExit()
+}
+
 do {
-    let arguments = Array(CommandLine.arguments.dropFirst())
+    let arguments = launchArguments
     let permissionTimeoutMilliseconds = max(
         5_000,
         min(170_000, Int(argument("--permission-timeout-ms", in: arguments) ?? "120000") ?? 120_000)
     )
+    if arguments.contains("--preflight-only") {
+        try emit(
+            PermissionResult(permissionGranted: CGPreflightPostEventAccess()),
+            arguments: arguments
+        )
+        exit(0)
+    }
     if arguments.contains("--request-permission-only") {
         guard waitForPostEventPermission(timeoutMilliseconds: permissionTimeoutMilliseconds) else {
             throw HelperFailure.accessibilityDenied(
                 "Enable ‘Yume Life After Mac Agent Input Helper’ in System Settings > Privacy & Security > Accessibility."
             )
         }
-        FileHandle.standardOutput.write(Data("{\"permissionGranted\":true}\n".utf8))
+        try emit(PermissionResult(permissionGranted: true), arguments: arguments)
         exit(0)
     }
     guard let pidText = argument("--pid", in: arguments),
@@ -118,10 +167,10 @@ do {
         bringToFront: bringToFront,
         mouseReleased: mouseButtonsReleased()
     )
-    let data = try JSONEncoder().encode(result)
-    FileHandle.standardOutput.write(data)
-    FileHandle.standardOutput.write(Data("\n".utf8))
+    try emit(result, arguments: arguments)
 } catch {
-    FileHandle.standardError.write(Data("\(error)\n".utf8))
+    let message = String(describing: error)
+    try? emit(HelperErrorResult(error: message), arguments: launchArguments)
+    FileHandle.standardError.write(Data("\(message)\n".utf8))
     exit(1)
 }

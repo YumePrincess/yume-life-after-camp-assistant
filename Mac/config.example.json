@@ -748,9 +748,9 @@
   "plugins": {
     "userDirectory": "~/Library/Application Support/Yume Life After Mac Agent/Plugins",
     "disabled": [],
-    "uninstalled": [],
-    "trustedKeys": {},
-    "allowUnsignedLocal": false,
-    "catalogUrl": "https://lifeafter.yume.zone/agent-plugins/index.json"
+    "trustedKeys": {
+      "yume-release-27": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAiMlCmf4NhZ9tLUpzdpzwv7Vqp5Sxhd75HHlrMKqtVlQ=\n-----END PUBLIC KEY-----"
+    },
+    "allowUnsignedLocal": false
   }
 }

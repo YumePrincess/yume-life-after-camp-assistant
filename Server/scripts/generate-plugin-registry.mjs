@@ -28,6 +28,10 @@ function validateManifest(value, directoryName) {
   if (id !== directoryName) fail(`${directoryName}.id must match its directory name`);
   const version = requiredText(value.version, `${directoryName}.version`);
   if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) fail(`${directoryName}.version is invalid`);
+  const majorVersion = Number(version.split(".")[0]);
+  if (!Number.isSafeInteger(value.build) || Math.floor(value.build / 1000) !== majorVersion) {
+    fail(`${directoryName}.build must be a five-digit number prefixed by its major version`);
+  }
   const tasks = Array.isArray(value.tasks) ? value.tasks : [];
   const permissions = Array.isArray(value.permissions) ? value.permissions : [];
   const adminModules = Array.isArray(value.adminModules) ? value.adminModules : [];
@@ -57,6 +61,7 @@ function validateManifest(value, directoryName) {
     schemaVersion: 1,
     id,
     version,
+    build: value.build,
     displayName: requiredText(value.displayName, `${directoryName}.displayName`),
     description: requiredText(value.description, `${directoryName}.description`),
     builtin: value.builtin === true,

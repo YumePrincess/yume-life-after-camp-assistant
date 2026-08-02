@@ -5,6 +5,11 @@ import { fileURLToPath } from "node:url";
 
 export const MAC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CREDENTIALS_MARKERS = new Set(["CREDENTIALS_FILE", "KEYCHAIN"]);
+const BUILTIN_PLUGIN_TRUSTED_KEYS = Object.freeze({
+  "yume-release-27": `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAiMlCmf4NhZ9tLUpzdpzwv7Vqp5Sxhd75HHlrMKqtVlQ=
+-----END PUBLIC KEY-----`
+});
 let runtimeCredentialsPromise;
 
 export async function loadConfig(options = {}) {
@@ -58,8 +63,10 @@ export async function loadConfig(options = {}) {
       )
   );
   config.plugins.disabled ||= [];
-  config.plugins.uninstalled ||= [];
-  config.plugins.trustedKeys ||= {};
+  config.plugins.trustedKeys = {
+    ...(config.plugins.trustedKeys || {}),
+    ...BUILTIN_PLUGIN_TRUSTED_KEYS
+  };
   config.plugins.allowUnsignedLocal ??= false;
   config.server.agentName ||= config.server.agentId;
   validate(config, { validateCredentials });

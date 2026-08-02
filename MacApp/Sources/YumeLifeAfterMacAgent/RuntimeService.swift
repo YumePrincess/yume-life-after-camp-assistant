@@ -30,11 +30,14 @@ actor RuntimeService {
         applicationSupport.appending(path: "credentials.json")
     }
 
-    func installBundledRuntimeIfNeeded() throws {
+    func installBundledRuntimeIfNeeded() throws -> Bool {
         guard let bundled = Bundle.main.resourceURL?.appending(path: "Runtime", directoryHint: .isDirectory),
               fileManager.fileExists(atPath: bundled.appending(path: "src/main.mjs").path)
-        else { return }
+        else { return false }
         let destination = applicationSupport.appending(path: "Runtime/current", directoryHint: .isDirectory)
+        let replacedExistingRuntime = fileManager.fileExists(
+            atPath: destination.appending(path: "src/main.mjs").path
+        )
         let marketingVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
         let buildVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
         let bundleVersion = "\(marketingVersion)-\(buildVersion)"
@@ -42,7 +45,7 @@ actor RuntimeService {
         if fileManager.fileExists(atPath: destination.appending(path: "src/main.mjs").path),
            (try? String(contentsOf: marker, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) == bundleVersion {
             try ensureRuntimeConfig(at: destination)
-            return
+            return false
         }
         try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         let staging = destination.deletingLastPathComponent().appending(path: "installing", directoryHint: .isDirectory)
@@ -70,6 +73,7 @@ actor RuntimeService {
             try? fileManager.moveItem(at: previous, to: destination)
             throw error
         }
+        return replacedExistingRuntime
     }
 
     /// Creates a secret-free first-launch configuration. Existing settings are
@@ -149,18 +153,94 @@ actor RuntimeService {
 
     func requestHostInputPermission() async throws -> String {
         let root = runtimeRoot
-        let helper = root.appending(
-            path: "bin/Yume Life After Mac Agent Input Helper.app/Contents/MacOS/YumeLifeAfterMacAgentInputHelper"
+        let helperApp = root.appending(
+            path: "bin/Yume Life After Mac Agent Input Helper.app",
+            directoryHint: .isDirectory
         )
-        guard fileManager.isExecutableFile(atPath: helper.path) else {
+        let helperExecutable = helperApp.appending(
+            path: "Contents/MacOS/YumeLifeAfterMacAgentInputHelper"
+        )
+        guard fileManager.isExecutableFile(atPath: helperExecutable.path) else {
             throw RuntimeError.failed(String(localized: "The bundled input helper is missing."))
         }
-        return try await process(
-            helper.path,
-            ["--request-permission-only", "--permission-timeout-ms", "120000"],
-            workingDirectory: root,
-            timeout: 130
+        let preflight = try await hostInputPermissionResponse(
+            helperApp: helperApp,
+            root: root,
+            helperArguments: ["--preflight-only"],
+            resultTimeout: 10
         )
+        if preflight["permissionGranted"] as? Bool == true {
+            return "Input helper permission granted"
+        }
+        // Apple exposes the limited event-posting privilege in the
+        // Accessibility settings UI, but TCC stores it as the distinct
+        // PostEvent service. Resetting Accessibility would leave the stale
+        // PostEvent code requirement untouched after an ad-hoc signed update.
+        _ = try? await process(
+            "/usr/bin/tccutil",
+            ["reset", "PostEvent", "zone.yume.lifeafter.macagent.input-helper"],
+            workingDirectory: root,
+            timeout: 10
+        )
+        let response = try await hostInputPermissionResponse(
+            helperApp: helperApp,
+            root: root,
+            helperArguments: [
+                "--request-permission-only",
+                "--permission-timeout-ms", "120000"
+            ],
+            resultTimeout: 130
+        )
+        if let error = response["error"] as? String, !error.isEmpty {
+            throw RuntimeError.failed(error)
+        }
+        guard response["permissionGranted"] as? Bool == true else {
+            throw RuntimeError.failed(
+                "Enable Yume Life After Mac Agent Input Helper in System Settings > Privacy & Security > Accessibility."
+            )
+        }
+        return "Input helper permission granted"
+    }
+
+    private func hostInputPermissionResponse(
+        helperApp: URL,
+        root: URL,
+        helperArguments: [String],
+        resultTimeout: TimeInterval
+    ) async throws -> [String: Any] {
+        let result = URL(
+            fileURLWithPath: "/private/tmp/yume-life-after-input-\(UUID().uuidString).json"
+        )
+        defer { try? fileManager.removeItem(at: result) }
+        var launchFailure: String?
+        do {
+            _ = try await process(
+                "/usr/bin/open",
+                ["-n", helperApp.path, "--args"] + helperArguments + ["--result-path", result.path],
+                workingDirectory: root,
+                timeout: 10
+            )
+        } catch {
+            // LaunchServices can report a transient process-observation error
+            // after the helper has already started. The helper's atomic result
+            // file is authoritative, so retain this only as timeout context.
+            launchFailure = error.localizedDescription
+        }
+        let deadline = Date().addingTimeInterval(resultTimeout)
+        while !fileManager.fileExists(atPath: result.path), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        guard fileManager.fileExists(atPath: result.path) else {
+            throw RuntimeError.failed(
+                launchFailure ?? "Input Helper did not return a permission result within \(Int(resultTimeout)) seconds. Open System Settings > Privacy & Security > Accessibility and enable Yume Life After Mac Agent Input Helper."
+            )
+        }
+        guard let response = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: result)
+        ) as? [String: Any] else {
+            throw RuntimeError.failed("Input Helper returned an invalid permission result.")
+        }
+        return response
     }
 
     func health(debugToken: String) async throws -> AgentHealth {
@@ -222,7 +302,8 @@ actor RuntimeService {
         agentName: String,
         agentToken: String,
         debugToken: String,
-        mumuInstanceName: String
+        mumuInstanceName: String,
+        allowUnsignedLocalPlugins: Bool
     ) throws {
         try saveCredentials(agentToken: agentToken, debugToken: debugToken)
         let root = runtimeRoot
@@ -248,6 +329,11 @@ actor RuntimeService {
         var debug = object["debug"] as? [String: Any] ?? [:]
         debug["token"] = "CREDENTIALS_FILE"
         object["debug"] = debug
+        var plugins = object["plugins"] as? [String: Any] ?? [:]
+        plugins.removeValue(forKey: "catalogUrl")
+        plugins.removeValue(forKey: "uninstalled")
+        plugins["allowUnsignedLocal"] = allowUnsignedLocalPlugins
+        object["plugins"] = plugins
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: path, options: [.atomic])
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)

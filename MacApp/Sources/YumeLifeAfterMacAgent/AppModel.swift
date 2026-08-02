@@ -7,13 +7,11 @@ final class AppModel: ObservableObject {
     @Published var selection: SidebarSection? = .overview
     @Published var health: AgentHealth?
     @Published var plugins: [AgentPlugin] = []
-    @Published var updates: [RemotePlugin] = []
     @Published var logText = ""
     @Published var isBusy = false
     @Published var statusMessage = ""
     @Published var alertMessage: String?
     @Published var showAbout = false
-    @Published var pluginImporterPresented = false
     @Published var serverURL: String
     @Published var agentID: String
     @Published var agentName: String
@@ -68,7 +66,13 @@ final class AppModel: ObservableObject {
     func bootstrap() async {
         guard isAppleSilicon else { return }
         do {
-            try await runtime.installBundledRuntimeIfNeeded()
+            let runtimeWasUpdated = try await runtime.installBundledRuntimeIfNeeded()
+            if runtimeWasUpdated {
+                // The previous launchd process may still have the old modules
+                // in memory after Runtime/current is replaced. Repairing here
+                // unloads that process and starts the newly installed bundle.
+                _ = try await runtime.run(["repair"], timeout: 300)
+            }
             if let credentials = try? await runtime.loadCredentials() {
                 agentToken = credentials.agentToken
                 debugToken = credentials.debugToken
@@ -89,7 +93,6 @@ final class AppModel: ObservableObject {
     func refreshAll() async {
         await refreshStatusAndLogs()
         await refreshPlugins()
-        await checkPluginUpdates(silent: true)
     }
 
     func refreshStatusAndLogs() async {
@@ -142,65 +145,32 @@ final class AppModel: ObservableObject {
         } catch { alertMessage = error.localizedDescription }
     }
 
-    func installPlugin(from url: URL) async {
-        guard url.startAccessingSecurityScopedResource() else {
-            alertMessage = text("The selected plugin could not be accessed.")
+    func removePlugin(_ plugin: AgentPlugin) async {
+        guard plugin.builtin != true else {
+            alertMessage = text("Bundled plugins cannot be removed. Disable the plugin instead.")
             return
         }
-        defer { url.stopAccessingSecurityScopedResource() }
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            var arguments = ["install", url.path]
-            if allowUnsignedPlugins { arguments.append("--allow-unsigned") }
-            _ = try await runtime.plugin(arguments)
-            statusMessage = text("Plugin installed. Restart the Agent to activate it.")
-            await refreshPlugins()
-        } catch { alertMessage = error.localizedDescription }
-    }
-
-    func removePlugin(_ plugin: AgentPlugin) async {
         do {
             _ = try await runtime.plugin(["remove", plugin.id])
             await refreshPlugins()
         } catch { alertMessage = error.localizedDescription }
     }
 
-    func restoreBundledPlugins() async {
+    func openPluginDirectory() {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "Yume Life After Mac Agent/Plugins", directoryHint: .isDirectory)
         do {
-            _ = try await runtime.plugin(["restore-all-builtins"])
-            await refreshPlugins()
-            statusMessage = text("Bundled plugins restored. Restart the Agent to activate them.")
-        } catch { alertMessage = error.localizedDescription }
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(directory)
+        } catch {
+            alertMessage = error.localizedDescription
+        }
     }
 
     func setPlugin(_ plugin: AgentPlugin, enabled: Bool) async {
         do {
             _ = try await runtime.plugin([enabled ? "enable" : "disable", plugin.id])
             await refreshPlugins()
-        } catch { alertMessage = error.localizedDescription }
-    }
-
-    func checkPluginUpdates(silent: Bool = false) async {
-        do {
-            let output = try await runtime.plugin(["updates"])
-            let envelope = try decodeEnvelope(output)
-            updates = envelope.updates ?? []
-            if !silent && updates.isEmpty {
-                alertMessage = text("All plugins are up to date.")
-            }
-        } catch {
-            if !silent { alertMessage = error.localizedDescription }
-        }
-    }
-
-    func installRemotePlugin(_ plugin: RemotePlugin) async {
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            _ = try await runtime.plugin(["install-remote", plugin.id], timeout: 300)
-            await refreshPlugins()
-            await checkPluginUpdates(silent: true)
         } catch { alertMessage = error.localizedDescription }
     }
 
@@ -231,7 +201,14 @@ final class AppModel: ObservableObject {
         do {
             _ = try await runtime.requestHostInputPermission()
             statusMessage = text("Input helper permission granted")
+            alertMessage = text("Input helper permission granted")
         } catch {
+            if error.localizedDescription.contains("YLA_HOST_INPUT_PERMISSION_DENIED"),
+               let settings = URL(
+                   string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+               ) {
+                NSWorkspace.shared.open(settings)
+            }
             alertMessage = error.localizedDescription
             statusMessage = text("Input helper permission was not granted")
         }
@@ -284,6 +261,9 @@ final class AppModel: ObservableObject {
         do {
             setupProgressMessage = text("Saving secure settings…")
             try await persistSettings()
+            setupProgressMessage = text("Waiting for input permission…")
+            _ = try await runtime.requestHostInputPermission()
+            setupProgressMessage = text("Input helper permission granted")
             setupProgressMessage = text("Registering background Agent…")
             _ = try await runtime.run(["repair"], timeout: 300)
             setupProgressMessage = text("Verifying local Agent…")
@@ -307,7 +287,8 @@ final class AppModel: ObservableObject {
             agentName: agentName,
             agentToken: agentToken,
             debugToken: debugToken,
-            mumuInstanceName: mumuInstanceName
+            mumuInstanceName: mumuInstanceName,
+            allowUnsignedLocalPlugins: allowUnsignedPlugins
         )
         try await runtime.registerAgent(
             baseURL: serverURL,

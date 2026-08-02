@@ -44,7 +44,6 @@
 "The latest Agent output refreshes automatically." = "自动刷新 Agent 的最新输出。";
 "Refresh" = "刷新";
 "No log entries yet." = "暂无日志。";
-"Install a signed file or update from the Workers catalog." = "导入已签名文件，或从 Workers 插件源更新。";
 "Add plugin…" = "添加插件…";
 "Check for updates" = "检查更新";
 "Built-in" = "内置";
@@ -72,7 +71,6 @@
 "Dark" = "深色";
 "Plugin security" = "插件安全";
 "Allow unsigned local plugins (developer mode)" = "允许未签名本地插件（开发者模式）";
-"Workers catalog plugins always require a trusted signature." = "Workers 插件源始终要求可信签名。";
 "Save settings" = "保存设置";
 "Load saved credentials from Keychain" = "从钥匙串载入已保存凭据";
 "No saved credentials were found in Keychain." = "钥匙串中没有找到已保存的凭据。";
@@ -148,3 +146,8 @@
 "Input helper permission granted" = "输入助手权限已授权";
 "Input helper permission was not granted" = "输入助手权限未获授权";
 "The bundled input helper is missing." = "内置输入助手缺失。";
+"Enabled plugins" = "已启用插件";
+"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "App 内置 5 个插件；额外插件可从 Application Support 文件夹添加。";
+"Open plugin folder" = "打开插件目录";
+"Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced." = "额外插件从 Application Support 插件目录加载；内置插件不能删除或替换。";
+"Bundled plugins cannot be removed. Disable the plugin instead." = "内置插件不能删除，请改为停用。";

@@ -379,7 +379,7 @@
       const card = create("article", "agent-card");
       const heading = create("div", "agent-card-heading");
       heading.append(
-        create("strong", "", `${plugin.displayName} · ${plugin.version}`),
+        create("strong", "", `${plugin.displayName} · ${plugin.version} (Build ${plugin.build})`),
         create("span", plugin.enabled ? "agent-enabled-badge" : "agent-standby-badge", plugin.enabled ? "已启用" : "已停用")
       );
       const actions = create("div", "agent-card-actions");

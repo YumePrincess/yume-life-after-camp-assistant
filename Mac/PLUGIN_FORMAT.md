@@ -1,37 +1,25 @@
-# Yume Life After Agent plugin format
+# Yume Life After Agent plugin folders
 
-Agent plugins are distributed as a single `.ylaplugin` ZIP archive. The archive
-contains one directory with `plugin.json`, the declared `.mjs` entry point, and
-any private resources used by that plugin.
+Agent plugins are plain, unencrypted folders. Each folder contains a
+`plugin.json`, the declared `.mjs` entry point, and any resources declared by
+the manifest. Only Apple Silicon (`arm64`) plugins are accepted.
 
-Only `arm64` is accepted. Remote packages must declare SHA-256 hashes for every
-payload file and carry an Ed25519 signature from a key configured in
-`plugins.trustedKeys`. The signature covers the canonical, key-sorted manifest
-without its `signature` field. Catalog downloads are verified a second time
-against the package SHA-256 from `/agent-plugins/index.json`.
+The five official plugins live in `Mac/plugins/` and are copied into the signed
+App Runtime during a build. They can be enabled or disabled, but a local folder
+cannot replace or remove an official plugin id. To update an official plugin,
+replace its source folder and rebuild the App.
 
-Local packages use the same checks. An unsigned package can only be installed
-when the user explicitly enables developer mode (`allowUnsignedLocal`) or
-confirms the one-time `--allow-unsigned` command. Unsigned packages are never
-accepted from the Workers catalog.
+Extra plugins live in:
 
-Package a plugin:
-
-```sh
-npm run plugin:package -- ./my-plugin ./my-plugin.ylaplugin
+```text
+~/Library/Application Support/Yume Life After Mac Agent/Plugins/<plugin-id>/
 ```
 
-For a signed release, set `YLA_PLUGIN_SIGNING_KEY` to an Ed25519 private-key
-PEM file and `YLA_PLUGIN_SIGNING_KEY_ID` to the matching trusted key id.
+The App's plugin page can open this directory. Copy the complete folder there,
+then restart the Agent and refresh the plugin page. A signed local plugin must
+include SHA-256 hashes for every payload file and an Ed25519 signature whose key
+is configured in `plugins.trustedKeys`. Unsigned local folders load only when
+developer mode (`allowUnsignedLocal`) is explicitly enabled.
 
-To publish through Workers + Assets, copy signed `.ylaplugin` files into
-`Server/public/agent-plugins/packages/`, then run:
-
-```sh
-npm run plugin:catalog:build
-```
-
-The generated `index.json` is deployed with the existing Worker Assets bundle.
-The app checks this catalog for arm64-compatible updates and verifies both the
-catalog SHA-256 and the package's Ed25519 signature before atomic installation.
-If activation fails, the prior plugin directory is restored automatically.
+App plugins are never fetched from Workers. Workers has its own independent,
+build-time plugin folders under `Server/plugins/`.
