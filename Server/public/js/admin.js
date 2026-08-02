@@ -38,11 +38,9 @@
     "admin:identity-codes": ["identity:manage"],
     "admin:smtp": ["smtp:manage"],
     "admin:access": ["keys:manage"],
-    "admin:members": ["member:kick"],
     "admin:history": ["task:interrupt"],
     "task:run": ["admin:overview"],
     "task:interrupt": ["admin:history"],
-    "member:kick": ["admin:members"],
     "keys:manage": ["admin:access"],
     "identity:review": ["admin:identity-review"],
     "identity:manage": ["admin:identity-codes"],
@@ -52,9 +50,7 @@
   const TASK_NAMES = {
     ...Object.fromEntries(TASKS.map(([key, name]) => [key, name])),
     member_sync: "成员同步",
-    automation_routine: "任务例程",
-    kick_member: "踢出成员",
-    kick_inactive_members: "自动斩杀"
+    automation_routine: "任务例程"
   };
   const ACTIVE_STATES = new Set(["queued", "claimed", "running", "cancelling"]);
   const state = {
@@ -181,7 +177,6 @@
         "technology-history:manage": "管理科技投票历史",
         "task:run": "执行任务",
         "task:interrupt": "中断任务",
-        "member:kick": "踢出成员",
         "keys:manage": "管理 Key",
         "identity:review": "审批身份识别码",
         "identity:manage": "管理身份识别码",
@@ -403,8 +398,6 @@
         currentCampType: camp.currentCampType,
         publicMembersEnabled: camp.publicMembersEnabled,
         inactivityWarningDays: camp.inactivityWarningDays,
-        automaticKickEnabled: camp.automaticKickEnabled,
-        automaticKickGraceDays: camp.automaticKickGraceDays,
         temporaryKeyLoginEnabled: bundle.authConfig.temporaryKeyLoginEnabled,
         announcement:
           state.publicContentDraft[state.publicContentLocale]?.announcement || "",
@@ -1208,7 +1201,6 @@
     if (canView("history")) renderRuns(data.recentRuns || []);
     if (canView("members")) {
       renderAdminMembers(data.members || []);
-      renderAutoKick(data.autoKickCandidates || [], data.configBundle.campConfig);
     }
     state.accessAllowed = canView("access");
     for (const link of document.querySelectorAll("[data-nav-target]")) {
@@ -1221,10 +1213,6 @@
       );
     }
     setConfigReadOnly();
-    if (!hasPermission("member:kick")) {
-      input("automaticKickEnabled").disabled = true;
-      input("automaticKickGraceDays").disabled = true;
-    }
     setModuleActionState();
     const requestedView = location.hash.slice(1) || state.activeView;
     activateView(requestedView);
@@ -1254,8 +1242,6 @@
         control.disabled = !hasPermission(permission);
       }
     }
-    byId("kick-member").disabled = !hasPermission("member:kick");
-    byId("auto-kick-evaluate").disabled = !hasPermission("member:kick");
     byId("clear-rate-limits").disabled = !hasPermission("admin:history");
     byId("clear-run-history").disabled = !hasPermission("admin:history");
     const canManageTechnologyHistory = hasPermission("technology-history:manage");
@@ -1406,84 +1392,7 @@
     ]) {
       detail.append(create("dt", "", label), create("dd", "", String(value ?? "—")));
     }
-    byId("kick-member").disabled = !hasPermission("member:kick");
     byId("member-dialog").showModal();
-  }
-
-  function renderAutoKick(candidates, camp) {
-    const threshold =
-      Number(camp.inactivityWarningDays || 0) +
-      Number(camp.automaticKickGraceDays || 0);
-    byId("auto-kick-summary").textContent = camp.automaticKickEnabled
-      ? window.MrzhI18n.format(
-          "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。",
-          { threshold, count: candidates.length }
-        )
-      : window.MrzhI18n.format(
-          "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。",
-          {
-            warning: camp.inactivityWarningDays,
-            grace: camp.automaticKickGraceDays
-          }
-        );
-    byId("auto-kick-evaluate").disabled =
-      !camp.automaticKickEnabled || !candidates.length || !hasPermission("member:kick");
-  }
-
-  async function kickSelectedMember() {
-    const member = state.selectedMember;
-    if (!member) return;
-    const confirmation = window.prompt(
-      window.MrzhI18n.format(
-        "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：",
-        { name: member.name }
-      )
-    );
-    if (confirmation !== member.name) {
-      byId("save-state").textContent = "姓名不一致，已取消踢出";
-      return;
-    }
-    try {
-      await request("/api/admin/kick-member", {
-        method: "POST",
-        body: JSON.stringify({
-          memberName: member.name,
-          confirmMemberName: confirmation
-        })
-      });
-      byId("member-dialog").close();
-      byId("save-state").textContent = window.MrzhI18n.format(
-        "踢出 {name} 的任务已入队",
-        { name: member.name }
-      );
-      await refresh(false);
-    } catch (error) {
-      byId("save-state").textContent = error.message;
-    }
-  }
-
-  async function evaluateAutoKick() {
-    if (
-      !window.confirm(
-        "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？"
-      )
-    ) {
-      return;
-    }
-    try {
-      const result = await request("/api/admin/auto-kick-evaluate", {
-        method: "POST",
-        body: "{}"
-      });
-      byId("save-state").textContent = result.run
-        ? window.MrzhI18n.format("自动斩杀任务已入队，共 {count} 人", {
-            count: result.candidates.length
-          })
-        : window.MrzhI18n.t("当前没有达到斩杀线的成员");
-      await refresh(false);
-    } catch (error) {
-      byId("save-state").textContent = error.message;
-    }
   }
 
   async function refresh(forceAll = false) {
@@ -1632,9 +1541,7 @@
         voteWindowEnd: String(getField("voteWindowEnd")).trim(),
         currentCampType: getField("currentCampType"),
         publicMembersEnabled: getField("publicMembersEnabled"),
-        inactivityWarningDays: Number(getField("inactivityWarningDays")),
-        automaticKickEnabled: getField("automaticKickEnabled"),
-        automaticKickGraceDays: Number(getField("automaticKickGraceDays"))
+        inactivityWarningDays: Number(getField("inactivityWarningDays"))
       };
       next.authConfig = {
         temporaryKeyLoginEnabled: getField("temporaryKeyLoginEnabled")
@@ -2417,8 +2324,6 @@
   byId("public-content-locale").addEventListener("change", (event) => {
     switchPublicContentLocale(event.target.value);
   });
-  byId("kick-member").addEventListener("click", kickSelectedMember);
-  byId("auto-kick-evaluate").addEventListener("click", evaluateAutoKick);
   byId("refresh-admin").addEventListener("click", () => refresh(false));
   byId("logout").addEventListener("click", logout);
   byId("temporary-key-form").addEventListener("submit", generateTemporaryKey);

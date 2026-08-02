@@ -154,11 +154,8 @@ uninstall_all() {
 
 repair_agent() {
   install_dependencies
-  cd "${MAC_ROOT}"
-  run_npm run doctor
   "${INSTALL_AGENT}"
   wait_for_health
-  "${MODEL_CONTROL}" status || true
 }
 
 run_once() {

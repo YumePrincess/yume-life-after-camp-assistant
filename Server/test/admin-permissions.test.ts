@@ -41,7 +41,6 @@ describe("admin permissions", () => {
     expect(canViewAdminModule(demo, "admin:members")).toBe(true);
     expect(canViewAdminModule(demo, "admin:smtp")).toBe(true);
     expect(hasPermission(demo, "admin:members")).toBe(false);
-    expect(hasPermission(demo, "member:kick")).toBe(false);
     expect(hasPermission(demo, "smtp:manage")).toBe(false);
   });
 

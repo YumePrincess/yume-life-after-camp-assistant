@@ -104,6 +104,30 @@ export async function saveConfigBundle(env: Env, bundle: ConfigBundle): Promise<
   ]);
 }
 
+export async function registerAgentIdentity(
+  env: Env,
+  bundle: ConfigBundle,
+  agentId: string
+): Promise<ConfigBundle> {
+  const next: ConfigBundle = {
+    ...bundle,
+    campConfig: { ...bundle.campConfig, agentId }
+  };
+  const now = isoNow();
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
+    ).bind("camp_config", JSON.stringify(next.campConfig), now),
+    env.DB.prepare(
+      "UPDATE command_queue SET agent_id = ? WHERE agent_id <> ? AND state = 'queued'"
+    ).bind(agentId, agentId),
+    env.DB.prepare(
+      "DELETE FROM agent_heartbeats WHERE agent_id <> ?"
+    ).bind(agentId)
+  ]);
+  return next;
+}
+
 export interface SessionRow {
   id: string;
   csrf_token: string;

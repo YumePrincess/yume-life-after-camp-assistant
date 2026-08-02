@@ -48,6 +48,7 @@ fi
 killall YumeLifeAfterMacAgent 2>/dev/null || true
 
 env CLANG_MODULE_CACHE_PATH=/private/tmp/yla-clang-cache \
+  EnableSDKStatCaching=0 \
   swift build --disable-sandbox -c "${BUILD_CONFIGURATION}" --arch arm64 \
   --scratch-path "${SWIFT_SCRATCH}" \
   --cache-path /private/tmp/yla-swift-cache \

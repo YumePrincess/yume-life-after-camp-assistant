@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
     @Published var theme: AppTheme
     @Published var setupCompleted: Bool
     @Published var setupStep = 0
+    @Published var setupProgressMessage = ""
     @Published private(set) var isAppleSilicon = false
 
     let browser = AdminBrowser()
@@ -57,7 +58,13 @@ final class AppModel: ObservableObject {
 
     func bootstrap() async {
         guard isAppleSilicon else { return }
-        do { try await runtime.installBundledRuntimeIfNeeded() }
+        do {
+            try await runtime.installBundledRuntimeIfNeeded()
+            if let credentials = try? await runtime.loadCredentials() {
+                agentToken = credentials.agentToken
+                debugToken = credentials.debugToken
+            }
+        }
         catch { alertMessage = error.localizedDescription }
         browser.load(baseURL: serverURL)
         await refreshAll()
@@ -195,11 +202,20 @@ final class AppModel: ObservableObject {
         } catch { alertMessage = error.localizedDescription }
     }
 
-    func loadStoredCredentials() {
+    func loadStoredCredentials() async {
+        if let credentials = try? await runtime.loadCredentials() {
+            agentToken = credentials.agentToken
+            debugToken = credentials.debugToken
+            statusMessage = text("Saved credentials loaded")
+            return
+        }
+        // One-time migration for Beta 53 and earlier. This user-initiated read
+        // may show one native App Keychain prompt; saving immediately migrates
+        // the values to the owner-only runtime file and removes the old items.
         let storedAgentToken = KeychainStore.get(account: "agent-token")
         let storedDebugToken = KeychainStore.get(account: "debug-token")
         guard let storedAgentToken, let storedDebugToken else {
-            alertMessage = text("No saved credentials were found in Keychain.")
+            alertMessage = text("No saved credentials were found.")
             return
         }
         agentToken = storedAgentToken
@@ -209,6 +225,7 @@ final class AppModel: ObservableObject {
 
     func openSetupAssistant() {
         setupStep = 0
+        setupProgressMessage = ""
         setupCompleted = false
     }
 
@@ -226,26 +243,39 @@ final class AppModel: ObservableObject {
             return
         }
         isBusy = true
+        setupProgressMessage = ""
         defer { isBusy = false }
         do {
+            setupProgressMessage = text("Saving secure settings…")
             try await persistSettings()
-            _ = try await runtime.run(["repair"], timeout: 1_800)
+            setupProgressMessage = text("Registering background Agent…")
+            _ = try await runtime.run(["repair"], timeout: 300)
+            setupProgressMessage = text("Verifying local Agent…")
+            _ = try await runtime.health(debugToken: debugToken)
             UserDefaults.standard.set(true, forKey: "setupCompleted")
             setupCompleted = true
             browser.load(baseURL: serverURL)
             statusMessage = text("Setup completed")
+            setupProgressMessage = ""
             await refreshAll()
-        } catch { alertMessage = error.localizedDescription }
+        } catch {
+            setupProgressMessage = text("Installation stopped. Review the error and try again.")
+            alertMessage = error.localizedDescription
+        }
     }
 
     private func persistSettings() async throws {
-        try KeychainStore.set(agentToken, account: "agent-token")
-        try KeychainStore.set(debugToken, account: "debug-token")
         try await runtime.saveConnection(
             baseURL: serverURL,
             agentID: agentID,
+            agentToken: agentToken,
             debugToken: debugToken,
             mumuInstanceName: mumuInstanceName
+        )
+        try await runtime.registerAgent(
+            baseURL: serverURL,
+            agentID: agentID,
+            agentToken: agentToken
         )
         let defaults = UserDefaults.standard
         defaults.set(serverURL, forKey: "serverURL")

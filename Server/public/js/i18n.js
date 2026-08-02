@@ -228,20 +228,15 @@
       "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。":
         "Under camp practice, players offline for more than {days} days may be removed.",
       "斩杀预警天数": "Warning threshold (days)",
-      "自动踢出达到斩杀线的成员（默认关闭）": "Automatically remove members at the threshold (off by default)",
-      "自动踢出宽限 N 天": "Automatic-removal grace days",
       "轮询、无响应恢复与任务例程": "Polling, recovery and task routines",
       "任务执行中轮询（秒）": "Active-task polling (seconds)",
       "默认空闲轮询（秒）": "Default idle polling (seconds)",
       "等待 Agent 接取超时（分钟）": "Agent claim timeout (minutes)",
       "游戏无响应自动重启": "Restart the game when unresponsive",
       "营地成员完整信息": "Full camp member information",
-      "按最新斩杀线执行": "Run against the latest threshold",
-      "踢出营地": "Remove from camp",
       "仅贡献": "Contribution only",
       "仅斩杀预警": "Warning scan only",
       "仅成员资料与公职": "Profiles and officers only",
-      "踢出成员": "Remove members",
       "明日之后“愿”营地公共信息、科技投票与成员贡献":
         "LifeAfter “Wish” camp public information, technology voting, and member contributions",
       "登录 · 明日之后“愿”营地助手": "Sign in · LifeAfter “Wish” Camp Assistant",
@@ -306,15 +301,6 @@
         "Update only offline time from the town hall Activity page",
       "仅更新职业、庄园、同居与公职":
         "Update only profession, manor, roommate, and officer data",
-      "自动斩杀": "Automatic removal",
-      "处理最新识别仍达到斩杀线的成员":
-        "Process members who still meet the removal threshold after the latest scan",
-      "从最新名单精确选择成员后执行":
-        "Select the exact member from the latest roster before running",
-      "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？":
-        "Using the latest online status, add the exact members who meet “warning days + grace days” to the removal task. Continue?",
-      "姓名不一致，已取消踢出": "Name mismatch; removal was cancelled",
-      "当前没有达到斩杀线的成员": "No members currently meet the removal threshold",
       "中断": "Interrupt",
       "中断指令已发送": "Interrupt command sent",
       "事件": "Events",
@@ -350,14 +336,6 @@
       "编号 {id}": "ID {id}",
       "有效期 {date}": "Expires {date}",
       "最近使用 {date}": "Last used {date}",
-      "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。":
-        "Enabled: process the latest recognized roster after {threshold} offline days; {count} current candidates.",
-      "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。":
-        "Off by default. When enabled, the threshold is {warning} warning days + {grace} grace days.",
-      "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：":
-        "High-risk action: remove “{name}” through the town hall sandbox. Enter the full member name to confirm:",
-      "踢出 {name} 的任务已入队": "Removal task for {name} queued",
-      "自动斩杀任务已入队，共 {count} 人": "Automatic-removal task queued for {count} members",
       "{task}已入队": "{task} queued"
     },
     fr: {
@@ -574,20 +552,15 @@
       "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。":
         "Selon les usages du camp, les joueurs hors ligne depuis plus de {days} jours peuvent être exclus.",
       "斩杀预警天数": "Seuil d’alerte (jours)",
-      "自动踢出达到斩杀线的成员（默认关闭）": "Exclure automatiquement au seuil (désactivé par défaut)",
-      "自动踢出宽限 N 天": "Jours de grâce avant exclusion",
       "轮询、无响应恢复与任务例程": "Interrogation, récupération et routines",
       "任务执行中轮询（秒）": "Interrogation en tâche (secondes)",
       "默认空闲轮询（秒）": "Interrogation au repos (secondes)",
       "等待 Agent 接取超时（分钟）": "Délai d’attribution à l’agent (minutes)",
       "游戏无响应自动重启": "Redémarrer le jeu s’il ne répond plus",
       "营地成员完整信息": "Informations complètes des membres",
-      "按最新斩杀线执行": "Exécuter selon le dernier seuil",
-      "踢出营地": "Exclure du camp",
       "仅贡献": "Contributions uniquement",
       "仅斩杀预警": "Alerte uniquement",
       "仅成员资料与公职": "Profils et responsables uniquement",
-      "踢出成员": "Exclure des membres",
       "明日之后“愿”营地公共信息、科技投票与成员贡献":
         "Informations publiques, vote technologique et contributions du camp « Vœu » de LifeAfter",
       "登录 · 明日之后“愿”营地助手": "Connexion · Assistant du camp « Vœu » LifeAfter",
@@ -654,15 +627,6 @@
         "Mettre à jour uniquement l’absence depuis la page Activité de la mairie",
       "仅更新职业、庄园、同居与公职":
         "Mettre à jour uniquement profession, manoir, cohabitant et responsables",
-      "自动斩杀": "Retrait automatique",
-      "处理最新识别仍达到斩杀线的成员":
-        "Traiter les membres encore au seuil après la dernière analyse",
-      "从最新名单精确选择成员后执行":
-        "Sélectionner précisément le membre dans la dernière liste avant exécution",
-      "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？":
-        "Selon le dernier état en ligne, ajouter à la tâche de retrait les membres atteignant « jours d’alerte + jours de grâce ». Continuer ?",
-      "姓名不一致，已取消踢出": "Nom différent ; retrait annulé",
-      "当前没有达到斩杀线的成员": "Aucun membre n’atteint le seuil de retrait",
       "中断": "Interrompre",
       "中断指令已发送": "Commande d’interruption envoyée",
       "事件": "Événements",
@@ -700,15 +664,6 @@
       "编号 {id}": "ID {id}",
       "有效期 {date}": "Expire le {date}",
       "最近使用 {date}": "Dernière utilisation {date}",
-      "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。":
-        "Activé : traitement de la dernière liste après {threshold} jours hors ligne ; {count} candidats actuels.",
-      "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。":
-        "Désactivé par défaut. Une fois activé, le seuil est de {warning} jours d’alerte + {grace} jours de grâce.",
-      "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：":
-        "Action à risque : exclure « {name} » depuis la table de la mairie. Saisissez le nom complet pour confirmer :",
-      "踢出 {name} 的任务已入队": "Tâche d’exclusion de {name} mise en file",
-      "自动斩杀任务已入队，共 {count} 人":
-        "Tâche d’exclusion automatique mise en file pour {count} membres",
       "{task}已入队": "{task} mis en file"
     },
     ja: {
@@ -924,20 +879,15 @@
       "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。":
         "キャンプの慣例により、{days}日を超えてオフラインのプレイヤーは除名される場合があります。",
       "斩杀预警天数": "警告日数",
-      "自动踢出达到斩杀线的成员（默认关闭）": "基準到達メンバーを自動除名（初期設定はオフ）",
-      "自动踢出宽限 N 天": "自動除名の猶予日数",
       "轮询、无响应恢复与任务例程": "ポーリング、無応答復旧、タスクルーチン",
       "任务执行中轮询（秒）": "タスク中のポーリング（秒）",
       "默认空闲轮询（秒）": "待機中のポーリング（秒）",
       "等待 Agent 接取超时（分钟）": "エージェント取得待ちタイムアウト（分）",
       "游戏无响应自动重启": "ゲーム無応答時に自動再起動",
       "营地成员完整信息": "野営地メンバー詳細",
-      "按最新斩杀线执行": "最新基準で実行",
-      "踢出营地": "野営地から除名",
       "仅贡献": "貢献のみ",
       "仅斩杀预警": "警告確認のみ",
       "仅成员资料与公职": "プロフィールと役職のみ",
-      "踢出成员": "メンバーを除名",
       "明日之后“愿”营地公共信息、科技投票与成员贡献":
         "ライフアフター「願」野営地の公開情報・技術投票・メンバー貢献",
       "登录 · 明日之后“愿”营地助手": "ログイン · ライフアフター「願」野営地アシスタント",
@@ -1000,14 +950,6 @@
       "仅从市政厅沙盘活跃页更新离线时间":
         "市役所の「アクティブ」ページからオフライン時間のみ更新",
       "仅更新职业、庄园、同居与公职": "職業・荘園・同居人・役職のみ更新",
-      "自动斩杀": "自動除名",
-      "处理最新识别仍达到斩杀线的成员":
-        "最新認識後も除名基準に達しているメンバーを処理",
-      "从最新名单精确选择成员后执行": "最新名簿から対象メンバーを正確に選択して実行",
-      "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？":
-        "最新のオンライン状況に基づき「警告日数＋猶予日数」に達した正確な名簿を除名タスクへ追加します。続行しますか？",
-      "姓名不一致，已取消踢出": "名前が一致しないため除名を中止しました",
-      "当前没有达到斩杀线的成员": "現在、除名基準に達したメンバーはいません",
       "中断": "中断",
       "中断指令已发送": "中断指示を送信しました",
       "事件": "イベント",
@@ -1042,15 +984,6 @@
       "编号 {id}": "ID {id}",
       "有效期 {date}": "有効期限 {date}",
       "最近使用 {date}": "最終使用 {date}",
-      "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。":
-        "有効：{threshold}日オフラインで最新認識名簿を処理します。現在の候補は{count}人です。",
-      "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。":
-        "初期設定はオフです。有効時の基準は警告{warning}日＋猶予{grace}日です。",
-      "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：":
-        "高リスク操作：市役所のサンドテーブルから「{name}」を除名します。確認のため完全なメンバー名を入力してください：",
-      "踢出 {name} 的任务已入队": "{name} の除名タスクをキューに追加しました",
-      "自动斩杀任务已入队，共 {count} 人":
-        "{count}人の自動除名タスクをキューに追加しました",
       "{task}已入队": "{task}をキューに追加しました"
     },
     "zh-tw": {
@@ -1266,20 +1199,15 @@
       "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。":
         "根據營地慣例，離線超過 {days} 天的玩家可能會被請離營地。",
       "斩杀预警天数": "斬殺預警天數",
-      "自动踢出达到斩杀线的成员（默认关闭）": "自動踢出達到斬殺線的成員（預設關閉）",
-      "自动踢出宽限 N 天": "自動踢出寬限 N 天",
       "轮询、无响应恢复与任务例程": "輪詢、無回應恢復與任務例程",
       "任务执行中轮询（秒）": "任務執行中輪詢（秒）",
       "默认空闲轮询（秒）": "預設閒置輪詢（秒）",
       "等待 Agent 接取超时（分钟）": "等待 Agent 接取逾時（分鐘）",
       "游戏无响应自动重启": "遊戲無回應自動重啟",
       "营地成员完整信息": "營地成員完整資訊",
-      "按最新斩杀线执行": "按最新斬殺線執行",
-      "踢出营地": "踢出營地",
       "仅贡献": "僅貢獻",
       "仅斩杀预警": "僅斬殺預警",
       "仅成员资料与公职": "僅成員資料與公職",
-      "踢出成员": "踢出成員",
       "明日之后“愿”营地公共信息、科技投票与成员贡献":
         "明日之後「願」營地公共資訊、科技投票與成員貢獻",
       "登录 · 明日之后“愿”营地助手": "登入 · 明日之後「願」營地助手",
@@ -1336,13 +1264,6 @@
       "仅从市政厅沙盘更新三项贡献数据": "僅從市政廳沙盤更新三項貢獻資料",
       "仅从市政厅沙盘活跃页更新离线时间": "僅從市政廳沙盤活躍頁更新離線時間",
       "仅更新职业、庄园、同居与公职": "僅更新職業、莊園、同居與公職",
-      "自动斩杀": "自動斬殺",
-      "处理最新识别仍达到斩杀线的成员": "處理最新辨識後仍達到斬殺線的成員",
-      "从最新名单精确选择成员后执行": "從最新名單精確選擇成員後執行",
-      "将依据最新在线情况，把当前达到“预警天数＋宽限天数”的精确名单加入踢出任务。继续吗？":
-        "將依據最新上線情況，把目前達到「預警天數＋寬限天數」的精確名單加入踢出任務。繼續嗎？",
-      "姓名不一致，已取消踢出": "姓名不一致，已取消踢出",
-      "当前没有达到斩杀线的成员": "目前沒有達到斬殺線的成員",
       "中断": "中斷",
       "中断指令已发送": "中斷指令已傳送",
       "事件": "事件",
@@ -1377,14 +1298,6 @@
       "编号 {id}": "編號 {id}",
       "有效期 {date}": "有效期 {date}",
       "最近使用 {date}": "最近使用 {date}",
-      "已开启：离线达到 {threshold} 天时按最新识别名单处理；当前候选 {count} 人。":
-        "已開啟：離線達到 {threshold} 天時依最新辨識名單處理；目前候選 {count} 人。",
-      "默认关闭。若开启，判定线为预警 {warning} 天＋宽限 {grace} 天。":
-        "預設關閉。若開啟，判定線為預警 {warning} 天＋寬限 {grace} 天。",
-      "高风险操作：将从市政厅沙盘踢出“{name}”。请输入完整成员姓名确认：":
-        "高風險操作：將從市政廳沙盤踢出「{name}」。請輸入完整成員姓名確認：",
-      "踢出 {name} 的任务已入队": "踢出 {name} 的任務已排入佇列",
-      "自动斩杀任务已入队，共 {count} 人": "自動斬殺任務已排入佇列，共 {count} 人",
       "{task}已入队": "{task}已排入佇列"
     }
   };

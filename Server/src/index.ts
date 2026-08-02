@@ -30,7 +30,6 @@ import {
   getRun,
   getTechnologyVoteHistory,
   listActivityWarnings,
-  listHeartbeats,
   listMembers,
   listRecordedTechnologyVoteHistoryDates,
   listRecentRuns,
@@ -41,6 +40,7 @@ import {
   replaceMemberSnapshot,
   replaceStaffSnapshot,
   removeCurrentMembers,
+  registerAgentIdentity,
   updateActivitySnapshot,
   updateContributionSnapshot,
   updateMemberProfiles,
@@ -1155,18 +1155,6 @@ async function handleAdminApi(
         ? { technologyConfig: submitted.technologyConfig }
         : {})
     });
-    const kickPolicyChanged =
-      current.campConfig.automaticKickEnabled !==
-        next.campConfig.automaticKickEnabled ||
-      current.campConfig.automaticKickGraceDays !==
-        next.campConfig.automaticKickGraceDays;
-    if (kickPolicyChanged && !hasPermission(session, "member:kick")) {
-      return problem(
-        "修改自动踢出策略需要 member:kick 权限",
-        403,
-        "member_kick_permission_required"
-      );
-    }
     await saveConfigBundle(env, next);
     return json(await buildAdminBootstrap(env, session));
   }
@@ -1193,49 +1181,6 @@ async function handleAdminApi(
       requestedBy: session
     });
     return json(result, 201);
-  }
-  if (path === "/api/admin/kick-member" && method === "POST") {
-    const body = await readJsonObject(request, 16_000);
-    const memberName = boundedText(body.memberName, "memberName", 80);
-    if (body.confirmMemberName !== memberName) {
-      return problem("必须完整输入成员姓名确认", 400, "member_confirmation_required");
-    }
-    const bundle = await getConfigBundle(env);
-    const currentMember = (await listMembers(env)).find(
-      (item) => item.name === memberName
-    );
-    if (!currentMember) return problem("成员不在最新名单中", 404, "member_not_current");
-    const result = await enqueueTask(env, {
-      bundle,
-      taskKey: "kick_member",
-      triggerMode: "manual",
-      requestedBy: session,
-      payloadDetail: { memberName, destructiveConfirmation: true }
-    });
-    return json(result, 201);
-  }
-  if (path === "/api/admin/auto-kick-evaluate" && method === "POST") {
-    const bundle = await getConfigBundle(env);
-    if (!bundle.campConfig.automaticKickEnabled) {
-      return problem("自动斩杀当前未开启", 409, "automatic_kick_disabled");
-    }
-    const warnings = await listActivityWarnings(env);
-    const candidates = automaticKickCandidates(bundle, warnings);
-    if (!candidates.length) return json({ run: null, candidates: [] });
-    const result = await enqueueTask(env, {
-      bundle,
-      taskKey: "kick_inactive_members",
-      triggerMode: "manual",
-      requestedBy: session,
-      payloadDetail: {
-        memberNames: candidates.map((member) => member.name),
-        thresholdDays:
-          bundle.campConfig.inactivityWarningDays +
-          bundle.campConfig.automaticKickGraceDays,
-        destructiveConfirmation: true
-      }
-    });
-    return json({ ...result, candidates }, 201);
   }
   if (path === "/api/admin/interrupt" && method === "POST") {
     const body = await readJsonObject(request, 16_000);
@@ -1297,6 +1242,16 @@ async function handleAgentApi(
   path: string,
   method: string
 ): Promise<Response> {
+  if (path === "/api/agent/register" && method === "POST") {
+    const body = await readJsonObject(request, 16_000);
+    const agentId = boundedText(body.agentId, "agentId", 80);
+    const bundle = await registerAgentIdentity(
+      env,
+      await getConfigBundle(env),
+      agentId
+    );
+    return json({ ok: true, agentId: bundle.campConfig.agentId });
+  }
   if (path === "/api/agent/heartbeat" && method === "POST") {
     const body = await readJsonObject(request, 64_000);
     const activeRunId =
@@ -1404,7 +1359,6 @@ async function handleAgentApi(
         capturedAt,
         members
       });
-      await enqueueAutomaticKickIfNeeded(env, bundle, runId, capturedAt, members);
       return json({ ok: true, count: members.length });
     }
     if (type === "contribution") {
@@ -1429,14 +1383,6 @@ async function handleAgentApi(
         capturedAt,
         members
       });
-      const bundle = await getConfigBundle(env);
-      await enqueueAutomaticKickIfNeeded(
-        env,
-        bundle,
-        runId,
-        capturedAt,
-        reconciliation.updates
-      );
       return json({
         ok: true,
         count: reconciliation.updates.length,
@@ -1566,13 +1512,16 @@ async function buildAdminBootstrap(
   const canTechnology = canViewAdminModule(session, "admin:technology");
   const canMembers = canViewAdminModule(session, "admin:members");
   const canHistory = canViewAdminModule(session, "admin:history");
-  const [voteSummary, heartbeats, recentRuns, staff, members, warnings] = await Promise.all([
+  const [voteSummary, heartbeats, recentRuns, staff, members] = await Promise.all([
     buildVoteSummary(env, bundle),
-    canOverview ? listHeartbeats(env) : Promise.resolve([]),
+    canOverview
+      ? getHeartbeat(env, bundle.campConfig.agentId).then((heartbeat) =>
+          heartbeat ? [heartbeat] : []
+        )
+      : Promise.resolve([]),
     canHistory ? listRecentRuns(env, 100) : Promise.resolve([]),
     canMembers ? listStaff(env) : Promise.resolve([]),
-    canMembers ? listMembers(env) : Promise.resolve([]),
-    canMembers ? listActivityWarnings(env) : Promise.resolve([])
+    canMembers ? listMembers(env) : Promise.resolve([])
   ]);
   const voteBallots = canTechnology
     ? (await listVoteBallotDetails(env, voteSummary.pollDate)).map((ballot) =>
@@ -1607,9 +1556,6 @@ async function buildAdminBootstrap(
     recentRuns: recentRuns.filter(isCurrentFeatureRun),
     staffAssignments: canMembers ? staff : [],
     members: canMembers ? members : [],
-    autoKickCandidates: canMembers
-      ? automaticKickCandidates(bundle, warnings)
-      : [],
     agentOnlineThresholdSeconds: Math.max(
       45,
       bundle.automationConfig.agentPolling.idleSeconds * 2 + 30
@@ -1728,56 +1674,6 @@ function pollingIntervalSeconds(
     : automation.agentPolling.idleSeconds;
 }
 
-function automaticKickCandidates(
-  bundle: ConfigBundle,
-  members: Record<string, unknown>[]
-): Record<string, unknown>[] {
-  if (!bundle.campConfig.automaticKickEnabled) return [];
-  const threshold =
-    bundle.campConfig.inactivityWarningDays +
-    bundle.campConfig.automaticKickGraceDays;
-  return members
-    .filter(
-      (member) => {
-        const days = member.inactive_days ?? member.inactiveDays;
-        return typeof days === "number" && days >= threshold;
-      }
-    )
-    .sort(
-      (left, right) =>
-        Number(right.inactive_days ?? right.inactiveDays) -
-          Number(left.inactive_days ?? left.inactiveDays) ||
-        String(left.name).localeCompare(String(right.name))
-    );
-}
-
-async function enqueueAutomaticKickIfNeeded(
-  env: Env,
-  bundle: ConfigBundle,
-  sourceRunId: string,
-  capturedAt: string,
-  observedMembers: Record<string, unknown>[]
-): Promise<void> {
-  const candidates = automaticKickCandidates(bundle, observedMembers);
-  if (!candidates.length) return;
-  const thresholdDays =
-    bundle.campConfig.inactivityWarningDays +
-    bundle.campConfig.automaticKickGraceDays;
-  await enqueueTask(env, {
-    bundle,
-    taskKey: "kick_inactive_members",
-    triggerMode: "scheduled",
-    scheduleKey: `auto-kick:${sourceRunId}`,
-    localDate: zonedDateKey(new Date(capturedAt), bundle.automationConfig.timezone),
-    payloadDetail: {
-      memberNames: candidates.map((member) => member.name),
-      thresholdDays,
-      sourceRunId,
-      destructiveConfirmation: true
-    }
-  });
-}
-
 function permissionForAdminRequest(
   path: string,
   method: string
@@ -1790,10 +1686,6 @@ function permissionForAdminRequest(
   if (method === "PUT" && path === "/api/admin/config") return null;
   if (method === "POST" && path === "/api/admin/run") return "task:run";
   if (method === "POST" && path === "/api/admin/interrupt") return "task:interrupt";
-  if (method === "POST" && path === "/api/admin/kick-member") return "member:kick";
-  if (method === "POST" && path === "/api/admin/auto-kick-evaluate") {
-    return "member:kick";
-  }
   if (method === "DELETE" && path.startsWith("/api/admin/maintenance/")) {
     return "admin:history";
   }

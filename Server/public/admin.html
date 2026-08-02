@@ -100,11 +100,6 @@
                 </label>
                 <label class="field"><span>斩杀预警天数</span><input name="inactivityWarningDays" type="number" min="1" max="3650" /></label>
                 <label class="field field-checkbox">
-                  <input name="automaticKickEnabled" type="checkbox" />
-                  <span>自动踢出达到斩杀线的成员（默认关闭）</span>
-                </label>
-                <label class="field"><span>自动踢出宽限 N 天</span><input name="automaticKickGraceDays" type="number" min="0" max="3650" /></label>
-                <label class="field field-checkbox">
                   <input name="temporaryKeyLoginEnabled" type="checkbox" />
                   <span>开放临时 Key 登录</span>
                 </label>
@@ -544,9 +539,7 @@
                 <p class="eyebrow">CURRENT ROSTER</p>
                 <h1>营地成员完整信息</h1>
               </div>
-              <button id="auto-kick-evaluate" class="button button-danger" type="button">按最新斩杀线执行</button>
             </div>
-            <p id="auto-kick-summary" class="muted"></p>
             <label class="search-field">
               <span class="sr-only">搜索成员</span>
               <input id="admin-member-search" type="search" placeholder="搜索姓名、职业、同居" />
@@ -637,7 +630,6 @@
           <button class="button button-quiet" value="close">关闭</button>
         </div>
         <dl id="member-detail" class="member-detail"></dl>
-        <button id="kick-member" class="button button-danger" type="button">踢出营地</button>
       </form>
     </dialog>
     <dialog id="vote-detail-dialog">

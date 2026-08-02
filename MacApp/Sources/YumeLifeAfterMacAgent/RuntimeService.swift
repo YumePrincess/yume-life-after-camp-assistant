@@ -26,6 +26,10 @@ actor RuntimeService {
         return development
     }
 
+    var credentialsFile: URL {
+        applicationSupport.appending(path: "credentials.json")
+    }
+
     func installBundledRuntimeIfNeeded() throws {
         guard let bundled = Bundle.main.resourceURL?.appending(path: "Runtime", directoryHint: .isDirectory),
               fileManager.fileExists(atPath: bundled.appending(path: "src/main.mjs").path)
@@ -69,8 +73,9 @@ actor RuntimeService {
     }
 
     /// Creates a secret-free first-launch configuration. Existing settings are
-    /// never overwritten during an App update; the actual Agent token remains
-    /// in Keychain and is only referenced by the `KEYCHAIN` marker.
+    /// never overwritten during an App update. Both tokens live in an
+    /// owner-only credentials file outside the replaceable runtime and config
+    /// only contains a marker.
     private func ensureRuntimeConfig(at runtime: URL) throws {
         let config = runtime.appending(path: "config.json")
         if fileManager.fileExists(atPath: config.path) {
@@ -78,9 +83,29 @@ actor RuntimeService {
             // administrator-defined Agent ID is never overwritten.
             var object = try JSONSerialization.jsonObject(with: Data(contentsOf: config)) as! [String: Any]
             var server = object["server"] as? [String: Any] ?? [:]
+            var changed = false
+            if object.removeValue(forKey: "memberKick") != nil {
+                changed = true
+            }
             if server["agentId"] as? String == "mumu-main" {
                 server["agentId"] = "mac-life-after-agent"
-                object["server"] = server
+                changed = true
+            }
+            if server["agentToken"] as? String == "KEYCHAIN" {
+                server["agentToken"] = "CREDENTIALS_FILE"
+                changed = true
+            }
+            object["server"] = server
+            var debug = object["debug"] as? [String: Any] ?? [:]
+            let storedDebugToken = debug["token"] as? String
+            let credentialsExist = fileManager.fileExists(atPath: credentialsFile.path)
+            if storedDebugToken == "KEYCHAIN" ||
+                (storedDebugToken != nil && storedDebugToken != "" && credentialsExist) {
+                debug["token"] = "CREDENTIALS_FILE"
+                object["debug"] = debug
+                changed = true
+            }
+            if changed {
                 let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
                 try data.write(to: config, options: .atomic)
                 try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path)
@@ -93,10 +118,10 @@ actor RuntimeService {
         }
         var object = try JSONSerialization.jsonObject(with: Data(contentsOf: template)) as! [String: Any]
         var server = object["server"] as? [String: Any] ?? [:]
-        server["agentToken"] = "KEYCHAIN"
+        server["agentToken"] = "CREDENTIALS_FILE"
         object["server"] = server
         var debug = object["debug"] as? [String: Any] ?? [:]
-        debug["token"] = ""
+        debug["token"] = "CREDENTIALS_FILE"
         object["debug"] = debug
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: config, options: .atomic)
@@ -127,6 +152,27 @@ actor RuntimeService {
         return try JSONDecoder().decode(AgentHealth.self, from: data)
     }
 
+    func registerAgent(baseURL: String, agentID: String, agentToken: String) async throws {
+        guard let endpoint = URL(string: baseURL)?.appending(path: "api/agent/register") else {
+            throw RuntimeError.failed(String(localized: "The Workers URL is invalid."))
+        }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(agentToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["agentId": agentID])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let message = payload?["error"] as? String ?? "HTTP \(status)"
+            throw RuntimeError.failed(
+                "\(String(localized: "The Agent could not be registered with Workers.")) \(message)"
+            )
+        }
+    }
+
     func logs() async -> String {
         let root = runtimeRoot
         let candidates = [
@@ -140,16 +186,24 @@ actor RuntimeService {
             .joined(separator: "\n")
     }
 
-    func saveConnection(baseURL: String, agentID: String, debugToken: String, mumuInstanceName: String) throws {
+    func saveConnection(
+        baseURL: String,
+        agentID: String,
+        agentToken: String,
+        debugToken: String,
+        mumuInstanceName: String
+    ) throws {
+        try saveCredentials(agentToken: agentToken, debugToken: debugToken)
         let root = runtimeRoot
         let path = root.appending(path: "config.json")
         let template = root.appending(path: "config.example.json")
         let source = fileManager.fileExists(atPath: path.path) ? path : template
         var object = try JSONSerialization.jsonObject(with: Data(contentsOf: source)) as! [String: Any]
+        object.removeValue(forKey: "memberKick")
         var server = object["server"] as? [String: Any] ?? [:]
         server["baseUrl"] = baseURL
         server["agentId"] = agentID
-        server["agentToken"] = "KEYCHAIN"
+        server["agentToken"] = "CREDENTIALS_FILE"
         object["server"] = server
         var mumu = object["mumu"] as? [String: Any] ?? [:]
         mumu["instanceName"] = mumuInstanceName
@@ -160,11 +214,37 @@ actor RuntimeService {
         adb["serial"] = "auto"
         object["adb"] = adb
         var debug = object["debug"] as? [String: Any] ?? [:]
-        debug["token"] = debugToken
+        debug["token"] = "CREDENTIALS_FILE"
         object["debug"] = debug
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: path, options: [.atomic])
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+    }
+
+    func loadCredentials() throws -> StoredCredentials {
+        let metadata = try credentialsFile.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard metadata.isRegularFile == true, metadata.isSymbolicLink != true else {
+            throw RuntimeError.failed(String(localized: "The saved credentials file is invalid."))
+        }
+        let attributes = try fileManager.attributesOfItem(atPath: credentialsFile.path)
+        let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue ?? 0
+        guard permissions & 0o077 == 0 else {
+            throw RuntimeError.failed(String(localized: "The saved credentials file permissions are unsafe."))
+        }
+        let credentials = try JSONDecoder().decode(StoredCredentials.self, from: Data(contentsOf: credentialsFile))
+        guard !credentials.agentToken.isEmpty, !credentials.debugToken.isEmpty else {
+            throw RuntimeError.failed(String(localized: "The saved credentials are incomplete."))
+        }
+        return credentials
+    }
+
+    private func saveCredentials(agentToken: String, debugToken: String) throws {
+        try fileManager.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: applicationSupport.path)
+        let credentials = StoredCredentials(agentToken: agentToken, debugToken: debugToken)
+        let data = try JSONEncoder().encode(credentials)
+        try data.write(to: credentialsFile, options: [.atomic, .completeFileProtection])
+        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: credentialsFile.path)
     }
 
     func exportMigrationArchive(to archive: URL) async throws {
@@ -183,11 +263,12 @@ actor RuntimeService {
         let config = runtimeRoot.appending(path: "config.json")
         if fileManager.fileExists(atPath: config.path) {
             var object = try JSONSerialization.jsonObject(with: Data(contentsOf: config)) as! [String: Any]
+            object.removeValue(forKey: "memberKick")
             var server = object["server"] as? [String: Any] ?? [:]
-            server["agentToken"] = "KEYCHAIN"
+            server["agentToken"] = "CREDENTIALS_FILE"
             object["server"] = server
             var debug = object["debug"] as? [String: Any] ?? [:]
-            debug["token"] = ""
+            debug["token"] = "CREDENTIALS_FILE"
             object["debug"] = debug
             try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
                 .write(to: payload.appending(path: "config.json"), options: .atomic)
@@ -235,6 +316,7 @@ actor RuntimeService {
         let importedConfig = payload.appending(path: "config.json")
         if fileManager.fileExists(atPath: importedConfig.path) {
             try fileManager.copyItemReplacing(at: importedConfig, to: runtimeRoot.appending(path: "config.json"))
+            try ensureRuntimeConfig(at: runtimeRoot)
         }
     }
 
@@ -291,6 +373,11 @@ actor RuntimeService {
             }
         }
     }
+}
+
+struct StoredCredentials: Codable, Sendable {
+    let agentToken: String
+    let debugToken: String
 }
 
 private extension FileManager {

@@ -132,19 +132,6 @@ export function validateCampConfig(value: unknown): CampConfig {
             "campConfig.inactivityWarningDays",
             1,
             3650
-          ),
-    automaticKickEnabled:
-      source.automaticKickEnabled === undefined
-        ? false
-        : boolean(source.automaticKickEnabled, "campConfig.automaticKickEnabled"),
-    automaticKickGraceDays:
-      source.automaticKickGraceDays === undefined
-        ? 0
-        : integer(
-            source.automaticKickGraceDays,
-            "campConfig.automaticKickGraceDays",
-            0,
-            3650
           )
   };
 }

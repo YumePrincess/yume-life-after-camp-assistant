@@ -2,6 +2,7 @@
 set -euo pipefail
 
 LABEL="zone.yume.lifeafter.macagent.runtime"
+LEGACY_LABEL="zone.yume.mrzh-agent"
 SERVICE_TARGET="gui/${UID}/${LABEL}"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 
@@ -18,6 +19,9 @@ if [[ -f "${PLIST_PATH}" ]]; then
 else
   echo "LaunchAgent plist is already absent."
 fi
+
+launchctl bootout "gui/${UID}/${LEGACY_LABEL}" 2>/dev/null || true
+rm -f -- "${HOME}/Library/LaunchAgents/${LEGACY_LABEL}.plist"
 
 echo "Uninstalled ${LABEL}."
 echo "Project files, config.json, logs, OCR tools, and downloaded APKs were preserved."

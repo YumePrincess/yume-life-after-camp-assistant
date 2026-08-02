@@ -1,12 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const MAC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const execFileAsync = promisify(execFile);
+const CREDENTIALS_MARKERS = new Set(["CREDENTIALS_FILE", "KEYCHAIN"]);
+let runtimeCredentialsPromise;
 
 export async function loadConfig(options = {}) {
   const {
@@ -17,8 +16,18 @@ export async function loadConfig(options = {}) {
   const config = JSON.parse(await readFile(path, "utf8"));
   config.__path = path;
   config.__root = MAC_ROOT;
-  if (resolveSecrets && config.server?.agentToken === "KEYCHAIN") {
-    config.server.agentToken = await readAgentTokenFromKeychain();
+  if (
+    resolveSecrets &&
+    (CREDENTIALS_MARKERS.has(config.server?.agentToken) ||
+      CREDENTIALS_MARKERS.has(config.debug?.token))
+  ) {
+    const credentials = await readRuntimeCredentials();
+    if (CREDENTIALS_MARKERS.has(config.server?.agentToken)) {
+      config.server.agentToken = credentials.agentToken;
+    }
+    if (CREDENTIALS_MARKERS.has(config.debug?.token)) {
+      config.debug.token = credentials.debugToken;
+    }
   }
   if (config.adb?.binary?.startsWith(".")) {
     config.adb.binary = resolve(MAC_ROOT, config.adb.binary);
@@ -56,24 +65,50 @@ export async function loadConfig(options = {}) {
   return config;
 }
 
-async function readAgentTokenFromKeychain() {
+async function readRuntimeCredentials() {
+  // The background Agent must never invoke a generic Keychain shell utility;
+  // macOS would authorize that utility rather than this App and could show a
+  // password dialog on every reload. The App writes this owner-only file once;
+  // each Agent process reads and caches it at startup.
+  runtimeCredentialsPromise ||= loadRuntimeCredentialsFile();
+  return runtimeCredentialsPromise;
+}
+
+async function loadRuntimeCredentialsFile() {
+  const path = resolve(
+    process.env.YLA_CREDENTIALS_FILE ||
+      resolve(
+        homedir(),
+        "Library/Application Support/Yume Life After Mac Agent/credentials.json"
+      )
+  );
   try {
-    const { stdout } = await execFileAsync(
-      "/usr/bin/security",
-      [
-        "find-generic-password",
-        "-s",
-        "zone.yume.lifeafter.agent",
-        "-a",
-        "agent-token",
-        "-w"
-      ],
-      { timeout: 5_000, encoding: "utf8" }
-    );
-    return stdout.trim();
-  } catch {
+    const metadata = await lstat(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      throw new Error("credentials path is not a regular file");
+    }
+    if ((metadata.mode & 0o077) !== 0) {
+      throw new Error("credentials file permissions must be 0600");
+    }
+    if (typeof process.getuid === "function" && metadata.uid !== process.getuid()) {
+      throw new Error("credentials file is not owned by the current user");
+    }
+    const credentials = JSON.parse(await readFile(path, "utf8"));
+    if (
+      typeof credentials.agentToken !== "string" ||
+      credentials.agentToken.length === 0 ||
+      typeof credentials.debugToken !== "string" ||
+      credentials.debugToken.length === 0
+    ) {
+      throw new Error("credentials file is incomplete");
+    }
+    return Object.freeze({
+      agentToken: credentials.agentToken,
+      debugToken: credentials.debugToken
+    });
+  } catch (error) {
     throw new Error(
-      "Agent token is stored in Keychain but could not be read; open Yume Life After Mac Agent and save the connection settings again"
+      `Runtime credentials are unavailable; open Yume Life After Mac Agent, load or enter both tokens, then save settings (${error.message})`
     );
   }
 }

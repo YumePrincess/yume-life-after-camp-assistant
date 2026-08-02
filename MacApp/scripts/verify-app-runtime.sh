@@ -40,7 +40,7 @@ model_bytes=$(/usr/bin/stat -f '%z' "${MODEL}/model.safetensors")
 (( model_bytes > 1000000000 )) || { echo "Bundled local model weights are incomplete" >&2; exit 1; }
 
 plugin_count=$(find "${RUNTIME}/plugins" -mindepth 2 -maxdepth 2 -name plugin.json | wc -l | tr -d ' ')
-[[ "${plugin_count}" == "7" ]] || { echo "Expected 7 built-in plugins, found ${plugin_count}" >&2; exit 1; }
+[[ "${plugin_count}" == "5" ]] || { echo "Expected 5 built-in plugins, found ${plugin_count}" >&2; exit 1; }
 for localization in en fr ja zh-Hans zh-Hant; do
   [[ -f "${APP_BUNDLE}/Contents/Resources/${localization}.lproj/Localizable.strings" ]] || {
     echo "Missing App localization: ${localization}" >&2

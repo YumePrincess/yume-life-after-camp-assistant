@@ -117,7 +117,7 @@ struct OverviewView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeader(eyebrow: "LOCAL AGENT", title: "Control center", summary: "Run, inspect and maintain the Mac automation runtime.")
-                HStack(spacing: 16) {
+                HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Label(model.text(model.health?.ok == true ? "Online" : "Offline"), systemImage: model.health?.ok == true ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
@@ -131,21 +131,16 @@ struct OverviewView: View {
                         Text(model.health?.adbSerial ?? model.text("ADB not connected"))
                             .font(.callout.monospaced())
                             .foregroundStyle(.secondary)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 142, maximum: 210), spacing: 10)], spacing: 10) {
-                            Button("Start") { Task { await model.performAgentAction("start") } }
-                                .buttonStyle(PrimaryButtonStyle())
-                            Button("Stop") { Task { await model.performAgentAction("stop") } }
-                                .buttonStyle(GlassButtonStyle())
-                            Button("Restart") { Task { await model.performAgentAction("restart") } }
-                                .buttonStyle(GlassButtonStyle())
-                            Button("Install / Repair") { Task { await model.performAgentAction("repair") } }
-                                .buttonStyle(GlassButtonStyle())
-                            Button("Update runtime") { Task { await model.performAgentAction("update") } }
-                                .buttonStyle(GlassButtonStyle())
-                            Button("Uninstall Agent") { Task { await model.performAgentAction("uninstall") } }
-                                .buttonStyle(GlassButtonStyle())
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                            OverviewActionButton("Start", primary: true) { await model.performAgentAction("start") }
+                            OverviewActionButton("Stop") { await model.performAgentAction("stop") }
+                            OverviewActionButton("Restart") { await model.performAgentAction("restart") }
+                            OverviewActionButton("Install / Repair") { await model.performAgentAction("repair") }
+                            OverviewActionButton("Update runtime") { await model.performAgentAction("update") }
+                            OverviewActionButton("Uninstall Agent") { await model.performAgentAction("uninstall") }
                         }
                     }
+                    .frame(maxWidth: .infinity, minHeight: 214, alignment: .topLeading)
                     .glassPanel()
                     VStack(alignment: .leading, spacing: 12) {
                         Label("Apple Silicon", systemImage: "cpu")
@@ -156,7 +151,7 @@ struct OverviewView: View {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
-                    .frame(width: 260, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 214, alignment: .topLeading)
                     .glassPanel()
                 }
                 HStack(spacing: 14) {
@@ -172,6 +167,37 @@ struct OverviewView: View {
                 }
             }
             .padding(30)
+        }
+    }
+}
+
+private struct OverviewActionButton: View {
+    let title: LocalizedStringKey
+    let primary: Bool
+    let action: () async -> Void
+
+    init(
+        _ title: LocalizedStringKey,
+        primary: Bool = false,
+        action: @escaping () async -> Void
+    ) {
+        self.title = title
+        self.primary = primary
+        self.action = action
+    }
+
+    @ViewBuilder var body: some View {
+        if primary {
+            button.buttonStyle(PrimaryButtonStyle())
+        } else {
+            button.buttonStyle(GlassButtonStyle())
+        }
+    }
+
+    private var button: some View {
+        Button { Task { await action() } } label: {
+            Text(title)
+                .frame(maxWidth: .infinity, minHeight: 36)
         }
     }
 }
@@ -350,8 +376,8 @@ struct SettingsView: View {
                     TextField("MuMu container name", text: $model.mumuInstanceName)
                     SecureField("Agent token", text: $model.agentToken)
                     SecureField("Local debug token", text: $model.debugToken)
-                    Button("Load saved credentials from Keychain") {
-                        model.loadStoredCredentials()
+                    Button("Import legacy Keychain credentials…") {
+                        Task { await model.loadStoredCredentials() }
                     }
                     .buttonStyle(GlassButtonStyle())
                     Text("The Agent matches this MuMu container name and discovers its current loopback ADB port automatically.")
@@ -375,7 +401,7 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Migration") {
-                    Text("The migration archive includes settings and user plugins, but never Keychain tokens.")
+                    Text("The migration archive includes settings and user plugins, but never credentials.")
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button("Export migration archive…") { Task { await model.exportMigration() } }
@@ -488,12 +514,12 @@ struct SetupAssistantView: View {
     private var tokenStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Secure credentials").font(.title.bold())
-            Text("Tokens are stored in macOS Keychain and are never included in the App or migration archive.")
+            Text("Tokens are stored in an owner-only local credentials file and are never included in the App or migration archive.")
                 .foregroundStyle(.secondary)
             SecureField("Agent token", text: $model.agentToken).textFieldStyle(.roundedBorder)
             SecureField("Local debug token", text: $model.debugToken).textFieldStyle(.roundedBorder)
-            Button("Load saved credentials from Keychain") {
-                model.loadStoredCredentials()
+                    Button("Import legacy Keychain credentials…") {
+                        Task { await model.loadStoredCredentials() }
             }
             .buttonStyle(GlassButtonStyle())
         }
@@ -507,8 +533,13 @@ struct SetupAssistantView: View {
             Label(model.serverURL, systemImage: "network")
             Label(model.agentID, systemImage: "desktopcomputer")
             Label(model.mumuInstanceName, systemImage: "square.stack.3d.up")
-            Label("7 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
-            if model.isBusy { ProgressView("Installing and verifying…") }
+            Label("5 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
+            if model.isBusy {
+                ProgressView(model.setupProgressMessage.isEmpty ? model.text("Preparing installation…") : model.setupProgressMessage)
+            } else if !model.setupProgressMessage.isEmpty {
+                Label(model.setupProgressMessage, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
         }
     }
 }

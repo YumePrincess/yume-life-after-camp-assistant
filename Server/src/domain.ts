@@ -4,8 +4,6 @@ export const TASK_KEYS = [
   "contribution_sync",
   "inactivity_sync",
   "member_profile_sync",
-  "kick_member",
-  "kick_inactive_members",
   "patrol",
   "automation_routine"
 ] as const;
@@ -39,8 +37,6 @@ export interface CampConfig {
   serverName: string;
   publicMembersEnabled: boolean;
   inactivityWarningDays: number;
-  automaticKickEnabled: boolean;
-  automaticKickGraceDays: number;
 }
 
 export interface PublicOverview {
@@ -132,14 +128,7 @@ export interface AutomationRoutine {
   enabled: boolean;
   time: string;
   weekdays: number[];
-  groups: Array<
-    Array<
-      Exclude<
-        TaskKey,
-        "automation_routine" | "kick_member" | "kick_inactive_members"
-      >
-    >
-  >;
+  groups: Array<Array<Exclude<TaskKey, "automation_routine">>>;
 }
 
 export interface ConfigBundle {

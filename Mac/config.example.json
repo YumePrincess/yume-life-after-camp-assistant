@@ -751,10 +751,5 @@
     "trustedKeys": {},
     "allowUnsignedLocal": false,
     "catalogUrl": "https://lifeafter.yume.zone/agent-plugins/index.json"
-  },
-  "memberKick": {
-    "enabled": false,
-    "finalFingerprint": { "x": 1810, "y": 1080 },
-    "requireExactName": true
   }
 }
