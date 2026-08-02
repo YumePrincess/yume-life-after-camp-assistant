@@ -1211,22 +1211,27 @@ function findReadyTextsInRegion(vision, observations, texts = [], region) {
       centerY <= region.bottom
     );
   });
-  // Channel tabs are short, independent labels. Never use substring matching
-  // here: the login/loading page legal disclaimer contains both “世界观” and
-  // “角色场景”, which previously allowed one sentence to impersonate two HUD
-  // anchors. Each label must occupy its own OCR observation.
-  const claimed = new Set();
+  // Vision may merge adjacent channel tabs into one observation, for example
+  // “世界 场景「营地“队伍”. Split only at whitespace/punctuation and require
+  // complete tokens. This accepts that real tab row while rejecting substring
+  // hits such as “世界观” and “角色场景” in the login legal disclaimer.
+  const candidates = bounded.map((item) => ({
+    item,
+    tokens: new Set(channelLabelTokens(item.text))
+  }));
   return texts.flatMap((text) => {
     const expected = normalizeChannelLabel(text);
-    const index = bounded.findIndex(
-      (item, candidateIndex) =>
-        !claimed.has(candidateIndex) &&
-        normalizeChannelLabel(item.text) === expected
-    );
-    if (index < 0) return [];
-    claimed.add(index);
-    return [{ text, match: bounded[index] }];
+    const candidate = candidates.find(({ tokens }) => tokens.has(expected));
+    return candidate ? [{ text, match: candidate.item }] : [];
   });
+}
+
+function channelLabelTokens(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .split(/[^\p{L}\p{N}]+/gu)
+    .map(normalizeChannelLabel)
+    .filter(Boolean);
 }
 
 function normalizeChannelLabel(value) {

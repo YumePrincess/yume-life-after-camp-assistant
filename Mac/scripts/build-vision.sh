@@ -13,6 +13,7 @@ xcrun swiftc \
   -module-cache-path "${OUTPUT_DIR}/module-cache" \
   -framework Vision \
   -framework CoreGraphics \
+  -framework CoreVideo \
   -framework ImageIO \
   "${MAC_DIR}/vision/MrzhVisionOCR.swift" \
   -o "${OUTPUT_DIR}/mrzh-vision-ocr"

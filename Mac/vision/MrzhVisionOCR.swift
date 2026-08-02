@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreVideo
 import Foundation
 import ImageIO
 import Vision
@@ -15,6 +16,8 @@ struct OCRObservation: Codable {
 enum OCRFailure: Error, CustomStringConvertible {
     case usage
     case unreadableImage(String)
+    case imageNormalizationFailed(String)
+    case visionStageFailed(String, String)
 
     var description: String {
         switch self {
@@ -22,6 +25,10 @@ enum OCRFailure: Error, CustomStringConvertible {
             return "Usage: mrzh-vision-ocr <image-path> [fast|accurate]"
         case .unreadableImage(let path):
             return "Unable to read image dimensions: \(path)"
+        case .imageNormalizationFailed(let path):
+            return "Unable to normalize image pixels: \(path)"
+        case .visionStageFailed(let stage, let detail):
+            return "Vision failed during \(stage): \(detail)"
         }
     }
 }
@@ -39,23 +46,98 @@ func imageDimensions(at url: URL) throws -> (width: Int, height: Int) {
     return (width, height)
 }
 
-func loadImage(at url: URL) throws -> CGImage {
+func normalizedImage(at url: URL) throws -> CGImage {
     guard
         let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-        let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        let sourceImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
     else {
         throw OCRFailure.unreadableImage(url.path)
     }
-    return image
+
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+        | CGImageAlphaInfo.premultipliedLast.rawValue
+    guard let context = CGContext(
+        data: nil,
+        width: sourceImage.width,
+        height: sourceImage.height,
+        bitsPerComponent: 8,
+        bytesPerRow: sourceImage.width * 4,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo
+    ) else {
+        throw OCRFailure.imageNormalizationFailed(url.path)
+    }
+
+    context.interpolationQuality = .high
+    context.draw(
+        sourceImage,
+        in: CGRect(x: 0, y: 0, width: sourceImage.width, height: sourceImage.height)
+    )
+    guard let normalized = context.makeImage() else {
+        throw OCRFailure.imageNormalizationFailed(url.path)
+    }
+    return normalized
+}
+
+func normalizedPixelBuffer(at url: URL) throws -> CVPixelBuffer {
+    guard
+        let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+        let sourceImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    else {
+        throw OCRFailure.unreadableImage(url.path)
+    }
+
+    let attributes: [CFString: Any] = [
+        kCVPixelBufferCGImageCompatibilityKey: true,
+        kCVPixelBufferCGBitmapContextCompatibilityKey: true
+    ]
+    var optionalBuffer: CVPixelBuffer?
+    let status = CVPixelBufferCreate(
+        kCFAllocatorDefault,
+        sourceImage.width,
+        sourceImage.height,
+        kCVPixelFormatType_32BGRA,
+        attributes as CFDictionary,
+        &optionalBuffer
+    )
+    guard status == kCVReturnSuccess, let pixelBuffer = optionalBuffer else {
+        throw OCRFailure.imageNormalizationFailed(
+            "\(url.path) (CVPixelBufferCreate status \(status))"
+        )
+    }
+
+    CVPixelBufferLockBaseAddress(pixelBuffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+    guard
+        let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer),
+        let context = CGContext(
+            data: baseAddress,
+            width: sourceImage.width,
+            height: sourceImage.height,
+            bitsPerComponent: 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue
+                | CGImageAlphaInfo.premultipliedFirst.rawValue
+        )
+    else {
+        throw OCRFailure.imageNormalizationFailed(url.path)
+    }
+    context.interpolationQuality = .high
+    context.draw(
+        sourceImage,
+        in: CGRect(x: 0, y: 0, width: sourceImage.width, height: sourceImage.height)
+    )
+    return pixelBuffer
 }
 
 func effectiveRecognitionMode(_ requestedMode: String) -> String {
-    let osVersion = ProcessInfo.processInfo.operatingSystemVersion
-    // macOS 27 Vision currently traps inside SwiftNativeNSArray before a
-    // `.fast` request returns. Apple's `.accurate` path uses the same public
-    // text-recognition contract and completes a 1920×1200 HUD frame in well
-    // under the Agent's one-second fallback cadence on Apple silicon.
-    if requestedMode == "fast" && osVersion.majorVersion == 27 {
+    // The macOS 27 beta `.fast` recognizer traps in SwiftNativeNSArray before
+    // returning a result. Keep the public revision-3 request but use its safe
+    // accurate level until Apple fixes that framework path.
+    if requestedMode == "fast" &&
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 {
         return "accurate"
     }
     return requestedMode
@@ -81,10 +163,25 @@ func legacyRecognize(
     recognitionMode: String
 ) throws -> [OCRObservation] {
     let request = VNRecognizeTextRequest()
-    try configureLegacyRequest(request, recognitionMode: recognitionMode)
+    do {
+        try configureLegacyRequest(request, recognitionMode: recognitionMode)
+    } catch {
+        throw OCRFailure.visionStageFailed(
+            "legacy language configuration",
+            String(describing: error)
+        )
+    }
 
-    let handler = VNImageRequestHandler(url: imageURL, options: [:])
-    try handler.perform([request])
+    let image = try normalizedImage(at: imageURL)
+    let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
+    do {
+        try handler.perform([request])
+    } catch {
+        throw OCRFailure.visionStageFailed(
+            "legacy normalized-image recognition",
+            String(describing: error)
+        )
+    }
 
     return (request.results ?? []).compactMap { observation in
         guard let candidate = observation.topCandidates(1).first else {
@@ -114,19 +211,32 @@ func modernRecognize(
     dimensions: (width: Int, height: Int),
     recognitionMode: String
 ) async throws -> [OCRObservation] {
-    var request = RecognizeTextRequest()
+    var request = RecognizeTextRequest(.revision3)
     request.recognitionLevel = recognitionMode == "fast" ? .fast : .accurate
-    if recognitionMode != "fast" {
+    let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+    if recognitionMode != "fast" && osVersion.majorVersion != 27 {
         let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US"]
             .map(Locale.Language.init(identifier:))
         let supportedLanguages = Set(request.supportedRecognitionLanguages)
         request.recognitionLanguages = preferredLanguages.filter(supportedLanguages.contains)
     }
+    request.automaticallyDetectsLanguage = osVersion.majorVersion == 27
     request.usesLanguageCorrection = false
     request.minimumTextHeightFraction = 0.008
 
-    let image = try loadImage(at: imageURL)
-    return try await request.perform(on: image).compactMap { observation in
+    // macOS 27 can reject a PNG or CGImage while creating Vision's internal
+    // CVPixelBuffer. Supply a known 32BGRA buffer directly.
+    let pixelBuffer = try normalizedPixelBuffer(at: imageURL)
+    let results: [RecognizedTextObservation]
+    do {
+        results = try await request.perform(on: pixelBuffer, orientation: .up)
+    } catch {
+        throw OCRFailure.visionStageFailed(
+            "modern normalized-pixel-buffer recognition",
+            String(describing: error)
+        )
+    }
+    return results.compactMap { observation in
         guard let candidate = observation.topCandidates(1).first else {
             return nil
         }

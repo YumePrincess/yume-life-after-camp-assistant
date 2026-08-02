@@ -411,6 +411,40 @@ test("precise bottom-left channel OCR confirms login when general HUD OCR keeps 
   assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
 });
 
+test("merged macOS 27 channel OCR tokens confirm HUD without substring matching", async () => {
+  const mergedChannelFrame = [{
+    text: "世界 场景「营地“队伍 贾斯…^",
+    x: 84,
+    y: 1090,
+    width: 326,
+    height: 36
+  }];
+  const fixture = createFixture(
+    [[], []],
+    null,
+    [],
+    "shadow",
+    {
+      channelReadyStableFrames: 2,
+      channelReadyStableMs: 0,
+      channelReadyProbeMs: 250,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    },
+    [mergedChannelFrame, mergedChannelFrame]
+  );
+
+  await waitForGameReady(fixture.context);
+
+  assert.ok(fixture.captures >= 2);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("确认 HUD：世界、场景、营地、队伍")
+    )
+  );
+  assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
+});
+
 test("channel OCR uses its own fast probe interval instead of the full-frame cooldown", async () => {
   const channelFrame = [
     { text: "综合", x: 30, y: 1090 },

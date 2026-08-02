@@ -177,6 +177,6 @@ frontend/public/vendor/lobehub-icons/
 frontend/public/pwa/generated/
 docker-compose.local.yml
 
-.DS_Store
+**/.DS_Store
 .idea
 worker-configuration.d.ts

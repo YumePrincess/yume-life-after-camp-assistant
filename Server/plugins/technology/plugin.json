@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "technology",
   "version": "27.0.0",
-  "build": 27002,
+  "build": 27003,
   "displayName": "更新科技",
   "description": "科技投票、固定科技、历史归档与 Agent 科技切换任务。",
   "builtin": true,
