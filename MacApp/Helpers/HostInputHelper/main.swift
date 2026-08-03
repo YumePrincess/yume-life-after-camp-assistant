@@ -1,5 +1,7 @@
 import AppKit
 import ApplicationServices
+import CoreGraphics
+import Darwin
 import Foundation
 
 private struct HelperResult: Encodable {
@@ -7,8 +9,9 @@ private struct HelperResult: Encodable {
     let keyCode: Int
     let bringToFront: Bool
     let mouseReleased: Bool
-    let mouseButtonsReleasedBefore: Bool
-    let mouseButtonsReleasedAfter: Bool
+    let cursorVisibleBefore: Bool
+    let cursorVisibleAfter: Bool
+    let keyEventSent: Bool
     let skippedBecauseAlreadyReleased: Bool
 }
 
@@ -24,6 +27,7 @@ private enum HelperFailure: Error, CustomStringConvertible {
     case invalidArguments(String)
     case accessibilityDenied(String)
     case eventCreationFailed
+    case cursorVisibilityUnavailable
 
     var description: String {
         switch self {
@@ -33,6 +37,8 @@ private enum HelperFailure: Error, CustomStringConvertible {
             return "YLA_HOST_INPUT_PERMISSION_DENIED: \(message)"
         case .eventCreationFailed:
             return "YLA_HOST_INPUT_EVENT_FAILED: macOS could not create the keyboard event"
+        case .cursorVisibilityUnavailable:
+            return "YLA_HOST_INPUT_CURSOR_VISIBILITY_UNAVAILABLE: macOS did not expose the cursor visibility state"
         }
     }
 }
@@ -48,11 +54,16 @@ private func boundedDelay(_ milliseconds: Int) -> Double {
     Double(max(100, min(10_000, milliseconds))) / 1_000
 }
 
-private func mouseButtonsReleased() -> Bool {
-    let source = CGEventSourceStateID.combinedSessionState
-    return !CGEventSource.buttonState(source, button: .left)
-        && !CGEventSource.buttonState(source, button: .right)
-        && !CGEventSource.buttonState(source, button: .center)
+private func cursorVisible() throws -> Bool {
+    guard let coreGraphics = dlopen(
+        "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics",
+        RTLD_LAZY
+    ),
+    let symbol = dlsym(coreGraphics, "CGCursorIsVisible") else {
+        throw HelperFailure.cursorVisibilityUnavailable
+    }
+    let function = unsafeBitCast(symbol, to: (@convention(c) () -> Int32).self)
+    return function() != 0
 }
 
 private func waitForPostEventPermission(timeoutMilliseconds: Int) -> Bool {
@@ -150,16 +161,20 @@ do {
     // cursor capture is meaningful only while its Android container owns the
     // active window; never send `~` when the already-foreground container is
     // demonstrably released, because `~` is a toggle and would recapture it.
-    let releasedBefore = mouseButtonsReleased()
-    if releasedBefore {
+    let cursorVisibleBefore = try cursorVisible()
+    // Do not decide immediately after the first state read. The container
+    // must settle for the same interval before the toggle decision.
+    Thread.sleep(forTimeInterval: foregroundDelay)
+    if cursorVisibleBefore {
         try emit(
             HelperResult(
                 processId: processId,
                 keyCode: keyCode,
                 bringToFront: bringToFront,
                 mouseReleased: true,
-                mouseButtonsReleasedBefore: true,
-                mouseButtonsReleasedAfter: true,
+                cursorVisibleBefore: true,
+                cursorVisibleAfter: true,
+                keyEventSent: false,
                 skippedBecauseAlreadyReleased: true
             ),
             arguments: arguments
@@ -185,14 +200,18 @@ do {
     keyUp.postToPid(processId)
     Thread.sleep(forTimeInterval: postKeyDelay)
 
-    let releasedAfter = mouseButtonsReleased()
+    let cursorVisibleAfter = try cursorVisible()
+    // Keep the final state visible to the container before the caller moves
+    // on or decides whether another guarded cycle is needed.
+    Thread.sleep(forTimeInterval: postKeyDelay)
     let result = HelperResult(
         processId: processId,
         keyCode: keyCode,
         bringToFront: bringToFront,
-        mouseReleased: releasedAfter,
-        mouseButtonsReleasedBefore: releasedBefore,
-        mouseButtonsReleasedAfter: releasedAfter,
+        mouseReleased: cursorVisibleAfter,
+        cursorVisibleBefore: cursorVisibleBefore,
+        cursorVisibleAfter: cursorVisibleAfter,
+        keyEventSent: true,
         skippedBecauseAlreadyReleased: false
     )
     try emit(result, arguments: arguments)

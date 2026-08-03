@@ -160,7 +160,7 @@ test("built-in camp flow releases host mouse before the first channel click and 
         order.push("release");
         return releases === 1
           ? { mouseReleased: false }
-          : { mouseReleased: true, mouseButtonsReleasedBefore: true, mouseButtonsReleasedAfter: true };
+          : { mouseReleased: true, cursorVisibleBefore: true, cursorVisibleAfter: true, keyEventSent: false };
       }
     }
   });
@@ -179,6 +179,37 @@ test("built-in camp flow releases host mouse before the first channel click and 
   });
   assert.equal(releases, 2);
   assert.deepEqual(order, ["release", "release", "channel"]);
+});
+
+test("built-in camp flow does not toggle host mouse again after a completed click", async () => {
+  let releases = 0;
+  const fixture = createUi({
+    transientCapture(label) {
+      if (label === "camp-panel-verify-2") {
+        return [
+          observation("营地", 150, 145),
+          observation("市长：雨梦", 260, 450)
+        ];
+      }
+      return [];
+    },
+    mumu: {
+      async releaseContainerMouseCapture() {
+        releases += 1;
+        return { mouseReleased: true, skippedBecauseAlreadyReleased: true };
+      }
+    }
+  });
+
+  await fixture.ui.openCampPanelViaChat({
+    attempts: 2,
+    hostMouseUnlockBeforeCampChannel: true,
+    chatDelayMs: 1,
+    channelDelayMs: 1,
+    verifySeconds: 1
+  });
+
+  assert.equal(releases, 1);
 });
 
 test("map preparation closes the camp page, collapses chat, then confirms HUD", async () => {
@@ -1043,6 +1074,20 @@ test("notice-board recovery accepts a stable fallback HUD without an impossible 
       Object.hasOwn(teleport.fallback, "readyRegion"),
       false
     );
+  }
+});
+
+test("city-hall data tasks use the same held-W approach fallback as patrol", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    const [teleport] = config.flows.teleportCityHall;
+    assert.equal(teleport.target.approachFallbackKey, "KEYCODE_W");
+    assert.equal(teleport.target.approachFallbackMaxRounds, 5);
+    assert.equal(teleport.target.approachFallbackHoldMs, 900);
+    assert.equal(teleport.target.approachFallbackIntervalMs, 2000);
+    assert.equal(teleport.fallback.name, "中心出入口");
   }
 });
 

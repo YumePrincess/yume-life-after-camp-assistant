@@ -193,10 +193,8 @@ export async function createPatrolTeam(context, signal) {
     screen.observations,
     controls
   );
-  // `~` 是切换开关，宿主机无法可靠读取游戏私有的鼠标锁定状态。
-  // 因此绝不在旗帜点击前盲发：先以画面响应验证。仅当已校准点击没有
-  // 打开预期界面时才发送，并在每次后立即重新识别；旗帜和创建入口共用
-  // 同一上限，避免两个阶段各自无限切换。
+  // `~` 是切换开关。旗帜/创建入口共用现有成员与科技的前台释放调用，
+  // 只在第一次实际点击前执行一次；后续 OCR 未确认不能再次切换 `~`。
   const hostMouseReleaseMaxAttempts = Math.max(
     1,
     Math.min(6, Number(controls.hostMouseUnlockAttempts) || 6)
@@ -226,7 +224,9 @@ export async function createPatrolTeam(context, signal) {
     await report(
       "info",
       "patrol_host_mouse_unlock_checked",
-      `~ 释放结果已复核：释放前鼠标按钮${unlock?.mouseButtonsReleasedBefore ? "已松开" : "仍有按下或不可读"}，释放后${unlock?.mouseButtonsReleasedAfter ? "已松开" : "仍有按下或不可读"}；随后重新识别旗帜/队伍入口`
+      unlock?.skippedBecauseAlreadyReleased
+        ? "鼠标指针已显示，未发送 ~；随后重新识别旗帜/队伍入口"
+        : `鼠标指针释放前${unlock?.cursorVisibleBefore ? "已显示" : "未显示"}；${unlock?.keyEventSent ? "已实际发送 ~" : "未发送 ~"}；释放后${unlock?.cursorVisibleAfter ? "已显示" : "仍未显示"}；随后重新识别旗帜/队伍入口`
     );
     if (!unlock?.mouseReleased) {
       throw new Error(
@@ -266,8 +266,16 @@ export async function createPatrolTeam(context, signal) {
         "PATROL_FLAG_NOT_VISIBLE: 未识别到 CtrlQ，且底部频道 HUD 锚点不足，禁止点击游戏世界"
       );
     }
-    // 首次直接点击旗帜并以队伍入口的画面变化验证；不能预先发送 `~`，
-    // 因为用户可能已经手动释放鼠标，重复发送会重新锁定它。
+    // 旗帜也是宿主机鼠标点击，必须先复用更新成员/科技相同的幂等释放
+    // 流程：先把 MuMu 安卓容器实例窗口置前并等待 3 秒，检查已释放则
+    // 跳过 `~`，未释放才发送一次 `~`，再等待 3 秒复核。首次旗帜 ADB
+    // 点击之前禁止先试点，否则容器仍捕获宿主机鼠标时点击一定会丢失。
+    if (controls.hostMouseUnlockBeforeCreate) {
+      await releaseHostMouseForRetry(
+        "patrol_flag_host_mouse_unlock_before_click",
+        "首次点击旗帜前先将 MuMu 安卓容器实例窗口置前并按统一规则检查/释放游戏鼠标"
+      );
+    }
     const flagClickAttempts = Math.max(
       2,
       Math.min(
@@ -285,19 +293,13 @@ export async function createPatrolTeam(context, signal) {
       attempt <= flagClickAttempts;
       attempt += 1
     ) {
-      if (attempt >= 2) {
-        await releaseHostMouseForRetry(
-          "patrol_flag_host_mouse_unlock_retry",
-          "首次旗帜点击后仍未识别到队伍入口；现在才发送 Esc 下方的 ~ 键释放游戏鼠标，再重试旗帜。每次恢复后都会先复核队伍入口，最多 6 次"
-        );
-      }
       await report(
         "info",
         attempt === 1
           ? "patrol_flag_click"
           : "patrol_flag_mouse_focus_retry",
         attempt === 1
-          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点，先直接用 ADB 鼠标点击旗帜 (${controls.flagButton.x},${controls.flagButton.y})；仅在画面未打开队伍入口时才补发一次 ~`
+          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点，并完成首次旗帜点击前的统一鼠标释放检查；现在用 ADB 鼠标点击旗帜 (${controls.flagButton.x},${controls.flagButton.y})`
           : `旗帜点击后仍未出现队伍菜单，已按需恢复鼠标并复核；再次点击同一旗帜坐标 (${controls.flagButton.x},${controls.flagButton.y})`
       );
       await tapPatrolMouse(ui, controls.flagButton, signal);
@@ -452,16 +454,10 @@ export async function createPatrolTeam(context, signal) {
       // 左侧菜单的 OCR 文本框会覆盖旗帜图标，文本中心并不等于可点击行中心。
       // 保持与营地频道相同的 ADB 鼠标点击，不能改为触屏点击。
       const createMenuPoint = controls.createMenuPoint || { x: 220, y: 180 };
-      if (attempt >= 2) {
-        await releaseHostMouseForRetry(
-          "patrol_create_host_mouse_unlock_retry",
-          "首次点击左侧“创建队伍”后仍未确认创建页；现按需发送 Esc 下方的 ~ 键后重试。与旗帜阶段共用最多 6 次的恢复上限"
-        );
-      }
       await report(
         attempt === 1 ? "info" : "warning",
         "patrol_create_menu_click",
-        `第 ${attempt}/${createMenuClickAttempts} 次：已在左侧区域精确识别“创建队伍”；沿用营地频道已验证的 ADB 鼠标点击已校准按钮中心 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})${hostMouseReleaseAttempts > 0 ? `；本流程已执行 ${hostMouseReleaseAttempts}/${hostMouseReleaseMaxAttempts} 次鼠标恢复，后续仅在未达上限时继续` : "；如本次未生效，将在下一次重试前按需释放鼠标"}`
+        `第 ${attempt}/${createMenuClickAttempts} 次：已在左侧区域精确识别“创建队伍”；沿用营地频道已验证的 ADB 鼠标点击已校准按钮中心 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})${hostMouseReleaseAttempts > 0 ? "；本流程已完成一次前置鼠标释放，后续 OCR 重试不再切换 ~" : ""}`
       );
       await tapPatrolMouse(ui, createMenuPoint, signal);
       await sleep(createMenuWaitMs, signal);
@@ -500,7 +496,7 @@ export async function createPatrolTeam(context, signal) {
         await report(
           "warning",
           "patrol_create_menu_click_unverified",
-          `第 ${attempt} 次点击左侧入口后仍未确认创建页面；仅在该入口仍可见时重试，旗帜与创建入口合计最多补发 ${hostMouseReleaseMaxAttempts} 次 ~`
+          `第 ${attempt} 次点击左侧入口后仍未确认创建页面；仅在该入口仍可见时重试，不再次切换已完成前置释放的 ~`
         );
       }
     }

@@ -141,6 +141,7 @@ export async function captureContribution(context, signal) {
   await context.ui.executeFlow("teleportCityHall", {}, signal);
   await context.ui.executeFlow("navigateToSandTable", {}, signal);
   await context.ui.executeFlow("openContribution", {}, signal);
+  await settleTableBeforeFirstScan(context, "contribution", signal);
   let rows = await capturePagedTable(
     context,
     "member-contribution",
@@ -156,6 +157,7 @@ export async function captureContribution(context, signal) {
     );
     await context.ui.tap({ x: 80, y: 1080 }, signal);
     await context.ui.executeFlow("openContribution", {}, signal);
+    await settleTableBeforeFirstScan(context, "contribution-retry", signal);
     rows = await capturePagedTable(
       context,
       "member-contribution-retry",
@@ -194,6 +196,7 @@ async function captureActivity(
     {},
     signal
   );
+  await settleTableBeforeFirstScan(context, "activity", signal);
   await ensureActivityDescending(context, signal);
   return capturePagedTable(
     context,
@@ -204,9 +207,27 @@ async function captureActivity(
   );
 }
 
+async function settleTableBeforeFirstScan(context, tableName, signal) {
+  const table = context.config.tables?.[tableName.startsWith("contribution") ? "contribution" : "activity"];
+  const configured = Number(table?.pagination?.initialSettleMs);
+  const settleMs = Math.max(3_000, Number.isFinite(configured) ? configured : 3_000);
+  await context.report(
+    "info",
+    "table_initial_settle",
+    `${tableName} 页面切换完成，固定等待 ${Math.round(settleMs / 1000)} 秒后扫描首个页面`,
+    { table: tableName, settleMs }
+  );
+  await (context.sleep || delay)(settleMs, signal);
+}
+
 async function ensureActivityDescending(context, signal) {
   const definition = context.config.tables.activity;
-  const before = await context.vision.capture("activity-sort-before", signal);
+  const before = await captureTableFrame(
+    context,
+    "activity-sort-before",
+    definition,
+    signal
+  );
   const beforeRows = await readActivityFrame(
     context,
     before,
@@ -225,8 +246,19 @@ async function ensureActivityDescending(context, signal) {
       definition.sortPoint || { x: 1630, y: 230 },
       signal
     );
+    await context.report(
+      "info",
+      "activity_sort_settle",
+      "在线情况已切换排序，固定等待 3 秒后再读取首个页面"
+    );
+    await (context.sleep || delay)(3_000, signal);
   }
-  const after = await context.vision.capture("activity-sort-after", signal);
+  const after = await captureTableFrame(
+    context,
+    "activity-sort-after",
+    definition,
+    signal
+  );
   const afterValues = (await readActivityFrame(
     context,
     after,
@@ -244,6 +276,13 @@ async function ensureActivityDescending(context, signal) {
   ) {
     throw new Error("在线情况未成功切换为最久离线优先");
   }
+}
+
+async function captureTableFrame(context, label, definition, signal) {
+  if (typeof context.vision.captureTable === "function") {
+    return context.vision.captureTable(label, definition, signal);
+  }
+  return context.vision.capture(label, signal);
 }
 
 async function readActivityFrame(
@@ -399,7 +438,12 @@ export async function capturePagedTable(
         readAttempt === 1
           ? `${label}-${page + 1}`
           : `${label}-${page + 1}-retry-${readAttempt}`;
-      const attemptFrame = await vision.capture(attemptLabel, signal);
+      const attemptFrame = await captureTableFrame(
+        context,
+        attemptLabel,
+        definition,
+        signal
+      );
       // The fast native parser is only available for definitions carrying
       // calibrated regions/columns. Test doubles and plugin-defined tables
       // may intentionally provide capture observations without that layout;
@@ -611,12 +655,13 @@ export async function capturePagedTable(
       definition.pagination.durationMs,
       signal
     );
-    const settleAfterSwipeMs = Math.max(
-      0,
-      Number(definition.pagination.settleAfterSwipeMs) || 0
-    );
+    const fixedPageSettle =
+      label.startsWith("member-contribution") || label.startsWith("member-activity");
+    const settleAfterSwipeMs = fixedPageSettle
+      ? Math.max(3_000, Number(definition.pagination.settleAfterSwipeMs) || 3_000)
+      : Math.max(0, Number(definition.pagination.settleAfterSwipeMs) || 0);
     if (settleAfterSwipeMs > 0) {
-      await delay(settleAfterSwipeMs, signal);
+      await (context.sleep || delay)(settleAfterSwipeMs, signal);
     } else {
       await ui.afterAction(signal);
     }

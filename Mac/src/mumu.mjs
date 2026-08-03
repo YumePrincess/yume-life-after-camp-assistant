@@ -167,13 +167,18 @@ export class MumuLifecycle {
       0,
       Math.min(255, Number(controls.keyCode) || 50)
     );
+    // `~` is a toggle. The container must be the active window before the
+    // state check, and MuMu needs a full settling period after either the
+    // activation or the toggle before the second state check is meaningful.
+    // Keep the two-second floor here as well as in the bundled config so an
+    // older user config cannot bypass the required foreground/check spacing.
     const foregroundSettleSeconds = Math.max(
-      0.1,
-      Math.min(10, Number(controls.foregroundSettleMs) / 1000 || 4)
+      2,
+      Math.min(10, Number(controls.foregroundSettleMs) / 1000 || 2)
     );
     const postKeySettleSeconds = Math.max(
-      0.1,
-      Math.min(10, Number(controls.postKeySettleMs) / 1000 || 4)
+      2,
+      Math.min(10, Number(controls.postKeySettleMs) / 1000 || 2)
     );
     const configuredHelper = String(controls.helperBinary || "").trim();
     const helperApp = hostInputHelperAppPath(
@@ -219,11 +224,8 @@ export class MumuLifecycle {
         signal
       );
       if (response.error) throw new Error(response.error);
-      const mouseButtonsReleasedAfter = await this.hostMouseButtonsReleased(
-        signal
-      );
-      const mouseButtonsReleasedBefore =
-        response.mouseButtonsReleasedBefore === true;
+      const cursorVisibleBefore = response.cursorVisibleBefore === true;
+      const cursorVisibleAfter = response.cursorVisibleAfter === true;
       return {
         instanceIndex: instance.index,
         processId,
@@ -232,10 +234,10 @@ export class MumuLifecycle {
         foregroundSettleSeconds,
         postKeySettleSeconds,
         helperMouseReleased: response.mouseReleased === true,
-        mouseReleased:
-          response.mouseReleased === true && mouseButtonsReleasedAfter === true,
-        mouseButtonsReleasedBefore,
-        mouseButtonsReleasedAfter,
+        mouseReleased: response.mouseReleased === true && cursorVisibleAfter,
+        cursorVisibleBefore,
+        cursorVisibleAfter,
+        keyEventSent: response.keyEventSent === true,
         skippedBecauseAlreadyReleased:
           response.skippedBecauseAlreadyReleased === true,
         permissionOwner: "Yume Life After Mac Agent Input Helper"
@@ -256,30 +258,6 @@ export class MumuLifecycle {
       throw error;
     } finally {
       await rm(resultPath, { force: true }).catch(() => undefined);
-    }
-  }
-
-  async hostMouseButtonsReleased(signal) {
-    // macOS does not expose an app's private cursor-capture state. The safe,
-    // observable condition before an ADB click is that no global mouse button
-    // remains pressed; this check deliberately treats an unavailable result as
-    // not released so the patrol workflow does not click blindly.
-    const script = [
-      "ObjC.import('ApplicationServices');",
-      "const source = $.kCGEventSourceStateCombinedSessionState;",
-      "const pressed = $.CGEventSourceButtonState(source, $.kCGMouseButtonLeft) || $.CGEventSourceButtonState(source, $.kCGMouseButtonRight) || $.CGEventSourceButtonState(source, $.kCGMouseButtonCenter);",
-      "JSON.stringify({ released: !pressed });"
-    ].join("\n");
-    try {
-      const result = await runFile(
-        "/usr/bin/osascript",
-        ["-l", "JavaScript", "-e", script],
-        { timeoutMs: 5_000, signal }
-      );
-      return JSON.parse(String(result.stdout || "{}")).released === true;
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      return false;
     }
   }
 

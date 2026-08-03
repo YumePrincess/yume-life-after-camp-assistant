@@ -131,6 +131,39 @@ actor RuntimeService {
                 }
             }
             object["vision"] = vision
+            var mumu = object["mumu"] as? [String: Any] ?? [:]
+            var hostMouseUnlock = mumu["hostMouseUnlock"] as? [String: Any] ?? [:]
+            for key in ["foregroundSettleMs", "postKeySettleMs"] {
+                if let settle = hostMouseUnlock[key] as? NSNumber,
+                   settle.doubleValue != 2_000 {
+                    hostMouseUnlock[key] = 2_000
+                    changed = true
+                }
+            }
+            if !hostMouseUnlock.isEmpty {
+                mumu["hostMouseUnlock"] = hostMouseUnlock
+                object["mumu"] = mumu
+            }
+            var tables = object["tables"] as? [String: Any] ?? [:]
+            for tableName in ["contribution", "activity"] {
+                var table = tables[tableName] as? [String: Any] ?? [:]
+                if table["ocrMinimumConfidence"] == nil {
+                    table["ocrMinimumConfidence"] = 0.25
+                    changed = true
+                }
+                var pagination = table["pagination"] as? [String: Any] ?? [:]
+                if let settle = pagination["initialSettleMs"] as? NSNumber,
+                   settle.doubleValue < 3_000 {
+                    pagination["initialSettleMs"] = 3_000
+                    changed = true
+                } else if pagination["initialSettleMs"] == nil {
+                    pagination["initialSettleMs"] = 3_000
+                    changed = true
+                }
+                table["pagination"] = pagination
+                tables[tableName] = table
+            }
+            object["tables"] = tables
             if changed {
                 let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
                 try data.write(to: config, options: .atomic)

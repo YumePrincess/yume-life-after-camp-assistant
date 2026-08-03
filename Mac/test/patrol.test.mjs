@@ -205,7 +205,7 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
   assert.deepEqual(taps[0], { x: 48, y: 327 });
 });
 
-test("patrol create-menu uses bounded late host mouse release retries after its verified entry click fails", async () => {
+test("patrol create-menu does not toggle host mouse again after its verified entry click fails", async () => {
   let mouseTapCount = 0;
   let hostUnlockCount = 0;
   const config = patrolConfig();
@@ -252,14 +252,14 @@ test("patrol create-menu uses bounded late host mouse release retries after its 
     createPatrolTeam(context),
     /PATROL_TEAM_CREATOR_DID_NOT_OPEN/
   );
-  // The initial capture already has the flag menu open, so no pre-flag release is
-  // permitted. Each failed create-entry retry may use the shared late recovery
-  // path, but never before the first verified click and never beyond its limit.
+  // The initial capture already has the flag menu open, so no pre-flag release
+  // is needed. OCR verification failures must not toggle `~` again after the
+  // first guarded release path has already completed.
   assert.equal(mouseTapCount, 6);
-  assert.equal(hostUnlockCount, 5);
+  assert.equal(hostUnlockCount, 0);
 });
 
-test("patrol flag opens directly without toggling host mouse release", async () => {
+test("patrol flag releases the host mouse before its first ADB click", async () => {
   let hostUnlockCount = 0;
   const config = patrolConfig();
   config.patrolTeamUi.hostMouseUnlockBeforeCreate = true;
@@ -294,7 +294,63 @@ test("patrol flag opens directly without toggling host mouse release", async () 
   };
 
   await createPatrolTeam(context);
-  assert.equal(hostUnlockCount, 0);
+  assert.equal(hostUnlockCount, 1);
+});
+
+test("patrol flag recovery requests MuMu foreground before the idempotent release", async () => {
+  const unlockOptions = [];
+  let menuReads = 0;
+  const config = patrolConfig();
+  config.patrolTeamUi.hostMouseUnlockBeforeCreate = true;
+  const context = {
+    config,
+    ui: { async tap() {} },
+    adb: { async key() {} },
+    mumu: {
+      async releaseContainerMouseCapture(_signal, options) {
+        unlockOptions.push(options);
+        return {
+          mouseReleased: true,
+          cursorVisibleBefore: false,
+          cursorVisibleAfter: true,
+          keyEventSent: true,
+          foregroundWakeup: { settleSeconds: 3 }
+        };
+      }
+    },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return { path: "hud.png", observations: [observation("CtrlQ", 20, 300)] };
+        }
+        if (label.startsWith("patrol-team-menu-open")) {
+          menuReads += 1;
+          return {
+            path: "menu.png",
+            observations: menuReads === 1 ? [] : [observation("创建队伍", 120, 160)]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: observationsFor(label)
+        };
+      },
+      async captureAccurateTransient() {
+        return { path: null, observations: [] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await createPatrolTeam(context);
+
+  assert.deepEqual(unlockOptions, [{ bringToFront: true }]);
 });
 
 test("an existing patrol team is recognized without toggling the flag", async () => {

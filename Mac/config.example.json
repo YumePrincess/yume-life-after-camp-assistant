@@ -27,8 +27,8 @@
       "enabled": true,
       "keyCode": 50,
       "permissionTimeoutSeconds": 120,
-      "foregroundSettleMs": 1200,
-      "postKeySettleMs": 800
+      "foregroundSettleMs": 2000,
+      "postKeySettleMs": 2000
     },
     "hardRestartDelaySeconds": 4,
     "returnToCenterAfterTask": true,
@@ -282,6 +282,7 @@
   "tables": {
     "contribution": {
       "region": { "left": 1220, "top": 270, "right": 1900, "bottom": 1000 },
+      "ocrMinimumConfidence": 0.25,
       "minimumCompleteRows": 100,
       "columns": [
         { "key": "name", "left": 0, "right": 0.32 },
@@ -294,6 +295,7 @@
         "from": { "x": 1550, "y": 900 },
         "to": { "x": 1550, "y": 350 },
         "durationMs": 800,
+        "initialSettleMs": 3000,
         "settleAfterSwipeMs": 3000,
         "maxPages": 11,
         "stopAfterStagnantPages": 2
@@ -330,6 +332,7 @@
     },
     "activity": {
       "region": { "left": 1220, "top": 245, "right": 1645, "bottom": 975 },
+      "ocrMinimumConfidence": 0.25,
       "sortPoint": { "x": 1630, "y": 230 },
       "columns": [
         { "key": "name", "left": 0, "right": 0.58 },
@@ -340,6 +343,7 @@
         "from": { "x": 1550, "y": 900 },
         "to": { "x": 1550, "y": 350 },
         "durationMs": 800,
+        "initialSettleMs": 3000,
         "settleAfterSwipeMs": 3000,
         "maxPages": 11,
         "stopAfterStagnantPages": 2

@@ -16,6 +16,11 @@ test("contribution and inactivity scans wait three seconds after paging and stop
     for (const table of ["contribution", "activity"]) {
       assert.equal(config.tables[table].pagination.maxPages, 11);
       assert.equal(
+        config.tables[table].pagination.initialSettleMs,
+        3000
+      );
+      assert.equal(config.tables[table].ocrMinimumConfidence, 0.25);
+      assert.equal(
         config.tables[table].pagination.settleAfterSwipeMs,
         3000
       );

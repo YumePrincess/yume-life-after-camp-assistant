@@ -1292,6 +1292,13 @@ export class GameUi {
   async openCampPanelViaChat(action, signal) {
     await this.closeMapBeforeCampPanel(action, signal);
     const attempts = Math.max(1, Math.min(6, Number(action.attempts) || 6));
+    // The host-side `~` key is a toggle. Release it before the first
+    // left-bottom camp click, then never send it again merely because OCR
+    // verification was slow or inconclusive. A second release is allowed
+    // only when the click sequence itself throws or the previous release was
+    // not confirmed.
+    let hostMouseUnlockNeeded =
+      action.hostMouseUnlockBeforeCampChannel === true;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       if (signal?.aborted) throw signal.reason || new Error("Interrupted");
       const before = await this.vision.captureTransient(
@@ -1318,7 +1325,7 @@ export class GameUi {
       const mouseReleaseRequired =
         action.hostMouseUnlockBeforeCampChannel === true ||
         action.hostMouseUnlockOnCampChannelRetry === true;
-      if (mouseReleaseRequired) {
+      if (mouseReleaseRequired && hostMouseUnlockNeeded) {
         const released = await this.releaseHostMouseForCampChannelRetry(
           action,
           attempt,
@@ -1333,17 +1340,30 @@ export class GameUi {
           }
           continue;
         }
+        hostMouseUnlockNeeded = false;
       }
       await this.report(
         "info",
         "open_camp_panel_attempt",
         `通过聊天营地频道打开营地界面（${attempt}/${attempts}）`
       );
-      await this.hudTap(action.chatButton || { x: 250, y: 1060 }, signal);
-      await delay(action.chatDelayMs || 500, signal);
-      await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
-      await delay(action.channelDelayMs || 500, signal);
-      await this.tap(action.campIconButton || { x: 980, y: 65 }, signal);
+      try {
+        await this.hudTap(action.chatButton || { x: 250, y: 1060 }, signal);
+        await delay(action.chatDelayMs || 500, signal);
+        await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
+        await delay(action.channelDelayMs || 500, signal);
+        await this.tap(action.campIconButton || { x: 980, y: 65 }, signal);
+      } catch (error) {
+        hostMouseUnlockNeeded = true;
+        await this.report(
+          "warning",
+          "camp_channel_click_failed",
+          `第 ${attempt}/${attempts} 次左下角营地入口点击失败；下一次重试前才重新执行 ~ 释放`,
+          { reason: error?.message || String(error) }
+        );
+        if (attempt >= attempts) throw error;
+        continue;
+      }
 
       const verifyDeadline =
         Date.now() + Math.max(1_500, Number(action.verifySeconds || 5) * 1000);
@@ -1377,6 +1397,16 @@ export class GameUi {
         }
         await delay(350, signal);
       }
+      // Legacy retry-only callers deliberately request a fresh release after
+      // an unverified camp-channel attempt. Built-in member/technology flows
+      // set hostMouseUnlockBeforeCampChannel and do not toggle `~` again just
+      // because OCR verification was inconclusive after a completed click.
+      if (
+        action.hostMouseUnlockBeforeCampChannel !== true &&
+        action.hostMouseUnlockOnCampChannelRetry === true
+      ) {
+        hostMouseUnlockNeeded = true;
+      }
       await this.adb.key(4, signal).catch(() => undefined);
       await delay(350, signal);
     }
@@ -1389,15 +1419,6 @@ export class GameUi {
     if (
       action.hostMouseUnlockBeforeCampChannel !== true &&
       action.hostMouseUnlockOnCampChannelRetry !== true
-    ) {
-      return true;
-    }
-    // Preserve the legacy opt-in semantics for external/custom flows. The
-    // built-in technology/member flow uses the new flag and releases before
-    // its first channel click.
-    if (
-      action.hostMouseUnlockBeforeCampChannel !== true &&
-      attempt === 1
     ) {
       return true;
     }
@@ -1430,8 +1451,8 @@ export class GameUi {
       "info",
       "camp_channel_host_mouse_unlock_checked",
       result?.skippedBecauseAlreadyReleased
-        ? `第 ${attempt}/${attempts} 次检查确认鼠标已释放，不发送 ~，直接继续营地频道流程`
-        : `第 ${attempt}/${attempts} 次 ~ 释放结果已复核：释放前鼠标按钮${result?.mouseButtonsReleasedBefore ? "已松开" : "仍有按下或不可读"}，释放后${result?.mouseButtonsReleasedAfter ? "已松开" : "仍有按下或不可读"}；继续用营地页面 OCR 验证`
+        ? `第 ${attempt}/${attempts} 次检查确认鼠标指针已显示，未发送 ~，直接继续营地频道流程`
+        : `第 ${attempt}/${attempts} 次鼠标指针检查：释放前${result?.cursorVisibleBefore ? "已显示" : "未显示"}；${result?.keyEventSent ? "已实际发送 ~" : "未发送 ~"}；释放后${result?.cursorVisibleAfter ? "已显示" : "仍未显示"}，继续用营地页面 OCR 验证`
     );
     if (!result?.mouseReleased) {
       await this.report(

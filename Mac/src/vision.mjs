@@ -113,6 +113,16 @@ export class Vision {
     return { path, observations: [] };
   }
 
+  async captureTable(label, definition, signal) {
+    const configuredMinimum = Number(definition?.ocrMinimumConfidence);
+    const minimumConfidence = Number.isFinite(configuredMinimum)
+      ? Math.max(0.1, Math.min(0.6, configuredMinimum))
+      : 0.25;
+    return this.#capture(label, signal, false, this.config.vision.mode, {
+      minimumConfidence
+    });
+  }
+
   async startAdvisor(signal) {
     return this.advisor.start(signal);
   }
@@ -714,7 +724,13 @@ export class Vision {
     }
   }
 
-  async #capture(label, signal, transient, mode = this.config.vision.mode) {
+  async #capture(
+    label,
+    signal,
+    transient,
+    mode = this.config.vision.mode,
+    options = {}
+  ) {
     await mkdir(this.snapshotDir, { recursive: true });
     const stamp = new Date().toISOString().replaceAll(":", "-");
     const path = resolve(
@@ -742,17 +758,19 @@ export class Vision {
           }
         );
         const minimumConfidence =
-          mode === "accurate"
-            ? Math.max(
-                0.1,
-                Number(
-                  this.config.vision.accurateMinimumConfidence
-                ) || Math.min(
-                  0.25,
-                  Number(this.config.vision.minimumConfidence) || 0.35
+          Number.isFinite(Number(options.minimumConfidence))
+            ? Number(options.minimumConfidence)
+            : mode === "accurate"
+              ? Math.max(
+                  0.1,
+                  Number(
+                    this.config.vision.accurateMinimumConfidence
+                  ) || Math.min(
+                    0.25,
+                    Number(this.config.vision.minimumConfidence) || 0.35
+                  )
                 )
-              )
-            : Number(this.config.vision.minimumConfidence) || 0.35;
+              : Number(this.config.vision.minimumConfidence) || 0.35;
         observations = JSON.parse(result.stdout).filter(
           (item) => item.confidence >= minimumConfidence
         );
