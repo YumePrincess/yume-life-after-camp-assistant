@@ -115,6 +115,22 @@ actor RuntimeService {
                 object["debug"] = debug
                 changed = true
             }
+            var vision = object["vision"] as? [String: Any] ?? [:]
+            if vision["prewarmEnabled"] == nil {
+                vision["prewarmEnabled"] = true
+                changed = true
+            }
+            if vision["prewarmTimeoutSeconds"] == nil {
+                vision["prewarmTimeoutSeconds"] = 45
+                changed = true
+            }
+            for key in ["fastTimeoutSeconds", "accurateTimeoutSeconds", "memberTableTimeoutSeconds"] {
+                if let timeout = vision[key] as? NSNumber, timeout.doubleValue <= 2 {
+                    vision[key] = 3
+                    changed = true
+                }
+            }
+            object["vision"] = vision
             if changed {
                 let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
                 try data.write(to: config, options: .atomic)

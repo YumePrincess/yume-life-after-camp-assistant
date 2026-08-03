@@ -29,7 +29,7 @@
     <key>CFBundleShortVersionString</key>
     <string>27.0.0</string>
     <key>CFBundleVersion</key>
-    <string>27001</string>
+    <string>27002</string>
     <key>LSArchitecturePriority</key>
     <array><string>arm64</string></array>
     <key>LSMinimumSystemVersion</key>

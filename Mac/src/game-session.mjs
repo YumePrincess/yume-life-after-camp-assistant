@@ -250,6 +250,25 @@ async function startAndEnterGame(context, signal) {
   const { adb, ui, vision, report, config } = context;
   await report("info", "game_start", "正在启动明日之后");
   await adb.launchGame();
+  if (typeof vision.prewarm === "function") {
+    await report("info", "ocr_prewarm", "正在预热本机 OCR（首次启动可能较慢）");
+    try {
+      const result = await vision.prewarm(signal);
+      await report(
+        "info",
+        "ocr_prewarm_done",
+        `本机 OCR 预热完成（${result.elapsedMs}ms），后续 fast OCR 进入低延迟模式`
+      );
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      await report(
+        "warning",
+        "ocr_prewarm_failed",
+        "本机 OCR 预热失败，将继续尝试正常 OCR",
+        { reason: error.message }
+      );
+    }
+  }
   await waitForGameReady(context, signal);
 }
 

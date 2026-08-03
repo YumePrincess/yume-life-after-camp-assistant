@@ -13,6 +13,7 @@ export class Vision {
     this.snapshotDir = resolve(MAC_ROOT, "snapshots");
     this.taskPaths = new Set();
     this.ocrModeHealth = new Map();
+    this.ocrPrewarmPromise = null;
     this.advisor = new LocalVisionAdvisor(config.localVisionModel);
   }
 
@@ -45,6 +46,43 @@ export class Vision {
 
   beginTask() {
     this.taskPaths.clear();
+  }
+
+  async prewarm(signal) {
+    if (this.config.vision?.prewarmEnabled === false) {
+      return { skipped: true, elapsedMs: 0 };
+    }
+    if (!this.ocrPrewarmPromise) {
+      this.ocrPrewarmPromise = this.#prewarm(signal).catch((error) => {
+        this.ocrPrewarmPromise = null;
+        throw error;
+      });
+    }
+    return this.ocrPrewarmPromise;
+  }
+
+  async #prewarm(signal) {
+    const startedAt = Date.now();
+    const frame = await this.captureSource("ocr-prewarm", signal);
+    try {
+      await runFile(
+        this.config.vision.binary,
+        [frame.path, "fast"],
+        {
+          timeoutMs:
+            Math.max(
+              1,
+              Number(this.config.vision.prewarmTimeoutSeconds) || 45
+            ) * 1000,
+          signal
+        }
+      );
+      this.#recordOcrSuccess("fast");
+      return { skipped: false, elapsedMs: Date.now() - startedAt };
+    } finally {
+      this.taskPaths.delete(frame.path);
+      await rm(frame.path, { force: true });
+    }
   }
 
   async capture(label = "screen", signal) {
