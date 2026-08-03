@@ -54,19 +54,13 @@ func effectiveRecognitionMode(_ requestedMode: String) -> String {
 }
 
 func configureLegacyRequest(_ request: VNRecognizeTextRequest, recognitionMode: String) throws {
-    if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 {
-        // Explicitly select the oldest supported detector revision. macOS 27
-        // crashes in the default/latest fast detector before returning any
-        // observations; effectiveRecognitionMode routes the public fast mode
-        // to this stable detector on that OS.
-        request.revision = 1
-    }
     request.recognitionLevel = recognitionMode == "fast" ? .fast : .accurate
-    if recognitionMode != "fast" {
-        let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP"]
-        let supportedLanguages = try request.supportedRecognitionLanguages()
-        request.recognitionLanguages = preferredLanguages.filter(supportedLanguages.contains)
-    }
+    // Always constrain the recognizer to the game's languages. Leaving this
+    // unset makes macOS 27's compatibility path auto-detect Latin/Cyrillic
+    // glyphs for Chinese HUD text and return plausible-looking gibberish.
+    let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP"]
+    let supportedLanguages = try request.supportedRecognitionLanguages()
+    request.recognitionLanguages = preferredLanguages.filter(supportedLanguages.contains)
     // Game UI consists of short labels and numbers. Language correction is
     // expensive on full-resolution emulator frames and can stall for tens of
     // seconds without improving these tokens.
@@ -132,14 +126,11 @@ func modernRecognize(
 ) async throws -> [OCRObservation] {
     var request = RecognizeTextRequest(.revision3)
     request.recognitionLevel = recognitionMode == "fast" ? .fast : .accurate
-    let osVersion = ProcessInfo.processInfo.operatingSystemVersion
-    if recognitionMode != "fast" && osVersion.majorVersion != 27 {
-        let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US"]
-            .map(Locale.Language.init(identifier:))
-        let supportedLanguages = Set(request.supportedRecognitionLanguages)
-        request.recognitionLanguages = preferredLanguages.filter(supportedLanguages.contains)
-    }
-    request.automaticallyDetectsLanguage = osVersion.majorVersion == 27
+    let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP"]
+        .map(Locale.Language.init(identifier:))
+    let supportedLanguages = Set(request.supportedRecognitionLanguages)
+    request.recognitionLanguages = preferredLanguages.filter(supportedLanguages.contains)
+    request.automaticallyDetectsLanguage = false
     request.usesLanguageCorrection = false
     request.minimumTextHeightFraction = 0.008
 
