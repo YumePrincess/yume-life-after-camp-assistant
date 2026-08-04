@@ -6,7 +6,7 @@ import {
   waitForGameReady
 } from "../src/game-session.mjs";
 
-test("initial MuMu startup remains protected for the full configured window", () => {
+test("initial MuMu container startup remains protected for the full configured window", () => {
   assert.equal(shouldHoldInitialStartup(false, 300_000, 299_999), true);
   assert.equal(shouldHoldInitialStartup(false, 300_000, 300_000), false);
   assert.equal(shouldHoldInitialStartup(true, 300_000, 1), false);

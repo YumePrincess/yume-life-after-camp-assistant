@@ -22,9 +22,8 @@ export async function withGameSession(
     300,
     Number(config.mumu.startupProtectionSeconds) || 300
   );
-  const startupProtectionDeadline =
-    Date.now() + startupProtectionSeconds * 1000;
-  let managerReady = false;
+  let startupProtectionDeadline = 0;
+  let containerReady = false;
   let startupWaitReportAt = 0;
   const startupState = {
     launched: false,
@@ -54,12 +53,19 @@ export async function withGameSession(
     }
     await report("info", "emulator_start", "正在后台启动 MuMu 模拟器");
     started = true;
+    // Start the protection window immediately before the container launch;
+    // local-model startup must not consume the container's 300-second budget.
+    startupProtectionDeadline =
+      Date.now() + startupProtectionSeconds * 1000;
     let restartCount = 0;
     while (true) {
       try {
-        if (!managerReady) {
+        if (!containerReady) {
           await mumu.ensureStarted(signal);
-          managerReady = true;
+          // The protection window is only for MuMu/Android container startup.
+          // Once ensureStarted has returned, the ADB device is ready and the
+          // game must proceed immediately through launch, OCR warmup and login.
+          containerReady = true;
         }
         await startAndEnterGame(context, signal, startupState);
         gameReady = true;
@@ -67,7 +73,7 @@ export async function withGameSession(
         return cleanupResult;
       } catch (error) {
         if (signal.aborted) throw signal.reason || error;
-        if (shouldHoldInitialStartup(gameReady, startupProtectionDeadline)) {
+        if (shouldHoldInitialStartup(containerReady, startupProtectionDeadline)) {
           const now = Date.now();
           if (now - startupWaitReportAt >= 15_000) {
             startupWaitReportAt = now;
@@ -82,7 +88,7 @@ export async function withGameSession(
             await report(
               "warning",
               "emulator_start_waiting",
-              `MuMu/游戏首次启动仍在加载，已等待约 ${waitedSeconds} 秒；首次启动保护共 ${startupProtectionSeconds} 秒，保护期内不重启游戏或 Android 容器`,
+              `MuMu Android 容器首次启动仍在加载，已等待约 ${waitedSeconds} 秒；首次容器启动保护共 ${startupProtectionSeconds} 秒，保护期内不重启容器`,
               { waitedSeconds, startupProtectionSeconds, reason: error.message }
             ).catch(() => undefined);
           }
@@ -121,7 +127,7 @@ export async function withGameSession(
         }
         if (!canRestart) throw error;
         const startupProtectionExpired =
-          !gameReady && Date.now() >= startupProtectionDeadline;
+          !containerReady && Date.now() >= startupProtectionDeadline;
         const nextRestartCount = restartCount + 1;
         const hardRestart =
           startupProtectionExpired ||
@@ -155,6 +161,7 @@ export async function withGameSession(
           }
           startupState.launched = false;
           startupState.prewarmed = false;
+          containerReady = true;
         } else {
           await report(
             "warning",
@@ -1454,9 +1461,9 @@ export function isRecoverableGameFailure(error, health, deviceState = "device") 
 }
 
 export function shouldHoldInitialStartup(
-  gameReady,
+  containerReady,
   startupProtectionDeadline,
   now = Date.now()
 ) {
-  return gameReady !== true && now < startupProtectionDeadline;
+  return containerReady !== true && now < startupProtectionDeadline;
 }
