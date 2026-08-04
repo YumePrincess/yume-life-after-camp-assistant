@@ -61,9 +61,21 @@ export async function withGameSession(
           error: healthError.message
         }));
         const canRestart =
+          !context.suppressScheduledRetry &&
           watchdog.enabled &&
           restartCount < watchdog.maxRestarts &&
           isRecoverableGameFailure(error, health, deviceState);
+        if (!canRestart && context.suppressScheduledRetry && !signal.aborted) {
+          await report(
+            "warning",
+            "task_cleanup_error_no_restart",
+            "任务已进入巡逻结束收尾阶段；本次收尾错误不会触发失败重启或新的定时任务尝试",
+            {
+              reason: error.message,
+              cleanupReason: context.suppressScheduledRetryReason || "task_cleanup"
+            }
+          ).catch(() => undefined);
+        }
         if (!canRestart) throw error;
         const hardRestart =
           deviceState !== "device" ||
@@ -249,6 +261,7 @@ async function returnToCenterExit(context) {
 async function startAndEnterGame(context, signal) {
   const { adb, ui, vision, report, config } = context;
   await report("info", "game_start", "正在启动明日之后");
+  ui.resetGameMouseState?.();
   await adb.launchGame();
   if (typeof vision.prewarm === "function") {
     await report("info", "ocr_prewarm", "正在预热本机 OCR（首次启动可能较慢）");

@@ -8,8 +8,8 @@ export class AdbClient {
     this.binary = config.adb.binary;
     this.serial = config.adb.serial;
     this.rawQueue = Promise.resolve();
-    this.mouseInputDevice = null;
     this.keyboardInputDevice = null;
+    this.gameMouseReady = false;
   }
 
   setSerial(serial) {
@@ -162,6 +162,22 @@ export class AdbClient {
     }
   }
 
+  resetGameMouseState() {
+    this.gameMouseReady = false;
+  }
+
+  async prepareGameMouseForClick(signal, { force = false } = {}) {
+    if (this.gameMouseReady && !force) return false;
+    const toggleKey = this.config.adb.gameMouseToggleKey || "KEYCODE_GRAVE";
+    await this.key(toggleKey, signal);
+    await delay(
+      Math.max(100, Number(this.config.adb.gameMouseToggleSettleMs) || 1_000),
+      signal
+    );
+    this.gameMouseReady = true;
+    return true;
+  }
+
   async touchTap(x, y, signal) {
     const args = ["input", "tap", Math.round(x), Math.round(y)];
     try {
@@ -278,45 +294,6 @@ export class AdbClient {
       if (isInputInjectionPermissionError(error)) return false;
       throw error;
     }
-  }
-
-  async releaseGameMouseCapture(signal) {
-    const device = await this.resolveMouseInputDevice(signal);
-    const events = [
-      ["1", "273", "1"],
-      ["0", "0", "0"],
-      ["1", "273", "0"],
-      ["0", "0", "0"]
-    ];
-    for (const event of events) {
-      await this.shell(["sendevent", device, ...event], {
-        signal,
-        timeoutMs: 5_000
-      });
-    }
-    await this.releaseMouseButton(undefined, undefined, signal);
-  }
-
-  async resolveMouseInputDevice(signal) {
-    if (this.mouseInputDevice) return this.mouseInputDevice;
-    const result = await this.shell(["getevent", "-pl"], {
-      signal,
-      timeoutMs: 8_000
-    });
-    const blocks = String(result.stdout || "").split(/(?=add device \d+: )/);
-    const mouse = blocks.find(
-      (block) =>
-        /add device \d+: \/dev\/input\/event\d+/.test(block) &&
-        /\bBTN_RIGHT\b/.test(block)
-    );
-    const match = mouse?.match(/add device \d+: (\/dev\/input\/event\d+)/);
-    if (!match) {
-      throw new Error(
-        "ADB_MOUSE_RIGHT_DEVICE_NOT_FOUND: 容器输入设备未提供 BTN_RIGHT"
-      );
-    }
-    this.mouseInputDevice = match[1];
-    return this.mouseInputDevice;
   }
 
   async mouseSwipe(from, to, durationMs = 500, signal) {

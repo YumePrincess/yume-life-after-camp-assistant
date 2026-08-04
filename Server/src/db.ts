@@ -1543,9 +1543,20 @@ export async function completeCommand(
     completedRun?.trigger_mode === "scheduled"
   ) {
     const detail = safeJsonObject(completedRun.detail_json);
+    const suppressScheduledRetry = detail.suppressScheduledRetry === true;
     const retryLimit = Math.max(0, Math.min(6, Number(detail.scheduledRetryLimit) || 0));
     const retryAttempt = Math.max(0, Number(detail.scheduledRetryAttempt) || 0);
-    if (retryAttempt < retryLimit) {
+    if (suppressScheduledRetry) {
+      await appendRunEvent(env, {
+        runId: completedRun.id,
+        level: "warning",
+        step: "scheduled_retry_suppressed",
+        message: "任务已进入结束收尾阶段；本次收尾错误不再按失败重试次数重新启动任务",
+        detail: {
+          reason: detail.retrySuppressionReason || "task_cleanup"
+        }
+      });
+    } else if (retryAttempt < retryLimit) {
       const nextAttempt = retryAttempt + 1;
       const retryDetail = {
         ...detail,

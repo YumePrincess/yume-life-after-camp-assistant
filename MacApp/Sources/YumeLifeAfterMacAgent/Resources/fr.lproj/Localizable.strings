@@ -140,13 +140,6 @@
 "Device ID" = "ID de l’appareil";
 "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "Saisissez le site HTTPS public, un nom d’appareil et le nom exact du conteneur MuMu. L’ID stable de l’appareil est généré automatiquement.";
 "Enter a valid Workers URL, device name and MuMu container name." = "Saisissez une URL Workers, un nom d’appareil et un nom de conteneur MuMu valides.";
-"MuMu input permission" = "Autorisation d’entrée MuMu";
-"The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient." = "L’assistant de saisie en arrière-plan requiert sa propre autorisation Accessibilité pour libérer la souris de MuMu. L’autorisation accordée uniquement à l’App principale ne suffit pas.";
-"Request input permission" = "Demander l’autorisation d’entrée";
-"Waiting for input permission…" = "En attente de l’autorisation d’entrée…";
-"Input helper permission granted" = "Autorisation de l’assistant de saisie accordée";
-"Input helper permission was not granted" = "Autorisation de l’assistant de saisie refusée";
-"The bundled input helper is missing." = "L’assistant de saisie intégré est manquant.";
 "Enabled plugins" = "Extensions activées";
 "Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "Cinq extensions sont intégrées à l’App. Ajoutez les extensions supplémentaires depuis Application Support.";
 "Open plugin folder" = "Ouvrir le dossier des extensions";

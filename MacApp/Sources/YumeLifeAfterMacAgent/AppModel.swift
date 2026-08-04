@@ -223,27 +223,6 @@ final class AppModel: ObservableObject {
         } catch { alertMessage = error.localizedDescription }
     }
 
-    func requestHostInputPermission() async {
-        guard !isBusy else { return }
-        isBusy = true
-        statusMessage = text("Waiting for input permission…")
-        defer { isBusy = false }
-        do {
-            _ = try await runtime.requestHostInputPermission()
-            statusMessage = text("Input helper permission granted")
-            alertMessage = text("Input helper permission granted")
-        } catch {
-            if error.localizedDescription.contains("YLA_HOST_INPUT_PERMISSION_DENIED"),
-               let settings = URL(
-                   string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-               ) {
-                NSWorkspace.shared.open(settings)
-            }
-            alertMessage = error.localizedDescription
-            statusMessage = text("Input helper permission was not granted")
-        }
-    }
-
     func loadStoredCredentials() async {
         if let credentials = try? await runtime.loadCredentials() {
             agentToken = credentials.agentToken
@@ -291,9 +270,6 @@ final class AppModel: ObservableObject {
         do {
             setupProgressMessage = text("Saving secure settings…")
             try await persistSettings()
-            setupProgressMessage = text("Waiting for input permission…")
-            _ = try await runtime.requestHostInputPermission()
-            setupProgressMessage = text("Input helper permission granted")
             setupProgressMessage = text("Registering background Agent…")
             _ = try await runtime.run(["repair"], timeout: 300)
             setupProgressMessage = text("Verifying local Agent…")

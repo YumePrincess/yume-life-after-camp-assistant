@@ -137,19 +137,16 @@ test("ADB held W uses container key down and up events", async () => {
   ]);
 });
 
-test("ADB game mouse release sends a real BTN_RIGHT click inside the container", async () => {
+test("first ADB mouse click summons the game cursor with KEYCODE_GRAVE once", async () => {
   const calls = [];
   const adb = createAdb(calls);
-  adb.mouseInputDevice = "/dev/input/event1";
 
-  await adb.releaseGameMouseCapture();
+  await adb.prepareGameMouseForClick();
+  await adb.prepareGameMouseForClick();
 
   assert.deepEqual(calls, [
-    ["sendevent", "/dev/input/event1", "1", "273", "1"],
-    ["sendevent", "/dev/input/event1", "0", "0", "0"],
-    ["sendevent", "/dev/input/event1", "1", "273", "0"],
-    ["sendevent", "/dev/input/event1", "0", "0", "0"],
-    ["input", "mouse", "motionevent", "UP", "960", "600"]
+    ["input", "mouse", "motionevent", "UP", "960", "600"],
+    ["input", "keyevent", "KEYCODE_GRAVE"]
   ]);
 });
 

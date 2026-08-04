@@ -144,13 +144,6 @@
 "Device ID" = "设备 ID";
 "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "请输入公开 HTTPS 站点、设备名称和准确的 MuMu 容器名称。稳定的设备 ID 会自动生成。";
 "Enter a valid Workers URL, device name and MuMu container name." = "请输入有效的 Workers 地址、设备名称和 MuMu 容器名称。";
-"MuMu input permission" = "MuMu 输入权限";
-"The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient." = "后台输入助手需要单独的“辅助功能”权限才能释放 MuMu 鼠标捕获；只给主 App 授权并不生效。";
-"Request input permission" = "请求输入权限";
-"Waiting for input permission…" = "正在等待输入权限…";
-"Input helper permission granted" = "输入助手权限已授权";
-"Input helper permission was not granted" = "输入助手权限未获授权";
-"The bundled input helper is missing." = "内置输入助手缺失。";
 "Enabled plugins" = "已启用插件";
 "Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "App 内置 5 个插件；额外插件可从 Application Support 文件夹添加。";
 "Open plugin folder" = "打开插件目录";

@@ -20,24 +20,43 @@ export class GameUi {
     await delay(this.config.timeouts.actionDelayMs, signal);
   }
 
+  resetGameMouseState() {
+    this.adb.resetGameMouseState?.();
+  }
+
   async tap(point, signal) {
-    await this.adb.mouseTap(point.x, point.y, signal);
+    await this.adb.prepareGameMouseForClick?.(signal);
+    try {
+      await this.adb.mouseTap(point.x, point.y, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // ADB can report a successful shell session while MuMu has dropped the
+      // mouse injection channel. Only a real ADB click error is allowed to
+      // invalidate the one-time KEYCODE_GRAVE state; OCR-only misses must
+      // retry the same click without toggling the game mouse again.
+      this.adb.resetGameMouseState?.();
+      await this.report(
+        "warning",
+        "adb_mouse_click_retry",
+        "ADB 鼠标点击命令失败，重新发送 KEYCODE_GRAVE 后重试一次；不会调用 macOS 输入助理"
+      );
+      await this.adb.prepareGameMouseForClick?.(signal, { force: true });
+      await this.adb.mouseTap(point.x, point.y, signal);
+    }
     await this.afterAction(signal);
   }
 
   async hudTap(point, signal) {
-    if (typeof this.adb.releaseGameMouseCapture === "function") {
-      await this.adb.releaseGameMouseCapture(signal);
-      await delay(
-        Math.max(100, Number(point.mouseReleaseSettleMs) || 250),
-        signal
+    return this.tap(point, signal);
+  }
+
+  async androidTouchTap(point, signal) {
+    if (typeof this.adb.touchTap !== "function") {
+      throw new Error(
+        "ADB_TOUCH_TAP_UNAVAILABLE: 当前 MuMu ADB 未提供 Android 触屏点击"
       );
     }
-    if (typeof this.adb.touchTap === "function") {
-      await this.adb.touchTap(point.x, point.y, signal);
-    } else {
-      await this.adb.mouseTap(point.x, point.y, signal);
-    }
+    await this.adb.touchTap(point.x, point.y, signal);
     await this.afterAction(signal);
   }
 
@@ -125,7 +144,8 @@ export class GameUi {
       await delay(700, signal);
       if (
         Date.now() >= deadline &&
-        this.config.timeouts.neverAbortHealthyTaskOnTimeout
+        this.config.timeouts.neverAbortHealthyTaskOnTimeout &&
+        options.strictTimeout !== true
       ) {
         await this.report(
           "warning",
@@ -298,7 +318,8 @@ export class GameUi {
       await delay(800, signal);
       if (
         Date.now() >= deadline &&
-        this.config.timeouts.neverAbortHealthyTaskOnTimeout
+        this.config.timeouts.neverAbortHealthyTaskOnTimeout &&
+        options.strictTimeout !== true
       ) {
         await this.report(
           "warning",
@@ -715,6 +736,133 @@ export class GameUi {
     throw new Error(
       `HUD_PANEL_DID_NOT_CLOSE: ${attempts} 次后仍识别到 ${(action.texts || []).join("/")}`
     );
+  }
+
+  async closePatrolTeamPanelBeforeAccept(action, signal) {
+    const panelTexts = action.panelTexts || ["调整", "离开队伍"];
+    const hudTexts = action.hudTexts || ["综合", "世界", "场景", "营地", "队伍"];
+    const fullRegion = action.region || {
+      left: 0,
+      top: 0,
+      right: 1920,
+      bottom: 1200
+    };
+    const hudRegion = action.hudRegion || {
+      left: 0,
+      top: 930,
+      right: 760,
+      bottom: 1200
+    };
+    const collapseRegion = action.collapseRegion || {
+      left: 1450,
+      top: 850,
+      right: 1900,
+      bottom: 1150
+    };
+    const chatRegion = action.chatRegion || {
+      left: 1200,
+      top: 100,
+      right: 1900,
+      bottom: 1150
+    };
+    const chatTexts = action.chatTexts || [
+      "营地频道",
+      "成员",
+      "私聊",
+      "萌芽邀约",
+      "聊天室"
+    ];
+    const minimumHudTexts = Math.max(
+      2,
+      Math.min(hudTexts.length, Number(action.minimumHudTexts) || 2)
+    );
+    const inspect = async (label) => {
+      const screen = await this.captureFlowObservations(
+        label,
+        { ...action, region: fullRegion },
+        signal
+      );
+      const observations = screen.observations;
+      const panelMatches = panelTexts
+        .map((text) => this.findInRegion(observations, text, fullRegion))
+        .filter(Boolean);
+      const hudMatches = hudTexts
+        .map((text) => this.findInRegion(observations, text, hudRegion))
+        .filter(Boolean);
+      const collapse = this.findInRegion(
+        observations,
+        action.collapseText || "收起",
+        collapseRegion
+      );
+      const chatMatches = chatTexts
+        .map((text) => this.findInRegion(observations, text, chatRegion))
+        .filter(Boolean);
+      return {
+        ...screen,
+        panelMatches,
+        hudMatches,
+        collapse,
+        chatMatches
+      };
+    };
+
+    await this.report(
+      "info",
+      "patrol_close_team_panel_once",
+      "巡逻队伍满员；只点击一次队伍页左下角返回箭头，等待 5 秒后确认 HUD，避免重复点击误开营地聊天"
+    );
+    await this.tapAction(action, signal);
+    await delay(Math.max(5_000, Number(action.settleAfterClickMs) || 5_000), signal);
+
+    let screen = await inspect("patrol-close-team-panel-after-wait");
+    const chatOpen = Boolean(screen.collapse) || screen.chatMatches.length >= 2;
+    if (chatOpen) {
+      await this.report(
+        "warning",
+        "patrol_close_team_chat_detected",
+        screen.collapse
+          ? "关闭队伍时误打开了营地聊天；先点击 OCR 识别到的“收起”关闭聊天，再重新确认 HUD 和交互选项"
+          : "关闭队伍后识别到营地聊天但未读到“收起”；点击右下角校准的收起位置关闭聊天，再重新确认 HUD 和交互选项"
+      );
+      const collapsePoint = screen.collapse
+        ? center(screen.collapse)
+        : action.collapsePoint || { x: 1740, y: 1110 };
+      await this.tapAction({ ...collapsePoint, hud: true }, signal);
+      await delay(
+        Math.max(1_000, Number(action.collapseSettleMs) || 1_500),
+        signal
+      );
+      screen = await inspect("patrol-close-team-panel-after-chat-collapse");
+    }
+
+    if (screen.collapse || screen.chatMatches.length >= 2) {
+      throw new Error(
+        "PATROL_CLOSE_TEAM_CHAT_DID_NOT_CLOSE: 已尝试点击收起，但仍识别到营地聊天界面"
+      );
+    }
+    if (screen.panelMatches.length > 0) {
+      if (screen.hudMatches.length < minimumHudTexts) {
+        throw new Error(
+          "PATROL_CLOSE_TEAM_PANEL_DID_NOT_CLOSE: 一次点击并等待后仍识别到队伍面板，且未确认 HUD；停止以避免重复点击"
+        );
+      }
+      await this.report(
+        "warning",
+        "patrol_close_team_panel_text_stale",
+        "队伍面板关闭后 OCR 仍残留“调整/离开队伍”文字，但 HUD 已确认且右下角没有“收起”；按已关闭处理，不重复点击"
+      );
+    }
+    if (screen.hudMatches.length < minimumHudTexts) {
+      throw new Error(
+        `PATROL_CLOSE_TEAM_HUD_UNVERIFIED: 关闭队伍后仅识别到 ${screen.hudMatches.length} 个 HUD 锚点，至少需要 ${minimumHudTexts} 个`
+      );
+    }
+    await this.report(
+      "info",
+      "patrol_close_team_panel_verified",
+      `已等待并确认队伍面板关闭，HUD 锚点 ${screen.hudMatches.length}/${hudTexts.length}，右下角未显示“收起”；继续识别公告版交互选项`
+    );
+    return screen;
   }
 
   async tapUntilAnyTexts(action, signal) {
@@ -1292,13 +1440,21 @@ export class GameUi {
   async openCampPanelViaChat(action, signal) {
     await this.closeMapBeforeCampPanel(action, signal);
     const attempts = Math.max(1, Math.min(6, Number(action.attempts) || 6));
-    // The host-side `~` key is a toggle. Release it before the first
-    // left-bottom camp click, then never send it again merely because OCR
-    // verification was slow or inconclusive. A second release is allowed
-    // only when the click sequence itself throws or the previous release was
-    // not confirmed.
-    let hostMouseUnlockNeeded =
-      action.hostMouseUnlockBeforeCampChannel === true;
+    const chatReadyTexts = action.chatReadyTexts || [];
+    const chatReadyRegion = action.chatReadyRegion || {
+      left: 1200,
+      top: 100,
+      right: 1900,
+      bottom: 1150
+    };
+    const chatReadyMinimum = Math.max(
+      1,
+      Math.min(chatReadyTexts.length || 1, Number(action.chatReadyMinimumTexts) || 1)
+    );
+    const campChatReady = (observations) =>
+      chatReadyTexts.filter((text) =>
+        this.findInRegion(observations, text, chatReadyRegion)
+      ).length >= chatReadyMinimum;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       if (signal?.aborted) throw signal.reason || new Error("Interrupted");
       const before = await this.vision.captureTransient(
@@ -1322,43 +1478,53 @@ export class GameUi {
           return;
         }
       }
-      const mouseReleaseRequired =
-        action.hostMouseUnlockBeforeCampChannel === true ||
-        action.hostMouseUnlockOnCampChannelRetry === true;
-      if (mouseReleaseRequired && hostMouseUnlockNeeded) {
-        const released = await this.releaseHostMouseForCampChannelRetry(
-          action,
-          attempt,
-          attempts,
-          signal
-        );
-        if (!released) {
-          if (attempt >= attempts) {
-            throw new Error(
-              "MUMU_HOST_MOUSE_UNLOCK_NOT_CONFIRMED: 已达到 6 次释放鼠标上限，未确认 ~ 释放成功；未点击营地频道"
-            );
-          }
-          continue;
-        }
-        hostMouseUnlockNeeded = false;
-      }
       await this.report(
         "info",
         "open_camp_panel_attempt",
-        `通过聊天营地频道打开营地界面（${attempt}/${attempts}）`
+        `通过聊天营地频道打开营地界面（${attempt}/${attempts}）；使用 ADB KEYCODE_GRAVE + 鼠标点击`
       );
       try {
-        await this.hudTap(action.chatButton || { x: 250, y: 1060 }, signal);
+        await this.tap(action.chatButton || { x: 250, y: 1060 }, signal);
         await delay(action.chatDelayMs || 500, signal);
+        let chatReady = chatReadyTexts.length === 0;
+        if (!chatReady) {
+          const chatFrame = await this.vision.captureTransient(
+            `camp-chat-verify-${attempt}`,
+            signal
+          );
+          chatReady = campChatReady(chatFrame.observations);
+          if (
+            !chatReady &&
+            typeof this.vision.captureAccurateTransient === "function"
+          ) {
+            const accurateChat = await this.vision.captureAccurateTransient(
+              `camp-chat-verify-accurate-${attempt}`,
+              signal
+            );
+            chatReady = campChatReady(accurateChat.observations);
+          }
+        }
+        if (!chatReady) {
+          await this.report(
+            "warning",
+            "camp_chat_not_verified",
+            `第 ${attempt}/${attempts} 次点击聊天入口后未 OCR 确认聊天营地频道，禁止继续点击营地频道坐标`
+          );
+          continue;
+        }
+        await this.report(
+          "info",
+          "camp_chat_verified",
+          "已确认聊天层，继续使用 ADB 鼠标点击；不会再次切换鼠标状态"
+        );
         await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
         await delay(action.channelDelayMs || 500, signal);
         await this.tap(action.campIconButton || { x: 980, y: 65 }, signal);
       } catch (error) {
-        hostMouseUnlockNeeded = true;
         await this.report(
           "warning",
           "camp_channel_click_failed",
-          `第 ${attempt}/${attempts} 次左下角营地入口点击失败；下一次重试前才重新执行 ~ 释放`,
+          `第 ${attempt}/${attempts} 次聊天→营地频道→市政厅点击失败；下一次只重试 ADB 点击，不切换鼠标状态`,
           { reason: error?.message || String(error) }
         );
         if (attempt >= attempts) throw error;
@@ -1397,73 +1563,12 @@ export class GameUi {
         }
         await delay(350, signal);
       }
-      // Legacy retry-only callers deliberately request a fresh release after
-      // an unverified camp-channel attempt. Built-in member/technology flows
-      // set hostMouseUnlockBeforeCampChannel and do not toggle `~` again just
-      // because OCR verification was inconclusive after a completed click.
-      if (
-        action.hostMouseUnlockBeforeCampChannel !== true &&
-        action.hostMouseUnlockOnCampChannelRetry === true
-      ) {
-        hostMouseUnlockNeeded = true;
-      }
       await this.adb.key(4, signal).catch(() => undefined);
       await delay(350, signal);
     }
     throw new Error(
       "CAMP_PANEL_DID_NOT_OPEN: 已重试聊天→营地频道→市政厅图标，但未识别到营地首页"
     );
-  }
-
-  async releaseHostMouseForCampChannelRetry(action, attempt, attempts, signal) {
-    if (
-      action.hostMouseUnlockBeforeCampChannel !== true &&
-      action.hostMouseUnlockOnCampChannelRetry !== true
-    ) {
-      return true;
-    }
-    if (typeof this.mumu?.releaseContainerMouseCapture !== "function") {
-      await this.report(
-        "warning",
-        "camp_channel_host_mouse_unlock_unavailable",
-        `第 ${attempt}/${attempts} 次打开营地频道前需要补发 ~，但 MuMu 容器控制器不可用；保留正常 ADB 点击继续验证`
-      );
-      return false;
-    }
-    await this.report(
-      "warning",
-      "camp_channel_host_mouse_unlock_retry",
-        attempt === 1
-          ? `点击营地频道前先发送 Esc 下方的 ~ 键释放游戏鼠标（第 ${attempt}/${attempts} 次），释放成功后才会点击并 OCR 验证`
-          : `前一轮聊天→营地频道→市政厅未确认营地首页；第 ${attempt}/${attempts} 次点击营地频道前发送 Esc 下方的 ~ 键重新释放鼠标，释放成功后才会点击并 OCR 验证`
-    );
-    const result = await this.mumu
-      .releaseContainerMouseCapture(signal, { bringToFront: true })
-      .catch(async (error) => {
-        await this.report(
-          "warning",
-          "camp_channel_host_mouse_unlock_failed",
-          `第 ${attempt}/${attempts} 次 ~ 鼠标恢复失败：${error.message || error}；保留正常 ADB 点击继续验证`
-        );
-        return null;
-      });
-    await this.report(
-      "info",
-      "camp_channel_host_mouse_unlock_checked",
-      result?.skippedBecauseAlreadyReleased
-        ? `第 ${attempt}/${attempts} 次检查确认鼠标指针已显示，未发送 ~，直接继续营地频道流程`
-        : `第 ${attempt}/${attempts} 次鼠标指针检查：释放前${result?.cursorVisibleBefore ? "已显示" : "未显示"}；${result?.keyEventSent ? "已实际发送 ~" : "未发送 ~"}；释放后${result?.cursorVisibleAfter ? "已显示" : "仍未显示"}，继续用营地页面 OCR 验证`
-    );
-    if (!result?.mouseReleased) {
-      await this.report(
-        "warning",
-        "camp_channel_host_mouse_unlock_unverified",
-        `第 ${attempt}/${attempts} 次 ~ 已发送但未确认鼠标按钮状态；仍以本轮营地页面 OCR 结果为准`
-      );
-      return false;
-    }
-    await delay(Math.max(100, Number(action.hostMouseUnlockDelayMs) || 250), signal);
-    return true;
   }
 
   async closeMapBeforeCampPanel(action, signal) {
@@ -2192,7 +2297,10 @@ export class GameUi {
     const local = options.timeoutSeconds || this.config.timeouts.screenTransitionSeconds;
     const configured =
       this.runtimeAutomation?.gameWatchdog?.actionTimeoutSeconds || local;
-    if (this.config.timeouts.neverAbortHealthyTaskOnTimeout) {
+    if (
+      this.config.timeouts.neverAbortHealthyTaskOnTimeout &&
+      options.strictTimeout !== true
+    ) {
       return Math.max(180, local, configured) * 1000;
     }
     return Math.min(local, configured) * 1000;
@@ -2242,6 +2350,9 @@ export class GameUi {
           break;
         case "tapUntilNoneTexts":
           await this.tapUntilNoneTexts(action, signal);
+          break;
+        case "closePatrolTeamPanelBeforeAccept":
+          await this.closePatrolTeamPanelBeforeAccept(action, signal);
           break;
         case "tapUntilAnyTexts":
           await this.tapUntilAnyTexts(action, signal);

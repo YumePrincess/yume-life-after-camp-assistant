@@ -144,13 +144,6 @@
 "Device ID" = "Device ID";
 "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically.";
 "Enter a valid Workers URL, device name and MuMu container name." = "Enter a valid Workers URL, device name and MuMu container name.";
-"MuMu input permission" = "MuMu input permission";
-"The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient." = "The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient.";
-"Request input permission" = "Request input permission";
-"Waiting for input permission…" = "Waiting for input permission…";
-"Input helper permission granted" = "Input helper permission granted";
-"Input helper permission was not granted" = "Input helper permission was not granted";
-"The bundled input helper is missing." = "The bundled input helper is missing.";
 "Enabled plugins" = "Enabled plugins";
 "Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "Five plugins are bundled with the App. Add extra folder plugins from Application Support.";
 "Open plugin folder" = "Open plugin folder";

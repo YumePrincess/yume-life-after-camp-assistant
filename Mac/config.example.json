@@ -23,13 +23,6 @@
     "adbReadyTimeoutSeconds": 180,
     "containerRestartTimeoutSeconds": 60,
     "deviceProcessName": "MuMuEmulator",
-    "hostMouseUnlock": {
-      "enabled": true,
-      "keyCode": 50,
-      "permissionTimeoutSeconds": 120,
-      "foregroundSettleMs": 2000,
-      "postKeySettleMs": 2000
-    },
     "hardRestartDelaySeconds": 4,
     "returnToCenterAfterTask": true,
     "returnToCenterTimeoutSeconds": 60
@@ -43,7 +36,9 @@
     "screenHeight": 1200,
     "loginButton": { "x": 960, "y": 945 },
     "loginButtonRegion": { "left": 360, "top": 795, "right": 1560, "bottom": 1095 },
-    "unicodeIme": "com.android.adbkeyboard/.AdbIME"
+    "unicodeIme": "com.android.adbkeyboard/.AdbIME",
+    "gameMouseToggleKey": "KEYCODE_GRAVE",
+    "gameMouseToggleSettleMs": 1000
   },
   "vision": {
     "binary": "./bin/mrzh-vision-ocr",
@@ -224,7 +219,6 @@
     "createMenuClickAttempts": 6,
     "createMenuWaitMs": 5000,
     "patrolTargetWaitMs": 5000,
-    "mouseReleaseSettleMs": 250,
     "creatorTitleRegion": { "left": 350, "top": 235, "right": 1565, "bottom": 325 },
     "campAffairsPoint": { "x": 480, "y": 906 },
     "campAffairsWaitMs": 5000,
@@ -261,16 +255,24 @@
     "focusAcquiredRegion": { "left": 0, "top": 0, "right": 620, "bottom": 1180 },
     "comboFallbackAttempts": 6,
     "comboHoldMs": 120,
-    "hostMouseUnlockBeforeCreate": true,
-    "hostMouseUnlockAttempts": 6,
     "stepSettleMs": 1200,
+    "hardPatrol": {
+      "acceptAttempts": 8,
+      "retryTexts": ["简单巡逻任务", "困难巡逻任务", "简单巡逻路线", "困难巡逻路线"],
+      "retryRegion": { "left": 850, "top": 150, "right": 1920, "bottom": 950 },
+      "successTexts": ["已经拥有巡逻路线"],
+      "successRegion": { "left": 0, "top": 0, "right": 1920, "bottom": 1200 }
+    },
     "share": {
       "teamPageTexts": ["营地巡逻任务", "保卫古籍", "招募", "离开队伍"],
       "teamPageRegion": { "left": 0, "top": 0, "right": 830, "bottom": 1180 },
       "recruitPoint": { "x": 343, "y": 1128 },
       "recruitTextRegion": { "left": 220, "top": 1040, "right": 480, "bottom": 1180 },
-      "recruitAttempts": 6,
+      "recruitAttempts": 15,
       "recruitMenuWaitMs": 3000,
+      "recruitOverlayTexts": ["邀请", "推荐组队", "最近组队", "巡猎车队", "萌芽师徒"],
+      "recruitOverlayRegion": { "left": 250, "top": 150, "right": 1350, "bottom": 820 },
+      "recruitOverlayDismissPoint": { "x": 1800, "y": 900 },
       "channelMenuRegion": { "left": 380, "top": 580, "right": 720, "bottom": 1150 },
       "campChannelTextRegion": { "left": 380, "top": 580, "right": 720, "bottom": 1150 },
       "channelAttempts": 6,
@@ -396,6 +398,9 @@
         "chatButton": { "x": 250, "y": 1060 },
         "campChannelButton": { "x": 1740, "y": 355 },
         "campIconButton": { "x": 980, "y": 65 },
+        "chatReadyTexts": ["营地频道", "成员", "私聊"],
+        "chatReadyRegion": { "left": 1200, "top": 100, "right": 1900, "bottom": 1150 },
+        "chatReadyMinimumTexts": 1,
         "readyConstantAnchors": [
           { "text": "营地", "region": { "left": 90, "top": 90, "right": 340, "bottom": 200 } },
           { "text": "量子时代", "region": { "left": 250, "top": 240, "right": 650, "bottom": 400 } },
@@ -409,8 +414,6 @@
         "readyBodyRegion": { "left": 120, "top": 250, "right": 1820, "bottom": 1000 },
         "readyMinimumTabs": 2,
         "attempts": 6,
-        "hostMouseUnlockBeforeCampChannel": true,
-        "hostMouseUnlockDelayMs": 250,
         "verifySeconds": 5
       }
     ],
@@ -534,7 +537,8 @@
       {
         "op": "waitAnyText",
         "texts": ["已经拥有巡逻路线"],
-        "timeoutSeconds": 15
+        "timeoutSeconds": 15,
+        "strictTimeout": true
       }
     ],
     "exitPatrolPages": [
@@ -573,7 +577,17 @@
     "openTeamPanel": [
       { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150, "hud": true },
       { "op": "sleep", "ms": 500 },
-      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 50, "y": 325, "hud": true },
+      {
+        "op": "tapUntilAnyTexts",
+        "texts": ["调整", "离开队伍"],
+        "minimumTexts": 1,
+        "x": 50,
+        "y": 325,
+        "maxAttempts": 6,
+        "intervalMs": 500,
+        "hud": true,
+        "controlLabel": "队伍卡片旗帜展开"
+      },
       { "op": "sleep", "ms": 300 },
       { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150, "hud": true },
       { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
@@ -591,6 +605,25 @@
         "maxAttempts": 6,
         "intervalMs": 500,
         "hud": true
+      }
+    ],
+    "closePatrolTeamPanelBeforeAccept": [
+      {
+        "op": "closePatrolTeamPanelBeforeAccept",
+        "x": 74,
+        "y": 1110,
+        "hud": true,
+        "panelTexts": ["调整", "离开队伍"],
+        "hudTexts": ["综合", "世界", "场景", "营地", "队伍"],
+        "hudRegion": { "left": 0, "top": 930, "right": 760, "bottom": 1200 },
+        "minimumHudTexts": 2,
+        "collapseText": "收起",
+        "collapseRegion": { "left": 1450, "top": 850, "right": 1900, "bottom": 1150 },
+        "collapsePoint": { "x": 1740, "y": 1110 },
+        "chatTexts": ["营地频道", "成员", "私聊", "萌芽邀约", "聊天室"],
+        "chatRegion": { "left": 1200, "top": 100, "right": 1900, "bottom": 1150 },
+        "settleAfterClickMs": 5000,
+        "collapseSettleMs": 1500
       }
     ],
     "teleportCityHall": [

@@ -92,31 +92,6 @@ if [[ "${YLA_REQUIRE_BUNDLED_MODEL:-1}" == "1" ]]; then
   }
 fi
 
-# Host-level ` / ~ cannot be delivered by ADB. Package direct Core Graphics
-# event posting in a signed, localized helper App so macOS attributes the
-# minimum PostEvent permission to the named input helper, never to node,
-# Terminal, System Events, or osascript. The helper remains portable.
-HOST_INPUT_SOURCE="${APP_ROOT}/Helpers/HostInputHelper"
-HOST_INPUT_APP="${APP_BUNDLE}/Contents/Resources/Runtime/bin/Yume Life After Mac Agent Input Helper.app"
-HOST_INPUT_EXECUTABLE="${HOST_INPUT_APP}/Contents/MacOS/YumeLifeAfterMacAgentInputHelper"
-mkdir -p "${HOST_INPUT_APP}/Contents/MacOS" "${HOST_INPUT_APP}/Contents/Resources"
-env CLANG_MODULE_CACHE_PATH=/private/tmp/yla-clang-cache \
-  /usr/bin/swiftc -O -target arm64-apple-macos26 \
-  "${HOST_INPUT_SOURCE}/main.swift" -o "${HOST_INPUT_EXECUTABLE}"
-cp "${HOST_INPUT_SOURCE}/Info.plist" "${HOST_INPUT_APP}/Contents/Info.plist"
-cp "${APP_ROOT}/AppIcon.icns" "${HOST_INPUT_APP}/Contents/Resources/AppIcon.icns"
-for localization in en fr ja zh-Hans zh-Hant; do
-  cp -R "${HOST_INPUT_SOURCE}/${localization}.lproj" \
-    "${HOST_INPUT_APP}/Contents/Resources/${localization}.lproj"
-done
-chmod +x "${HOST_INPUT_EXECUTABLE}"
-helper_archs=$(/usr/bin/lipo -archs "${HOST_INPUT_EXECUTABLE}")
-[[ " ${helper_archs} " == *" arm64 "* && " ${helper_archs} " != *" x86_64 "* ]] || {
-  echo "Host input helper must be arm64-only: ${helper_archs}" >&2
-  exit 1
-}
-codesign --force --options runtime --sign "${YLA_CODESIGN_IDENTITY:--}" "${HOST_INPUT_APP}"
-
 # Remove Intel slices from universal dependencies so the delivered app is
 # genuinely Apple-Silicon-only and never needs Rosetta on a clean Mac.
 while IFS= read -r -d '' mach_file; do

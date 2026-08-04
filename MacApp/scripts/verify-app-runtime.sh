@@ -8,7 +8,6 @@ NPM="${RUNTIME}/Toolchain/node/bin/npm"
 PYTHON="${RUNTIME}/Toolchain/python/bin/python3"
 ADB="${RUNTIME}/Toolchain/platform-tools/adb"
 MODEL="${RUNTIME}/.local-model/models/Qwen3-VL-2B-Instruct-4bit"
-HELPER="${RUNTIME}/bin/Yume Life After Mac Agent Input Helper.app"
 
 require_arm64() {
   local binary=$1
@@ -26,7 +25,6 @@ require_arm64 "${PYTHON}"
 require_arm64 "${ADB}"
 require_arm64 "${RUNTIME}/bin/mrzh-vision-ocr"
 require_arm64 "${RUNTIME}/bin/mrzh-pixel-probe"
-require_arm64 "${HELPER}/Contents/MacOS/YumeLifeAfterMacAgentInputHelper"
 
 export PATH="${RUNTIME}/Toolchain/node/bin:${RUNTIME}/Toolchain/platform-tools:/usr/bin:/bin:/usr/sbin:/sbin"
 [[ "$("${NODE}" --version)" == "v22.16.0" ]] || { echo "Unexpected bundled Node version" >&2; exit 1; }
@@ -46,16 +44,6 @@ for localization in en fr ja zh-Hans zh-Hant; do
     echo "Missing App localization: ${localization}" >&2
     exit 1
   }
-  [[ -f "${HELPER}/Contents/Resources/${localization}.lproj/InfoPlist.strings" ]] || {
-    echo "Missing input-helper localization: ${localization}" >&2
-    exit 1
-  }
 done
 
-display_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "${HELPER}/Contents/Info.plist")
-[[ "${display_name}" == "Yume Life After Mac Agent Input Helper" ]] || {
-  echo "Unexpected permission helper display name: ${display_name}" >&2
-  exit 1
-}
-
-echo "Verified bundled Node/npm, Python/MLX, ADB, OCR, model, plugins, localizations and host-input helper."
+echo "Verified bundled Node/npm, Python/MLX, ADB, OCR, model, plugins and localizations."

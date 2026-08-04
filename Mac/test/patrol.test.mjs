@@ -5,8 +5,117 @@ import {
   createPatrolTeam,
   patrolTeamIsFull,
   removeFirstPatrolMemberOutsideCamp,
-  sharePatrolTeam
+  sharePatrolTeam,
+  startHardPatrolWithRetry
 } from "../src/workflows/patrol.mjs";
+
+test("hard patrol acceptance retries the complete flow while the route list remains visible", async () => {
+  let flowAttempts = 0;
+  const reports = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async executeFlow() {
+        flowAttempts += 1;
+        if (flowAttempts < 3) {
+          throw new Error("Timed out waiting for: 已经拥有巡逻路线");
+        }
+      }
+    },
+    vision: {
+      async capture() {
+        return {
+          path: "hard-patrol.png",
+          observations: [observation("困难巡逻路线", 1100, 250)]
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await startHardPatrolWithRetry(context);
+
+  assert.equal(flowAttempts, 3);
+  assert.equal(
+    reports.filter((step) => step === "patrol_hard_accept_retry").length,
+    2
+  );
+});
+
+test("hard patrol acceptance treats a timeout with the success text as success", async () => {
+  let flowAttempts = 0;
+  const reports = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async executeFlow() {
+        flowAttempts += 1;
+        throw new Error("Timed out waiting for: 已经拥有巡逻路线");
+      }
+    },
+    vision: {
+      async capture() {
+        return {
+          path: "hard-patrol-success.png",
+          observations: [observation("已经拥有巡逻路线", 900, 700)]
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await startHardPatrolWithRetry(context);
+
+  assert.equal(flowAttempts, 1);
+  assert.ok(reports.includes("patrol_hard_accept_confirmed_after_timeout"));
+});
+
+test("hard patrol acceptance stops after eight failed attempts", async () => {
+  let flowAttempts = 0;
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async executeFlow() {
+        flowAttempts += 1;
+        throw new Error("Timed out waiting for: 已经拥有巡逻路线");
+      }
+    },
+    vision: {
+      async capture() {
+        return {
+          path: "hard-patrol.png",
+          observations: [observation("简单巡逻任务", 1100, 250)]
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report() {}
+  };
+
+  await assert.rejects(
+    startHardPatrolWithRetry(context),
+    /PATROL_HARD_ACCEPT_UNVERIFIED/
+  );
+  assert.equal(flowAttempts, 8);
+});
 
 test("patrol deadline closes the team panel before the session returns to center", async () => {
   const flows = [];
@@ -42,8 +151,42 @@ test("patrol deadline closes the team panel before the session returns to center
 
   await closePatrolPanelBeforeExit(context);
 
-  assert.deepEqual(flows, ["closeTeamPanel"]);
+  assert.deepEqual(flows, ["closePatrolTeamPanelBeforeAccept"]);
   assert.ok(reports.includes("patrol_deadline_team_closed"));
+});
+
+test("patrol deadline continues to center cleanup when final panel OCR is stale", async () => {
+  const reports = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async executeFlow() {
+        throw new Error(
+          "PATROL_CLOSE_TEAM_PANEL_DID_NOT_CLOSE: stale 离开队伍 OCR"
+        );
+      }
+    },
+    vision: {
+      async capture() {
+        return {
+          path: "team-stale.png",
+          observations: [observation("离开队伍", 1520, 1080)]
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await closePatrolPanelBeforeExit(context);
+
+  assert.ok(reports.includes("patrol_deadline_panel_close_unverified_continue"));
 });
 
 test("patrol team creation follows only region-verified live-device steps", async () => {
@@ -205,11 +348,9 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
   assert.deepEqual(taps[0], { x: 48, y: 327 });
 });
 
-test("patrol create-menu does not toggle host mouse again after its verified entry click fails", async () => {
+test("patrol create-menu retries the same ADB click without toggling mouse state", async () => {
   let mouseTapCount = 0;
-  let hostUnlockCount = 0;
   const config = patrolConfig();
-  config.patrolTeamUi.hostMouseUnlockBeforeCreate = true;
   const context = {
     config,
     ui: {
@@ -219,12 +360,6 @@ test("patrol create-menu does not toggle host mouse again after its verified ent
     },
     adb: {
       async key() {}
-    },
-    mumu: {
-      async releaseContainerMouseCapture() {
-        hostUnlockCount += 1;
-        return { mouseReleased: true };
-      }
     },
     vision: {
       async capture() {
@@ -252,27 +387,16 @@ test("patrol create-menu does not toggle host mouse again after its verified ent
     createPatrolTeam(context),
     /PATROL_TEAM_CREATOR_DID_NOT_OPEN/
   );
-  // The initial capture already has the flag menu open, so no pre-flag release
-  // is needed. OCR verification failures must not toggle `~` again after the
-  // first guarded release path has already completed.
   assert.equal(mouseTapCount, 6);
-  assert.equal(hostUnlockCount, 0);
 });
 
-test("patrol flag releases the host mouse before its first ADB click", async () => {
-  let hostUnlockCount = 0;
+test("patrol flag click is attempted through the shared ADB clicker", async () => {
   const config = patrolConfig();
-  config.patrolTeamUi.hostMouseUnlockBeforeCreate = true;
+  const taps = [];
   const context = {
     config,
-    ui: { async tap() {} },
+    ui: { async tap(point) { taps.push(point); } },
     adb: { async key() {} },
-    mumu: {
-      async releaseContainerMouseCapture() {
-        hostUnlockCount += 1;
-        return { mouseReleased: true };
-      }
-    },
     vision: {
       async capture(label) {
         return {
@@ -294,63 +418,7 @@ test("patrol flag releases the host mouse before its first ADB click", async () 
   };
 
   await createPatrolTeam(context);
-  assert.equal(hostUnlockCount, 1);
-});
-
-test("patrol flag recovery requests MuMu foreground before the idempotent release", async () => {
-  const unlockOptions = [];
-  let menuReads = 0;
-  const config = patrolConfig();
-  config.patrolTeamUi.hostMouseUnlockBeforeCreate = true;
-  const context = {
-    config,
-    ui: { async tap() {} },
-    adb: { async key() {} },
-    mumu: {
-      async releaseContainerMouseCapture(_signal, options) {
-        unlockOptions.push(options);
-        return {
-          mouseReleased: true,
-          cursorVisibleBefore: false,
-          cursorVisibleAfter: true,
-          keyEventSent: true,
-          foregroundWakeup: { settleSeconds: 3 }
-        };
-      }
-    },
-    vision: {
-      async capture(label) {
-        if (label === "patrol-team-entry") {
-          return { path: "hud.png", observations: [observation("CtrlQ", 20, 300)] };
-        }
-        if (label.startsWith("patrol-team-menu-open")) {
-          menuReads += 1;
-          return {
-            path: "menu.png",
-            observations: menuReads === 1 ? [] : [observation("创建队伍", 120, 160)]
-          };
-        }
-        return {
-          path: `${label}.png`,
-          observations: observationsFor(label)
-        };
-      },
-      async captureAccurateTransient() {
-        return { path: null, observations: [] };
-      },
-      find(observations, query, mode) {
-        return observations.find((item) =>
-          mode === "exact" ? item.text === query : item.text.includes(query)
-        );
-      }
-    },
-    async sleep() {},
-    async report() {}
-  };
-
-  await createPatrolTeam(context);
-
-  assert.deepEqual(unlockOptions, [{ bringToFront: true }]);
+  assert.deepEqual(taps[0], { x: 48, y: 327 });
 });
 
 test("an existing patrol team is recognized without toggling the flag", async () => {
@@ -463,7 +531,6 @@ test("patrol category fallback reuses the contribution-list ADB mouse swipe", as
     config: patrolConfig(),
     ui: { async tap(point) { taps.push(point); } },
     adb: {
-      async releaseGameMouseCapture() {},
       async mouseTap() {},
       async mouseSwipe(from, to, durationMs) {
         swipes.push({ from, to, durationMs });
@@ -636,7 +703,6 @@ test("Ctrl+Q fallback stops after six recognition attempts", async () => {
 
 test("patrol share uses calibrated recruit and camp-channel points and verifies success", async () => {
   const taps = [];
-  let mouseReleases = 0;
   const reports = [];
   const sleeps = [];
   const context = {
@@ -646,11 +712,7 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
         taps.push(point);
       }
     },
-    adb: {
-      async releaseGameMouseCapture() {
-        mouseReleases += 1;
-      }
-    },
+    adb: {},
     vision: {
       async capture(label) {
         if (
@@ -700,7 +762,6 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
     { x: 343, y: 1128 },
     { x: 420, y: 890 }
   ]);
-  assert.equal(mouseReleases, 1);
   assert.ok(sleeps.includes(3_000));
   assert.ok(reports.includes("patrol_share_camp_channel_verified"));
   assert.ok(reports.includes("patrol_share_success"));
@@ -758,10 +819,72 @@ test("book-defense patrol share verifies and clicks the fixed camp-channel row",
     async sleep() {},
     async report() {}
   };
-
   await sharePatrolTeam(context);
   assert.deepEqual(taps, [
     { x: 343, y: 1128 },
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 }
+  ]);
+});
+
+test("patrol share closes the invite card and retries recruit", async () => {
+  const taps = [];
+  let channelMenus = 0;
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    vision: {
+      async capture(label) {
+        if (
+          label === "patrol-share-team-page" ||
+          label.startsWith("patrol-share-recruit-verify")
+        ) {
+          return {
+            path: "team.png",
+            observations: [
+              observation("保卫古籍", 160, 20),
+              observation("招募", 300, 1100)
+            ]
+          };
+        }
+        if (label.startsWith("patrol-share-channel-menu")) {
+          channelMenus += 1;
+          return {
+            path: "invite-or-channel.png",
+            observations:
+              channelMenus === 1
+                ? [observation("邀请", 300, 200), observation("推荐组队", 350, 300)]
+                : [observation("营地频道", 350, 870)]
+          };
+        }
+        return {
+          path: "success.png",
+          observations: [observation("成功分享至营地频道", 780, 210)]
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+  context.config.patrolTeamUi.share.recruitOverlayDismissPoint = {
+    x: 300,
+    y: 300
+  };
+
+  await sharePatrolTeam(context);
+
+  assert.deepEqual(taps, [
+    { x: 343, y: 1128 },
+    { x: 1450, y: 920 },
     { x: 343, y: 1128 },
     { x: 420, y: 890 }
   ]);
@@ -986,6 +1109,48 @@ test("members whose card-bottom location is the camp are never removed", async (
 
   assert.equal(removed, false);
   assert.ok(reports.includes("patrol_member_locations_verified"));
+});
+
+test("Latin OCR noise is never treated as a patrol location", async () => {
+  const reports = [];
+  const removed = await removeFirstPatrolMemberOutsideCamp(
+    {
+      config: { patrolTeamUi: patrolUiConfig() },
+      ui: {
+        async tap() {
+          throw new Error("should not remove on Latin OCR noise");
+        }
+      },
+      vision: {
+        find(observations, query, mode) {
+          return observations.find((item) =>
+            mode === "exact" ? item.text === query : item.text.includes(query)
+          );
+        }
+      },
+      async report(_level, step) {
+        reports.push(step);
+      }
+    },
+    {
+      observations: [
+        observation("玩家甲", 650, 800),
+        observation("COSGH", 650, 860),
+        observation("玩家乙", 1050, 800),
+        observation("LSGH", 1050, 860),
+        observation("玩家丙", 1450, 800),
+        observation("愿", 1450, 860)
+      ]
+    },
+    undefined,
+    "愿"
+  );
+
+  assert.equal(removed, false);
+  assert.equal(
+    reports.filter((step) => step === "patrol_member_location_unverified").length,
+    2
+  );
 });
 
 function observationsFor(label) {

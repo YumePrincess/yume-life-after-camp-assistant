@@ -2,6 +2,68 @@ import { describe, expect, it } from "vitest";
 import { completeCommand, reconcileTerminalRunCommands } from "../src/db";
 
 describe("completeCommand", () => {
+  it("does not schedule a retry after patrol terminal cleanup failure", async () => {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const command = {
+      id: "command-patrol",
+      run_id: "run-patrol",
+      agent_id: "agent-1",
+      type: "run_task",
+      trigger_mode: "scheduled",
+      payload_json: "{}"
+    };
+    const completedRun = {
+      id: "run-patrol",
+      task_key: "patrol",
+      trigger_mode: "scheduled",
+      schedule_key: "patrol:2026-08-04",
+      local_date: "2026-08-04",
+      detail_json: JSON.stringify({
+        scheduledRetryLimit: 4,
+        scheduledRetryAttempt: 0,
+        suppressScheduledRetry: true,
+        retrySuppressionReason: "patrol_deadline_cleanup"
+      })
+    };
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          return {
+            first: async () => null,
+            bind(...values: unknown[]) {
+              const statement = { sql, values };
+              statements.push(statement);
+              return {
+                async first() {
+                  if (sql.includes("FROM command_queue")) return command;
+                  if (sql.includes("FROM task_runs")) return completedRun;
+                  return null;
+                },
+                async run() {
+                  return { meta: { changes: 1 } };
+                }
+              };
+            }
+          };
+        },
+        async batch() {
+          return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+        }
+      }
+    } as unknown as Env;
+
+    expect(
+      await completeCommand(env, {
+        commandId: command.id,
+        leaseToken: "lease-patrol",
+        state: "failed",
+        message: "PATROL_CLOSE_TEAM_PANEL_DID_NOT_CLOSE"
+      })
+    ).toBe(true);
+    assertNoScheduledRetryInsert(statements);
+    expect(statements.some(({ sql }) => sql.includes("INSERT INTO task_events"))).toBe(true);
+  });
+
   it("atomically marks a cancelled run_task as interrupted", async () => {
     const statements: Array<{ sql: string; values: unknown[] }> = [];
     const env = {
@@ -71,6 +133,17 @@ describe("completeCommand", () => {
     expect(statements[1]?.values[0]).toBe("succeeded");
   });
 });
+
+function assertNoScheduledRetryInsert(
+  statements: Array<{ sql: string; values: unknown[] }>
+) {
+  expect(
+    statements.some(({ sql }) => sql.includes("INSERT INTO task_runs"))
+  ).toBe(false);
+  expect(
+    statements.some(({ sql }) => sql.includes("INSERT INTO command_queue"))
+  ).toBe(false);
+}
 
 describe("reconcileTerminalRunCommands", () => {
   it("repairs historical cancelling runs without deleting their data", async () => {

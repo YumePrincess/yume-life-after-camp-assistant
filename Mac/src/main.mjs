@@ -352,10 +352,18 @@ async function executeCommand(command, signal) {
     const interrupted = signal.aborted;
     terminalState = interrupted ? "interrupted" : "failed";
     terminalMessage = interrupted ? "任务已由管理员中断" : error.message;
+    const terminalDetail = context.suppressScheduledRetry
+      ? {
+          suppressScheduledRetry: true,
+          retrySuppressionReason:
+            context.suppressScheduledRetryReason || "task_cleanup"
+        }
+      : undefined;
     await updateRunSafely({
       state: terminalState,
       message: terminalMessage,
       currentStep: null,
+      detail: terminalDetail,
       event: {
         level: interrupted ? "warning" : "error",
         step: "finished",

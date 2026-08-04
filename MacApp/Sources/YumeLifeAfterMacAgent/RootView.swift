@@ -443,15 +443,6 @@ struct SettingsView: View {
                     Text("Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("MuMu input permission") {
-                    Text("The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button("Request input permission") {
-                        Task { await model.requestHostInputPermission() }
-                    }
-                    .buttonStyle(GlassButtonStyle())
-                    .disabled(model.isBusy)
-                }
                 Section("Migration") {
                     Text("The migration archive includes settings and user plugins, but never credentials.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -597,10 +588,6 @@ struct SetupAssistantView: View {
                 .font(.caption.monospaced())
             Label(model.mumuInstanceName, systemImage: "square.stack.3d.up")
             Label("5 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
-            Label("MuMu input permission", systemImage: "keyboard.badge.ellipsis")
-            Text("The background input helper needs its own Accessibility permission to release MuMu mouse capture. Permission granted only to the main App is not sufficient.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
             if model.isBusy {
                 ProgressView(model.setupProgressMessage.isEmpty ? model.text("Preparing installation…") : model.setupProgressMessage)
             } else if !model.setupProgressMessage.isEmpty {

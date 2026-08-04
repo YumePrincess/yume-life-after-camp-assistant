@@ -105,111 +105,101 @@ test("a map blocking the camp panel is closed before any chat click", async () =
   );
 });
 
-test("camp channel retries release host mouse only after the first unverified attempt", async () => {
-  let releases = 0;
+test("camp navigation summons the game mouse once and uses ADB clicks", async () => {
   const fixture = createUi({
     transientCapture(label) {
-      if (label === "camp-panel-verify-2") {
+      if (label === "camp-chat-verify-1") {
+        return [observation("营地频道", 1660, 180)];
+      }
+      if (label.startsWith("camp-panel-verify")) {
         return [
-          observation("营地", 150, 145),
-          observation("市长：雨梦", 260, 450)
+          observation("量子时代", 330, 330),
+          observation("营地周活跃", 760, 320)
         ];
       }
       return [];
     },
-    mumu: {
-      async releaseContainerMouseCapture() {
-        releases += 1;
-        return { mouseReleased: true };
-      }
+    mumu: null
+  });
+  const mouseTaps = fixture.taps;
+  let summons = 0;
+  let mouseReady = false;
+  fixture.adb.prepareGameMouseForClick = async () => {
+    if (!mouseReady) {
+      summons += 1;
+      mouseReady = true;
     }
-  });
-
-  await fixture.ui.openCampPanelViaChat({
-    attempts: 2,
-    hostMouseUnlockOnCampChannelRetry: true,
-    chatDelayMs: 1,
-    channelDelayMs: 1,
-    verifySeconds: 1
-  });
-
-  assert.equal(releases, 1);
-  assert.ok(
-    fixture.messages.some((message) =>
-      message.includes("点击营地频道前发送 Esc 下方的 ~ 键")
-    )
-  );
-});
-
-test("built-in camp flow releases host mouse before the first channel click and blocks unverified clicks", async () => {
-  const order = [];
-  let releases = 0;
-  const fixture = createUi({
-    transientCapture(label) {
-      if (label === "camp-panel-verify-2") {
-        return [
-          observation("营地", 150, 145),
-          observation("市长：雨梦", 260, 450)
-        ];
-      }
-      return [];
-    },
-    mumu: {
-      async releaseContainerMouseCapture() {
-        releases += 1;
-        order.push("release");
-        return releases === 1
-          ? { mouseReleased: false }
-          : { mouseReleased: true, cursorVisibleBefore: true, cursorVisibleAfter: true, keyEventSent: false };
-      }
-    }
-  });
-  const originalTap = fixture.ui.tap.bind(fixture.ui);
-  fixture.ui.tap = async (point, signal) => {
-    if (point.x === 1740 && point.y === 355) order.push("channel");
-    return originalTap(point, signal);
   };
 
   await fixture.ui.openCampPanelViaChat({
-    attempts: 2,
-    hostMouseUnlockBeforeCampChannel: true,
+    attempts: 1,
+    chatReadyTexts: ["营地频道"],
+    chatReadyRegion: { left: 1200, top: 100, right: 1900, bottom: 1150 },
+    chatReadyMinimumTexts: 1,
     chatDelayMs: 1,
     channelDelayMs: 1,
     verifySeconds: 1
   });
-  assert.equal(releases, 2);
-  assert.deepEqual(order, ["release", "release", "channel"]);
+
+  assert.equal(summons, 1);
+  assert.deepEqual(mouseTaps, [
+    { x: 250, y: 1060 },
+    { x: 1740, y: 355 },
+    { x: 980, y: 65 }
+  ]);
 });
 
-test("built-in camp flow does not toggle host mouse again after a completed click", async () => {
-  let releases = 0;
+test("an ADB click command failure re-summons once, while OCR retries do not toggle", async () => {
+  const fixture = createUi();
+  const prepareCalls = [];
+  let clicks = 0;
+  fixture.adb.prepareGameMouseForClick = async (_signal, options = {}) => {
+    prepareCalls.push(options);
+  };
+  fixture.adb.mouseTap = async () => {
+    clicks += 1;
+    if (clicks === 1) throw new Error("ADB click injection failed");
+  };
+
+  await fixture.ui.tap({ x: 48, y: 327 });
+
+  assert.deepEqual(prepareCalls, [{}, { force: true }]);
+  assert.equal(clicks, 2);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("KEYCODE_GRAVE"))
+  );
+});
+
+test("camp navigation retries ADB clicks without toggling the game mouse", async () => {
   const fixture = createUi({
     transientCapture(label) {
-      if (label === "camp-panel-verify-2") {
+      if (label === "camp-panel-verify-3") {
         return [
-          observation("营地", 150, 145),
-          observation("市长：雨梦", 260, 450)
+          observation("量子时代", 330, 330),
+          observation("营地周活跃", 760, 320)
         ];
       }
       return [];
-    },
-    mumu: {
-      async releaseContainerMouseCapture() {
-        releases += 1;
-        return { mouseReleased: true, skippedBecauseAlreadyReleased: true };
-      }
     }
   });
+  let summons = 0;
+  let mouseReady = false;
+  fixture.adb.prepareGameMouseForClick = async () => {
+    if (!mouseReady) {
+      summons += 1;
+      mouseReady = true;
+    }
+  };
 
   await fixture.ui.openCampPanelViaChat({
-    attempts: 2,
-    hostMouseUnlockBeforeCampChannel: true,
+    attempts: 3,
     chatDelayMs: 1,
     channelDelayMs: 1,
     verifySeconds: 1
   });
 
-  assert.equal(releases, 1);
+  assert.equal(summons, 1);
+  assert.equal(fixture.taps.length, 9);
 });
 
 test("map preparation closes the camp page, collapses chat, then confirms HUD", async () => {
@@ -724,7 +714,7 @@ test("destination recovery never exceeds six center-target cycles", async () => 
   assert.equal(calls.filter((name) => name === "公告版").length, 7);
 });
 
-test("HUD panel close retries with container mouse release until panel text disappears", async () => {
+test("HUD panel close retries ADB clicks without container mouse release", async () => {
   const fixture = createUi({
     fastFrames: [
       [observation("调整", 80, 40)],
@@ -733,14 +723,6 @@ test("HUD panel close retries with container mouse release until panel text disa
     ],
     accurateFrames: [[], [], []]
   });
-  let releases = 0;
-  fixture.adb.releaseGameMouseCapture = async () => {
-    releases += 1;
-  };
-  fixture.adb.touchTap = async (x, y) => {
-    fixture.taps.push({ x, y });
-  };
-
   await fixture.ui.tapUntilNoneTexts({
     texts: ["调整", "离开队伍"],
     region: { left: 0, top: 0, right: 1920, bottom: 1200 },
@@ -748,15 +730,83 @@ test("HUD panel close retries with container mouse release until panel text disa
     y: 327,
     maxAttempts: 6,
     intervalMs: 200,
-    mouseReleaseSettleMs: 100,
     hud: true
   });
 
-  assert.equal(releases, 2);
   assert.deepEqual(fixture.taps, [
     { x: 48, y: 327 },
     { x: 48, y: 327 }
   ]);
+});
+
+test("patrol team close waits, closes accidental camp chat, then verifies HUD", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("综合", 40, 1080),
+        observation("营地", 250, 1080),
+        observation("营地频道", 1400, 130),
+        observation("成员", 1500, 130),
+        observation("收起", 1700, 1040)
+      ],
+      [
+        observation("综合", 40, 1080),
+        observation("世界", 110, 1080),
+        observation("营地", 250, 1080),
+        observation("查看玩法", 1320, 690)
+      ]
+    ],
+    accurateFrames: [[], []]
+  });
+
+  await fixture.ui.closePatrolTeamPanelBeforeAccept({
+    x: 74,
+    y: 1110,
+    hud: true,
+    settleAfterClickMs: 5000,
+    collapseSettleMs: 1000
+  });
+
+  assert.deepEqual(fixture.taps, [
+    { x: 74, y: 1110 },
+    { x: 1710, y: 1050 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("误打开了营地聊天")
+    )
+  );
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("右下角未显示“收起”")
+    )
+  );
+});
+
+test("patrol team close accepts stale leave-team OCR when HUD is already visible", async () => {
+  const fixture = createUi({
+    fastFrames: [[
+      observation("调整", 80, 40),
+      observation("离开队伍", 1520, 1080),
+      observation("综合", 40, 1080),
+      observation("世界", 110, 1080)
+    ]]
+  });
+
+  await fixture.ui.closePatrolTeamPanelBeforeAccept({
+    x: 74,
+    y: 1110,
+    hud: true,
+    settleAfterClickMs: 1,
+    collapseSettleMs: 1
+  });
+
+  assert.deepEqual(fixture.taps, [{ x: 74, y: 1110 }]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("OCR 仍残留“调整/离开队伍”文字")
+    )
+  );
 });
 
 test("patrol result exit uses the calibrated HUD return arrow until bottom HUD anchors appear", async () => {
@@ -830,6 +880,24 @@ test("waitAnyText accepts accurate OCR before asking the model again", async () 
     fixture.messages.some((message) =>
       message.includes("高精度 OCR 确认界面文字")
     )
+  );
+});
+
+test("strict waitAnyText timeout returns control for retryable patrol states", async () => {
+  const fixture = createUi({ fastFrames: [[]], accurateFrames: [[]] });
+  fixture.ui.config.timeouts.neverAbortHealthyTaskOnTimeout = true;
+  fixture.ui.config.timeouts.screenTransitionSeconds = 0.01;
+
+  await assert.rejects(
+    fixture.ui.waitAnyText(
+      ["已经拥有巡逻路线"],
+      { timeoutSeconds: 0.01, strictTimeout: true }
+    ),
+    /Timed out waiting for/
+  );
+  assert.equal(
+    fixture.messages.some((message) => message.includes("继续等待界面文字")),
+    false
   );
 });
 
@@ -962,7 +1030,8 @@ test("hard patrol flow clicks the difficult-row accept button and confirms it", 
     assert.deepEqual(flow.at(-1), {
       op: "waitAnyText",
       texts: ["已经拥有巡逻路线"],
-      timeoutSeconds: 15
+      timeoutSeconds: 15,
+      strictTimeout: true
     });
     assert.deepEqual(flow[1].region, {
       left: 1450,
@@ -976,6 +1045,25 @@ test("hard patrol flow clicks the difficult-row accept button and confirms it", 
       ),
       false
     );
+  }
+});
+
+test("open team panel retries the flag expansion until the team card is visible", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    assert.deepEqual(config.flows.openTeamPanel[2], {
+      op: "tapUntilAnyTexts",
+      texts: ["调整", "离开队伍"],
+      minimumTexts: 1,
+      x: 50,
+      y: 325,
+      maxAttempts: 6,
+      intervalMs: 500,
+      hud: true,
+      controlLabel: "队伍卡片旗帜展开"
+    });
   }
 });
 
@@ -1031,6 +1119,49 @@ test("full patrol team closes through the calibrated bottom-left return arrow", 
         hud: true
       }
     ]);
+  }
+});
+
+test("patrol acceptance uses the guarded close flow with a five-second settle", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    assert.deepEqual(config.flows.closePatrolTeamPanelBeforeAccept, [
+      {
+        op: "closePatrolTeamPanelBeforeAccept",
+        x: 74,
+        y: 1110,
+        hud: true,
+        panelTexts: ["调整", "离开队伍"],
+        hudTexts: ["综合", "世界", "场景", "营地", "队伍"],
+        hudRegion: { left: 0, top: 930, right: 760, bottom: 1200 },
+        minimumHudTexts: 2,
+        collapseText: "收起",
+        collapseRegion: { left: 1450, top: 850, right: 1900, bottom: 1150 },
+        collapsePoint: { x: 1740, y: 1110 },
+        chatTexts: ["营地频道", "成员", "私聊", "萌芽邀约", "聊天室"],
+        chatRegion: { left: 1200, top: 100, right: 1900, bottom: 1150 },
+        settleAfterClickMs: 5000,
+        collapseSettleMs: 1500
+      }
+    ]);
+  }
+});
+
+test("all click flows use the ADB game-mouse summon key and no host release config", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    assert.equal(config.adb.gameMouseToggleKey, "KEYCODE_GRAVE");
+    assert.equal(config.adb.gameMouseToggleSettleMs, 1000);
+    assert.equal(Object.hasOwn(config.mumu, "hostMouseUnlock"), false);
+    assert.equal(
+      Object.hasOwn(config.flows.openCampPanel[0], "hostMouseUnlockBeforeCampChannel"),
+      false
+    );
+    assert.equal(Object.hasOwn(config.patrolTeamUi, "hostMouseUnlockBeforeCreate"), false);
   }
 });
 
@@ -1165,7 +1296,6 @@ function createUi({
     async focusGameInput(x, y) {
       focusPoints.push({ x, y });
     },
-    async releaseGameMouseCapture() {},
     async touchSwipe(from, to, durationMs) {
       swipes.push({ from, to, durationMs });
       approachActions.push("swipe");

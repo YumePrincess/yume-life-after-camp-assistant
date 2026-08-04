@@ -75,14 +75,14 @@ export async function runPatrol(context, command, bundle, signal) {
     "patrol_team_full",
     "已确认巡逻队伍四个位置均有人，正在收起队伍界面后接取任务"
   );
-  await ui.executeFlow("closeTeamPanel", {}, signal);
+  await ui.executeFlow("closePatrolTeamPanelBeforeAccept", {}, signal);
   await report(
     "info",
     "patrol_notice_board_reused",
     "队伍等待期间角色没有移动；收起队伍后直接使用初始公告版位置，不再执行任何传送"
   );
   await ui.executeFlow("openPatrol", {}, signal);
-  await ui.executeFlow("startHardPatrol", {}, signal);
+  await startHardPatrolWithRetry(context, signal);
   await ui.executeFlow("exitPatrolPages", {}, signal);
   await ui.executeFlow("openTeamPanel", {}, signal);
   await ui.executeFlow("switchToBookDefense", {}, signal);
@@ -105,8 +105,96 @@ export async function runPatrol(context, command, bundle, signal) {
     const shareDelay = Math.max(0, nextShareAt - Date.now());
     await delay(Math.max(250, Math.min(deadlineDelay, shareDelay)), signal);
   }
+  // From this point on the patrol run is in its terminal cleanup phase. Any
+  // OCR/input error while closing the team panel or returning to the center
+  // must not be treated as a reason to start a fresh scheduled attempt.
+  context.suppressScheduledRetry = true;
+  context.suppressScheduledRetryReason = "patrol_deadline_cleanup";
   await report("info", "patrol_done", "已到巡逻任务结束时间");
   await closePatrolPanelBeforeExit(context, signal);
+}
+
+export async function startHardPatrolWithRetry(context, signal) {
+  const { config, ui, vision, report } = context;
+  const controls = config.patrolTeamUi?.hardPatrol || {};
+  const maxAttempts = Math.max(
+    1,
+    Math.min(8, Number(controls.acceptAttempts) || 8)
+  );
+  const retryTexts = controls.retryTexts || [
+    "简单巡逻任务",
+    "困难巡逻任务",
+    "简单巡逻路线",
+    "困难巡逻路线"
+  ];
+  const retryRegion = controls.retryRegion || {
+    left: 850,
+    top: 150,
+    right: 1920,
+    bottom: 950
+  };
+  const successTexts = controls.successTexts || ["已经拥有巡逻路线"];
+  const successRegion = controls.successRegion || {
+    left: 0,
+    top: 0,
+    right: 1920,
+    bottom: 1200
+  };
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await ui.executeFlow("startHardPatrol", {}, signal);
+      return;
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason || error;
+      if (!String(error?.message || "").includes("已经拥有巡逻路线")) {
+        throw error;
+      }
+      lastError = error;
+      const screen = await capturePatrolScreen(
+        vision,
+        `patrol-hard-accept-retry-check-${attempt}`,
+        signal
+      );
+      const successMatch = findAnyTextInRegion(
+        vision,
+        screen.observations,
+        successTexts,
+        successRegion
+      );
+      if (successMatch) {
+        await report(
+          "info",
+          "patrol_hard_accept_confirmed_after_timeout",
+          `接取等待到期后确认已成功接取：识别到“${successMatch.text}”；不再重试，继续退出巡逻页面`
+        );
+        return;
+      }
+      const retryMatch = findAnyTextInRegion(
+        vision,
+        screen.observations,
+        retryTexts,
+        retryRegion
+      );
+      if (!retryMatch || attempt >= maxAttempts) break;
+      await report(
+        "warning",
+        "patrol_hard_accept_retry",
+        `第 ${attempt} 次接取后仍显示巡逻路线选择页（检测到“${retryMatch.text}”）；重新执行接取-确定，第 ${attempt + 1}/${maxAttempts} 次，直到确认“已经拥有巡逻路线”`
+      );
+      continue;
+    }
+  }
+  if (lastError) {
+    await report(
+      "warning",
+      "patrol_hard_accept_state_unverified",
+      `接取等待到期后既未确认“${successTexts.join("、")}”，也未识别到未接取关键词；为避免重复接取，停止并报告状态未确认`
+    );
+  }
+  throw new Error(
+    `PATROL_HARD_ACCEPT_UNVERIFIED: ${maxAttempts} 次接取-确定后未确认巡逻接取状态${lastError?.message ? `（${lastError.message}）` : ""}`
+  );
 }
 
 export async function closePatrolPanelBeforeExit(context, signal) {
@@ -127,18 +215,23 @@ export async function closePatrolPanelBeforeExit(context, signal) {
   await report(
     "info",
     "patrol_deadline_close_team",
-    "巡逻结束时间已到；先点击已校准的队伍页左下角返回箭头，确认面板关闭后再传送中心出入口"
+    "巡逻结束时间已到；只点击一次已校准的队伍页返回箭头，等待并确认 HUD 后再传送中心出入口"
   );
-  await ui.executeFlow("closeTeamPanel", {}, signal);
-  screen = await capturePatrolScreen(
-    vision,
-    "patrol-deadline-team-panel-closed",
-    signal
-  );
-  if (patrolTeamPanelVisible(vision, screen.observations, config)) {
-    throw new Error(
-      "PATROL_DEADLINE_PANEL_DID_NOT_CLOSE: 队伍页左下角返回后仍识别到调整/离开队伍"
+  try {
+    // Reuse the same one-click, five-second settle, chat-collapse and HUD
+    // verification flow used by the live patrol handoff. The generic
+    // closeTeamPanel flow can mistake stale "离开队伍" OCR for a failed close
+    // and prevent the already-successful center return from running.
+    await ui.executeFlow("closePatrolTeamPanelBeforeAccept", {}, signal);
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason || error;
+    await report(
+      "warning",
+      "patrol_deadline_panel_close_unverified_continue",
+      "巡逻结束收尾关闭队伍面板未能完成最终文字确认；不再重复点击，继续执行中心出入口传送，且本次收尾错误不会触发任务重试",
+      { reason: error.message }
     );
+    return;
   }
   await report(
     "info",
@@ -148,7 +241,7 @@ export async function closePatrolPanelBeforeExit(context, signal) {
 }
 
 export async function createPatrolTeam(context, signal) {
-  const { config, ui, adb, mumu, vision, report } = context;
+  const { config, ui, adb, vision, report } = context;
   const controls = config.patrolTeamUi;
   if (!controls) {
     throw new Error("PATROL_TEAM_UI_NOT_CONFIGURED");
@@ -193,48 +286,6 @@ export async function createPatrolTeam(context, signal) {
     screen.observations,
     controls
   );
-  // `~` 是切换开关。旗帜/创建入口共用现有成员与科技的前台释放调用，
-  // 只在第一次实际点击前执行一次；后续 OCR 未确认不能再次切换 `~`。
-  const hostMouseReleaseMaxAttempts = Math.max(
-    1,
-    Math.min(6, Number(controls.hostMouseUnlockAttempts) || 6)
-  );
-  let hostMouseReleaseAttempts = 0;
-  const releaseHostMouseForRetry = async (event, message) => {
-    if (
-      !controls.hostMouseUnlockBeforeCreate ||
-      hostMouseReleaseAttempts >= hostMouseReleaseMaxAttempts
-    ) {
-      return false;
-    }
-    if (typeof mumu?.releaseContainerMouseCapture !== "function") {
-      throw new Error(
-        "MUMU_HOST_MOUSE_UNLOCK_UNAVAILABLE: 旗帜或创建队伍点击未生效，需要向 MuMu 安卓容器发送宿主机 ~ 键，但容器控制器不可用"
-      );
-    }
-    hostMouseReleaseAttempts += 1;
-    await report(
-      "warning",
-      event,
-      `${message}（~ 恢复第 ${hostMouseReleaseAttempts}/${hostMouseReleaseMaxAttempts} 次）`
-    );
-    const unlock = await mumu.releaseContainerMouseCapture(signal, {
-      bringToFront: true
-    });
-    await report(
-      "info",
-      "patrol_host_mouse_unlock_checked",
-      unlock?.skippedBecauseAlreadyReleased
-        ? "鼠标指针已显示，未发送 ~；随后重新识别旗帜/队伍入口"
-        : `鼠标指针释放前${unlock?.cursorVisibleBefore ? "已显示" : "未显示"}；${unlock?.keyEventSent ? "已实际发送 ~" : "未发送 ~"}；释放后${unlock?.cursorVisibleAfter ? "已显示" : "仍未显示"}；随后重新识别旗帜/队伍入口`
-    );
-    if (!unlock?.mouseReleased) {
-      throw new Error(
-        "MUMU_HOST_MOUSE_STILL_CAPTURED: 旗帜或创建队伍点击未生效，尝试释放游戏鼠标后仍未确认成功，停止以避免角色攻击"
-      );
-    }
-    return true;
-  };
   if (!menuOpen && !creatorOpen) {
     const flagReady = controls.flagReadyTexts.some((text) =>
       hasTextInRegion(
@@ -266,26 +317,11 @@ export async function createPatrolTeam(context, signal) {
         "PATROL_FLAG_NOT_VISIBLE: 未识别到 CtrlQ，且底部频道 HUD 锚点不足，禁止点击游戏世界"
       );
     }
-    // 旗帜也是宿主机鼠标点击，必须先复用更新成员/科技相同的幂等释放
-    // 流程：先把 MuMu 安卓容器实例窗口置前并等待 3 秒，检查已释放则
-    // 跳过 `~`，未释放才发送一次 `~`，再等待 3 秒复核。首次旗帜 ADB
-    // 点击之前禁止先试点，否则容器仍捕获宿主机鼠标时点击一定会丢失。
-    if (controls.hostMouseUnlockBeforeCreate) {
-      await releaseHostMouseForRetry(
-        "patrol_flag_host_mouse_unlock_before_click",
-        "首次点击旗帜前先将 MuMu 安卓容器实例窗口置前并按统一规则检查/释放游戏鼠标"
-      );
-    }
     const flagClickAttempts = Math.max(
       2,
       Math.min(
         7,
-        Math.max(
-          Number(controls.flagClickAttempts) || 2,
-          controls.hostMouseUnlockBeforeCreate
-            ? hostMouseReleaseMaxAttempts + 1
-            : 2
-        )
+        Number(controls.flagClickAttempts) || 2
       )
     );
     for (
@@ -299,8 +335,8 @@ export async function createPatrolTeam(context, signal) {
           ? "patrol_flag_click"
           : "patrol_flag_mouse_focus_retry",
         attempt === 1
-          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点，并完成首次旗帜点击前的统一鼠标释放检查；现在用 ADB 鼠标点击旗帜 (${controls.flagButton.x},${controls.flagButton.y})`
-          : `旗帜点击后仍未出现队伍菜单，已按需恢复鼠标并复核；再次点击同一旗帜坐标 (${controls.flagButton.x},${controls.flagButton.y})`
+          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点；首次 ADB 点击前由统一点击器发送一次 KEYCODE_GRAVE (${controls.flagButton.x},${controls.flagButton.y})`
+          : `旗帜点击后仍未出现队伍菜单；保持当前鼠标状态重试 ADB 点击 (${controls.flagButton.x},${controls.flagButton.y})`
       );
       await tapPatrolMouse(ui, controls.flagButton, signal);
       await sleep(settleMs, signal);
@@ -457,7 +493,7 @@ export async function createPatrolTeam(context, signal) {
       await report(
         attempt === 1 ? "info" : "warning",
         "patrol_create_menu_click",
-        `第 ${attempt}/${createMenuClickAttempts} 次：已在左侧区域精确识别“创建队伍”；沿用营地频道已验证的 ADB 鼠标点击已校准按钮中心 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})${hostMouseReleaseAttempts > 0 ? "；本流程已完成一次前置鼠标释放，后续 OCR 重试不再切换 ~" : ""}`
+        `第 ${attempt}/${createMenuClickAttempts} 次：已在左侧区域精确识别“创建队伍”；使用统一 ADB 鼠标点击器 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})`
       );
       await tapPatrolMouse(ui, createMenuPoint, signal);
       await sleep(createMenuWaitMs, signal);
@@ -496,7 +532,7 @@ export async function createPatrolTeam(context, signal) {
         await report(
           "warning",
           "patrol_create_menu_click_unverified",
-          `第 ${attempt} 次点击左侧入口后仍未确认创建页面；仅在该入口仍可见时重试，不再次切换已完成前置释放的 ~`
+          `第 ${attempt} 次点击左侧入口后仍未确认创建页面；下一次保持当前鼠标状态重试 ADB 点击`
         );
       }
     }
@@ -836,7 +872,7 @@ export async function sharePatrolTeam(context, signal) {
 
   const recruitAttempts = Math.max(
     1,
-    Math.min(6, Number(controls.recruitAttempts) || 6)
+    Math.min(15, Number(controls.recruitAttempts) || 15)
   );
   const campChannelTextRegion =
     controls.campChannelTextRegion || controls.channelMenuRegion;
@@ -847,6 +883,23 @@ export async function sharePatrolTeam(context, signal) {
     bottom: 1_180
   };
   const recruitPoint = controls.recruitPoint || { x: 343, y: 1128 };
+  const recruitOverlayTexts = controls.recruitOverlayTexts || [
+    "邀请",
+    "推荐组队",
+    "最近组队",
+    "巡猎车队",
+    "萌芽师徒"
+  ];
+  const recruitOverlayRegion = controls.recruitOverlayRegion || {
+    left: 250,
+    top: 150,
+    right: 1350,
+    bottom: 820
+  };
+  const recruitOverlayDismissPoint = resolveRecruitOverlayDismissPoint(
+    controls.recruitOverlayDismissPoint || { x: 1800, y: 900 },
+    recruitOverlayRegion
+  );
   let channelMenuVisible = false;
   for (let attempt = 1; attempt <= recruitAttempts; attempt += 1) {
     await report(
@@ -894,9 +947,8 @@ export async function sharePatrolTeam(context, signal) {
         }
       }
     );
-    // “招募”是队伍 HUD 的真实鼠标按钮。触屏 tap 在这一个控件会被
-    // MuMu 吃掉；先以容器右键解除游戏鼠标锁定，再使用 ADB 左键点击。
-    // 这与能稳定点击公告版交互的方式一致。
+    // “招募”是队伍 HUD 的真实鼠标按钮，沿用统一的 ADB
+    // KEYCODE_GRAVE + 鼠标点击状态；不再调用宿主机输入或低层右键事件。
     await tapPatrolHudMouse(ui, adb, recruitPoint, signal, sleep);
     await report(
       "info",
@@ -909,6 +961,26 @@ export async function sharePatrolTeam(context, signal) {
       `patrol-share-channel-menu-${attempt}`,
       signal
     );
+    const inviteOverlayMatch = findAnyTextInRegion(
+      vision,
+      screen.observations,
+      recruitOverlayTexts,
+      recruitOverlayRegion
+    );
+    if (inviteOverlayMatch) {
+      await report(
+        "warning",
+        "patrol_share_invite_overlay_detected",
+        `点击“招募”误打开邀请卡片（识别到“${inviteOverlayMatch.text}”）；点击卡片边框外空白点 (${Math.round(recruitOverlayDismissPoint.x)},${Math.round(recruitOverlayDismissPoint.y)}) 关闭后重试招募（第 ${attempt}/${recruitAttempts} 次）`,
+        {
+          dismissPoint: recruitOverlayDismissPoint,
+          overlayRegion: recruitOverlayRegion
+        }
+      );
+      await tapPatrolMouse(ui, recruitOverlayDismissPoint, signal);
+      await sleep(settleMs, signal);
+      continue;
+    }
     channelMenuVisible = hasTextInRegion(
       vision,
       screen.observations,
@@ -954,9 +1026,8 @@ export async function sharePatrolTeam(context, signal) {
       );
       break;
     }
-    // “可分享目标”是模态弹窗：hudTap 会先通过右键释放鼠标锁定，右键会
-    // 直接关闭该弹窗。频道菜单的位置会随队伍卡片布局而偏移，所以只用 OCR
-    // 定位到的“营地频道”文字中心点击；这里必须使用普通 ADB 鼠标左键。
+    // “可分享目标”是模态弹窗。频道菜单的位置会随队伍卡片布局而偏移，
+    // 所以只用 OCR 定位到的“营地频道”文字中心点击。
     const campChannelPoint = observationCenter(channelMatch);
     await report(
       "info",
@@ -1086,9 +1157,7 @@ async function tapPatrolMouse(ui, point, signal) {
   return ui.tap(point, signal);
 }
 
-async function tapPatrolHudMouse(ui, adb, point, signal, sleep = delay) {
-  await adb?.releaseGameMouseCapture?.(signal);
-  await sleep(250, signal);
+async function tapPatrolHudMouse(ui, _adb, point, signal, _sleep = delay) {
   return tapPatrolMouse(ui, point, signal);
 }
 
@@ -1209,7 +1278,7 @@ export async function removeFirstPatrolMemberOutsideCamp(
           `patrol-team-location-slot-${index + 2}`,
           signal,
           "accurate",
-          0.28,
+          0.45,
           1.5
         )
         .catch(() => []);
@@ -1218,11 +1287,25 @@ export async function removeFirstPatrolMemberOutsideCamp(
     const locationTokens = locationObservations
       .map((item) => normalizePatrolText(item?.text))
       .filter(Boolean);
-    if (locationTokens.some((token) => token.includes(expectedCamp))) continue;
-    // OCR 未读取到所在地时绝不凭空移出队员；只在能读出另一处地点文字时处理。
-    const readableLocation = locationTokens.find((token) =>
-      /[\p{L}\p{Script=Han}]/u.test(token) && token.length >= 2
-    );
+    // 地点字段在游戏中只使用中文。拉丁字母串（例如 COSGH/LSGH）是
+    // 低置信度 OCR 噪声，不能因为“像文字”就进入移出队员判定。
+    const chineseLocationTokens = locationObservations
+      .map((item) => ({
+        text: normalizePatrolText(item?.text),
+        confidence: Number(item?.confidence)
+      }))
+      .filter(
+        (item) =>
+          isChineseOnlyPatrolLocation(item.text) &&
+          (!Number.isFinite(item.confidence) || item.confidence >= 0.45)
+      )
+      .map((item) => item.text);
+    if (chineseLocationTokens.some((token) => token.includes(expectedCamp))) {
+      continue;
+    }
+    // OCR 未读取到可信的中文所在地时绝不凭空移出队员；只在能读出
+    // 另一处中文地点时处理。
+    const readableLocation = chineseLocationTokens.find((token) => token.length >= 1);
     if (!readableLocation) {
       await report(
         "warning",
@@ -1367,11 +1450,53 @@ function normalizePatrolText(value) {
     .replace(/[\p{P}\p{S}]/gu, "");
 }
 
+function isChineseOnlyPatrolLocation(value) {
+  return /^[\p{Script=Han}]+$/u.test(String(value || ""));
+}
+
 function centerOfRegion(region) {
   return {
     x: Math.round((region.left + region.right) / 2),
     y: Math.round((region.top + region.bottom) / 2)
   };
+}
+
+function resolveRecruitOverlayDismissPoint(point, region) {
+  const candidate = {
+    x: Number(point?.x),
+    y: Number(point?.y)
+  };
+  if (
+    Number.isFinite(candidate.x) &&
+    Number.isFinite(candidate.y) &&
+    isPointOutsideRegion(candidate, region)
+  ) {
+    return candidate;
+  }
+  const candidates = [
+    { x: region.right + 100, y: region.bottom + 100 },
+    { x: region.right + 100, y: region.top - 100 },
+    { x: region.left - 100, y: region.bottom + 100 },
+    { x: region.left - 100, y: region.top - 100 }
+  ];
+  const safe = candidates.find(
+    (item) =>
+      item.x >= 20 &&
+      item.x <= 1900 &&
+      item.y >= 20 &&
+      item.y <= 1180 &&
+      isPointOutsideRegion(item, region)
+  );
+  return safe || { x: 1800, y: 900 };
+}
+
+function isPointOutsideRegion(point, region) {
+  return (
+    point.x < region.left ||
+    point.x > region.right ||
+    point.y < region.top ||
+    point.y > region.bottom
+  );
 }
 
 function slotShowsWaiting(observations) {

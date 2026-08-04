@@ -132,18 +132,20 @@ actor RuntimeService {
             }
             object["vision"] = vision
             var mumu = object["mumu"] as? [String: Any] ?? [:]
-            var hostMouseUnlock = mumu["hostMouseUnlock"] as? [String: Any] ?? [:]
-            for key in ["foregroundSettleMs", "postKeySettleMs"] {
-                if let settle = hostMouseUnlock[key] as? NSNumber,
-                   settle.doubleValue != 2_000 {
-                    hostMouseUnlock[key] = 2_000
-                    changed = true
-                }
-            }
-            if !hostMouseUnlock.isEmpty {
-                mumu["hostMouseUnlock"] = hostMouseUnlock
+            if mumu.removeValue(forKey: "hostMouseUnlock") != nil {
+                changed = true
                 object["mumu"] = mumu
             }
+            var adb = object["adb"] as? [String: Any] ?? [:]
+            if adb["gameMouseToggleKey"] == nil {
+                adb["gameMouseToggleKey"] = "KEYCODE_GRAVE"
+                changed = true
+            }
+            if adb["gameMouseToggleSettleMs"] == nil {
+                adb["gameMouseToggleSettleMs"] = 1_000
+                changed = true
+            }
+            object["adb"] = adb
             var tables = object["tables"] as? [String: Any] ?? [:]
             for tableName in ["contribution", "activity"] {
                 var table = tables[tableName] as? [String: Any] ?? [:]
@@ -164,6 +166,9 @@ actor RuntimeService {
                 tables[tableName] = table
             }
             object["tables"] = tables
+            if migratePatrolSettings(&object) {
+                changed = true
+            }
             if changed {
                 let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
                 try data.write(to: config, options: .atomic)
@@ -187,6 +192,139 @@ actor RuntimeService {
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path)
     }
 
+    private func migratePatrolSettings(_ object: inout [String: Any]) -> Bool {
+        var changed = false
+        var patrol = object["patrolTeamUi"] as? [String: Any] ?? [:]
+        for key in [
+            "hostMouseUnlockBeforeCreate",
+            "hostMouseUnlockAttempts",
+            "mouseReleaseSettleMs"
+        ] {
+            if patrol.removeValue(forKey: key) != nil { changed = true }
+        }
+        var hardPatrol = patrol["hardPatrol"] as? [String: Any] ?? [:]
+        if hardPatrol["acceptAttempts"] == nil {
+            hardPatrol["acceptAttempts"] = 8
+            changed = true
+        }
+        if hardPatrol["retryTexts"] == nil {
+            hardPatrol["retryTexts"] = [
+                "简单巡逻任务", "困难巡逻任务", "简单巡逻路线", "困难巡逻路线"
+            ]
+            changed = true
+        }
+        if hardPatrol["retryRegion"] == nil {
+            hardPatrol["retryRegion"] = [
+                "left": 850, "top": 150, "right": 1920, "bottom": 950
+            ]
+            changed = true
+        }
+        patrol["hardPatrol"] = hardPatrol
+
+        var share = patrol["share"] as? [String: Any] ?? [:]
+        if let attempts = share["recruitAttempts"] as? NSNumber,
+           attempts.intValue < 15 {
+            share["recruitAttempts"] = 15
+            changed = true
+        } else if share["recruitAttempts"] == nil {
+            share["recruitAttempts"] = 15
+            changed = true
+        }
+        if share["recruitOverlayTexts"] == nil {
+            share["recruitOverlayTexts"] = [
+                "邀请", "推荐组队", "最近组队", "巡猎车队", "萌芽师徒"
+            ]
+            changed = true
+        }
+        if share["recruitOverlayRegion"] == nil {
+            share["recruitOverlayRegion"] = [
+                "left": 250, "top": 150, "right": 1350, "bottom": 820
+            ]
+            changed = true
+        }
+        if share["recruitOverlayDismissPoint"] == nil {
+            share["recruitOverlayDismissPoint"] = ["x": 1800, "y": 900]
+            changed = true
+        }
+        patrol["share"] = share
+        object["patrolTeamUi"] = patrol
+
+        var flows = object["flows"] as? [String: Any] ?? [:]
+        if var hardFlow = flows["startHardPatrol"] as? [[String: Any]],
+           let last = hardFlow.indices.last,
+           hardFlow[last]["op"] as? String == "waitAnyText" {
+            if hardFlow[last]["strictTimeout"] as? Bool != true {
+                hardFlow[last]["strictTimeout"] = true
+                flows["startHardPatrol"] = hardFlow
+                changed = true
+            }
+        }
+        if var openFlow = flows["openTeamPanel"] as? [[String: Any]],
+           openFlow.count > 2,
+           openFlow[2]["op"] as? String == "tapUnlessAnyText" {
+            openFlow[2] = [
+                "op": "tapUntilAnyTexts",
+                "texts": ["调整", "离开队伍"],
+                "minimumTexts": 1,
+                "x": 50,
+                "y": 325,
+                "maxAttempts": 6,
+                "intervalMs": 500,
+                "hud": true,
+                "controlLabel": "队伍卡片旗帜展开"
+            ]
+            flows["openTeamPanel"] = openFlow
+            changed = true
+        }
+        if var campFlow = flows["openCampPanel"] as? [[String: Any]],
+           !campFlow.isEmpty,
+           campFlow[0]["op"] as? String == "openCampPanelViaChat" {
+            for key in [
+                "hostMouseUnlockBeforeCampChannel",
+                "hostMouseUnlockBeforeEveryCampChannelAttempt",
+                "hostMouseUnlockOnCampChannelRetry",
+                "hostMouseUnlockDelayMs",
+                "campControlTapMode",
+                "androidTouchFallbackAfterAttempts"
+            ] {
+                if campFlow[0].removeValue(forKey: key) != nil { changed = true }
+            }
+            flows["openCampPanel"] = campFlow
+        }
+        if flows["closePatrolTeamPanelBeforeAccept"] == nil {
+            flows["closePatrolTeamPanelBeforeAccept"] = [[
+                "op": "closePatrolTeamPanelBeforeAccept",
+                "x": 74,
+                "y": 1110,
+                "hud": true,
+                "panelTexts": ["调整", "离开队伍"],
+                "hudTexts": ["综合", "世界", "场景", "营地", "队伍"],
+                "hudRegion": ["left": 0, "top": 930, "right": 760, "bottom": 1200],
+                "minimumHudTexts": 2,
+                "collapseText": "收起",
+                "collapseRegion": ["left": 1450, "top": 850, "right": 1900, "bottom": 1150],
+                "collapsePoint": ["x": 1740, "y": 1110],
+                "chatTexts": ["营地频道", "成员", "私聊", "萌芽邀约", "聊天室"],
+                "chatRegion": ["left": 1200, "top": 100, "right": 1900, "bottom": 1150],
+                "settleAfterClickMs": 5000,
+                "collapseSettleMs": 1500
+            ]]
+            changed = true
+        }
+        if var campFlow = flows["openCampPanel"] as? [[String: Any]],
+           !campFlow.isEmpty,
+           campFlow[0]["op"] as? String == "openCampPanelViaChat",
+           campFlow[0]["chatReadyTexts"] == nil {
+            campFlow[0]["chatReadyTexts"] = ["营地频道", "成员", "私聊"]
+            campFlow[0]["chatReadyRegion"] = ["left": 1200, "top": 100, "right": 1900, "bottom": 1150]
+            campFlow[0]["chatReadyMinimumTexts"] = 1
+            flows["openCampPanel"] = campFlow
+            changed = true
+        }
+        object["flows"] = flows
+        return changed
+    }
+
     func run(_ arguments: [String], timeout: TimeInterval = 120) async throws -> String {
         let root = runtimeRoot
         let script = root.appending(path: "scripts/manage-local-agent.sh").path
@@ -198,98 +336,6 @@ actor RuntimeService {
         let node = bundledNode(root: root)
         let manager = root.appending(path: "src/plugin-manager.mjs").path
         return try await process(node, [manager] + arguments, workingDirectory: root, timeout: timeout)
-    }
-
-    func requestHostInputPermission() async throws -> String {
-        let root = runtimeRoot
-        let helperApp = root.appending(
-            path: "bin/Yume Life After Mac Agent Input Helper.app",
-            directoryHint: .isDirectory
-        )
-        let helperExecutable = helperApp.appending(
-            path: "Contents/MacOS/YumeLifeAfterMacAgentInputHelper"
-        )
-        guard fileManager.isExecutableFile(atPath: helperExecutable.path) else {
-            throw RuntimeError.failed(String(localized: "The bundled input helper is missing."))
-        }
-        let preflight = try await hostInputPermissionResponse(
-            helperApp: helperApp,
-            root: root,
-            helperArguments: ["--preflight-only"],
-            resultTimeout: 10
-        )
-        if preflight["permissionGranted"] as? Bool == true {
-            return "Input helper permission granted"
-        }
-        // Apple exposes the limited event-posting privilege in the
-        // Accessibility settings UI, but TCC stores it as the distinct
-        // PostEvent service. Resetting Accessibility would leave the stale
-        // PostEvent code requirement untouched after an ad-hoc signed update.
-        _ = try? await process(
-            "/usr/bin/tccutil",
-            ["reset", "PostEvent", "zone.yume.lifeafter.macagent.input-helper"],
-            workingDirectory: root,
-            timeout: 10
-        )
-        let response = try await hostInputPermissionResponse(
-            helperApp: helperApp,
-            root: root,
-            helperArguments: [
-                "--request-permission-only",
-                "--permission-timeout-ms", "120000"
-            ],
-            resultTimeout: 130
-        )
-        if let error = response["error"] as? String, !error.isEmpty {
-            throw RuntimeError.failed(error)
-        }
-        guard response["permissionGranted"] as? Bool == true else {
-            throw RuntimeError.failed(
-                "Enable Yume Life After Mac Agent Input Helper in System Settings > Privacy & Security > Accessibility."
-            )
-        }
-        return "Input helper permission granted"
-    }
-
-    private func hostInputPermissionResponse(
-        helperApp: URL,
-        root: URL,
-        helperArguments: [String],
-        resultTimeout: TimeInterval
-    ) async throws -> [String: Any] {
-        let result = URL(
-            fileURLWithPath: "/private/tmp/yume-life-after-input-\(UUID().uuidString).json"
-        )
-        defer { try? fileManager.removeItem(at: result) }
-        var launchFailure: String?
-        do {
-            _ = try await process(
-                "/usr/bin/open",
-                ["-n", helperApp.path, "--args"] + helperArguments + ["--result-path", result.path],
-                workingDirectory: root,
-                timeout: 10
-            )
-        } catch {
-            // LaunchServices can report a transient process-observation error
-            // after the helper has already started. The helper's atomic result
-            // file is authoritative, so retain this only as timeout context.
-            launchFailure = error.localizedDescription
-        }
-        let deadline = Date().addingTimeInterval(resultTimeout)
-        while !fileManager.fileExists(atPath: result.path), Date() < deadline {
-            try await Task.sleep(for: .milliseconds(250))
-        }
-        guard fileManager.fileExists(atPath: result.path) else {
-            throw RuntimeError.failed(
-                launchFailure ?? "Input Helper did not return a permission result within \(Int(resultTimeout)) seconds. Open System Settings > Privacy & Security > Accessibility and enable Yume Life After Mac Agent Input Helper."
-            )
-        }
-        guard let response = try JSONSerialization.jsonObject(
-            with: Data(contentsOf: result)
-        ) as? [String: Any] else {
-            throw RuntimeError.failed("Input Helper returned an invalid permission result.")
-        }
-        return response
     }
 
     func health(debugToken: String) async throws -> AgentHealth {
