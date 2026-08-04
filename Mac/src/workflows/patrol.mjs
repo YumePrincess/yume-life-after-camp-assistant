@@ -338,7 +338,7 @@ export async function createPatrolTeam(context, signal) {
           ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点；点击前由统一点击器检查右下角鼠标图标，不存在才发送一次 70 (${controls.flagButton.x},${controls.flagButton.y})`
           : `旗帜点击后仍未出现队伍菜单；重新检查右下角鼠标图标后重试触屏点击 (${controls.flagButton.x},${controls.flagButton.y})`
       );
-      await tapPatrolMouse(ui, controls.flagButton, signal);
+      await tapPatrolMouse(ui, controls.flagButton, signal, { gameMouse: true });
       await sleep(settleMs, signal);
       screen = await capturePatrolScreen(
         vision,
@@ -495,7 +495,7 @@ export async function createPatrolTeam(context, signal) {
         "patrol_create_menu_click",
         `第 ${attempt}/${createMenuClickAttempts} 次：已在左侧区域精确识别“创建队伍”；使用统一图标检测后的 ADB 触屏点击 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})`
       );
-      await tapPatrolMouse(ui, createMenuPoint, signal);
+      await tapPatrolMouse(ui, createMenuPoint, signal, { gameMouse: true });
       await sleep(createMenuWaitMs, signal);
       screen = await capturePatrolScreen(
         vision,
@@ -660,7 +660,7 @@ export async function createPatrolTeam(context, signal) {
     "patrol_create_submit",
     "已确认“营地事务>营地巡逻任务”，点击创建页面右下角的最终“创建队伍”按钮"
   );
-  await tapPatrolMouse(ui, controls.createButtonPoint, signal);
+  await tapPatrolMouse(ui, controls.createButtonPoint, signal, { gameMouse: true });
   await sleep(settleMs, signal);
   screen = await capturePatrolScreen(
     vision,
@@ -1153,7 +1153,10 @@ function observationCenter(observation) {
   };
 }
 
-async function tapPatrolMouse(ui, point, signal) {
+async function tapPatrolMouse(ui, point, signal, options = {}) {
+  if (options.gameMouse && typeof ui.gameMouseTap === "function") {
+    return ui.gameMouseTap(point, signal);
+  }
   return ui.tap(point, signal);
 }
 

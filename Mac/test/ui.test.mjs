@@ -31,6 +31,20 @@ test("a visible game-mouse icon skips keyevent 70 and uses Android touch tap", a
   assert.deepEqual(fixture.taps, []);
 });
 
+test("a panel touch tap never inspects the HUD game-mouse icon", async () => {
+  const fixture = createUi();
+  const touchTaps = [];
+  fixture.vision.gameMouseIconVisible = async () => {
+    throw new Error("panel has no game-mouse icon");
+  };
+  fixture.adb.touchTap = async (x, y) => touchTaps.push({ x, y });
+
+  await fixture.ui.tap({ x: 1050, y: 450 });
+
+  assert.deepEqual(touchTaps, [{ x: 1050, y: 450 }]);
+  assert.deepEqual(fixture.taps, []);
+});
+
 test("an absent game-mouse icon sends keyevent 70 once, verifies it, then taps", async () => {
   const fixture = createUi();
   const states = [false, true];
@@ -42,11 +56,38 @@ test("an absent game-mouse icon sends keyevent 70 once, verifies it, then taps",
   };
   fixture.adb.touchTap = async (x, y) => touchTaps.push({ x, y });
 
-  await fixture.ui.tap({ x: 220, y: 180 });
+  await fixture.ui.gameMouseTap({ x: 220, y: 180 });
 
   assert.deepEqual(prepareCalls, [{ force: true }]);
   assert.deepEqual(touchTaps, [{ x: 220, y: 180 }]);
   assert.deepEqual(fixture.taps, []);
+});
+
+test("retry-only game-mouse fallback waits until the first panel tap fails", async () => {
+  const fixture = createUi({
+    fastFrames: [[], [], [observation("调整", 100, 100)]]
+  });
+  const states = [false, true];
+  const prepareCalls = [];
+  fixture.vision.gameMouseIconVisible = async () => states.shift() ?? true;
+  fixture.adb.prepareGameMouseForClick = async (_signal, options) => {
+    prepareCalls.push(options);
+  };
+
+  await fixture.ui.tapUntilAnyTexts({
+    texts: ["调整"],
+    x: 50,
+    y: 325,
+    maxAttempts: 2,
+    intervalMs: 1,
+    gameMouseOnRetry: true
+  });
+
+  assert.deepEqual(prepareCalls, [{ force: true }]);
+  assert.deepEqual(fixture.taps, [
+    { x: 50, y: 325 },
+    { x: 50, y: 325 }
+  ]);
 });
 
 test("dynamic camp content alone never confirms the camp page", () => {
@@ -184,7 +225,7 @@ test("camp navigation summons the game mouse once and uses ADB clicks", async ()
   ]);
 });
 
-test("an ADB click command failure rechecks the cursor before retrying", async () => {
+test("a game-mouse entry click command failure rechecks the cursor before retrying", async () => {
   const fixture = createUi();
   const prepareCalls = [];
   let clicks = 0;
@@ -196,7 +237,7 @@ test("an ADB click command failure rechecks the cursor before retrying", async (
     if (clicks === 1) throw new Error("ADB click injection failed");
   };
 
-  await fixture.ui.tap({ x: 48, y: 327 });
+  await fixture.ui.gameMouseTap({ x: 48, y: 327 });
 
   assert.deepEqual(prepareCalls, [{}, { force: true }]);
   assert.equal(clicks, 2);
@@ -1097,6 +1138,7 @@ test("open team panel retries the flag expansion until the team card is visible"
       maxAttempts: 6,
       intervalMs: 500,
       hud: true,
+      gameMouse: true,
       controlLabel: "队伍卡片旗帜展开"
     });
   }

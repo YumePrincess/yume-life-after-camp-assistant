@@ -603,6 +603,7 @@
         "maxAttempts": 6,
         "intervalMs": 500,
         "hud": true,
+        "gameMouse": true,
         "controlLabel": "队伍卡片旗帜展开"
       },
       { "op": "sleep", "ms": 300 },

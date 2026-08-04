@@ -66,6 +66,15 @@ export class GameUi {
   }
 
   async tap(point, signal) {
+    // Most game surfaces handled by the Agent are Android panels. A direct
+    // touch tap is stable there and must not probe the HUD-only game-mouse
+    // icon. Only callers that explicitly mark a game-mouse entry use the
+    // gameMouseTap path below.
+    await this.performAdbTap(point, signal);
+    await this.afterAction(signal);
+  }
+
+  async gameMouseTap(point, signal) {
     await this.ensureGameMouseForClick(signal);
     try {
       await this.performAdbTap(point, signal);
@@ -105,8 +114,8 @@ export class GameUi {
   }
 
   async tapAction(point, signal) {
-    if (point?.hud === true) {
-      return this.hudTap(point, signal);
+    if (point?.gameMouse === true) {
+      return this.gameMouseTap(point, signal);
     }
     return this.tap(point, signal);
   }
@@ -182,7 +191,14 @@ export class GameUi {
       }
       if (match) {
         const point = center(match);
-        await this.tapAction({ ...point, hud: options.hud === true }, signal);
+        await this.tapAction(
+          {
+            ...point,
+            hud: options.hud === true,
+            gameMouse: options.gameMouse === true
+          },
+          signal
+        );
         return { frame, match };
       }
       await delay(700, signal);
@@ -566,7 +582,14 @@ export class GameUi {
     }
     if (!match) return null;
     const point = center(match);
-    await this.tapAction({ ...point, hud: options.hud === true }, signal);
+    await this.tapAction(
+      {
+        ...point,
+        hud: options.hud === true,
+        gameMouse: options.gameMouse === true
+      },
+      signal
+    );
     return { frame, match };
   }
 
@@ -678,7 +701,14 @@ export class GameUi {
       }
       if (candidate) {
         const point = center(candidate.match);
-        await this.tapAction({ ...point, hud: action.hud === true }, signal);
+        await this.tapAction(
+          {
+            ...point,
+            hud: action.hud === true,
+            gameMouse: action.gameMouse === true
+          },
+          signal
+        );
       } else {
         const anchoredClick = (action.anchorClickFallbacks || [])
           .map((fallback) => ({
@@ -702,7 +732,14 @@ export class GameUi {
             `已确认交互菜单锚点“${anchoredClick.fallback.anchorText}”，点击其相邻的“${anchoredClick.fallback.targetText}”按钮`,
             { point }
           );
-          await this.tapAction({ ...point, hud: action.hud === true }, signal);
+          await this.tapAction(
+            {
+              ...point,
+              hud: action.hud === true,
+              gameMouse: action.gameMouse === true
+            },
+            signal
+          );
         } else {
           await delay(action.intervalMs || 800, signal);
         }
@@ -774,7 +811,15 @@ export class GameUi {
         "hud_panel_close_attempt",
         `第 ${attempt + 1}/${attempts} 次关闭 HUD 面板；${action.controlLabel ? `点击已校准的${action.controlLabel}` : "点击前先释放容器鼠标"}并在点击后重新识别`
       );
-      await this.tapAction(action, signal);
+      await this.tapAction(
+        {
+          ...action,
+          gameMouse:
+            action.gameMouse === true ||
+            (action.gameMouseOnRetry === true && attempt > 0)
+        },
+        signal
+      );
       await delay(Math.max(200, Number(action.intervalMs) || 500), signal);
     }
     throw new Error(
@@ -946,7 +991,16 @@ export class GameUi {
           ? `已出现 HUD 锚点，但巡逻结果页至少需返回 ${minimumTapsBeforeSuccess} 次；继续第 ${performedTaps + 1}/${minimumTapsBeforeSuccess} 次左下角返回`
           : `正在逐层退出遮挡页面（${attempt + 1}/${attempts}），返回 HUD 后立即停止`
       );
-      await this.tapAction(action, signal);
+      await this.tapAction(
+        {
+          ...action,
+          gameMouse:
+            action.gameMouse === true ||
+            action.controlLabel === "队伍卡片旗帜展开" ||
+            (action.gameMouseOnRetry === true && performedTaps > 0)
+        },
+        signal
+      );
       performedTaps += 1;
       await delay(Math.max(200, Number(action.intervalMs) || 500), signal);
     }
@@ -1528,7 +1582,13 @@ export class GameUi {
         `通过聊天营地频道打开营地界面（${attempt}/${attempts}）；点击前检查右下角鼠标图标，使用 ADB 触屏点击`
       );
       try {
-        await this.tap(action.chatButton || { x: 250, y: 1060 }, signal);
+        await this.tapAction(
+          {
+            ...(action.chatButton || { x: 250, y: 1060 }),
+            gameMouse: true
+          },
+          signal
+        );
         await delay(action.chatDelayMs || 500, signal);
         let chatReady = chatReadyTexts.length === 0;
         if (!chatReady) {
