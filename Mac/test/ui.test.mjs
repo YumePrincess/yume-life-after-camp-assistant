@@ -1184,7 +1184,7 @@ test("patrol acceptance uses the guarded close flow with a five-second settle", 
   }
 });
 
-test("all click flows use input keyevent 70 and no host release config", async () => {
+test("post-login click flows use input keyevent 70 and no host release config", async () => {
   for (const file of ["config.json", "config.example.json"]) {
     const config = JSON.parse(
       await readFile(new URL(`../${file}`, import.meta.url), "utf8")

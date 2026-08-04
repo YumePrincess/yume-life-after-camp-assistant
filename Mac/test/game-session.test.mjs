@@ -198,6 +198,7 @@ test("a clear local-model login candidate clicks the calibrated login button", a
   );
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+  assert.deepEqual(fixture.touchTaps, [{ x: 960, y: 945 }]);
   assert.ok(
     fixture.messages.some((message) => message.includes("固定登录按钮"))
   );
@@ -555,6 +556,7 @@ function createFixture(
   regionalFrames = []
 ) {
   const taps = [];
+  const touchTaps = [];
   const messages = [];
   let frameIndex = 0;
   let accurateFrameIndex = 0;
@@ -678,6 +680,10 @@ function createFixture(
       async tap(point) {
         taps.push(point);
       },
+      async androidTouchTap(point) {
+        touchTaps.push(point);
+        taps.push(point);
+      },
       async afterAction() {},
       async keyIfAnyText() {}
     },
@@ -689,6 +695,7 @@ function createFixture(
   return {
     context,
     taps,
+    touchTaps,
     messages,
     get captures() {
       return frameIndex;

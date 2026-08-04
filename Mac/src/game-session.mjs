@@ -357,6 +357,16 @@ async function startAndEnterGame(context, signal, startupState = {}) {
 
 export async function waitForGameReady(context, signal) {
   const { adb, ui, vision, report, config } = context;
+  // The login screen and other pre-login overlays are Android UI, not the
+  // game's captured-mouse HUD. Use the existing touch path there so the game
+  // mouse toggle is only evaluated for post-login game clicks that actually
+  // need it.
+  const tapBeforeLogin = async (point) => {
+    if (typeof ui.androidTouchTap === "function") {
+      return ui.androidTouchTap(point, signal);
+    }
+    return ui.tap(point, signal);
+  };
   const promotions = {
     maxDismissAttemptsPerPage: 4,
     dismissRetryCooldownMs: 15_000,
@@ -916,7 +926,7 @@ export async function waitForGameReady(context, signal) {
       }
     }
     if (login && Date.now() - lastLoginClickAt >= 5_000) {
-      await ui.tap(config.adb.loginButton, signal);
+      await tapBeforeLogin(config.adb.loginButton);
       loginClicked = true;
       loginClickedAt = Date.now();
       lastLoginClickAt = Date.now();
@@ -956,7 +966,7 @@ export async function waitForGameReady(context, signal) {
         "local_model_guarded_login",
         "本地模型以高置信度确认登录页，正在点击已校准的固定登录按钮"
       );
-      await ui.tap(config.adb.loginButton, signal);
+      await tapBeforeLogin(config.adb.loginButton);
       loginClicked = true;
       loginClickedAt = Date.now();
       lastLoginClickAt = Date.now();
@@ -996,7 +1006,7 @@ export async function waitForGameReady(context, signal) {
           maxFixedCloseAttempts
         }
       );
-      await ui.tap(announcements.closePoint, signal);
+      await tapBeforeLogin(announcements.closePoint);
       await ui.afterAction(signal);
     }
     const updateState = updates.enabled
@@ -1037,7 +1047,7 @@ export async function waitForGameReady(context, signal) {
           "game_update_restart_button",
           `资源更新要求${restartButton.text}，正在点击明确的重启按钮`
         );
-        await ui.tap(center(restartButton.match), signal);
+        await tapBeforeLogin(center(restartButton.match));
         await ui.afterAction(signal);
         processMissingSince = null;
         continue;
@@ -1058,7 +1068,7 @@ export async function waitForGameReady(context, signal) {
         `检测到登录角色前的${announcement}，正在点击右上角关闭按钮`,
         { closure: announcementClosures }
       );
-      await ui.tap(announcements.closePoint, signal);
+      await tapBeforeLogin(announcements.closePoint);
       await ui.afterAction(signal);
       continue;
     }
