@@ -4,6 +4,50 @@ import {
   parsePopulationCapacity,
   safeSipsCropRegion
 } from "../src/vision.mjs";
+import { Vision } from "../src/vision.mjs";
+
+test("game-mouse icon detection uses two pixel probes and OCR only as a conservative fallback", async () => {
+  const vision = new Vision({
+    adb: {
+      screenWidth: 1920,
+      screenHeight: 1200,
+      gameMouseIcon: {
+        probePoints: [
+          { x: 1728, y: 1000 },
+          { x: 1728, y: 1055 }
+        ],
+        probeRadius: 18,
+        luminanceDeviationThreshold: 0.12,
+        ocrFallback: {
+          texts: ["Space"],
+          minimumConfidence: 0.35,
+          luminanceDeviationThreshold: 0.08
+        }
+      }
+    },
+    vision: {},
+    localVisionModel: { enabled: false }
+  }, {});
+  vision.captureSource = async () => ({ path: "/private/tmp/icon-test.png" });
+  vision.ocrRegion = async () => [{ text: "Space", confidence: 1 }];
+  let probes = [
+    { luminanceDeviation: 0.13 },
+    { luminanceDeviation: 0.12 }
+  ];
+  vision.probe = async () => probes;
+
+  assert.equal(await vision.gameMouseIconVisible(), true);
+  probes = [
+    { luminanceDeviation: 0.03 },
+    { luminanceDeviation: 0.04 }
+  ];
+  assert.equal(await vision.gameMouseIconVisible(), false);
+  probes = [
+    { luminanceDeviation: 0.09 },
+    { luminanceDeviation: 0.08 }
+  ];
+  assert.equal(await vision.gameMouseIconVisible(), true);
+});
 
 test("macOS 27 bottom-edge crops shift inward instead of silently returning the full frame", () => {
   assert.deepEqual(

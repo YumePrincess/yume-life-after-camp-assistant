@@ -14,6 +14,41 @@ test("camp page is recognized by two stable, region-bound anchors", () => {
   );
 });
 
+test("a visible game-mouse icon skips keyevent 70 and uses Android touch tap", async () => {
+  const fixture = createUi();
+  const touchTaps = [];
+  fixture.vision.gameMouseIconVisible = async () => true;
+  fixture.adb.touchTap = async (x, y) => touchTaps.push({ x, y });
+  let prepareCalls = 0;
+  fixture.adb.prepareGameMouseForClick = async () => {
+    prepareCalls += 1;
+  };
+
+  await fixture.ui.tap({ x: 48, y: 327 });
+
+  assert.equal(prepareCalls, 0);
+  assert.deepEqual(touchTaps, [{ x: 48, y: 327 }]);
+  assert.deepEqual(fixture.taps, []);
+});
+
+test("an absent game-mouse icon sends keyevent 70 once, verifies it, then taps", async () => {
+  const fixture = createUi();
+  const states = [false, true];
+  const touchTaps = [];
+  const prepareCalls = [];
+  fixture.vision.gameMouseIconVisible = async () => states.shift() ?? true;
+  fixture.adb.prepareGameMouseForClick = async (_signal, options) => {
+    prepareCalls.push(options);
+  };
+  fixture.adb.touchTap = async (x, y) => touchTaps.push({ x, y });
+
+  await fixture.ui.tap({ x: 220, y: 180 });
+
+  assert.deepEqual(prepareCalls, [{ force: true }]);
+  assert.deepEqual(touchTaps, [{ x: 220, y: 180 }]);
+  assert.deepEqual(fixture.taps, []);
+});
+
 test("dynamic camp content alone never confirms the camp page", () => {
   const ui = createUi().ui;
   assert.equal(
@@ -149,7 +184,7 @@ test("camp navigation summons the game mouse once and uses ADB clicks", async ()
   ]);
 });
 
-test("an ADB click command failure re-summons once, while OCR retries do not toggle", async () => {
+test("an ADB click command failure rechecks the cursor before retrying", async () => {
   const fixture = createUi();
   const prepareCalls = [];
   let clicks = 0;
@@ -166,7 +201,7 @@ test("an ADB click command failure re-summons once, while OCR retries do not tog
   assert.deepEqual(prepareCalls, [{}, { force: true }]);
   assert.equal(clicks, 2);
   assert.ok(
-    fixture.messages.some((message) => message.includes("KEYCODE_GRAVE"))
+    fixture.messages.some((message) => message.includes("图标"))
   );
 });
 
@@ -1149,13 +1184,13 @@ test("patrol acceptance uses the guarded close flow with a five-second settle", 
   }
 });
 
-test("all click flows use the ADB game-mouse summon key and no host release config", async () => {
+test("all click flows use input keyevent 70 and no host release config", async () => {
   for (const file of ["config.json", "config.example.json"]) {
     const config = JSON.parse(
       await readFile(new URL(`../${file}`, import.meta.url), "utf8")
     );
-    assert.equal(config.adb.gameMouseToggleKey, "KEYCODE_GRAVE");
-    assert.equal(config.adb.gameMouseToggleSettleMs, 1000);
+    assert.equal(config.adb.gameMouseToggleKey, 70);
+    assert.equal(config.adb.gameMouseToggleSettleMs, 350);
     assert.equal(Object.hasOwn(config.mumu, "hostMouseUnlock"), false);
     assert.equal(
       Object.hasOwn(config.flows.openCampPanel[0], "hostMouseUnlockBeforeCampChannel"),
@@ -1315,6 +1350,7 @@ function createUi({
   return {
     ui,
     adb,
+    vision,
     taps,
     keys,
     keyCalls,

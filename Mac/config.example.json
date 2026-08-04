@@ -21,6 +21,7 @@
     "stopEmulatorAfterTask": true,
     "keepRunningOnTaskError": false,
     "adbReadyTimeoutSeconds": 180,
+    "startupProtectionSeconds": 300,
     "containerRestartTimeoutSeconds": 60,
     "deviceProcessName": "MuMuEmulator",
     "hardRestartDelaySeconds": 4,
@@ -37,8 +38,24 @@
     "loginButton": { "x": 960, "y": 945 },
     "loginButtonRegion": { "left": 360, "top": 795, "right": 1560, "bottom": 1095 },
     "unicodeIme": "com.android.adbkeyboard/.AdbIME",
-    "gameMouseToggleKey": "KEYCODE_GRAVE",
-    "gameMouseToggleSettleMs": 1000
+    "gameMouseToggleKey": 70,
+    "gameMouseToggleSettleMs": 350,
+    "gameMouseIconVerifyTimeoutMs": 2000,
+    "gameMouseIconVerifyPollMs": 250,
+    "gameMouseIcon": {
+      "probePoints": [
+        { "x": 1728, "y": 1000 },
+        { "x": 1728, "y": 1055 }
+      ],
+      "probeRadius": 18,
+      "luminanceDeviationThreshold": 0.12,
+      "ocrFallback": {
+        "texts": ["Space"],
+        "region": { "left": 1450, "top": 850, "right": 1910, "bottom": 1150 },
+        "minimumConfidence": 0.35,
+        "luminanceDeviationThreshold": 0.08
+      }
+    }
   },
   "vision": {
     "binary": "./bin/mrzh-vision-ocr",

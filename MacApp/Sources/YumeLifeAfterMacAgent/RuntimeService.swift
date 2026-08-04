@@ -137,14 +137,50 @@ actor RuntimeService {
                 object["mumu"] = mumu
             }
             var adb = object["adb"] as? [String: Any] ?? [:]
-            if adb["gameMouseToggleKey"] == nil {
-                adb["gameMouseToggleKey"] = "KEYCODE_GRAVE"
+            let toggleKeyIs70 = (adb["gameMouseToggleKey"] as? NSNumber)?.intValue == 70 ||
+                (adb["gameMouseToggleKey"] as? String) == "70"
+            if !toggleKeyIs70 {
+                adb["gameMouseToggleKey"] = 70
                 changed = true
             }
-            if adb["gameMouseToggleSettleMs"] == nil {
-                adb["gameMouseToggleSettleMs"] = 1_000
+            if (adb["gameMouseToggleSettleMs"] as? NSNumber)?.intValue != 350 {
+                adb["gameMouseToggleSettleMs"] = 350
                 changed = true
             }
+            if (adb["gameMouseIconVerifyTimeoutMs"] as? NSNumber)?.intValue != 2_000 {
+                adb["gameMouseIconVerifyTimeoutMs"] = 2_000
+                changed = true
+            }
+            if (adb["gameMouseIconVerifyPollMs"] as? NSNumber)?.intValue != 250 {
+                adb["gameMouseIconVerifyPollMs"] = 250
+                changed = true
+            }
+            var gameMouseIcon = adb["gameMouseIcon"] as? [String: Any] ?? [:]
+            if gameMouseIcon["probePoints"] == nil {
+                gameMouseIcon["probePoints"] = [
+                    ["x": 1_728, "y": 1_000],
+                    ["x": 1_728, "y": 1_055]
+                ]
+                changed = true
+            }
+            if gameMouseIcon["probeRadius"] == nil {
+                gameMouseIcon["probeRadius"] = 18
+                changed = true
+            }
+            if gameMouseIcon["luminanceDeviationThreshold"] == nil {
+                gameMouseIcon["luminanceDeviationThreshold"] = 0.12
+                changed = true
+            }
+            if gameMouseIcon["ocrFallback"] == nil {
+                gameMouseIcon["ocrFallback"] = [
+                    "texts": ["Space"],
+                    "region": ["left": 1_450, "top": 850, "right": 1_910, "bottom": 1_150],
+                    "minimumConfidence": 0.35,
+                    "luminanceDeviationThreshold": 0.08
+                ]
+                changed = true
+            }
+            adb["gameMouseIcon"] = gameMouseIcon
             object["adb"] = adb
             var tables = object["tables"] as? [String: Any] ?? [:]
             for tableName in ["contribution", "activity"] {

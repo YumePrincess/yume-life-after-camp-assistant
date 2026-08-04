@@ -2,8 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isRecoverableGameFailure,
+  shouldHoldInitialStartup,
   waitForGameReady
 } from "../src/game-session.mjs";
+
+test("initial MuMu startup remains protected for the full configured window", () => {
+  assert.equal(shouldHoldInitialStartup(false, 300_000, 299_999), true);
+  assert.equal(shouldHoldInitialStartup(false, 300_000, 300_000), false);
+  assert.equal(shouldHoldInitialStartup(true, 300_000, 1), false);
+});
 
 test("a healthy game is never restarted for a UI or input timeout", () => {
   assert.equal(

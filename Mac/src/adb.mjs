@@ -168,10 +168,20 @@ export class AdbClient {
 
   async prepareGameMouseForClick(signal, { force = false } = {}) {
     if (this.gameMouseReady && !force) return false;
-    const toggleKey = this.config.adb.gameMouseToggleKey || "KEYCODE_GRAVE";
-    await this.key(toggleKey, signal);
+    const toggleKey = this.config.adb.gameMouseToggleKey ?? 70;
+    const args = ["input", "keyevent", String(toggleKey)];
+    try {
+      await this.shell(args, { signal, timeoutMs: 5_000 });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      await this.reconnect();
+      await this.shell(args, { signal, timeoutMs: 5_000 }).catch((retryError) => {
+        retryError.cause = error;
+        throw retryError;
+      });
+    }
     await delay(
-      Math.max(100, Number(this.config.adb.gameMouseToggleSettleMs) || 1_000),
+      Math.max(100, Number(this.config.adb.gameMouseToggleSettleMs) || 350),
       signal
     );
     this.gameMouseReady = true;

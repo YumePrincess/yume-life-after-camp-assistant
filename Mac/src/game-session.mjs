@@ -18,6 +18,18 @@ export async function withGameSession(
   let advisorStarted = false;
   let preserveSceneAfterError = false;
   let preservedError = null;
+  const startupProtectionSeconds = Math.max(
+    300,
+    Number(config.mumu.startupProtectionSeconds) || 300
+  );
+  const startupProtectionDeadline =
+    Date.now() + startupProtectionSeconds * 1000;
+  let managerReady = false;
+  let startupWaitReportAt = 0;
+  const startupState = {
+    launched: false,
+    prewarmed: false
+  };
   const cleanupResult = {
     cleanupCompleted: true,
     cleanupIssues: []
@@ -42,16 +54,47 @@ export async function withGameSession(
     }
     await report("info", "emulator_start", "正在后台启动 MuMu 模拟器");
     started = true;
-    await mumu.ensureStarted(signal);
-
-    for (let restartCount = 0; ; restartCount += 1) {
+    let restartCount = 0;
+    while (true) {
       try {
-        await startAndEnterGame(context, signal);
+        if (!managerReady) {
+          await mumu.ensureStarted(signal);
+          managerReady = true;
+        }
+        await startAndEnterGame(context, signal, startupState);
         gameReady = true;
         await runWithWatchdog(context, work, signal, watchdog);
         return cleanupResult;
       } catch (error) {
         if (signal.aborted) throw signal.reason || error;
+        if (shouldHoldInitialStartup(gameReady, startupProtectionDeadline)) {
+          const now = Date.now();
+          if (now - startupWaitReportAt >= 15_000) {
+            startupWaitReportAt = now;
+            const waitedSeconds = Math.max(
+              0,
+              Math.round(
+                (startupProtectionSeconds * 1000 -
+                  Math.max(0, startupProtectionDeadline - now)) /
+                  1000
+              )
+            );
+            await report(
+              "warning",
+              "emulator_start_waiting",
+              `MuMu/游戏首次启动仍在加载，已等待约 ${waitedSeconds} 秒；首次启动保护共 ${startupProtectionSeconds} 秒，保护期内不重启游戏或 Android 容器`,
+              { waitedSeconds, startupProtectionSeconds, reason: error.message }
+            ).catch(() => undefined);
+          }
+          await delay(
+            Math.min(
+              5_000,
+              Math.max(250, startupProtectionDeadline - Date.now())
+            ),
+            signal
+          );
+          continue;
+        }
         const deviceState = await adb.state();
         const health = await adb.gameHealth().catch((healthError) => ({
           running: null,
@@ -77,7 +120,11 @@ export async function withGameSession(
           ).catch(() => undefined);
         }
         if (!canRestart) throw error;
+        const startupProtectionExpired =
+          !gameReady && Date.now() >= startupProtectionDeadline;
+        const nextRestartCount = restartCount + 1;
         const hardRestart =
+          startupProtectionExpired ||
           deviceState !== "device" ||
           restartCount > 0 ||
           /MUMU_DEVICE_|ADB device|GAME_SCREEN_FROZEN/i.test(error.message);
@@ -85,8 +132,15 @@ export async function withGameSession(
           await report(
             "warning",
             "emulator_container_restart",
-            `检测到 MuMu 设备或界面无响应，正在优先重启 Android 容器（${restartCount + 1}/${watchdog.maxRestarts}）`,
-            { reason: error.message, deviceState, health }
+            startupProtectionExpired
+              ? `首次启动保护已等待 ${startupProtectionSeconds} 秒仍未成功，正在重启 Android 容器（${nextRestartCount}/${watchdog.maxRestarts}）`
+              : `检测到 MuMu 设备或界面无响应，正在优先重启 Android 容器（${nextRestartCount}/${watchdog.maxRestarts}）`,
+            {
+              reason: error.message,
+              deviceState,
+              health,
+              startupProtectionExpired
+            }
           );
           try {
             await mumu.restartContainer(signal);
@@ -99,15 +153,20 @@ export async function withGameSession(
             );
             await mumu.hardRestart(signal);
           }
+          startupState.launched = false;
+          startupState.prewarmed = false;
         } else {
           await report(
             "warning",
             "game_restart",
-            `已确认游戏进程退出或发生 ANR，正在结束进程并重启游戏（${restartCount + 1}/${watchdog.maxRestarts}）`,
+            `已确认游戏进程退出或发生 ANR，正在结束进程并重启游戏（${nextRestartCount}/${watchdog.maxRestarts}）`,
             { reason: error.message, deviceState, health }
           );
           await adb.stopGame();
+          startupState.launched = false;
+          startupState.prewarmed = false;
         }
+        restartCount = nextRestartCount;
         await delay(watchdog.restartCooldownSeconds * 1000, signal);
       }
     }
@@ -258,12 +317,15 @@ async function returnToCenterExit(context) {
   }
 }
 
-async function startAndEnterGame(context, signal) {
+async function startAndEnterGame(context, signal, startupState = {}) {
   const { adb, ui, vision, report, config } = context;
-  await report("info", "game_start", "正在启动明日之后");
-  ui.resetGameMouseState?.();
-  await adb.launchGame();
-  if (typeof vision.prewarm === "function") {
+  if (!startupState.launched) {
+    await report("info", "game_start", "正在启动明日之后");
+    ui.resetGameMouseState?.();
+    await adb.launchGame();
+    startupState.launched = true;
+  }
+  if (!startupState.prewarmed && typeof vision.prewarm === "function") {
     await report("info", "ocr_prewarm", "正在预热本机 OCR（首次启动可能较慢）");
     try {
       const result = await vision.prewarm(signal);
@@ -281,6 +343,7 @@ async function startAndEnterGame(context, signal) {
         { reason: error.message }
       );
     }
+    startupState.prewarmed = true;
   }
   await waitForGameReady(context, signal);
 }
@@ -1388,4 +1451,12 @@ export function isRecoverableGameFailure(error, health, deviceState = "device") 
   // UI/OCR timeouts and transient input failures must not restart a healthy game.
   // The watchdog performs the authoritative process/ANR check above.
   return false;
+}
+
+export function shouldHoldInitialStartup(
+  gameReady,
+  startupProtectionDeadline,
+  now = Date.now()
+) {
+  return gameReady !== true && now < startupProtectionDeadline;
 }

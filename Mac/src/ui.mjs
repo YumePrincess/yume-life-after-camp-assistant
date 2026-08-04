@@ -24,24 +24,68 @@ export class GameUi {
     this.adb.resetGameMouseState?.();
   }
 
+  async ensureGameMouseForClick(signal) {
+    const detector = this.vision?.gameMouseIconVisible;
+    if (typeof detector !== "function") {
+      await this.adb.prepareGameMouseForClick?.(signal);
+      return;
+    }
+
+    let visible = await detector.call(this.vision, signal);
+    if (visible) return;
+
+    await this.adb.prepareGameMouseForClick?.(signal, { force: true });
+    const verifyTimeoutMs = Math.max(
+      500,
+      Number(this.config.adb?.gameMouseIconVerifyTimeoutMs) || 2_000
+    );
+    const pollMs = Math.max(
+      100,
+      Number(this.config.adb?.gameMouseIconVerifyPollMs) || 250
+    );
+    const deadline = Date.now() + verifyTimeoutMs;
+    do {
+      visible = await detector.call(this.vision, signal);
+      if (visible) return;
+      if (Date.now() >= deadline) break;
+      await delay(Math.min(pollMs, Math.max(1, deadline - Date.now())), signal);
+    } while (Date.now() < deadline);
+
+    throw new Error(
+      "ADB_GAME_MOUSE_ICON_NOT_VISIBLE: input keyevent 70 后未确认右下角鼠标图标"
+    );
+  }
+
+  async performAdbTap(point, signal) {
+    if (typeof this.adb.touchTap === "function") {
+      await this.adb.touchTap(point.x, point.y, signal);
+      return "touch";
+    }
+    await this.adb.mouseTap(point.x, point.y, signal);
+    return "mouse-compatibility";
+  }
+
   async tap(point, signal) {
-    await this.adb.prepareGameMouseForClick?.(signal);
+    await this.ensureGameMouseForClick(signal);
     try {
-      await this.adb.mouseTap(point.x, point.y, signal);
+      await this.performAdbTap(point, signal);
     } catch (error) {
       if (signal?.aborted) throw error;
-      // ADB can report a successful shell session while MuMu has dropped the
-      // mouse injection channel. Only a real ADB click error is allowed to
-      // invalidate the one-time KEYCODE_GRAVE state; OCR-only misses must
-      // retry the same click without toggling the game mouse again.
-      this.adb.resetGameMouseState?.();
       await this.report(
         "warning",
         "adb_mouse_click_retry",
-        "ADB 鼠标点击命令失败，重新发送 KEYCODE_GRAVE 后重试一次；不会调用 macOS 输入助理"
+        "ADB 触屏点击命令失败，重新检查右下角鼠标图标后重试；图标仍存在时不会再次发送 70"
       );
-      await this.adb.prepareGameMouseForClick?.(signal, { force: true });
-      await this.adb.mouseTap(point.x, point.y, signal);
+      if (typeof this.vision?.gameMouseIconVisible === "function") {
+        await this.ensureGameMouseForClick(signal);
+      } else {
+        // Compatibility for diagnostic/test clients that do not expose the
+        // screenshot detector. The production client always takes the
+        // icon-aware branch above.
+        this.adb.resetGameMouseState?.();
+        await this.adb.prepareGameMouseForClick?.(signal, { force: true });
+      }
+      await this.performAdbTap(point, signal);
     }
     await this.afterAction(signal);
   }
@@ -1481,7 +1525,7 @@ export class GameUi {
       await this.report(
         "info",
         "open_camp_panel_attempt",
-        `通过聊天营地频道打开营地界面（${attempt}/${attempts}）；使用 ADB KEYCODE_GRAVE + 鼠标点击`
+        `通过聊天营地频道打开营地界面（${attempt}/${attempts}）；点击前检查右下角鼠标图标，使用 ADB 触屏点击`
       );
       try {
         await this.tap(action.chatButton || { x: 250, y: 1060 }, signal);
@@ -1515,7 +1559,7 @@ export class GameUi {
         await this.report(
           "info",
           "camp_chat_verified",
-          "已确认聊天层，继续使用 ADB 鼠标点击；不会再次切换鼠标状态"
+          "已确认聊天层，继续使用 ADB 触屏点击；图标存在时不会再次发送 70"
         );
         await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
         await delay(action.channelDelayMs || 500, signal);

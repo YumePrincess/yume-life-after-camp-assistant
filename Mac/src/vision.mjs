@@ -878,6 +878,89 @@ export class Vision {
     );
     return JSON.parse(result.stdout);
   }
+
+  async gameMouseIconVisible(signal) {
+    const icon = this.config.adb?.gameMouseIcon || {};
+    const points = Array.isArray(icon.probePoints) && icon.probePoints.length >= 2
+      ? icon.probePoints
+      : [
+          { x: 1728, y: 1000 },
+          { x: 1728, y: 1055 }
+        ];
+    const radius = Math.max(6, Number(icon.probeRadius) || 18);
+    const threshold = Math.max(
+      0.01,
+      Number(icon.luminanceDeviationThreshold) || 0.12
+    );
+    const frame = await this.captureSource("game-mouse-icon", signal);
+    try {
+      let probes = null;
+      try {
+        probes = await this.probe(frame.path, points, radius, signal);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        // The OCR fallback below is deliberately conservative. A graphics
+        // probe can fail on an unusual screenshot codec or scene, but a text
+        // anchor alone is not proof that the cursor icon is visible.
+      }
+      if (
+        probes?.length >= 2 &&
+        probes.every(
+          (probe) => Number(probe.luminanceDeviation) >= threshold
+        )
+      ) {
+        return true;
+      }
+
+      const ocrFallback = icon.ocrFallback || {};
+      const fallbackTexts = Array.isArray(ocrFallback.texts)
+        ? ocrFallback.texts.filter((text) => String(text).trim())
+        : [];
+      if (!fallbackTexts.length || !probes?.length) return false;
+      const fallbackRegion = ocrFallback.region || {
+        left: 1450,
+        top: 850,
+        right: 1910,
+        bottom: 1150
+      };
+      let observations;
+      try {
+        observations = await this.ocrRegion(
+          frame.path,
+          fallbackRegion,
+          "game-mouse-icon-ocr-fallback",
+          signal,
+          "fast",
+          Math.max(0.1, Number(ocrFallback.minimumConfidence) || 0.35)
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        return false;
+      }
+      const hasHudAnchor = fallbackTexts.some((text) =>
+        this.find(observations, text)
+      );
+      if (!hasHudAnchor) return false;
+
+      // "Space" is a HUD anchor in the tested MuMu layout, not the icon
+      // itself. It only allows a lower pixel threshold to absorb a textured
+      // background or a transient anti-aliased frame; OCR never authorizes a
+      // click by itself.
+      const fallbackThreshold = Math.max(
+        0.01,
+        Number(ocrFallback.luminanceDeviationThreshold) || 0.08
+      );
+      return (
+        probes.length >= 2 &&
+        probes.every(
+          (probe) => Number(probe.luminanceDeviation) >= fallbackThreshold
+        )
+      );
+    } finally {
+      this.taskPaths.delete(frame.path);
+      await rm(frame.path, { force: true });
+    }
+  }
 }
 
 export function safeSipsCropRegion(region, sourceWidth, sourceHeight) {

@@ -137,7 +137,7 @@ test("ADB held W uses container key down and up events", async () => {
   ]);
 });
 
-test("first ADB mouse click summons the game cursor with KEYCODE_GRAVE once", async () => {
+test("first game click summons the cursor with input keyevent 70 once", async () => {
   const calls = [];
   const adb = createAdb(calls);
 
@@ -145,8 +145,7 @@ test("first ADB mouse click summons the game cursor with KEYCODE_GRAVE once", as
   await adb.prepareGameMouseForClick();
 
   assert.deepEqual(calls, [
-    ["input", "mouse", "motionevent", "UP", "960", "600"],
-    ["input", "keyevent", "KEYCODE_GRAVE"]
+    ["input", "keyevent", "70"]
   ]);
 });
 

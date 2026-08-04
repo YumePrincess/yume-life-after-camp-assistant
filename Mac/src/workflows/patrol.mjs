@@ -335,8 +335,8 @@ export async function createPatrolTeam(context, signal) {
           ? "patrol_flag_click"
           : "patrol_flag_mouse_focus_retry",
         attempt === 1
-          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点；首次 ADB 点击前由统一点击器发送一次 KEYCODE_GRAVE (${controls.flagButton.x},${controls.flagButton.y})`
-          : `旗帜点击后仍未出现队伍菜单；保持当前鼠标状态重试 ADB 点击 (${controls.flagButton.x},${controls.flagButton.y})`
+          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点；点击前由统一点击器检查右下角鼠标图标，不存在才发送一次 70 (${controls.flagButton.x},${controls.flagButton.y})`
+          : `旗帜点击后仍未出现队伍菜单；重新检查右下角鼠标图标后重试触屏点击 (${controls.flagButton.x},${controls.flagButton.y})`
       );
       await tapPatrolMouse(ui, controls.flagButton, signal);
       await sleep(settleMs, signal);
@@ -488,12 +488,12 @@ export async function createPatrolTeam(context, signal) {
         );
       }
       // 左侧菜单的 OCR 文本框会覆盖旗帜图标，文本中心并不等于可点击行中心。
-      // 保持与营地频道相同的 ADB 鼠标点击，不能改为触屏点击。
+      // 保持与营地频道相同的图标检测和 ADB 触屏点击。
       const createMenuPoint = controls.createMenuPoint || { x: 220, y: 180 };
       await report(
         attempt === 1 ? "info" : "warning",
         "patrol_create_menu_click",
-        `第 ${attempt}/${createMenuClickAttempts} 次：已在左侧区域精确识别“创建队伍”；使用统一 ADB 鼠标点击器 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})`
+        `第 ${attempt}/${createMenuClickAttempts} 次：已在左侧区域精确识别“创建队伍”；使用统一图标检测后的 ADB 触屏点击 (${Math.round(createMenuPoint.x)},${Math.round(createMenuPoint.y)})`
       );
       await tapPatrolMouse(ui, createMenuPoint, signal);
       await sleep(createMenuWaitMs, signal);
@@ -532,7 +532,7 @@ export async function createPatrolTeam(context, signal) {
         await report(
           "warning",
           "patrol_create_menu_click_unverified",
-          `第 ${attempt} 次点击左侧入口后仍未确认创建页面；下一次保持当前鼠标状态重试 ADB 点击`
+          `第 ${attempt} 次点击左侧入口后仍未确认创建页面；下一次重新检查图标后重试 ADB 触屏点击`
         );
       }
     }
@@ -948,7 +948,7 @@ export async function sharePatrolTeam(context, signal) {
       }
     );
     // “招募”是队伍 HUD 的真实鼠标按钮，沿用统一的 ADB
-    // KEYCODE_GRAVE + 鼠标点击状态；不再调用宿主机输入或低层右键事件。
+    // 统一检查右下角图标并使用 ADB 触屏点击；不调用宿主机输入或低层右键事件。
     await tapPatrolHudMouse(ui, adb, recruitPoint, signal, sleep);
     await report(
       "info",
