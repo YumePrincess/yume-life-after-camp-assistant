@@ -27,6 +27,12 @@ test("contribution and inactivity scans wait three seconds after paging and stop
       );
     }
     assert.equal(config.tables.members.ocrMinimumConfidence, 0.3);
+    assert.deepEqual(
+      config.flows.resetMemberPanelForRescan.map((action) => action.op),
+      ["clickText", "waitAnyText", "clickText", "waitAnyText"]
+    );
+    assert.equal(config.flows.resetMemberPanelForRescan[0].text, "首页");
+    assert.equal(config.flows.resetMemberPanelForRescan[2].text, "成员");
   }
 });
 

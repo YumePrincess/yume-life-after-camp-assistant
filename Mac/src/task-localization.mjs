@@ -120,6 +120,12 @@ const FIXED_TRANSLATIONS = {
     en: "Contribution data matched no member in the profile roster; the previous contribution data was kept",
     fr: "Aucune donnée de contribution ne correspond à la liste des profils ; les données précédentes ont été conservées",
     ja: "貢献データをプロフィール名簿のメンバーに照合できなかったため、前回のデータを保持しました"
+  },
+  "成员资料首次扫描识别 ${details}/${expectedMembers} 名，先通过顶部“首页”返回列表起点，再进入“成员”页完整重扫一次，避免末页 OCR 漏行": {
+    "zh-tw": "成員資料首次掃描識別 ${details}/${expectedMembers} 名，先透過頂部「首頁」返回列表起點，再進入「成員」頁完整重掃一次，避免末頁 OCR 漏行",
+    en: "The first member-profile scan recognized ${details}/${expectedMembers}; returning to Home and reopening Members before a full rescan to avoid missing rows at the bottom",
+    fr: "Le premier scan des profils a reconnu ${details}/${expectedMembers} membres ; retour à l’accueil puis réouverture de Membres avant un nouveau scan complet pour éviter les lignes manquantes en bas",
+    ja: "メンバープロフィールの初回スキャンは ${details}/${expectedMembers} 名を認識しました。末尾の行抜けを避けるため、「ホーム」に戻って「メンバー」を開き直して再スキャンします"
   }
 };
 

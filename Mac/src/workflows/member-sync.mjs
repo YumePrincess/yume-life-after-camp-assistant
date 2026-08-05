@@ -447,11 +447,9 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
     await context.report(
       "warning",
       "member_details_count_retry",
-      `成员资料首次扫描识别 ${details.length}/${expectedMembers} 名，返回成员页并完整重扫一次，避免末页 OCR 漏行`
+      `成员资料首次扫描识别 ${details.length}/${expectedMembers} 名，先通过顶部“首页”返回列表起点，再进入“成员”页完整重扫一次，避免末页 OCR 漏行`
     );
-    await context.ui.tap({ x: 80, y: 1080 }, signal);
-    await (context.sleep || delay)(1_000, signal);
-    await context.ui.executeFlow("openMemberPanel", {}, signal);
+    await context.ui.executeFlow("resetMemberPanelForRescan", {}, signal);
     details = await scanMemberDetails();
   }
   if (details.length !== expectedMembers) {

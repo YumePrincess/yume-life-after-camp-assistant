@@ -825,6 +825,32 @@
         "timeoutSeconds": 12
       }
     ],
+    "resetMemberPanelForRescan": [
+      {
+        "op": "clickText",
+        "text": "首页",
+        "region": { "left": 300, "top": 120, "right": 1550, "bottom": 260 },
+        "timeoutSeconds": 12
+      },
+      {
+        "op": "waitAnyText",
+        "texts": ["首页", "玩法", "科技", "成员", "相册"],
+        "region": { "left": 300, "top": 120, "right": 1550, "bottom": 260 },
+        "timeoutSeconds": 12
+      },
+      {
+        "op": "clickText",
+        "text": "成员",
+        "region": { "left": 300, "top": 120, "right": 1550, "bottom": 260 },
+        "timeoutSeconds": 12
+      },
+      {
+        "op": "waitAnyText",
+        "texts": ["职业", "庄园等级", "同居"],
+        "region": { "left": 650, "top": 235, "right": 1800, "bottom": 295 },
+        "timeoutSeconds": 12
+      }
+    ],
     "openStaffPanel": [
       { "op": "tap", "x": 1640, "y": 950 },
       {
