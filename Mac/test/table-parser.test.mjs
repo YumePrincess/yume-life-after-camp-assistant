@@ -60,3 +60,14 @@ test("member profiles preserve the profile page's own weekly contribution field"
     ]
   );
 });
+
+test("member profile normalization preserves the reconciled roster count", () => {
+  assert.deepEqual(
+    normalizeProfiles([
+      { name: "成员资料" },
+      { name: "✨" },
+      { name: "玩家甲" }
+    ]).map(({ name }) => name),
+    ["成员资料", "✨", "玩家甲"]
+  );
+});

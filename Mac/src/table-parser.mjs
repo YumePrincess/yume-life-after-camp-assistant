@@ -146,17 +146,15 @@ export function normalizeContribution(rows) {
 }
 
 export function normalizeProfiles(rows) {
-  // The profile task is authoritative for the roster. Keep this as a
-  // profile-only normalization pass: it must not merge against contribution
-  // or activity rows, but it still rejects obvious OCR garbage and headers.
-  // Symbol/emoji-only names remain valid through isPlausibleMemberName.
+  // The profile task is authoritative for the roster. The table workflow has
+  // already scanned to the bottom, reconciled OCR variants, and capped the
+  // result to the page header total before this field-only conversion. Do not
+  // apply the contribution/activity name filters here: a legitimate display
+  // name may contain words such as “成员”, or consist only of symbols.
   return rows
     .map((row) => {
       const name = clean(row.name);
-      if (
-        !isPlausibleMemberName(name) ||
-        /成员|姓名|贡献|职业/.test(name)
-      ) return null;
+      if (!name) return null;
       return {
         name,
         profession: clean(row.profession) || null,

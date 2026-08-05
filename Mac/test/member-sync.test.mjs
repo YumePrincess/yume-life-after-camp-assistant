@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   capturePagedTable,
   dedupeStaffAssignments,
+  assertContributionComplete,
   reconcilePageRows,
   selectActivityWarningRows
 } from "../src/workflows/member-sync.mjs";
@@ -27,6 +28,25 @@ test("contribution and inactivity scans wait three seconds after paging and stop
     }
     assert.equal(config.tables.members.ocrMinimumConfidence, 0.3);
   }
+});
+
+test("contribution completeness accepts a raw full scan with one filtered OCR row", () => {
+  assert.doesNotThrow(() =>
+    assertContributionComplete(
+      Array.from({ length: 99 }, (_, index) => ({ name: `成员${index}` })),
+      { minimumCompleteRows: 100 },
+      Array.from({ length: 100 }, (_, index) => ({ name: `成员${index}` }))
+    )
+  );
+  assert.throws(
+    () =>
+      assertContributionComplete(
+        Array.from({ length: 98 }, (_, index) => ({ name: `成员${index}` })),
+        { minimumCompleteRows: 100 },
+        Array.from({ length: 99 }, (_, index) => ({ name: `成员${index}` }))
+      ),
+    /CONTRIBUTION_INCOMPLETE/
+  );
 });
 
 test("page overlap reconciles only the same positional member", () => {
@@ -193,7 +213,7 @@ test("activity warning scan does not stop while every parsed member remains over
   assert.equal(selection.reachedBoundary, false);
 });
 
-test("member profile pagination reaches the bottom before reconciling OCR duplicates", async () => {
+test("member profile pagination reaches the bottom before organizing to the header total", async () => {
   let swipes = 0;
   const reports = [];
   const pages = [
@@ -205,9 +225,7 @@ test("member profile pagination reaches the bottom before reconciling OCR duplic
     [
       { name: "成员参", profession: "步枪兵", weeklyContribution: "300" },
       { name: "成员四" },
-      { name: "成员五" },
-      { name: "COSGH" },
-      { name: "LSGH" }
+      { name: "成员五" }
     ]
   ];
   const context = {

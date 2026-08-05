@@ -1279,7 +1279,10 @@ async function handleAdminApi(
       bundle,
       taskKey: taskKeyValue,
       triggerMode: "manual",
-      requestedBy: session
+      requestedBy: session,
+      payloadDetail: {
+        locale: normalizeLocale(body.locale)
+      }
     });
     return json(result, 201);
   }
@@ -1481,9 +1484,16 @@ async function handleAgentApi(
         })).filter((routine) => routine.groups.length)
       }
     };
+    const memberRoster = (await listMembers(env))
+      .map((member) => ({
+        name: typeof member.name === "string" ? member.name : "",
+        weeklyContribution: Number(member.weekly_contribution) || 0
+      }))
+      .filter((member) => member.name);
     return json({
       configBundle,
       plugins,
+      memberRoster,
       heartbeat: await getHeartbeat(env, agentId),
       enabled: bundle.campConfig.agentId === agentId,
       run: runId ? await getRun(env, runId) : null

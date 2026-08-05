@@ -824,10 +824,10 @@ export function reconcileContributionMembers(
       // The weekly value can legitimately change between the member snapshot
       // and the contribution scan, so it must not block a unique name match.
       // When names are tied, retain the numeric corroboration guard.
-      if (nearest.length === 1) {
+      if (best && nearest.length === 1) {
         candidate = best.member;
       } else if (corroboratedNearest.length === 1) {
-        candidate = corroboratedNearest[0].member;
+        candidate = corroboratedNearest[0]!.member;
       } else {
         if (fuzzyCandidates.length > 1) ambiguous += 1;
         ignored += 1;

@@ -1767,7 +1767,11 @@
     try {
       await request("/api/admin/run", {
         method: "POST",
-        body: JSON.stringify({ taskKey, ...(routineId ? { routineId } : {}) })
+        body: JSON.stringify({
+          taskKey,
+          locale: window.MrzhI18n.language(),
+          ...(routineId ? { routineId } : {})
+        })
       });
       byId("save-state").textContent = window.MrzhI18n.format(
         "{task}已入队",

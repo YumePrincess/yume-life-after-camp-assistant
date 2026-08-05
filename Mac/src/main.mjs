@@ -10,6 +10,10 @@ import { GameUi } from "./ui.mjs";
 import { withGameSession } from "./game-session.mjs";
 import { delay } from "./process.mjs";
 import { loadTaskPlugins } from "./plugin-loader.mjs";
+import {
+  localizeTaskEvent,
+  normalizeTaskLocale
+} from "./task-localization.mjs";
 
 enableExternalFileLogging(MAC_ROOT);
 const config = await loadConfig();
@@ -231,6 +235,9 @@ function startCommand(command) {
 
 async function executeCommand(command, signal) {
   const taskKey = command.payload?.taskKey;
+  const taskLocale = normalizeTaskLocale(
+    command?.payload?.locale || command?.payload?.detail?.locale
+  );
   const plugin = pluginRegistry.workflows[taskKey];
   const workflow = plugin?.workflow;
   if (!workflow) {
@@ -259,18 +266,24 @@ async function executeCommand(command, signal) {
     }
   };
   const report = async (level, step, message, detail = {}) => {
+    const localizedMessage = localizeTaskEvent(step, message, taskLocale);
     console.info(JSON.stringify({
       event: "task_event",
       runId: command.runId,
       level,
       step,
-      message,
+      message: localizedMessage,
       detail
     }));
     await updateRunSafely({
       currentStep: step,
-      message,
-      event: { level, step, message, detail }
+      message: localizedMessage,
+      event: {
+        level,
+        step,
+        message: localizedMessage,
+        detail: { ...detail, locale: taskLocale }
+      }
     }, `event:${step}`);
   };
   const progressState = { value: 0.02, step: "starting" };
@@ -305,23 +318,36 @@ async function executeCommand(command, signal) {
     progress,
     positionIndependent,
     skipUnknownRecovery: false,
-    skipReturnToCenter: positionIndependent
+    skipReturnToCenter: positionIndependent,
+    memberRoster: []
   };
   vision.beginTask();
   try {
     const bootstrap = await api.bootstrap(command.runId, signal);
+    context.memberRoster = Array.isArray(bootstrap.memberRoster)
+      ? bootstrap.memberRoster.filter((member) => member?.name)
+      : [];
     context.runtimeAutomation = bootstrap.configBundle.automationConfig;
     ui.setRuntimeAutomation(bootstrap.configBundle.automationConfig);
     if (bootstrap.run?.cancel_requested) throw new Error("任务在开始前已被中断");
     await updateRunSafely({
       state: "running",
-      message: "本地 Agent 已开始执行",
+      message: localizeTaskEvent(
+        "starting",
+        "本地 Agent 已开始执行",
+        taskLocale
+      ),
       currentStep: "starting",
       progress: 0.02,
       event: {
         level: "info",
         step: "starting",
-        message: "本地 Agent 已领取任务"
+        message: localizeTaskEvent(
+          "starting",
+          "本地 Agent 已领取任务",
+          taskLocale
+        ),
+        detail: { locale: taskLocale }
       }
     }, "starting");
     const sessionResult = await withGameSession(
@@ -348,7 +374,11 @@ async function executeCommand(command, signal) {
       }, "finished:partially_succeeded", true);
     } else {
       terminalState = "succeeded";
-      terminalMessage = "任务已成功完成，游戏与模拟器已停止";
+      terminalMessage = localizeTaskEvent(
+        "finished",
+        "任务已成功完成，游戏与模拟器已停止",
+        taskLocale
+      );
       await updateRunSafely({
         state: "succeeded",
         message: terminalMessage,
@@ -357,7 +387,12 @@ async function executeCommand(command, signal) {
         event: {
           level: "info",
           step: "finished",
-          message: "任务成功；已完成资源清理"
+          message: localizeTaskEvent(
+            "finished",
+            "任务成功；已完成资源清理",
+            taskLocale
+          ),
+          detail: { locale: taskLocale }
         }
       }, "finished:succeeded", true);
     }

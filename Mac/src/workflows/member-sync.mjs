@@ -57,14 +57,23 @@ export async function runMemberSync(context, command, _bundle, signal) {
 }
 
 export async function runContributionSync(context, command, _bundle, signal) {
+  const memberRoster = Array.isArray(context.memberRoster)
+    ? context.memberRoster.filter((member) => member?.name)
+    : [];
+  if (!memberRoster.length) {
+    throw new Error(
+      "CONTRIBUTION_MASTER_LIST_MISSING: 未读取到更新成员资料任务保存的成员主名单，请先执行“更新成员资料”"
+    );
+  }
+  const expectedMemberCount = memberRoster.length;
   await updateWorkflowProgress(context, 0.04, "contribution_prepare");
-  const rows = normalizeContribution(
-    await captureContribution(context, signal, {
-      progressRange: { start: 0.08, end: 0.72, step: "contribution_scan" }
-    })
-  );
+  const rawRows = await captureContribution(context, signal, {
+    expectedCount: expectedMemberCount,
+    progressRange: { start: 0.08, end: 0.72, step: "contribution_scan" }
+  });
+  const rows = normalizeContribution(rawRows);
+  const locallyFiltered = Math.max(0, rawRows.length - rows.length);
   await updateWorkflowProgress(context, 0.78, "contribution_validate");
-  assertContributionComplete(rows, context.config.tables.contribution);
   await updateWorkflowProgress(context, 0.86, "contribution_snapshot");
   const result = await context.api.snapshot(
     command.runId,
@@ -77,19 +86,24 @@ export async function runContributionSync(context, command, _bundle, signal) {
   const ignored = Math.max(0, Number(result?.ignored) || rows.length - matched);
   if (matched === 0) {
     throw new Error(
-      "CONTRIBUTION_MASTER_LIST_MISSING: 贡献数据未能匹配成员资料主名单，请先执行“更新成员资料”"
+      "CONTRIBUTION_MASTER_LIST_UNMATCHED: 贡献数据未能匹配成员资料主名单，已保留上一份贡献数据"
     );
   }
+  const incomplete = matched < expectedMemberCount;
   await updateWorkflowProgress(context, 0.97, "contribution_complete");
   await context.report(
-    ignored ? "warning" : "info",
+    ignored || locallyFiltered || incomplete ? "warning" : "info",
     "contribution_done",
-    `贡献页识别 ${rows.length} 行，已匹配更新 ${matched} 名成员，忽略 ${ignored} 行未确认 OCR 数据；成员总数未改变`,
+    `贡献页识别 ${rawRows.length} 行，OCR 清洗后保留 ${rows.length} 行；按成员资料主名单 ${expectedMemberCount} 名成员去重匹配，最终更新 ${matched} 名，忽略 ${ignored + locallyFiltered} 行；不会新增成员`,
     {
-      recognized: rows.length,
+      recognized: rawRows.length,
+      normalized: rows.length,
+      locallyFiltered,
+      expectedMemberCount,
       matched,
-      ignored,
-      ambiguous: Number(result?.ambiguous) || 0
+      ignored: ignored + locallyFiltered,
+      ambiguous: Number(result?.ambiguous) || 0,
+      incomplete
     }
   );
 }
@@ -217,7 +231,11 @@ export async function captureContribution(context, signal, options = {}) {
     signal,
     { progressRange: scanProgressRange }
   );
-  const minimumRows = contributionMinimum(context.config.tables.contribution);
+  const minimumRows = Math.max(
+    1,
+    Number(options.expectedCount) ||
+      contributionMinimum(context.config.tables.contribution)
+  );
   if (rows.length < minimumRows) {
     await context.report(
       "warning",
@@ -238,11 +256,11 @@ export async function captureContribution(context, signal, options = {}) {
   return rows;
 }
 
-export function assertContributionComplete(rows, definition) {
+export function assertContributionComplete(rows, definition, rawRows = rows) {
   const minimumRows = contributionMinimum(definition);
-  if (rows.length < minimumRows) {
+  if (rows.length < minimumRows && rawRows.length < minimumRows) {
     throw new Error(
-      `CONTRIBUTION_INCOMPLETE: recognized ${rows.length}/${minimumRows} required unique member rows`
+      `CONTRIBUTION_INCOMPLETE: recognized ${rawRows.length} raw rows, ${rows.length} usable rows; ${minimumRows} required unique member rows`
     );
   }
 }
@@ -760,11 +778,16 @@ export async function capturePagedTable(
       );
       break;
     }
+    // Member details must be scanned through the actual list end. OCR can
+    // temporarily produce a different spelling for a row on a later page;
+    // stopping as soon as the header count is reached would skip the tail and
+    // make the final reconciliation depend on page order. The final pass
+    // below deduplicates and caps the organized roster to the header total.
     if (!memberDetailsMode && expectedCount !== null && byName.size >= expectedCount) {
       await report(
         "info",
         `${label}_expected_count_reached`,
-        `已达到页面顶部报告的 ${expectedCount} 名成员，立即停止翻页；末页 OCR 变体不得继续新增成员`,
+        `已达到页面顶部报告的 ${expectedCount} 名成员，结束本表扫描`,
         {
           expectedCount,
           recognized: byName.size,
@@ -810,8 +833,16 @@ export async function capturePagedTable(
     await report(
       "info",
       "member_details_bottom_reached",
-      `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；异常重复 OCR 已在全表扫描后处理：${rows.length} 行归并为 ${reconciled.length} 名成员`,
-      { pages: scannedPages, scannedRows: rows.length, reconciledRows: reconciled.length, expectedCount }
+      expectedCount !== null
+        ? `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；全表去重合并后整理为 ${reconciled.length}/${expectedCount} 名成员`
+        : `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；整理结果为 ${reconciled.length} 名成员`,
+      {
+        pages: scannedPages,
+        scannedRows: rows.length,
+        reconciledRows: reconciled.length,
+        expectedCount,
+        stoppedAtExpectedCount: false
+      }
     );
     return reconciled;
   }
