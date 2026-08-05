@@ -1,5 +1,6 @@
 import { delay } from "../process.mjs";
 import { clockMinutes, reached, zonedClock } from "../clock.mjs";
+import { updateWorkflowProgress } from "./progress.mjs";
 
 export async function runPatrol(context, command, bundle, signal) {
   const { ui, vision, report } = context;
@@ -7,15 +8,20 @@ export async function runPatrol(context, command, bundle, signal) {
   const timezone = bundle.automationConfig.timezone;
   const campName = String(bundle.campConfig?.campName || "").trim();
 
+  await updateWorkflowProgress(context, 0.04, "patrol_prepare");
   await report(
     "info",
     "patrol_notice_board_first",
     "巡逻任务登录完成后直接传送公告版，再创建营地巡逻队伍"
   );
+  await updateWorkflowProgress(context, 0.08, "patrol_notice_board");
   await ui.executeFlow("teleportNoticeBoard", {}, signal);
+  await updateWorkflowProgress(context, 0.13, "patrol_team_create");
   await createPatrolTeam(context, signal);
   await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
+  await updateWorkflowProgress(context, 0.18, "patrol_team_share");
   await sharePatrolTeam(context, signal);
+  await updateWorkflowProgress(context, 0.22, "patrol_team_wait");
   await report("info", "patrol_team", "巡逻队伍已创建并分享到营地频道");
 
   let consecutiveFullTeamFrames = 0;
@@ -61,6 +67,11 @@ export async function runPatrol(context, command, bundle, signal) {
         ? 0
         : consecutiveFullTeamFrames + 1
       : 0;
+    await updateWorkflowProgress(
+      context,
+      full ? 0.38 : 0.22,
+      full ? "patrol_team_full_check" : "patrol_team_waiting"
+    );
     if (
       consecutiveFullTeamFrames >= 2 &&
       reached(timezone, patrol.teamReadyTime)
@@ -75,27 +86,47 @@ export async function runPatrol(context, command, bundle, signal) {
     "patrol_team_full",
     "已确认巡逻队伍四个位置均有人，正在收起队伍界面后接取任务"
   );
+  await updateWorkflowProgress(context, 0.42, "patrol_team_close");
   await ui.executeFlow("closePatrolTeamPanelBeforeAccept", {}, signal);
   await report(
     "info",
     "patrol_notice_board_reused",
     "队伍等待期间角色没有移动；收起队伍后直接使用初始公告版位置，不再执行任何传送"
   );
+  await updateWorkflowProgress(context, 0.47, "patrol_open_route");
   await ui.executeFlow("openPatrol", {}, signal);
   await startHardPatrolWithRetry(context, signal);
+  await updateWorkflowProgress(context, 0.60, "patrol_route_accepted");
   await ui.executeFlow("exitPatrolPages", {}, signal);
+  await updateWorkflowProgress(context, 0.66, "patrol_team_reopen");
   await ui.executeFlow("openTeamPanel", {}, signal);
+  await updateWorkflowProgress(context, 0.70, "patrol_switch_target");
   await ui.executeFlow("switchToBookDefense", {}, signal);
+  await updateWorkflowProgress(context, 0.74, "patrol_final_share");
   await sharePatrolTeam(context, signal);
   await ui.executeFlow("openTeamPanel", {}, signal);
   const readyAt = new Date().toISOString();
   await report("info", "patrol_ready", "困难巡逻已确认，队伍已切换为保卫古籍并分享", {
     readyAt
   });
-  await context.progress(0.25, "patrol_ready");
+  await updateWorkflowProgress(context, 0.76, "patrol_ready");
+  const deadlineWindowMs = Math.max(
+    1,
+    millisecondsUntil(timezone, patrol.deadline)
+  );
   let nextShareAt = Date.now() + patrol.shareIntervalMinutes * 60_000;
 
   while (!reached(timezone, patrol.deadline)) {
+    const remainingMs = millisecondsUntil(timezone, patrol.deadline);
+    const elapsedFraction = Math.min(
+      1,
+      Math.max(0, (deadlineWindowMs - remainingMs) / deadlineWindowMs)
+    );
+    await updateWorkflowProgress(
+      context,
+      0.76 + elapsedFraction * 0.20,
+      "patrol_waiting_deadline"
+    );
     if (Date.now() >= nextShareAt) {
       await sharePatrolTeam(context, signal);
       await report("info", "patrol_share", "已再次分享到营地频道");
@@ -110,6 +141,7 @@ export async function runPatrol(context, command, bundle, signal) {
   // must not be treated as a reason to start a fresh scheduled attempt.
   context.suppressScheduledRetry = true;
   context.suppressScheduledRetryReason = "patrol_deadline_cleanup";
+  await updateWorkflowProgress(context, 0.97, "patrol_cleanup");
   await report("info", "patrol_done", "已到巡逻任务结束时间");
   await closePatrolPanelBeforeExit(context, signal);
 }

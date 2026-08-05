@@ -6,17 +6,33 @@ import {
   normalizeStaffGrid,
   parseTable
 } from "../table-parser.mjs";
+import { isPlausibleMemberName } from "../member-name.mjs";
 import { delay } from "../process.mjs";
+import {
+  progressForRange,
+  progressRangeSlice,
+  updateWorkflowProgress
+} from "./progress.mjs";
 
 export async function runMemberSync(context, command, _bundle, signal) {
-  const contribution = await captureContribution(context, signal);
-  await context.progress(0.3, "contribution");
-  const activity = await captureActivity(context, false, signal);
-  await context.progress(0.5, "activity");
+  await updateWorkflowProgress(context, 0.04, "member_sync_prepare");
+  const contribution = await captureContribution(context, signal, {
+    progressRange: { start: 0.06, end: 0.28, step: "contribution_scan" }
+  });
+  await updateWorkflowProgress(context, 0.31, "contribution_complete");
+  const activity = await captureActivity(context, false, signal, {
+    progressRange: { start: 0.33, end: 0.48, step: "activity_scan" }
+  });
+  await updateWorkflowProgress(context, 0.51, "activity_complete");
   await context.ui.executeFlow("closeContribution", {}, signal);
-  const { details, staff } = await captureProfilesAndStaff(context, signal);
+  await updateWorkflowProgress(context, 0.54, "member_panel_prepare");
+  const { details, staff } = await captureProfilesAndStaff(context, signal, {
+    progressRange: { start: 0.56, end: 0.82, step: "member_profile_scan" }
+  });
+  await updateWorkflowProgress(context, 0.86, "member_profile_complete");
   const members = normalizeMembers(contribution, details, activity);
   if (!members.length) throw new Error("No member rows recognized; snapshot was not uploaded");
+  await updateWorkflowProgress(context, 0.91, "member_snapshot");
   await context.api.snapshot(
     command.runId,
     "members",
@@ -32,6 +48,7 @@ export async function runMemberSync(context, command, _bundle, signal) {
     signal
   );
   const staffCount = checkedStaffCount(staff, staffResult);
+  await updateWorkflowProgress(context, 0.97, "member_sync_complete");
   await context.report(
     "info",
     "member_sync_done",
@@ -40,8 +57,15 @@ export async function runMemberSync(context, command, _bundle, signal) {
 }
 
 export async function runContributionSync(context, command, _bundle, signal) {
-  const rows = normalizeContribution(await captureContribution(context, signal));
+  await updateWorkflowProgress(context, 0.04, "contribution_prepare");
+  const rows = normalizeContribution(
+    await captureContribution(context, signal, {
+      progressRange: { start: 0.08, end: 0.72, step: "contribution_scan" }
+    })
+  );
+  await updateWorkflowProgress(context, 0.78, "contribution_validate");
   assertContributionComplete(rows, context.config.tables.contribution);
+  await updateWorkflowProgress(context, 0.86, "contribution_snapshot");
   const result = await context.api.snapshot(
     command.runId,
     "contribution",
@@ -56,6 +80,7 @@ export async function runContributionSync(context, command, _bundle, signal) {
       "CONTRIBUTION_MASTER_LIST_MISSING: 贡献数据未能匹配成员资料主名单，请先执行“更新成员资料”"
     );
   }
+  await updateWorkflowProgress(context, 0.97, "contribution_complete");
   await context.report(
     ignored ? "warning" : "info",
     "contribution_done",
@@ -74,10 +99,15 @@ export async function runInactivitySync(context, command, bundle, signal) {
     1,
     Number(bundle?.campConfig?.inactivityWarningDays) || 1
   );
+  await updateWorkflowProgress(context, 0.04, "activity_prepare");
   const scanOptions = { minimumInactiveDays };
   const rows = normalizeActivity(
-    await captureActivity(context, true, signal, scanOptions)
+    await captureActivity(context, true, signal, {
+      ...scanOptions,
+      progressRange: { start: 0.08, end: 0.72, step: "activity_scan" }
+    })
   );
+  await updateWorkflowProgress(context, 0.78, "activity_validate");
   if (!rows.length && !scanOptions.thresholdBoundaryReached) {
     throw new Error(
       "INACTIVITY_SCAN_UNREADABLE: 未识别到成员行或阈值边界，已保留原有斩杀预警数据"
@@ -98,6 +128,7 @@ export async function runInactivitySync(context, command, bundle, signal) {
       "INACTIVITY_SCAN_UNREADABLE: 斩杀预警扫描结果在自身去重后为空，已保留上一份有效预警"
     );
   }
+  await updateWorkflowProgress(context, 0.97, "activity_complete");
   await context.report(
     ignored ? "warning" : "info",
     "activity_done",
@@ -112,10 +143,13 @@ export async function runInactivitySync(context, command, bundle, signal) {
 }
 
 export async function runMemberProfileSync(context, command, _bundle, signal) {
+  await updateWorkflowProgress(context, 0.04, "member_profile_prepare");
   const { details, staff, expectedMembers } = await captureProfilesAndStaff(
     context,
-    signal
+    signal,
+    { progressRange: { start: 0.10, end: 0.78, step: "member_profile_scan" } }
   );
+  await updateWorkflowProgress(context, 0.84, "member_profile_validate");
   const profiles = normalizeProfiles(details);
   if (!profiles.length) throw new Error("No profile rows recognized");
   if (profiles.length !== expectedMembers) {
@@ -130,6 +164,7 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
     new Date().toISOString(),
     signal
   );
+  await updateWorkflowProgress(context, 0.91, "member_profile_staff");
   const staffResult = await context.api.snapshot(
     command.runId,
     "staff",
@@ -138,6 +173,7 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
     signal
   );
   const staffCount = checkedStaffCount(staff, staffResult);
+  await updateWorkflowProgress(context, 0.97, "member_profile_complete");
   await context.report(
     "info",
     "profiles_done",
@@ -145,16 +181,41 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
   );
 }
 
-export async function captureContribution(context, signal) {
+export async function captureContribution(context, signal, options = {}) {
+  await updateWorkflowProgress(
+    context,
+    options.progressRange?.start,
+    "contribution_teleport"
+  );
   await context.ui.executeFlow("teleportCityHall", {}, signal);
+  await updateWorkflowProgress(context, progressForRange(
+    options.progressRange?.start,
+    options.progressRange?.end,
+    1,
+    4
+  ), "contribution_sand_table");
   await context.ui.executeFlow("navigateToSandTable", {}, signal);
+  await updateWorkflowProgress(context, progressForRange(
+    options.progressRange?.start,
+    options.progressRange?.end,
+    2,
+    4
+  ), "contribution_open");
   await context.ui.executeFlow("openContribution", {}, signal);
+  await updateWorkflowProgress(context, progressForRange(
+    options.progressRange?.start,
+    options.progressRange?.end,
+    3,
+    4
+  ), "contribution_settle");
   await settleTableBeforeFirstScan(context, "contribution", signal);
+  const scanProgressRange = progressRangeSlice(options.progressRange, 0.75);
   let rows = await capturePagedTable(
     context,
     "member-contribution",
     context.config.tables.contribution,
-    signal
+    signal,
+    { progressRange: scanProgressRange }
   );
   const minimumRows = contributionMinimum(context.config.tables.contribution);
   if (rows.length < minimumRows) {
@@ -170,7 +231,8 @@ export async function captureContribution(context, signal) {
       context,
       "member-contribution-retry",
       context.config.tables.contribution,
-      signal
+      signal,
+      { progressRange: scanProgressRange }
     );
   }
   return rows;
@@ -196,9 +258,22 @@ async function captureActivity(
   options = {}
 ) {
   if (startFromWorld) {
+    await updateWorkflowProgress(context, options.progressRange?.start, "activity_teleport");
     await context.ui.executeFlow("teleportCityHall", {}, signal);
+    await updateWorkflowProgress(context, progressForRange(
+      options.progressRange?.start,
+      options.progressRange?.end,
+      1,
+      3
+    ), "activity_sand_table");
     await context.ui.executeFlow("navigateToSandTable", {}, signal);
   }
+  await updateWorkflowProgress(context, progressForRange(
+    options.progressRange?.start,
+    options.progressRange?.end,
+    startFromWorld ? 2 : 1,
+    startFromWorld ? 3 : 2
+  ), "activity_open");
   await context.ui.executeFlow(
     startFromWorld ? "openActivity" : "openActivityFromMember",
     {},
@@ -206,12 +281,16 @@ async function captureActivity(
   );
   await settleTableBeforeFirstScan(context, "activity", signal);
   await ensureActivityDescending(context, signal);
+  const scanProgressRange = progressRangeSlice(
+    options.progressRange,
+    startFromWorld ? 2 / 3 : 1 / 2
+  );
   return capturePagedTable(
     context,
     "member-activity",
     context.config.tables.activity,
     signal,
-    options
+    { ...options, progressRange: scanProgressRange }
   );
 }
 
@@ -316,17 +395,34 @@ async function readActivityFrame(
   return normalizeActivity(rows);
 }
 
-export async function captureProfilesAndStaff(context, signal) {
+export async function captureProfilesAndStaff(context, signal, options = {}) {
+  await updateWorkflowProgress(context, options.progressRange?.start, "member_panel_open");
   await context.ui.executeFlow("openCampPanel", {}, signal);
+  await updateWorkflowProgress(context, progressForRange(
+    options.progressRange?.start,
+    options.progressRange?.end,
+    1,
+    3
+  ), "member_panel_open");
   await context.ui.executeFlow("openMemberPanel", {}, signal);
+  await updateWorkflowProgress(context, progressForRange(
+    options.progressRange?.start,
+    options.progressRange?.end,
+    2,
+    3
+  ), "member_header_read");
   const expectedMembers = await context.vision.readMemberExpectedTotal(signal);
+  const scanProgressRange = progressRangeSlice(options.progressRange, 0.1);
   const scanMemberDetails = () =>
     capturePagedTable(
       context,
       "member-details",
       context.config.tables.members,
       signal,
-      { expectedCount: expectedMembers }
+      {
+        expectedCount: expectedMembers,
+        progressRange: scanProgressRange
+      }
     );
   let details = await scanMemberDetails();
   if (details.length < expectedMembers) {
@@ -641,6 +737,17 @@ export async function capturePagedTable(
         elapsedMs
       }
     );
+    const scanProgress = progressForRange(
+      options.progressRange?.start,
+      options.progressRange?.end,
+      scannedPages,
+      definition.pagination.maxPages
+    );
+    await updateWorkflowProgress(
+      context,
+      scanProgress,
+      options.progressRange?.step || `${label}_page`
+    );
     if (reachedActivityBoundary) {
       await report(
         "info",
@@ -699,7 +806,7 @@ export async function capturePagedTable(
   }
   const rows = [...byName.values()];
   if (memberDetailsMode) {
-    const reconciled = reconcileMemberDetailRows(rows);
+    const reconciled = reconcileMemberDetailRows(rows, expectedCount);
     await report(
       "info",
       "member_details_bottom_reached",
@@ -711,7 +818,7 @@ export async function capturePagedTable(
   return rows;
 }
 
-function reconcileMemberDetailRows(rows) {
+function reconcileMemberDetailRows(rows, expectedCount = null) {
   const reconciled = [];
   for (const row of rows) {
     const duplicateIndex = reconciled.findIndex((existing) =>
@@ -727,7 +834,42 @@ function reconcileMemberDetailRows(rows) {
       row
     );
   }
+  if (
+    expectedCount !== null &&
+    Number.isFinite(Number(expectedCount)) &&
+    reconciled.length > Number(expectedCount)
+  ) {
+    const ranked = reconciled
+      .map((row, index) => ({
+        row,
+        index,
+        score: memberDetailQualityScore(row)
+      }))
+      .sort(
+        (left, right) =>
+          right.score - left.score || left.index - right.index
+      )
+      .slice(0, Number(expectedCount))
+      .sort((left, right) => left.index - right.index);
+    return ranked.map(({ row }) => row);
+  }
   return reconciled;
+}
+
+function memberDetailQualityScore(row) {
+  const name = String(row?.name || "").trim();
+  const fields = [
+    "profession",
+    "weeklyContribution",
+    "manorLevel",
+    "campTitle",
+    "roommateName"
+  ];
+  const populatedFields = fields.filter((field) => {
+    const value = row?.[field];
+    return value !== null && value !== undefined && String(value).trim();
+  }).length;
+  return (isPlausibleMemberName(name) ? 100 : 0) + populatedFields * 2;
 }
 
 function hasSuspiciousMemberCollision(rows, byName) {

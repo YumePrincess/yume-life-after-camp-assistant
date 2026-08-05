@@ -273,9 +273,22 @@ async function executeCommand(command, signal) {
       event: { level, step, message, detail }
     }, `event:${step}`);
   };
+  const progressState = { value: 0.02, step: "starting" };
   const progress = async (value, currentStep) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return;
+    const next = Math.min(1, Math.max(progressState.value, numeric));
+    if (
+      next === progressState.value ||
+      (currentStep === progressState.step &&
+        next - progressState.value < 0.005)
+    ) {
+      return;
+    }
+    progressState.value = next;
+    progressState.step = currentStep;
     await updateRunSafely(
-      { progress: value, currentStep },
+      { progress: next, currentStep },
       `progress:${currentStep || "unknown"}`
     );
   };

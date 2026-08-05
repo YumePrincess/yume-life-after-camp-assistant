@@ -13,6 +13,11 @@ export async function withGameSession(
   }
 ) {
   const { mumu, adb, ui, vision, report, config } = context;
+  const setProgress = async (value, step) => {
+    if (typeof context.progress === "function") {
+      await context.progress(value, step);
+    }
+  };
   let started = false;
   let gameReady = false;
   let advisorStarted = false;
@@ -40,6 +45,7 @@ export async function withGameSession(
         "local_model_start",
         "正在按任务启动本地视觉辅助模型"
       );
+      await setProgress(0.025, "local_model_start");
       try {
         advisorStarted = await vision.startAdvisor(signal);
       } catch (error) {
@@ -52,6 +58,7 @@ export async function withGameSession(
       }
     }
     await report("info", "emulator_start", "正在后台启动 MuMu 模拟器");
+    await setProgress(0.03, "emulator_start");
     started = true;
     // Start the protection window immediately before the container launch;
     // local-model startup must not consume the container's 300-second budget.
@@ -66,6 +73,7 @@ export async function withGameSession(
           // Once ensureStarted has returned, the ADB device is ready and the
           // game must proceed immediately through launch, OCR warmup and login.
           containerReady = true;
+          await setProgress(0.035, "emulator_ready");
         }
         await startAndEnterGame(context, signal, startupState);
         gameReady = true;
@@ -328,6 +336,7 @@ async function startAndEnterGame(context, signal, startupState = {}) {
   const { adb, ui, vision, report, config } = context;
   if (!startupState.launched) {
     await report("info", "game_start", "正在启动明日之后");
+    await context.progress?.(0.04, "game_start");
     ui.resetGameMouseState?.();
     await adb.launchGame();
     startupState.launched = true;
@@ -341,6 +350,7 @@ async function startAndEnterGame(context, signal, startupState = {}) {
         "ocr_prewarm_done",
         `本机 OCR 预热完成（${result.elapsedMs}ms），后续 fast OCR 进入低延迟模式`
       );
+      await context.progress?.(0.05, "ocr_prewarm_done");
     } catch (error) {
       if (signal?.aborted) throw error;
       await report(
@@ -844,6 +854,7 @@ export async function waitForGameReady(context, signal) {
             ? `游戏界面已就绪，已关闭 ${dismissedPages} 张活动宣传页`
             : "游戏界面已就绪，未出现活动宣传页"
         );
+        await context.progress?.(0.06, "game_ready");
         await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
         await adb.releaseMouseButton?.(
           Math.round((config.adb.screenWidth || 1920) / 2),

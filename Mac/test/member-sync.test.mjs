@@ -205,7 +205,9 @@ test("member profile pagination reaches the bottom before reconciling OCR duplic
     [
       { name: "成员参", profession: "步枪兵", weeklyContribution: "300" },
       { name: "成员四" },
-      { name: "成员五" }
+      { name: "成员五" },
+      { name: "COSGH" },
+      { name: "LSGH" }
     ]
   ];
   const context = {
@@ -254,6 +256,53 @@ test("member profile pagination reaches the bottom before reconciling OCR duplic
   assert.equal(swipes, 4);
   assert.ok(
     reports.includes("member_details_bottom_reached")
+  );
+});
+
+test("member profile reconciliation never exceeds the header total", async () => {
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture(label) {
+          return { path: `${label}.png`, observations: [] };
+        },
+        async extractTableRows() {
+          return [
+            { name: "成员一" },
+            { name: "成员二" },
+            { name: "成员三" },
+            { name: "成员四" },
+            { name: "成员五" },
+            { name: "COSGH" },
+            { name: "LSGH" }
+          ];
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 1,
+        from: { x: 1, y: 2 },
+        to: { x: 1, y: 1 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 5 }
+  );
+
+  assert.equal(rows.length, 5);
+  assert.deepEqual(
+    rows.map((row) => row.name),
+    ["成员一", "成员二", "成员三", "成员四", "成员五"]
   );
 });
 
