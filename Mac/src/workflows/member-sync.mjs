@@ -112,9 +112,17 @@ export async function runInactivitySync(context, command, bundle, signal) {
 }
 
 export async function runMemberProfileSync(context, command, _bundle, signal) {
-  const { details, staff } = await captureProfilesAndStaff(context, signal);
+  const { details, staff, expectedMembers } = await captureProfilesAndStaff(
+    context,
+    signal
+  );
   const profiles = normalizeProfiles(details);
   if (!profiles.length) throw new Error("No profile rows recognized");
+  if (profiles.length !== expectedMembers) {
+    throw new Error(
+      `MEMBER_PROFILE_COUNT_MISMATCH: normalized ${profiles.length}, page header reports ${expectedMembers}; profile snapshot was not uploaded`
+    );
+  }
   await context.api.snapshot(
     command.runId,
     "profiles",
@@ -133,7 +141,7 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
   await context.report(
     "info",
     "profiles_done",
-    `已更新 ${profiles.length} 名成员资料（含周贡献交叉比对值）和 ${staffCount} 项最新公职`
+    `已更新 ${profiles.length} 名成员资料和 ${staffCount} 项最新公职；贡献数值由“更新贡献”任务单独更新`
   );
 }
 
@@ -372,7 +380,7 @@ export async function captureProfilesAndStaff(context, signal) {
       `STAFF_COUNT_INVALID: recognized ${staff.length}, maximum is mayor 1 + staff 10`
     );
   }
-  return { details, staff };
+  return { details, staff, expectedMembers };
 }
 
 export function dedupeStaffAssignments(rows) {
@@ -435,10 +443,12 @@ export async function capturePagedTable(
   let stagnantPages = 0;
   let previousFingerprint = "";
   let previousRows = [];
+  let scannedPages = 0;
   const expectedCount = Number.isFinite(Number(options.expectedCount))
     ? Math.max(1, Number(options.expectedCount))
     : null;
   for (let page = 0; page < definition.pagination.maxPages; page += 1) {
+    scannedPages = page + 1;
     const pageStartedAt = Date.now();
     let frame;
     let rows = [];
@@ -604,6 +614,7 @@ export async function capturePagedTable(
       const current = byName.get(rowKey) || {};
       if (
         !byName.has(rowKey) &&
+        !memberDetailsMode &&
         expectedCount !== null &&
         byName.size >= expectedCount
       ) {
@@ -642,7 +653,7 @@ export async function capturePagedTable(
       );
       break;
     }
-    if (expectedCount !== null && byName.size >= expectedCount) {
+    if (!memberDetailsMode && expectedCount !== null && byName.size >= expectedCount) {
       await report(
         "info",
         `${label}_expected_count_reached`,
@@ -686,7 +697,37 @@ export async function capturePagedTable(
       await ui.afterAction(signal);
     }
   }
-  return [...byName.values()];
+  const rows = [...byName.values()];
+  if (memberDetailsMode) {
+    const reconciled = reconcileMemberDetailRows(rows);
+    await report(
+      "info",
+      "member_details_bottom_reached",
+      `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；异常重复 OCR 已在全表扫描后处理：${rows.length} 行归并为 ${reconciled.length} 名成员`,
+      { pages: scannedPages, scannedRows: rows.length, reconciledRows: reconciled.length, expectedCount }
+    );
+    return reconciled;
+  }
+  return rows;
+}
+
+function reconcileMemberDetailRows(rows) {
+  const reconciled = [];
+  for (const row of rows) {
+    const duplicateIndex = reconciled.findIndex((existing) =>
+      sameMemberProfileIdentity(existing, row) &&
+      similarMemberProfileName(existing.name, row.name)
+    );
+    if (duplicateIndex < 0) {
+      reconciled.push(row);
+      continue;
+    }
+    reconciled[duplicateIndex] = mergeMemberProfileRows(
+      reconciled[duplicateIndex],
+      row
+    );
+  }
+  return reconciled;
 }
 
 function hasSuspiciousMemberCollision(rows, byName) {
@@ -772,6 +813,62 @@ function mergeMemberProfileRows(current, incoming) {
   return merged;
 }
 
+function sameMemberProfileIdentity(left, right) {
+  const fields = [
+    "profession",
+    "weeklyContribution",
+    "manorLevel",
+    "campTitle",
+    "roommateName"
+  ];
+  const matched = fields.filter((field) => {
+    const leftValue = comparableMemberField(left?.[field]);
+    const rightValue = comparableMemberField(right?.[field]);
+    return leftValue && rightValue && leftValue === rightValue;
+  });
+  const strongMatch = ["weeklyContribution", "roommateName"].some((field) => {
+    const leftValue = comparableMemberField(left?.[field]);
+    const rightValue = comparableMemberField(right?.[field]);
+    return leftValue && rightValue && leftValue === rightValue;
+  });
+  return matched.length >= 2 && strongMatch;
+}
+
+function similarMemberProfileName(left, right) {
+  const leftName = exactPageName(left);
+  const rightName = exactPageName(right);
+  if (!leftName || !rightName || leftName === rightName) return true;
+  const leftLetters = leftName.match(/[\p{L}\p{N}]+/gu)?.join("") || "";
+  const rightLetters = rightName.match(/[\p{L}\p{N}]+/gu)?.join("") || "";
+  // Keep intentional display-name decorations as distinct members.
+  if (!leftLetters || leftLetters === rightLetters) return false;
+  const minimumLength = Math.min(
+    Array.from(leftLetters).length,
+    Array.from(rightLetters).length
+  );
+  const maximumDistance = minimumLength >= 8 ? 2 : 1;
+  return memberNameDistance(leftLetters, rightLetters) <= maximumDistance;
+}
+
+function memberNameDistance(left, right) {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current.push(
+        Math.min(
+          current[column - 1] + 1,
+          previous[column] + 1,
+          previous[column - 1] +
+            (left[row - 1] === right[column - 1] ? 0 : 1)
+        )
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length];
+}
+
 export function selectActivityWarningRows(rows, minimumInactiveDays) {
   const minimum = Math.max(1, Number(minimumInactiveDays) || 1);
   const inspected = rows.map((row) => ({
@@ -799,8 +896,7 @@ export function reconcilePageRows(previousRows, currentRows) {
   const previousBoundary = previousRows.at(-1);
   const currentBoundary = currentRows[0];
   if (
-    exactPageName(previousBoundary.name) !==
-      exactPageName(currentBoundary.name) &&
+    sameMemberProfileIdentity(previousBoundary, currentBoundary) ||
     sameExactNonEmpty(
       previousBoundary.roommateName,
       currentBoundary.roommateName
@@ -820,10 +916,7 @@ export function reconcilePageRows(previousRows, currentRows) {
     if (overlap < 2) continue;
     let exactMatches = 0;
     for (let index = 0; index < overlap; index += 1) {
-      if (
-        exactPageName(previousRows[offset + index].name) ===
-        exactPageName(currentRows[index].name)
-      ) {
+      if (samePageMember(previousRows[offset + index], currentRows[index])) {
         exactMatches += 1;
       }
     }
@@ -855,10 +948,17 @@ export function reconcilePageRows(previousRows, currentRows) {
   return currentRows.map((row, index) => {
     if (index >= best.overlap) return row;
     const previous = previousRows[best.offset + index];
-    return exactPageName(previous.name) === exactPageName(row.name)
+    return samePageMember(previous, row)
       ? row
       : { ...row, name: previous.name };
   });
+}
+
+function samePageMember(left, right) {
+  return (
+    exactPageName(left?.name) === exactPageName(right?.name) ||
+    sameMemberProfileIdentity(left, right)
+  );
 }
 
 function exactPageName(value) {

@@ -193,21 +193,19 @@ test("activity warning scan does not stop while every parsed member remains over
   assert.equal(selection.reachedBoundary, false);
 });
 
-test("member profile pagination stops exactly at the header count", async () => {
+test("member profile pagination reaches the bottom before reconciling OCR duplicates", async () => {
   let swipes = 0;
   const reports = [];
   const pages = [
     [
       { name: "成员一" },
       { name: "成员二" },
-      { name: "成员三" }
+      { name: "成员三", profession: "步枪兵", weeklyContribution: "300" }
     ],
     [
-      { name: "成员三" },
+      { name: "成员参", profession: "步枪兵", weeklyContribution: "300" },
       { name: "成员四" },
-      { name: "成员五" },
-      { name: "末页误识别甲" },
-      { name: "末页误识别乙" }
+      { name: "成员五" }
     ]
   ];
   const context = {
@@ -253,9 +251,9 @@ test("member profile pagination stops exactly at the header count", async () => 
     rows.map((row) => row.name),
     ["成员一", "成员二", "成员三", "成员四", "成员五"]
   );
-  assert.equal(swipes, 1);
+  assert.equal(swipes, 4);
   assert.ok(
-    reports.includes("member-details_expected_count_reached")
+    reports.includes("member_details_bottom_reached")
   );
 });
 

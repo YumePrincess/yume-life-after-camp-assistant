@@ -1001,7 +1001,6 @@ export async function updateMemberProfiles(
            manor_level = excluded.manor_level,
            roommate_name = excluded.roommate_name,
            camp_title = excluded.camp_title,
-           weekly_contribution = excluded.weekly_contribution,
            last_seen_at = excluded.last_seen_at,
            source_run_id = excluded.source_run_id`
       ).bind(

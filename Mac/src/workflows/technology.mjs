@@ -175,40 +175,24 @@ export async function clearAllConfiguredSlots(context, signal) {
         "tech_slot_check",
         `按顺序检查${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格`
       );
-      const pixelBefore = await probeTechnologySlotOccupancy(
-        context,
-        slot,
-        lane,
-        `technology-clear-pixel-${lane}-${slot.index + 1}`,
-        signal
-      );
-      const pixelFallbackOccupied =
-        pixelBefore?.occupied === true &&
-        pixelBefore.distance >= pixelBefore.fallbackThreshold;
       const before = await readTechnologySlotState(
         context,
         slot,
         `technology-clear-check-${lane}-${slot.index + 1}`,
         signal,
         {
-          attempts: pixelFallbackOccupied
-            ? Math.max(
-                2,
-                Number(config.technology.slotOpenAttempts) || 3
-              )
-            : 1,
-          report,
-          lane,
-          slotIndex: slot.index,
-          retryBecauseOccupiedPixels: pixelFallbackOccupied
+          // Slot content is decided only by this actual click followed by
+          // the detail OCR. A textured/animated empty slot can look filled
+          // to a pixel probe, so pixels must never authorize an unload or
+          // turn a missing detail action into a retry/fatal error.
+          attempts: 1
         }
       );
-      if (!before.occupied && !pixelFallbackOccupied) {
+      if (!before.occupied) {
         await report(
           "info",
           "tech_slot_empty",
-          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格经详情 OCR 与槽位像素双重检查为空，继续下一格`,
-          { pixel: pixelBefore }
+          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已实际点击，详情未出现“卸下”，确认为空，继续下一格`
         );
         processedSlots += 1;
         if (processedSlots < allSlots.length) {
@@ -219,11 +203,6 @@ export async function clearAllConfiguredSlots(context, signal) {
           );
         }
         continue;
-      }
-      if (!before.occupied && pixelFallbackOccupied) {
-        throw new Error(
-          `科技槽位未打开：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格像素显示已有科技，但连续点击后始终未出现“卸下”；已停止，未盲点卸下按钮`
-        );
       }
       configuredCount += 1;
       await ui.tap(config.technology.unloadSelected, signal);
@@ -262,21 +241,6 @@ export async function clearAllConfiguredSlots(context, signal) {
     "tech_clear",
     `已按第一行 1–6、第二行 1–6 的顺序逐格检查并卸下 ${configuredCount} 项；卸下后未重复点击原槽位`
   );
-  const slots = ["core", "general"].flatMap((lane) =>
-    config.technology.slots[lane].map((point, index) => ({
-      ...point,
-      lane,
-      index
-    }))
-  );
-  const frame = await vision.capture("technology-empty-baseline", signal);
-  const probes = await vision.probe(
-    frame.path,
-    slots,
-    config.technology.filledSlotDetection.sampleRadius,
-    signal
-  );
-  context.technologyEmptySlotBaseline = { slots, probes };
 }
 
 async function dismissTechnologyDetail(context, label, signal) {
@@ -318,48 +282,6 @@ async function dismissTechnologyDetail(context, label, signal) {
   throw new Error(
     `科技详情框关闭校验失败：点击“科技配置中”重试 ${maximumAttempts} 次并每次等待 ${Math.round(settleMs / 1000)} 秒后仍检测到“卸下”，已停止以避免遮挡下一个槽位`
   );
-}
-
-async function probeTechnologySlotOccupancy(
-  context,
-  slot,
-  lane,
-  label,
-  signal
-) {
-  const { config, vision } = context;
-  const reference = config.technology.emptyReference?.[lane];
-  if (!reference || typeof vision.probe !== "function") return null;
-  const frame = await vision.capture(label, signal);
-  if (!frame?.path) return null;
-  const [probe] = await vision.probe(
-    frame.path,
-    [slot],
-    config.technology.filledSlotDetection.sampleRadius,
-    signal
-  );
-  const distance = featureDistance(probe, reference);
-  const threshold = Math.max(
-    0.02,
-    Number(
-      config.technology.filledSlotDetection.minimumInstalledFeatureDistance ??
-        config.technology.filledSlotDetection.maximumEmptyFeatureDistance
-    ) || 0.08
-  );
-  const fallbackThreshold = Math.max(
-    threshold,
-    Number(
-      config.technology.filledSlotDetection
-        .fallbackMinimumOccupiedFeatureDistance
-    ) || threshold * 1.25
-  );
-  return {
-    occupied: distance > threshold,
-    distance,
-    threshold,
-    fallbackThreshold,
-    probe
-  };
 }
 
 export async function selectTechnology(
@@ -864,14 +786,11 @@ async function readTechnologySlotState(
       signal
     );
     if (state.occupied) return state;
-    if (
-      attempt < attempts &&
-      options.retryBecauseOccupiedPixels
-    ) {
+    if (attempt < attempts && options.retryOnMissingAction) {
       await options.report?.(
         "warning",
         "tech_slot_open_retry",
-        `${options.lane === "core" ? "第一行" : "第二行"}第 ${options.slotIndex + 1} 格像素显示已有科技，但第 ${attempt} 次点击后未出现“卸下”；等待后重试该格，不点击卸下按钮`,
+        `${options.lane === "core" ? "第一行" : "第二行"}第 ${options.slotIndex + 1} 格第 ${attempt} 次实际点击后详情未出现“卸下”；等待后重试该格，不点击卸下按钮`,
         { attempt, maximumAttempts: attempts }
       );
       await (context.sleep || delay)(
@@ -993,17 +912,6 @@ async function assertTechnologySlotSelected(
       `科技槽位选中校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slotIndex + 1} 格未出现橙色边框；禁止继续选择或配置科技`
     );
   }
-}
-
-function featureDistance(observed, reference) {
-  if (!observed || !reference) return Number.POSITIVE_INFINITY;
-  return Math.hypot(
-    observed.meanRed - reference.meanRed,
-    observed.meanGreen - reference.meanGreen,
-    observed.meanBlue - reference.meanBlue,
-    observed.meanSaturation - reference.meanSaturation,
-    observed.luminanceDeviation - reference.luminanceDeviation
-  );
 }
 
 function findTechnologyText(vision, observations, text, region) {

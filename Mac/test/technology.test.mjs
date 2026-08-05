@@ -137,45 +137,38 @@ test("cropped detail OCR detects and unloads the first general slot", async () =
   ]);
 });
 
-test("installed-slot pixels retry the slot click but never authorize a blind unload", async () => {
-  const taps = [];
+test("empty slot pixels never override the actual click and detail OCR", async () => {
+  const actions = [];
   const reports = [];
   const config = technologyConfig();
-  config.technology.emptyReference = {
-    core: feature(0),
-    general: feature(0)
+  config.technology.slots = {
+    core: [
+      { x: 800, y: 400 },
+      { x: 900, y: 400 }
+    ],
+    general: []
   };
-  config.technology.filledSlotDetection.fallbackMinimumOccupiedFeatureDistance =
-    0.1;
   const context = {
     config,
     ui: {
       async tap(point) {
-        taps.push(point);
+        actions.push(["tap", point]);
       }
     },
     vision: {
       async capture(label) {
-        return {
-          path: `${label}.png`,
-          observations: label.includes(
-            "clear-check-core-1-attempt-2"
-          )
-            ? [observation("卸下", 700, 600)]
-            : []
-        };
+        return { path: `${label}.png`, observations: [] };
       },
       find(observations, query, mode) {
         return findObservation(observations, query, mode);
       },
-      async probe(path, points) {
-        if (path.includes("clear-pixel-core-1")) {
-          return points.map(() => feature(0.25));
-        }
-        return points.map(() => feature(0));
+      async probe() {
+        throw new Error("pixel occupancy must not be consulted");
       }
     },
-    async sleep() {},
+    async sleep(ms) {
+      actions.push(["wait", ms]);
+    },
     async report(_level, step) {
       reports.push(step);
     }
@@ -183,12 +176,13 @@ test("installed-slot pixels retry the slot click but never authorize a blind unl
 
   await clearAllConfiguredSlots(context);
 
-  assert.deepEqual(taps.slice(0, 3), [
-    { x: 800, y: 400, lane: "core", index: 0 },
-    { x: 800, y: 400, lane: "core", index: 0 },
-    { x: 745, y: 638 }
+  assert.deepEqual(actions, [
+    ["tap", { x: 800, y: 400, lane: "core", index: 0 }],
+    ["wait", 1200],
+    ["tap", { x: 900, y: 400, lane: "core", index: 1 }],
+    ["wait", 1200]
   ]);
-  assert.ok(reports.includes("tech_slot_open_retry"));
+  assert.equal(reports.filter((step) => step === "tech_slot_empty").length, 2);
 });
 
 test("technology selection configures the exact target without re-clicking its slot", async () => {

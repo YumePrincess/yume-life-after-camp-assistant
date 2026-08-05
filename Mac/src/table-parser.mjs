@@ -146,23 +146,27 @@ export function normalizeContribution(rows) {
 }
 
 export function normalizeProfiles(rows) {
-  return normalizeMembers([], rows).map(
-    ({
-      name,
-      profession,
-      manorLevel,
-      roommateName,
-      campTitle,
-      weeklyContribution
-    }) => ({
-      name,
-      profession,
-      manorLevel,
-      roommateName,
-      campTitle,
-      weeklyContribution
+  // The profile task is authoritative for the roster. Keep this as a
+  // profile-only normalization pass: it must not merge against contribution
+  // or activity rows, but it still rejects obvious OCR garbage and headers.
+  // Symbol/emoji-only names remain valid through isPlausibleMemberName.
+  return rows
+    .map((row) => {
+      const name = clean(row.name);
+      if (
+        !isPlausibleMemberName(name) ||
+        /成员|姓名|贡献|职业/.test(name)
+      ) return null;
+      return {
+        name,
+        profession: clean(row.profession) || null,
+        manorLevel: integer(row.manorLevel),
+        roommateName: clean(row.roommateName) || null,
+        campTitle: clean(row.campTitle) || null,
+        weeklyContribution: integer(row.weeklyContribution) || 0
+      };
     })
-  );
+    .filter(Boolean);
 }
 
 export function parseInactiveDays(value) {

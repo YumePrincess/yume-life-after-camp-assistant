@@ -59,6 +59,12 @@ describe("authoritative member profile snapshot", () => {
 
     expect(recorder.batches).toHaveLength(1);
     expect(recorder.batches[0]).toHaveLength(1);
+    const upsert = recorder.prepared.find((statement) =>
+      statement.sql.includes("INSERT INTO members")
+    );
+    expect(upsert?.sql).not.toContain(
+      "weekly_contribution = excluded.weekly_contribution"
+    );
     const cleanup = recorder.prepared.find((statement) =>
       statement.sql.includes("DELETE FROM members WHERE source_run_id")
     );

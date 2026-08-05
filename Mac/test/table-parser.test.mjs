@@ -39,7 +39,7 @@ test("similar member names are never fuzzy-merged", () => {
   );
 });
 
-test("member profiles retain weekly contribution for contribution cross-checking", () => {
+test("member profiles preserve the profile page's own weekly contribution field", () => {
   assert.deepEqual(
     normalizeProfiles([
       {
