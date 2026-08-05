@@ -101,6 +101,16 @@ describe("reconcileContributionMembers", () => {
     expect(result.updates[0]?.name).toBe("星河踏月归");
   });
 
+  it("accepts a unique name correction even when the contribution total changed", () => {
+    const result = reconcileContributionMembers(
+      [contribution("星河踏月皈", 17)],
+      [{ name: "星河踏月归", weeklyContribution: 987654 }]
+    );
+
+    expect(result.updates[0]?.name).toBe("星河踏月归");
+    expect(result.ignored).toBe(0);
+  });
+
   it("keeps an ambiguous best name unmatched", () => {
     const result = reconcileContributionMembers(
       [contribution("星河踏月皈", 1000)],

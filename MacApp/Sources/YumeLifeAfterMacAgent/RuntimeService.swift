@@ -177,6 +177,60 @@ actor RuntimeService {
                 adb["gameMouseToggleSettleMs"] = 350
                 changed = true
             }
+            let hudTapPoint = adb["gameMouseHudTapPoint"] as? [String: Any]
+            let hudTapX = (hudTapPoint?["x"] as? NSNumber)?.intValue
+            let hudTapY = (hudTapPoint?["y"] as? NSNumber)?.intValue
+            if hudTapX != 1_865 || hudTapY != 1_130 {
+                adb["gameMouseHudTapPoint"] = ["x": 1_865, "y": 1_130]
+                changed = true
+            }
+            let initialHudTapPoint = adb["gameMouseHudInitialTapPoint"] as? [String: Any]
+            let initialHudTapX = (initialHudTapPoint?["x"] as? NSNumber)?.intValue
+            let initialHudTapY = (initialHudTapPoint?["y"] as? NSNumber)?.intValue
+            if initialHudTapX != 1_782 || initialHudTapY != 1_110 {
+                adb["gameMouseHudInitialTapPoint"] = ["x": 1_782, "y": 1_110]
+                changed = true
+            }
+            if (adb["gameMouseCClickDelayMs"] as? NSNumber)?.intValue != 2_000 {
+                adb["gameMouseCClickDelayMs"] = 2_000
+                changed = true
+            }
+            if (adb["gameMouseCKeyEventDelayMs"] as? NSNumber)?.intValue != 3_000 {
+                adb["gameMouseCKeyEventDelayMs"] = 3_000
+                changed = true
+            }
+            var gameMouseCIcon = adb["gameMouseCIcon"] as? [String: Any] ?? [:]
+            if gameMouseCIcon["probePoints"] == nil {
+                gameMouseCIcon["probePoints"] = [
+                    ["x": 1_865, "y": 1_130],
+                    ["x": 1_848, "y": 1_130],
+                    ["x": 1_882, "y": 1_130],
+                    ["x": 1_865, "y": 1_114],
+                    ["x": 1_865, "y": 1_146]
+                ]
+                changed = true
+            }
+            if gameMouseCIcon["probeRadius"] == nil {
+                gameMouseCIcon["probeRadius"] = 12
+                changed = true
+            }
+            if gameMouseCIcon["minimumLitPoints"] == nil {
+                gameMouseCIcon["minimumLitPoints"] = 3
+                changed = true
+            }
+            if gameMouseCIcon["redBlueDelta"] == nil {
+                gameMouseCIcon["redBlueDelta"] = 0.08
+                changed = true
+            }
+            if gameMouseCIcon["greenBlueDelta"] == nil {
+                gameMouseCIcon["greenBlueDelta"] = 0.07
+                changed = true
+            }
+            if gameMouseCIcon["minimumSaturation"] == nil {
+                gameMouseCIcon["minimumSaturation"] = 0.20
+                changed = true
+            }
+            adb["gameMouseCIcon"] = gameMouseCIcon
             if (adb["gameMouseIconVerifyTimeoutMs"] as? NSNumber)?.intValue != 2_000 {
                 adb["gameMouseIconVerifyTimeoutMs"] = 2_000
                 changed = true
@@ -213,10 +267,13 @@ actor RuntimeService {
             adb["gameMouseIcon"] = gameMouseIcon
             object["adb"] = adb
             var tables = object["tables"] as? [String: Any] ?? [:]
-            for tableName in ["contribution", "activity"] {
+            for tableName in ["contribution", "activity", "members"] {
                 var table = tables[tableName] as? [String: Any] ?? [:]
-                if table["ocrMinimumConfidence"] == nil {
-                    table["ocrMinimumConfidence"] = 0.25
+                let defaultOcrMinimum = 0.30
+                let existingOcrMinimum = (table["ocrMinimumConfidence"] as? NSNumber)?.doubleValue
+                if existingOcrMinimum == nil ||
+                    (existingOcrMinimum.map { abs($0 - 0.25) < 0.001 || abs($0 - 0.50) < 0.001 } == true) {
+                    table["ocrMinimumConfidence"] = defaultOcrMinimum
                     changed = true
                 }
                 var pagination = table["pagination"] as? [String: Any] ?? [:]

@@ -74,6 +74,11 @@ final class AppModel: ObservableObject {
                 // in memory after Runtime/current is replaced. Repairing here
                 // unloads that process and starts the newly installed bundle.
                 _ = try await runtime.run(["repair"], timeout: 300)
+            } else if setupCompleted {
+                // Opening the App is also the explicit local-agent start
+                // action. This keeps the web console online after a normal
+                // macOS/App restart without requiring a second manual click.
+                _ = try await runtime.run(["start"], timeout: 60)
             }
             if let credentials = try? await runtime.loadCredentials() {
                 agentToken = credentials.agentToken

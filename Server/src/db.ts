@@ -761,8 +761,11 @@ export function reconcileContributionMembers(
   masterMembers: ContributionMaster[]
 ): ContributionReconciliation {
   const available = new Set(masterMembers.map((member) => member.name));
+  const rawByName = new Map<string, ContributionMaster[]>();
   const exactByName = new Map<string, ContributionMaster[]>();
   for (const member of masterMembers) {
+    const rawKey = rawMemberName(member.name);
+    rawByName.set(rawKey, [...(rawByName.get(rawKey) ?? []), member]);
     const key = comparableMemberName(member.name);
     exactByName.set(key, [...(exactByName.get(key) ?? []), member]);
   }
@@ -771,8 +774,13 @@ export function reconcileContributionMembers(
   let ignored = 0;
   let ambiguous = 0;
   for (const row of incoming) {
-    const exactCandidates = (exactByName.get(comparableMemberName(row.name)) ?? [])
+    const rawCandidates = (rawByName.get(rawMemberName(row.name)) ?? [])
       .filter((member) => available.has(member.name));
+    const exactCandidates = (
+      rawCandidates.length
+        ? rawCandidates
+        : exactByName.get(comparableMemberName(row.name)) ?? []
+    ).filter((member) => available.has(member.name));
     let candidate: ContributionMaster | null = null;
     if (exactCandidates.length === 1) {
       candidate = exactCandidates[0]!;
@@ -791,19 +799,35 @@ export function reconcileContributionMembers(
           minimumLength >= 10 ? 3 : minimumLength >= 5 ? 2 : 1;
         return sourceName.length >= 3 &&
           targetName.length >= 3 &&
-          distance <= maximumDistance &&
-          contributionsCorroborate(
-            row.weeklyContribution,
-            member.weeklyContribution
-          )
-          ? [{ member, distance }]
+          distance <= maximumDistance
+          ? [{
+              member,
+              distance,
+              corroborated: contributionsCorroborate(
+                row.weeklyContribution,
+                member.weeklyContribution
+              )
+            }]
           : [];
       });
-      fuzzyCandidates.sort((left, right) => left.distance - right.distance);
+      fuzzyCandidates.sort(
+        (left, right) =>
+          left.distance - right.distance ||
+          Number(right.corroborated) - Number(left.corroborated)
+      );
       const best = fuzzyCandidates[0];
-      const second = fuzzyCandidates[1];
-      if (best && (!second || best.distance < second.distance)) {
+      const nearest = best
+        ? fuzzyCandidates.filter((item) => item.distance === best.distance)
+        : [];
+      const corroboratedNearest = nearest.filter((item) => item.corroborated);
+      // A unique name candidate is enough to accept a fuzzy OCR correction.
+      // The weekly value can legitimately change between the member snapshot
+      // and the contribution scan, so it must not block a unique name match.
+      // When names are tied, retain the numeric corroboration guard.
+      if (nearest.length === 1) {
         candidate = best.member;
+      } else if (corroboratedNearest.length === 1) {
+        candidate = corroboratedNearest[0].member;
       } else {
         if (fuzzyCandidates.length > 1) ambiguous += 1;
         ignored += 1;
@@ -827,6 +851,10 @@ function comparableMemberName(value: string): string {
   // unrelated symbol names do not collapse to the same empty key.
   const lettersAndNumbers = normalized.match(/[\p{L}\p{N}]+/gu)?.join("") ?? "";
   return lettersAndNumbers || normalized.replace(/\s+/g, "");
+}
+
+function rawMemberName(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, "");
 }
 
 function contributionsCorroborate(left: number, right: number): boolean {

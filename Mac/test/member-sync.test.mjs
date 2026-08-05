@@ -19,12 +19,13 @@ test("contribution and inactivity scans wait three seconds after paging and stop
         config.tables[table].pagination.initialSettleMs,
         3000
       );
-      assert.equal(config.tables[table].ocrMinimumConfidence, 0.25);
+      assert.equal(config.tables[table].ocrMinimumConfidence, 0.3);
       assert.equal(
         config.tables[table].pagination.settleAfterSwipeMs,
         3000
       );
     }
+    assert.equal(config.tables.members.ocrMinimumConfidence, 0.3);
   }
 });
 
@@ -258,7 +259,7 @@ test("member profile pagination stops exactly at the header count", async () => 
   );
 });
 
-test("member profiles deduplicate names that differ only by decorative symbols", async () => {
+test("member profiles keep names that differ by decorative symbols", async () => {
   const rows = await capturePagedTable(
     {
       vision: {
@@ -293,10 +294,10 @@ test("member profiles deduplicate names that differ only by decorative symbols",
       }
     },
     undefined,
-    { expectedCount: 4 }
+    { expectedCount: 5 }
   );
 
-  assert.equal(rows.length, 4);
+  assert.equal(rows.length, 5);
   assert.equal(rows[0].name, "#愿✨");
 });
 

@@ -24,17 +24,64 @@ export class GameUi {
     this.adb.resetGameMouseState?.();
   }
 
-  async ensureGameMouseForClick(signal) {
+  async ensureGameMouseForClick(signal, { reason = "入口点击" } = {}) {
     const detector = this.vision?.gameMouseIconVisible;
     if (typeof detector !== "function") {
-      await this.adb.prepareGameMouseForClick?.(signal);
+      await this.report(
+        "warning",
+        "game_mouse_icon_check_unavailable",
+        `无法读取右下角游戏鼠标图标（${reason}），调用 keyevent 70 准备点击`
+      );
+      const prepared = await this.adb.prepareGameMouseForClick?.(signal);
+      await this.report(
+        "info",
+        prepared === false ? "game_mouse_keyevent70_skipped" : "game_mouse_keyevent70_sent",
+        prepared === false
+          ? `游戏鼠标状态已缓存，未重复发送 keyevent 70（${reason}）`
+          : `已发送 input keyevent 70（${reason}）`
+      );
       return;
     }
 
-    let visible = await detector.call(this.vision, signal);
-    if (visible) return;
+    let iconReadErrorReported = false;
+    const readIcon = async () => {
+      try {
+        return Boolean(await detector.call(this.vision, signal));
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        if (!iconReadErrorReported) {
+          iconReadErrorReported = true;
+          await this.report(
+            "warning",
+            "game_mouse_icon_observation_failed",
+            `右下角游戏鼠标图标观测失败；图标仅作参考，按未观测处理（${reason}）`,
+            { reason: error?.message || String(error) }
+          );
+        }
+        return null;
+      }
+    };
+    let visible = await readIcon();
+    if (visible) {
+      await this.report(
+        "info",
+        "game_mouse_icon_visible",
+        `已检测到右下角游戏鼠标图标，跳过 keyevent 70（${reason}）`
+      );
+      return;
+    }
 
+    await this.report(
+      "warning",
+      "game_mouse_icon_missing",
+      `未检测到右下角游戏鼠标图标，正在发送 keyevent 70（${reason}）`
+    );
     await this.adb.prepareGameMouseForClick?.(signal, { force: true });
+    await this.report(
+      "info",
+      "game_mouse_keyevent70_sent",
+      `已发送 input keyevent 70，等待右下角图标出现（${reason}）`
+    );
     const verifyTimeoutMs = Math.max(
       500,
       Number(this.config.adb?.gameMouseIconVerifyTimeoutMs) || 2_000
@@ -45,14 +92,220 @@ export class GameUi {
     );
     const deadline = Date.now() + verifyTimeoutMs;
     do {
-      visible = await detector.call(this.vision, signal);
-      if (visible) return;
+      visible = await readIcon();
+      if (visible) {
+        await this.report(
+          "info",
+          "game_mouse_icon_verified",
+          `已复核右下角游戏鼠标图标可见，继续点击（${reason}）`
+        );
+        return;
+      }
       if (Date.now() >= deadline) break;
       await delay(Math.min(pollMs, Math.max(1, deadline - Date.now())), signal);
     } while (Date.now() < deadline);
 
-    throw new Error(
-      "ADB_GAME_MOUSE_ICON_NOT_VISIBLE: input keyevent 70 后未确认右下角鼠标图标"
+    await this.report(
+      "warning",
+      "game_mouse_icon_not_confirmed",
+      `keyevent 70 后未观测到右下角游戏鼠标图标；图标仅作参考，继续当前点击（${reason}）`
+    );
+  }
+
+  async summonGameMouseAfterHud(
+    signal,
+    maxAttempts = 6,
+    reason = "HUD 登录初始化",
+    { verifyCToggle = false } = {}
+  ) {
+    const attempts = Math.max(1, Math.min(6, Number(maxAttempts) || 6));
+    const detector = this.vision?.gameMouseCIconLit;
+    if (verifyCToggle && typeof detector !== "function") {
+      throw new Error(
+        "ADB_GAME_MOUSE_C_ICON_DETECTOR_UNAVAILABLE: 无法判断 C 图标点亮/熄灭状态"
+      );
+    }
+    const initialTapPoint = this.config.adb?.gameMouseHudInitialTapPoint || {
+      x: 1782,
+      y: 1110
+    };
+    const cTapPoint = this.config.adb?.gameMouseHudTapPoint || {
+      x: 1865,
+      y: 1130
+    };
+    const configuredDelay = (value, fallback) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+    };
+    const cClickDelayMs = configuredDelay(
+      this.config.adb?.gameMouseCClickDelayMs,
+      2_000
+    );
+    const keyEventDelayMs = configuredDelay(
+      this.config.adb?.gameMouseCKeyEventDelayMs,
+      3_000
+    );
+    const tapPoint = async (point, label, phase) => {
+      if (typeof this.adb.touchTap !== "function") {
+        throw new Error(
+          "ADB_TOUCH_TAP_UNAVAILABLE: HUD 初始化需要通过 input tap 点击 CtrlF/C 图标"
+        );
+      }
+      await this.adb.touchTap(
+        Math.round(point.x),
+        Math.round(point.y),
+        signal
+      );
+      await this.report(
+        "info",
+        label === "C" ? "game_mouse_hud_c_tapped" : "game_mouse_hud_ctrl_f_tapped",
+        `已通过 input tap 点击 HUD 右下角 ${label} 图标中心 (${Math.round(point.x)},${Math.round(point.y)})（${phase}）；等待 ${cClickDelayMs}ms`
+      );
+      await delay(cClickDelayMs, signal);
+    };
+    const tapInitialCtrlF = (phase) =>
+      tapPoint(initialTapPoint, "CtrlF", phase);
+    const tapC = (phase) => tapPoint(cTapPoint, "C", phase);
+    const sendKeyEvent = async (attempt) => {
+      await this.adb.prepareGameMouseForClick?.(signal, { force: true });
+      await this.report(
+        "info",
+        "game_mouse_keyevent70_sent",
+        `已发送 input keyevent 70（${reason}，第 ${attempt}/${attempts} 轮）；等待 ${keyEventDelayMs}ms`
+      );
+      await delay(keyEventDelayMs, signal);
+    };
+
+    // Login happens on a clean HUD, where the C icon can be covered by a
+    // player or scene content. Do not sample or toggle C here. The actual
+    // C+C verification is reserved for the retry path after a real entry
+    // click has failed.
+    if (!verifyCToggle) {
+      this.resetGameMouseState();
+      await this.report(
+        "info",
+        "game_mouse_hud_keyevent70_only",
+        `${reason}：仅执行一次 CtrlF → 等待 2 秒 → keyevent 70 → 等待 ${keyEventDelayMs}ms；登录阶段跳过 C+C 像素判断`
+      );
+      await tapInitialCtrlF("登录 HUD 初始化");
+      await sendKeyEvent(1);
+      return;
+    }
+
+    const readCIcon = async (expectedLit, phase) => {
+      try {
+        const lit = Boolean(await detector.call(this.vision, signal));
+        await this.report(
+          lit === expectedLit ? "info" : "warning",
+          "game_mouse_c_icon_state",
+          `C 图标${lit ? "已点亮（黄色）" : "未点亮/已熄灭"}；${phase}，期望${expectedLit ? "点亮" : "熄灭"}`
+        );
+        return lit;
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        await this.report(
+          "warning",
+          "game_mouse_c_icon_observation_failed",
+          `C 图标状态识别失败；${phase}按未满足处理并重试`,
+          { reason: error?.message || String(error) }
+        );
+        return expectedLit ? false : true;
+      }
+    };
+
+    let lit = false;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (signal?.aborted) throw signal.reason || new Error("Interrupted");
+      this.resetGameMouseState();
+      await this.report(
+        attempt === 1 ? "info" : "warning",
+        "game_mouse_c_release_attempt",
+        `${reason}：第 ${attempt}/${attempts} 轮，第一次点击 CtrlF → 等待 2 秒 → keyevent 70 → 等待 3 秒 → 第二次点击 C → 等待 2 秒后判断是否点亮`
+      );
+      try {
+        await tapInitialCtrlF("第一次点击 CtrlF");
+        await sendKeyEvent(attempt);
+        await tapC("第二次点击 C，检查是否变黄");
+        lit = await readCIcon(
+          true,
+          `第 ${attempt}/${attempts} 轮第二次 C 点击后`
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        lit = false;
+        await this.report(
+          "warning",
+          "game_mouse_c_release_attempt_failed",
+          `CtrlF → keyevent 70 → C 第 ${attempt}/${attempts} 轮执行失败，将回到第一次 CtrlF 重新开始`,
+          { reason: error?.message || String(error) }
+        );
+      }
+      if (lit) break;
+      if (attempt === attempts) {
+        throw new Error(
+          `ADB_GAME_MOUSE_C_ICON_NOT_LIT: ${attempts} 次 CtrlF → keyevent 70 → C 后仍未确认 C 图标点亮`
+        );
+      }
+      await this.report(
+        "warning",
+        "game_mouse_c_release_retry",
+        `第二次 C 点击后未确认黄色点亮，回到第一次 CtrlF 重试（${attempt + 1}/${attempts}）`
+      );
+    }
+
+    // A third C tap is itself a state-changing action. If the pixel sample
+    // is contaminated by a warm-colored player/scene, sending C again would
+    // toggle the control back on (and can make the character crouch). Send
+    // it once, then only re-observe without another tap. The initial C+C
+    // verification is only a retry fallback, so a conservative ambiguous
+    // observation must never issue a second state-changing tap.
+    await this.report(
+      "info",
+      "game_mouse_c_reset_attempt",
+      "C 已点亮，执行 1 次第三次 C 点击恢复初始状态；点击后等待 2 秒再判断熄灭"
+    );
+    let dimmed = false;
+    try {
+      await tapC("第三次点击 C，恢复初始状态");
+      const stillLit = await readCIcon(
+        false,
+        "第三次 C 点击后（首次复核）"
+      );
+      dimmed = !stillLit;
+      if (!dimmed) {
+        await delay(500, signal);
+        const stillLitAfterSettling = await readCIcon(
+          false,
+          "第三次 C 点击后（无输入二次复核）"
+        );
+        dimmed = !stillLitAfterSettling;
+      }
+      if (!dimmed) {
+        await this.report(
+          "warning",
+          "game_mouse_c_reset_observation_ambiguous",
+          "第三次 C 已实际发送，但像素复核仍受场景遮挡影响；为避免 C 反向切换，不再重复点击 C，按本次唯一切换继续后续操作"
+        );
+        dimmed = true;
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      await this.report(
+        "warning",
+        "game_mouse_c_reset_attempt_failed",
+        "第三次 C 点击执行异常，未再次盲点 C；将按入口点击重试策略处理",
+        { reason: error?.message || String(error) }
+      );
+    }
+    if (!dimmed) {
+      throw new Error(
+        "ADB_GAME_MOUSE_C_RESET_TAP_FAILED: 第三次 C 点击未执行成功"
+      );
+    }
+    await this.report(
+      "info",
+      "game_mouse_c_release_verified",
+      "C 图标已点亮后再恢复为初始状态，确认游戏鼠标已释放；继续后续操作"
     );
   }
 
@@ -75,28 +328,22 @@ export class GameUi {
   }
 
   async gameMouseTap(point, signal) {
-    await this.ensureGameMouseForClick(signal);
-    try {
-      await this.performAdbTap(point, signal);
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      await this.report(
-        "warning",
-        "adb_mouse_click_retry",
-        "ADB 触屏点击命令失败，重新检查右下角鼠标图标后重试；图标仍存在时不会再次发送 70"
-      );
-      if (typeof this.vision?.gameMouseIconVisible === "function") {
-        await this.ensureGameMouseForClick(signal);
-      } else {
-        // Compatibility for diagnostic/test clients that do not expose the
-        // screenshot detector. The production client always takes the
-        // icon-aware branch above.
-        this.adb.resetGameMouseState?.();
-        await this.adb.prepareGameMouseForClick?.(signal, { force: true });
-      }
-      await this.performAdbTap(point, signal);
-    }
-    await this.afterAction(signal);
+    // The HUD phase has already released the game mouse. Keep this entry
+    // click direct; only the owning retry loop may call
+    // recheckGameMouseForRetry after two failed clicks.
+    return this.tap(point, signal);
+  }
+
+  async recheckGameMouseForRetry(signal, reason) {
+    this.resetGameMouseState();
+    await this.report(
+      "warning",
+      "game_mouse_retry_recheck",
+      `前一次游戏鼠标入口点击连续失败，重新执行 CtrlF → keyevent 70 → C → C 释放流程（${reason}）`
+    );
+    await this.summonGameMouseAfterHud(signal, 6, reason, {
+      verifyCToggle: true
+    });
   }
 
   async hudTap(point, signal) {
@@ -811,12 +1058,19 @@ export class GameUi {
         "hud_panel_close_attempt",
         `第 ${attempt + 1}/${attempts} 次关闭 HUD 面板；${action.controlLabel ? `点击已校准的${action.controlLabel}` : "点击前先释放容器鼠标"}并在点击后重新识别`
       );
+      if (
+        attempt >= 2 &&
+        (action.gameMouse === true || action.gameMouseOnRetry === true)
+      ) {
+        await this.recheckGameMouseForRetry(
+          signal,
+          `${action.controlLabel || "HUD 面板"}连续点击失败 ${attempt} 次`
+        );
+      }
       await this.tapAction(
         {
           ...action,
-          gameMouse:
-            action.gameMouse === true ||
-            (action.gameMouseOnRetry === true && attempt > 0)
+          gameMouse: false
         },
         signal
       );
@@ -991,12 +1245,19 @@ export class GameUi {
           ? `已出现 HUD 锚点，但巡逻结果页至少需返回 ${minimumTapsBeforeSuccess} 次；继续第 ${performedTaps + 1}/${minimumTapsBeforeSuccess} 次左下角返回`
           : `正在逐层退出遮挡页面（${attempt + 1}/${attempts}），返回 HUD 后立即停止`
       );
+      if (
+        performedTaps >= 2 &&
+        (action.gameMouse === true || action.gameMouseOnRetry === true)
+      ) {
+        await this.recheckGameMouseForRetry(
+          signal,
+          `${action.controlLabel || "遮挡页面"}连续点击失败 ${performedTaps} 次`
+        );
+      }
       await this.tapAction(
         {
           ...action,
-          gameMouse:
-            action.gameMouse === true ||
-            (action.gameMouseOnRetry === true && performedTaps > 0)
+          gameMouse: false
         },
         signal
       );
@@ -1131,7 +1392,7 @@ export class GameUi {
       );
       await delay(action.mapListSwipe?.betweenMs || 500, signal);
     }
-    await this.tap(destination, signal);
+    await this.tapMapDestinationByOcr(action, destination, signal);
     await delay(action.destinationSelectDelayMs || 600, signal);
     if (
       action.quickTravelEnabledDetection &&
@@ -1192,6 +1453,86 @@ export class GameUi {
       };
     }
     return result;
+  }
+
+  async tapMapDestinationByOcr(action, destination, signal) {
+    const targetTexts = [
+      ...(Array.isArray(destination.mapTexts) ? destination.mapTexts : []),
+      ...(destination.name === "公告版" ? ["公告板"] : []),
+      destination.name
+    ]
+      .map((text) => String(text || "").trim())
+      .filter((text, index, values) => text && values.indexOf(text) === index);
+    if (!targetTexts.length) {
+      throw new Error(
+        "TELEPORT_TARGET_OCR_REQUIRED: 传送目标没有配置地图 OCR 名称"
+      );
+    }
+    const targetRegion =
+      destination.mapTextRegion ||
+      action.mapDestinationRegion || {
+        left: 80,
+        top: 120,
+        right: 680,
+        bottom: 1150
+      };
+    const targetMode = destination.mapTextMode || "exact";
+    const findTarget = (observations) =>
+      targetTexts
+        .map((text) => ({
+          text,
+          match: this.findInRegion(observations, text, targetRegion, targetMode)
+        }))
+        .filter((item) => item.match)
+        .sort(
+          (left, right) =>
+            (right.match.confidence || 0) - (left.match.confidence || 0)
+        )[0] || null;
+
+    const frame = await this.vision.capture(
+      `teleport-map-target-${destination.name}`,
+      signal
+    );
+    let found = findTarget(frame.observations);
+    if (
+      !found &&
+      frame.path &&
+      typeof this.vision.ocrRegion === "function"
+    ) {
+      const accurateObservations = await this.vision.ocrRegion(
+        frame.path,
+        targetRegion,
+        `teleport-map-target-${destination.name}-accurate`,
+        signal,
+        "accurate",
+        Math.max(
+          0.35,
+          Math.min(0.8, Number(destination.mapOcrMinimumConfidence) || 0.55)
+        ),
+        Number(destination.mapOcrScale) || 1
+      );
+      found = findTarget(accurateObservations);
+      if (found) {
+        await this.report(
+          "info",
+          "map_destination_accurate_ocr",
+          `快速 OCR 未命中后，已通过高精度 OCR 确认地图目标：${found.text}`
+        );
+      }
+    }
+    if (!found) {
+      throw new Error(
+        `TELEPORT_TARGET_OCR_NOT_FOUND: 地图目标列表中未确认${targetTexts.join(" / ")}，禁止按固定坐标点击`
+      );
+    }
+    const point = center(found.match);
+    await this.report(
+      "info",
+      "map_destination_ocr_verified",
+      `地图 OCR 已确认目标传送点“${found.text}”，使用识别坐标 (${Math.round(point.x)},${Math.round(point.y)}) 点击`
+    );
+    await this.tap(point, signal);
+    return { ...found, point };
   }
 
   async verifyDestination(destination, signal) {
@@ -1549,9 +1890,22 @@ export class GameUi {
       Math.min(chatReadyTexts.length || 1, Number(action.chatReadyMinimumTexts) || 1)
     );
     const campChatReady = (observations) =>
+      this.findInRegion(
+        observations,
+        action.chatPanelCollapseText || "收起",
+        chatReadyRegion
+      ) ||
       chatReadyTexts.filter((text) =>
         this.findInRegion(observations, text, chatReadyRegion)
-      ).length >= chatReadyMinimum;
+      ).length >= chatReadyMinimum ||
+      (chatReadyTexts.length >= 2 &&
+        chatReadyTexts.filter((text) => this.findInRegion(observations, text))
+          .length >= Math.max(2, chatReadyMinimum));
+    let failedChatClicks = 0;
+    const recheckAfterRepeatedFailure = async (reason, nextAttempt) => {
+      if (nextAttempt > attempts || failedChatClicks < 2) return;
+      await this.recheckGameMouseForRetry(signal, reason);
+    };
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       if (signal?.aborted) throw signal.reason || new Error("Interrupted");
       const before = await this.vision.captureTransient(
@@ -1561,6 +1915,7 @@ export class GameUi {
       if (this.isCampPanel(before.observations, action)) {
         return;
       }
+      let chatReady = campChatReady(before.observations);
       if (typeof this.vision.captureAccurateTransient === "function") {
         const accurateBefore = await this.vision.captureAccurateTransient(
           `camp-panel-before-accurate-${attempt}`,
@@ -1574,22 +1929,31 @@ export class GameUi {
           );
           return;
         }
+        chatReady ||= campChatReady(accurateBefore.observations);
       }
       await this.report(
         "info",
         "open_camp_panel_attempt",
-        `通过聊天营地频道打开营地界面（${attempt}/${attempts}）；点击前检查右下角鼠标图标，使用 ADB 触屏点击`
+        `通过聊天营地频道打开营地界面（${attempt}/${attempts}）；沿用 HUD 后游戏鼠标状态，使用 ADB 触屏点击`
       );
       try {
-        await this.tapAction(
-          {
-            ...(action.chatButton || { x: 250, y: 1060 }),
-            gameMouse: true
-          },
-          signal
-        );
-        await delay(action.chatDelayMs || 500, signal);
-        let chatReady = chatReadyTexts.length === 0;
+        if (chatReady) {
+          await this.report(
+            "info",
+            "camp_chat_already_open",
+            "已确认营地聊天面板已经打开，跳过左下角聊天入口，直接点击营地频道和市政厅图标"
+          );
+        } else {
+          await this.tapAction(
+            {
+              ...(action.chatButton || { x: 250, y: 1060 }),
+              gameMouse: true
+            },
+            signal
+          );
+          await delay(action.chatDelayMs || 500, signal);
+          chatReady = chatReadyTexts.length === 0;
+        }
         if (!chatReady) {
           const chatFrame = await this.vision.captureTransient(
             `camp-chat-verify-${attempt}`,
@@ -1611,26 +1975,43 @@ export class GameUi {
           await this.report(
             "warning",
             "camp_chat_not_verified",
-            `第 ${attempt}/${attempts} 次点击聊天入口后未 OCR 确认聊天营地频道，禁止继续点击营地频道坐标`
+            `第 ${attempt}/${attempts} 次点击聊天入口后未 OCR 确认聊天营地频道；同一步累计失败 ${failedChatClicks + 1} 次，连续 2 次后才检查 keyevent 70`
           );
+          failedChatClicks += 1;
+          if (attempt < attempts) {
+            await recheckAfterRepeatedFailure(
+              `聊天入口连续失败 ${failedChatClicks} 次，重试 ${attempt + 1}/${attempts}`,
+              attempt + 1
+            );
+          }
           continue;
         }
         await this.report(
           "info",
           "camp_chat_verified",
-          "已确认聊天层，继续使用 ADB 触屏点击；图标存在时不会再次发送 70"
+          "已确认聊天层，继续点击营地频道和市政厅图标；本步骤不重复发送 keyevent 70"
         );
         await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
         await delay(action.channelDelayMs || 500, signal);
+        await this.report(
+          "info",
+          "camp_city_hall_click",
+          "已确认营地聊天层，正在点击既有校准的市政厅图标"
+        );
         await this.tap(action.campIconButton || { x: 980, y: 65 }, signal);
       } catch (error) {
         await this.report(
           "warning",
           "camp_channel_click_failed",
-          `第 ${attempt}/${attempts} 次聊天→营地频道→市政厅点击失败；下一次只重试 ADB 点击，不切换鼠标状态`,
+          `第 ${attempt}/${attempts} 次聊天→营地频道→市政厅点击失败；同一步累计失败 ${failedChatClicks + 1} 次，连续 2 次后才检查 keyevent 70`,
           { reason: error?.message || String(error) }
         );
+        failedChatClicks += 1;
         if (attempt >= attempts) throw error;
+        await recheckAfterRepeatedFailure(
+          `聊天→营地频道→市政厅连续失败 ${failedChatClicks} 次，重试 ${attempt + 1}/${attempts}`,
+          attempt + 1
+        );
         continue;
       }
 
@@ -1668,6 +2049,11 @@ export class GameUi {
       }
       await this.adb.key(4, signal).catch(() => undefined);
       await delay(350, signal);
+      failedChatClicks += 1;
+      await recheckAfterRepeatedFailure(
+        `聊天→营地频道→市政厅页面未打开，连续失败 ${failedChatClicks} 次，重试 ${attempt + 1}/${attempts}`,
+        attempt + 1
+      );
     }
     throw new Error(
       "CAMP_PANEL_DID_NOT_OPEN: 已重试聊天→营地频道→市政厅图标，但未识别到营地首页"
@@ -2331,11 +2717,15 @@ export class GameUi {
   async teleportByText(action, signal) {
     await this.ensureMapOpen(action, signal);
     await this.ensureMapDestinationList(action, signal);
-    await this.clickText(
-      action.targetText,
+    await this.tapMapDestinationByOcr(
+      action,
       {
-        mode: action.targetTextMode || "includes",
-        timeoutSeconds: action.targetFindTimeoutSeconds || 12
+        name: action.targetText,
+        mapTexts: action.targetTexts,
+        mapTextMode: action.targetTextMode || "exact",
+        mapTextRegion: action.mapDestinationRegion,
+        mapOcrMinimumConfidence: action.mapOcrMinimumConfidence,
+        mapOcrScale: action.mapOcrScale
       },
       signal
     );
@@ -2377,9 +2767,16 @@ export class GameUi {
       await delay(action.cooldownSeconds * 1000, signal);
       await this.ensureMapOpen(action, signal);
       await this.ensureMapDestinationList(action, signal);
-      await this.clickText(
-        action.targetText,
-        { timeoutSeconds: action.targetFindTimeoutSeconds || 12 },
+      await this.tapMapDestinationByOcr(
+        action,
+        {
+          name: action.targetText,
+          mapTexts: action.targetTexts,
+          mapTextMode: action.targetTextMode || "exact",
+          mapTextRegion: action.mapDestinationRegion,
+          mapOcrMinimumConfidence: action.mapOcrMinimumConfidence,
+          mapOcrScale: action.mapOcrScale
+        },
         signal
       );
       await this.tap(action.quickTravel, signal);

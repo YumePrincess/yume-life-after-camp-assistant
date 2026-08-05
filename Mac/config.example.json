@@ -40,6 +40,24 @@
     "unicodeIme": "com.android.adbkeyboard/.AdbIME",
     "gameMouseToggleKey": 70,
     "gameMouseToggleSettleMs": 350,
+    "gameMouseHudInitialTapPoint": { "x": 1782, "y": 1110 },
+    "gameMouseHudTapPoint": { "x": 1865, "y": 1130 },
+    "gameMouseCClickDelayMs": 2000,
+    "gameMouseCKeyEventDelayMs": 3000,
+    "gameMouseCIcon": {
+      "probePoints": [
+        { "x": 1865, "y": 1130 },
+        { "x": 1848, "y": 1130 },
+        { "x": 1882, "y": 1130 },
+        { "x": 1865, "y": 1114 },
+        { "x": 1865, "y": 1146 }
+      ],
+      "probeRadius": 12,
+      "minimumLitPoints": 3,
+      "redBlueDelta": 0.08,
+      "greenBlueDelta": 0.07,
+      "minimumSaturation": 0.2
+    },
     "gameMouseIconVerifyTimeoutMs": 2000,
     "gameMouseIconVerifyPollMs": 250,
     "gameMouseIcon": {
@@ -301,7 +319,7 @@
   "tables": {
     "contribution": {
       "region": { "left": 1220, "top": 270, "right": 1900, "bottom": 1000 },
-      "ocrMinimumConfidence": 0.25,
+      "ocrMinimumConfidence": 0.3,
       "minimumCompleteRows": 100,
       "columns": [
         { "key": "name", "left": 0, "right": 0.32 },
@@ -322,6 +340,7 @@
     },
     "members": {
       "extractionMode": "hybrid",
+      "ocrMinimumConfidence": 0.3,
       "region": { "left": 115, "top": 285, "right": 1800, "bottom": 810 },
       "rowAnchorTop": 315,
       "columns": [
@@ -351,7 +370,7 @@
     },
     "activity": {
       "region": { "left": 1220, "top": 245, "right": 1645, "bottom": 975 },
-      "ocrMinimumConfidence": 0.25,
+      "ocrMinimumConfidence": 0.3,
       "sortPoint": { "x": 1630, "y": 230 },
       "columns": [
         { "key": "name", "left": 0, "right": 0.58 },
@@ -458,7 +477,10 @@
           "minimumSaturation": 0.25
         },
         "target": {
-          "name": "公告版",
+          "name": "公告板",
+          "mapTexts": ["公告板", "公告版"],
+          "mapTextMode": "exact",
+          "mapOcrMinimumConfidence": 0.55,
           "x": 270,
           "y": 577,
           "approachUntilReady": true,
@@ -669,6 +691,8 @@
         },
         "target": {
           "name": "市政厅",
+          "mapTextMode": "exact",
+          "mapOcrMinimumConfidence": 0.55,
           "x": 280,
           "y": 420,
           "approachUntilReady": true,
@@ -684,6 +708,8 @@
         },
         "fallback": {
           "name": "中心出入口",
+          "mapTextMode": "exact",
+          "mapOcrMinimumConfidence": 0.55,
           "x": 280,
           "y": 337,
           "readyTexts": ["中心出入口", "配方", "背包"],

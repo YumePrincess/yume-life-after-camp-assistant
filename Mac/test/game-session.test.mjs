@@ -61,6 +61,19 @@ test("zero promotion pages reaches HUD without blindly tapping the map area", as
   assert.match(fixture.messages.at(-1), /未出现活动宣传页/);
 });
 
+test("stable HUD sends the game-mouse key once after login, not before it", async () => {
+  const fixture = createFixture([["登录游戏"], ["背包"]]);
+  const hudCalls = [];
+  fixture.context.ui.summonGameMouseAfterHud = async (_signal, attempts) => {
+    hudCalls.push(attempts);
+  };
+
+  await waitForGameReady(fixture.context);
+
+  assert.deepEqual(hudCalls, [6]);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+});
+
 test("pre-login fallback uses Android touch and never GameUi.tap", async () => {
   const fixture = createFixture([["登录游戏"], ["背包"]]);
   const touchTaps = [];

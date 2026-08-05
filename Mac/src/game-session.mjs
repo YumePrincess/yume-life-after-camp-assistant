@@ -850,6 +850,13 @@ export async function waitForGameReady(context, signal) {
           Math.round((config.adb.screenHeight || 1200) / 2),
           signal
         );
+        // The stable HUD is the only unconditional game-mouse toggle point.
+        // The lower-right fist icon is diagnostic only: some MuMu/game states
+        // do not render it even though keyevent 70 was accepted.
+        await ui.summonGameMouseAfterHud?.(
+          signal,
+          Number(config.adb?.gameMouseHudReleaseAttempts) || 6
+        );
         return;
       }
     } else {

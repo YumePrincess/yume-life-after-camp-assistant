@@ -1,3 +1,5 @@
+import { isPlausibleMemberName } from "./member-name.mjs";
+
 export function parseTable(observations, definition) {
   const region = definition.region;
   const visible = observations
@@ -67,12 +69,18 @@ export function normalizeMembers(contributionRows, detailRows, activityRows = []
   const combined = [];
   for (const row of contributionRows) {
     const name = clean(row.name);
-    if (!name || /玩家名|成员|姓名|贡献|职业/.test(name)) continue;
+    if (
+      !isPlausibleMemberName(name) ||
+      /玩家名|成员|姓名|贡献|职业/.test(name)
+    ) continue;
     combined.push({ ...row, name });
   }
   for (const row of detailRows) {
     const name = clean(row.name);
-    if (!name || /成员|姓名|贡献|职业/.test(name)) continue;
+    if (
+      !isPlausibleMemberName(name) ||
+      /成员|姓名|贡献|职业/.test(name)
+    ) continue;
     const match = exactMember(combined, name);
     if (match) Object.assign(match, row, { name: match.name });
     else combined.push({ ...row, name });
@@ -114,7 +122,11 @@ export function normalizeActivity(rows) {
       lastActiveText: clean(row.onlineState) || null,
       inactiveDays: parseInactiveDays(row.onlineState)
     }))
-    .filter((row) => row.name && !/全部成员|在线情况|姓名/.test(row.name));
+    .filter(
+      (row) =>
+        isPlausibleMemberName(row.name) &&
+        !/全部成员|在线情况|姓名/.test(row.name)
+    );
 }
 
 export function normalizeContribution(rows) {

@@ -312,13 +312,26 @@ export async function captureProfilesAndStaff(context, signal) {
   await context.ui.executeFlow("openCampPanel", {}, signal);
   await context.ui.executeFlow("openMemberPanel", {}, signal);
   const expectedMembers = await context.vision.readMemberExpectedTotal(signal);
-  const details = await capturePagedTable(
-    context,
-    "member-details",
-    context.config.tables.members,
-    signal,
-    { expectedCount: expectedMembers }
-  );
+  const scanMemberDetails = () =>
+    capturePagedTable(
+      context,
+      "member-details",
+      context.config.tables.members,
+      signal,
+      { expectedCount: expectedMembers }
+    );
+  let details = await scanMemberDetails();
+  if (details.length < expectedMembers) {
+    await context.report(
+      "warning",
+      "member_details_count_retry",
+      `成员资料首次扫描识别 ${details.length}/${expectedMembers} 名，返回成员页并完整重扫一次，避免末页 OCR 漏行`
+    );
+    await context.ui.tap({ x: 80, y: 1080 }, signal);
+    await (context.sleep || delay)(1_000, signal);
+    await context.ui.executeFlow("openMemberPanel", {}, signal);
+    details = await scanMemberDetails();
+  }
   if (details.length !== expectedMembers) {
     throw new Error(
       `MEMBER_PROFILE_COUNT_MISMATCH: recognized ${details.length}, page header reports ${expectedMembers}`
@@ -501,22 +514,29 @@ export async function capturePagedTable(
     if (!memberDetailsMode) {
       rows = reconcilePageRows(previousRows, rows);
     }
-    if (
+    const memberPageNovelty = memberDetailsMode
+      ? pageNovelMemberCount(rows, byName)
+      : null;
+    const shouldRecoverMemberPage =
       memberDetailsMode &&
       frame?.path &&
-      hasSuspiciousMemberCollision(rows, byName)
-    ) {
+      (rows.length < minimumRowsPerPage ||
+        hasSuspiciousMemberCollision(rows, byName) ||
+        (expectedCount !== null &&
+          byName.size < expectedCount &&
+          memberPageNovelty === 0));
+    if (shouldRecoverMemberPage) {
       const recoveredRows = await vision.extractTableRows(
         frame.path,
         definition,
-        `${label}-${page + 1}-duplicate-recovery`,
+        `${label}-${page + 1}-page-recovery`,
         signal,
         { forceMemberAdvisor: true }
       ).catch(async (error) => {
         await report(
           "warning",
-          "member_details_duplicate_recovery_failed",
-          `第 ${page + 1} 页发现疑似姓名 OCR 合并，但模型强化重读失败`,
+          "member_details_page_recovery_failed",
+          `第 ${page + 1} 页存在漏行/重复行风险，但模型强化重读失败`,
           { reason: error.message }
         );
         return [];
@@ -539,8 +559,8 @@ export async function capturePagedTable(
       ) {
         await report(
           "info",
-          "member_details_duplicate_recovered",
-          `第 ${page + 1} 页强化重读已从疑似重名/特殊字符 OCR 合并中恢复 ${recoveredNovelty - originalNovelty} 名成员`,
+          "member_details_page_recovered",
+          `第 ${page + 1} 页强化重读恢复了 ${recoveredNovelty - originalNovelty} 名新的成员候选`,
           {
             beforeNames: rows.map((row) => row.name),
             recoveredNames: reconciledRecovery.map((row) => row.name)
@@ -550,8 +570,8 @@ export async function capturePagedTable(
       } else {
         await report(
           "warning",
-          "member_details_duplicate_unresolved",
-          `第 ${page + 1} 页存在疑似重名或特殊字符姓名，强化重读未能安全增加唯一成员`,
+          "member_details_page_recovery_unresolved",
+          `第 ${page + 1} 页强化重读未能安全增加唯一成员，继续翻页或执行整页重扫`,
           {
             names: rows.map((row) => row.name),
             recoveredNames: reconciledRecovery.map((row) => row.name)
@@ -675,7 +695,10 @@ function hasSuspiciousMemberCollision(rows, byName) {
     const key = memberProfileNameKey(row.name);
     if (!key) continue;
     const samePage = pageRows.get(key);
-    if (samePage && memberProfileDataConflicts(samePage, row)) return true;
+    // A repeated name can mean that one row was merged into its neighbour or
+    // that the native OCR returned the previous page's row twice. It needs
+    // the same forced row-by-row reread as a conflicting duplicate.
+    if (samePage) return true;
     pageRows.set(key, samePage || row);
     const existing = byName.get(key);
     if (existing && memberProfileDataConflicts(existing, row)) {
@@ -703,7 +726,10 @@ function memberProfileNameKey(value) {
     .normalize("NFKC")
     .toLocaleLowerCase()
     .replace(/\s+/g, "");
-  return normalized.replace(/[^\p{L}\p{N}]/gu, "") || normalized;
+  // Decorative symbols are part of the in-game display name. Removing them
+  // made distinct members such as "#愿✨" and "愿" collapse into one map
+  // entry, which caused the page count to be lower than the header count.
+  return normalized;
 }
 
 function memberProfileDataConflicts(left, right) {

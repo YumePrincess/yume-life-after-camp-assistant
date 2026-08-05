@@ -3,7 +3,10 @@ import { resolve } from "node:path";
 import { MAC_ROOT } from "./config.mjs";
 import { runFile } from "./process.mjs";
 import { LocalVisionAdvisor } from "./local-vision-advisor.mjs";
+import { isPlausibleMemberName } from "./member-name.mjs";
 import { parseTable } from "./table-parser.mjs";
+
+export { isPlausibleMemberName } from "./member-name.mjs";
 
 export class Vision {
   constructor(config, adb) {
@@ -323,13 +326,17 @@ export class Vision {
   }
 
   async #extractContributionRows(imagePath, definition, label, signal) {
+    const configuredMinimum = Number(definition.ocrMinimumConfidence);
+    const memberOcrMinimum = Number.isFinite(configuredMinimum)
+      ? Math.max(0.25, Math.min(0.8, configuredMinimum))
+      : 0.3;
     let observations = await this.ocrRegion(
       imagePath,
       definition.region,
       `${label}-values`,
       signal,
       "accurate",
-      0.25,
+      memberOcrMinimum,
       1,
       Math.max(1, Number(this.config.vision?.memberTableTimeoutSeconds) || 2)
     );
@@ -367,7 +374,11 @@ export class Vision {
       return rows
         .map((row, index) => ({
           ...row,
-          name: row.name || namesByRow.get(index + 1) || ""
+          name:
+            (isPlausibleMemberName(row.name) && row.name) ||
+            (isPlausibleMemberName(namesByRow.get(index + 1))
+              ? namesByRow.get(index + 1)
+              : "")
         }))
         .filter((row) => row.name);
     } finally {
@@ -383,13 +394,17 @@ export class Vision {
     signal,
     options = {}
   ) {
+    const configuredMinimum = Number(definition.ocrMinimumConfidence);
+    const memberOcrMinimum = Number.isFinite(configuredMinimum)
+      ? Math.max(0.25, Math.min(0.8, configuredMinimum))
+      : 0.3;
     let observations = await this.ocrRegion(
       imagePath,
       definition.region,
       `${label}-values`,
       signal,
       "accurate",
-      0.25
+      memberOcrMinimum
     );
     const region = definition.region;
     const width = region.right - region.left;
@@ -464,7 +479,9 @@ export class Vision {
     });
     const nativeNameCounts = new Map();
     for (const row of rowData) {
-      const key = comparableVisionName(row.identity.name);
+      const key = comparableVisionName(
+        isPlausibleMemberName(row.identity.name) ? row.identity.name : ""
+      );
       if (key) nativeNameCounts.set(key, (nativeNameCounts.get(key) || 0) + 1);
     }
     const forceMemberAdvisor = Boolean(options.forceMemberAdvisor);
@@ -473,7 +490,7 @@ export class Vision {
       forceMemberAdvisor ||
       rowData.some(
         (row) =>
-          !row.identity.name ||
+          !isPlausibleMemberName(row.identity.name) ||
           nativeNameCounts.get(comparableVisionName(row.identity.name)) > 1
       )
     ) {
@@ -516,10 +533,12 @@ export class Vision {
     return rowData
       .map(({ items, identity }, index) => {
         const ai = advisedByRow.get(index + 1) || {};
-        const nativeName = identity.name;
+        const nativeName = isPlausibleMemberName(identity.name)
+          ? identity.name
+          : "";
         const nativeNameDuplicated =
           nativeNameCounts.get(comparableVisionName(nativeName)) > 1;
-        const advisedName = cleanModelText(ai.name);
+        const advisedName = cleanMemberName(ai.name);
         return {
           name:
             (
@@ -550,17 +569,21 @@ export class Vision {
   }
 
   async #extractActivityRows(imagePath, definition, label, signal) {
+    const configuredMinimum = Number(definition.ocrMinimumConfidence);
+    const memberOcrMinimum = Number.isFinite(configuredMinimum)
+      ? Math.max(0.25, Math.min(0.8, configuredMinimum))
+      : 0.3;
     const observations = await this.ocrRegion(
       imagePath,
       definition.region,
       `${label}-activity-values`,
       signal,
       "accurate",
-      0.25
+      memberOcrMinimum
     );
     return parseTable(observations, definition).filter(
       (row) =>
-        row.name &&
+        isPlausibleMemberName(row.name) &&
         row.onlineState &&
         !definition.headerPattern.some(
           (value) =>
@@ -961,6 +984,64 @@ export class Vision {
       await rm(frame.path, { force: true });
     }
   }
+
+  async gameMouseCIconLit(signal) {
+    const icon = this.config.adb?.gameMouseCIcon || {};
+    const points = Array.isArray(icon.probePoints) && icon.probePoints.length >= 3
+      ? icon.probePoints
+      : [
+          { x: 1865, y: 1130 },
+          { x: 1848, y: 1130 },
+          { x: 1882, y: 1130 },
+          { x: 1865, y: 1114 },
+          { x: 1865, y: 1146 }
+        ];
+    const radius = Math.max(6, Number(icon.probeRadius) || 12);
+    const minimumPoints = Math.max(
+      1,
+      Math.min(points.length, Number(icon.minimumLitPoints) || 3)
+    );
+    const redBlueDelta = Math.max(
+      0,
+      Number(icon.redBlueDelta) || 0.08
+    );
+    const greenBlueDelta = Math.max(
+      0,
+      Number(icon.greenBlueDelta) || 0.07
+    );
+    const saturation = Math.max(
+      0,
+      Number(icon.minimumSaturation) || 0.20
+    );
+    const frame = await this.captureSource("game-mouse-c-icon", signal);
+    try {
+      let probes;
+      try {
+        probes = await this.probe(frame.path, points, radius, signal);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        return false;
+      }
+      const litPoints = (probes || []).filter((probe) => {
+        const red = Number(probe.meanRed);
+        const green = Number(probe.meanGreen);
+        const blue = Number(probe.meanBlue);
+        const meanSaturation = Number(probe.meanSaturation);
+        if (![red, green, blue, meanSaturation].every(Number.isFinite)) {
+          return false;
+        }
+        return (
+          red - blue >= redBlueDelta &&
+          green - blue >= greenBlueDelta &&
+          meanSaturation >= saturation
+        );
+      });
+      return litPoints.length >= minimumPoints;
+    } finally {
+      this.taskPaths.delete(frame.path);
+      await rm(frame.path, { force: true });
+    }
+  }
 }
 
 export function safeSipsCropRegion(region, sourceWidth, sourceHeight) {
@@ -1015,9 +1096,10 @@ function firstColumnText(items, bounds) {
     .trim();
 }
 
-function inferMemberIdentity(items) {
+export function inferMemberIdentity(items) {
   const values = items
-    .map((item) => String(item.text || "").trim())
+    .flatMap((item) => String(item.text || "").split(/\r?\n/))
+    .map((text) => text.trim())
     .filter(Boolean);
   if (!values.length) return { name: "", campTitle: "" };
   if (values.length === 1) {
@@ -1026,6 +1108,11 @@ function inferMemberIdentity(items) {
       : { name: values[0], campTitle: "" };
   }
   return { name: values[0], campTitle: values.slice(1).join(" ") };
+}
+
+function cleanMemberName(value) {
+  const text = cleanModelText(value);
+  return isPlausibleMemberName(text) ? text : "";
 }
 
 function cleanModelText(value) {
@@ -1038,8 +1125,7 @@ function comparableVisionName(value) {
     .trim()
     .normalize("NFKC")
     .toLocaleLowerCase()
-    .replace(/\s+/g, "")
-    .replace(/[^\p{L}\p{N}]/gu, "");
+    .replace(/\s+/g, "");
 }
 
 function medianNumber(values) {

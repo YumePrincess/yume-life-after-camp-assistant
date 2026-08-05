@@ -14,10 +14,12 @@ test("camp page is recognized by two stable, region-bound anchors", () => {
   );
 });
 
-test("a marked game-mouse entry skips keyevent 70 when the icon is visible", async () => {
+test("a marked game-mouse entry stays a direct tap after the HUD phase", async () => {
   const fixture = createUi();
   const touchTaps = [];
-  fixture.vision.gameMouseIconVisible = async () => true;
+  fixture.vision.gameMouseIconVisible = async () => {
+    throw new Error("entry tap must not inspect the reference icon");
+  };
   fixture.adb.touchTap = async (x, y) => touchTaps.push({ x, y });
   let prepareCalls = 0;
   fixture.adb.prepareGameMouseForClick = async () => {
@@ -45,31 +47,103 @@ test("a panel touch tap never inspects the HUD game-mouse icon", async () => {
   assert.deepEqual(fixture.taps, []);
 });
 
-test("an absent game-mouse icon sends keyevent 70 once, verifies it, then taps", async () => {
+test("HUD initialization taps CtrlF and sends keyevent 70 without toggling C", async () => {
   const fixture = createUi();
-  const states = [false, true];
+  const events = [];
+  fixture.ui.config.adb = {
+    gameMouseCClickDelayMs: 0,
+    gameMouseCKeyEventDelayMs: 0
+  };
+  let detectorCalls = 0;
+  fixture.vision.gameMouseCIconLit = async () => {
+    detectorCalls += 1;
+    return true;
+  };
+  fixture.adb.touchTap = async (x, y) => events.push(["tap", x, y]);
+  fixture.adb.prepareGameMouseForClick = async () => events.push(["key70"]);
+
+  await fixture.ui.summonGameMouseAfterHud(undefined, 6);
+
+  assert.deepEqual(events, [
+    ["tap", 1782, 1110],
+    ["key70"]
+  ]);
+  assert.equal(detectorCalls, 0);
+  assert.ok(fixture.messages.some((message) => message.includes("跳过 C+C")));
+});
+
+test("a retry recheck repeats the CtrlF/C/keyevent release state machine", async () => {
+  const fixture = createUi();
+  fixture.ui.config.adb = {
+    gameMouseCClickDelayMs: 0,
+    gameMouseCKeyEventDelayMs: 0
+  };
+  const states = [true, false];
   const touchTaps = [];
   const prepareCalls = [];
-  fixture.vision.gameMouseIconVisible = async () => states.shift() ?? true;
+  fixture.vision.gameMouseCIconLit = async () => states.shift() ?? false;
   fixture.adb.prepareGameMouseForClick = async (_signal, options) => {
     prepareCalls.push(options);
   };
   fixture.adb.touchTap = async (x, y) => touchTaps.push({ x, y });
 
-  await fixture.ui.gameMouseTap({ x: 220, y: 180 });
+  await fixture.ui.recheckGameMouseForRetry(
+    undefined,
+    "同一步点击连续失败 2 次"
+  );
 
   assert.deepEqual(prepareCalls, [{ force: true }]);
-  assert.deepEqual(touchTaps, [{ x: 220, y: 180 }]);
+  assert.deepEqual(touchTaps, [
+    { x: 1782, y: 1110 },
+    { x: 1865, y: 1130 },
+    { x: 1865, y: 1130 }
+  ]);
   assert.deepEqual(fixture.taps, []);
 });
 
-test("retry-only game-mouse fallback waits until the first panel tap fails", async () => {
+test("a retry does not click C again when dim verification is obscured", async () => {
+  const fixture = createUi();
+  fixture.ui.config.adb = {
+    gameMouseCClickDelayMs: 0,
+    gameMouseCKeyEventDelayMs: 0
+  };
+  const states = [true, true, true];
+  const touchTaps = [];
+  fixture.vision.gameMouseCIconLit = async () => states.shift() ?? true;
+  fixture.adb.prepareGameMouseForClick = async () => {};
+  fixture.adb.touchTap = async (x, y) => touchTaps.push({ x, y });
+
+  await fixture.ui.recheckGameMouseForRetry(undefined, "入口点击失败");
+
+  assert.deepEqual(touchTaps, [
+    { x: 1782, y: 1110 },
+    { x: 1865, y: 1130 },
+    { x: 1865, y: 1130 }
+  ]);
+  assert.equal(
+    touchTaps.filter((point) => point.x === 1865 && point.y === 1130).length,
+    2
+  );
+  assert.ok(
+    fixture.messages.some((message) => message.includes("不再重复点击 C"))
+  );
+});
+
+test("retry-only game-mouse fallback waits until two taps fail", async () => {
   const fixture = createUi({
-    fastFrames: [[], [], [observation("调整", 100, 100)]]
+    fastFrames: [[], [], [], [observation("调整", 100, 100)]]
   });
-  const states = [false, true];
+  fixture.ui.config.adb = {
+    gameMouseCClickDelayMs: 0,
+    gameMouseCKeyEventDelayMs: 0
+  };
+  const cStates = [true, false];
   const prepareCalls = [];
-  fixture.vision.gameMouseIconVisible = async () => states.shift() ?? true;
+  fixture.vision.gameMouseCIconLit = async () => {
+    const state = cStates.shift() ?? false;
+    return state;
+  };
+  fixture.adb.touchTap = async (x, y) => fixture.taps.push({ x, y });
   fixture.adb.prepareGameMouseForClick = async (_signal, options) => {
     prepareCalls.push(options);
   };
@@ -78,7 +152,7 @@ test("retry-only game-mouse fallback waits until the first panel tap fails", asy
     texts: ["调整"],
     x: 50,
     y: 325,
-    maxAttempts: 2,
+    maxAttempts: 3,
     intervalMs: 1,
     gameMouseOnRetry: true
   });
@@ -86,6 +160,10 @@ test("retry-only game-mouse fallback waits until the first panel tap fails", asy
   assert.deepEqual(prepareCalls, [{ force: true }]);
   assert.deepEqual(fixture.taps, [
     { x: 50, y: 325 },
+    { x: 50, y: 325 },
+    { x: 1782, y: 1110 },
+    { x: 1865, y: 1130 },
+    { x: 1865, y: 1130 },
     { x: 50, y: 325 }
   ]);
 });
@@ -201,7 +279,7 @@ test("a map blocking the camp panel is closed before any chat click", async () =
   );
 });
 
-test("camp navigation summons the game mouse once and uses ADB clicks", async () => {
+test("camp navigation uses direct ADB clicks after the HUD phase", async () => {
   const fixture = createUi({
     transientCapture(label) {
       if (label === "camp-chat-verify-1") {
@@ -219,12 +297,11 @@ test("camp navigation summons the game mouse once and uses ADB clicks", async ()
   });
   const mouseTaps = fixture.taps;
   let summons = 0;
-  let mouseReady = false;
+  fixture.vision.gameMouseIconVisible = async () => {
+    throw new Error("camp navigation must not inspect the reference icon");
+  };
   fixture.adb.prepareGameMouseForClick = async () => {
-    if (!mouseReady) {
-      summons += 1;
-      mouseReady = true;
-    }
+    summons += 1;
   };
 
   await fixture.ui.openCampPanelViaChat({
@@ -237,7 +314,7 @@ test("camp navigation summons the game mouse once and uses ADB clicks", async ()
     verifySeconds: 1
   });
 
-  assert.equal(summons, 1);
+  assert.equal(summons, 0);
   assert.deepEqual(mouseTaps, [
     { x: 250, y: 1060 },
     { x: 1740, y: 355 },
@@ -245,7 +322,47 @@ test("camp navigation summons the game mouse once and uses ADB clicks", async ()
   ]);
 });
 
-test("a game-mouse entry click command failure rechecks the cursor before retrying", async () => {
+test("an already-open camp chat skips the chat toggle and clicks city hall", async () => {
+  const fixture = createUi({
+    transientCapture(label) {
+      if (label === "camp-panel-before-1") {
+        return [
+          observation("营地频道", 820, 115),
+          observation("成员(97)", 1400, 115),
+          observation("收起", 1700, 1080)
+        ];
+      }
+      if (label.startsWith("camp-panel-verify")) {
+        return [
+          observation("量子时代", 330, 330),
+          observation("营地周活跃", 760, 320)
+        ];
+      }
+      return [];
+    },
+    mumu: null
+  });
+
+  await fixture.ui.openCampPanelViaChat({
+    attempts: 1,
+    chatReadyTexts: ["营地频道", "成员", "私聊"],
+    chatReadyRegion: { left: 1200, top: 100, right: 1900, bottom: 1150 },
+    chatReadyMinimumTexts: 1,
+    chatDelayMs: 1,
+    channelDelayMs: 1,
+    verifySeconds: 1
+  });
+
+  assert.deepEqual(fixture.taps, [
+    { x: 1740, y: 355 },
+    { x: 980, y: 65 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("聊天面板已经打开"))
+  );
+});
+
+test("a direct game-mouse entry click does not toggle keyevent 70 on one command failure", async () => {
   const fixture = createUi();
   const prepareCalls = [];
   let clicks = 0;
@@ -257,16 +374,16 @@ test("a game-mouse entry click command failure rechecks the cursor before retryi
     if (clicks === 1) throw new Error("ADB click injection failed");
   };
 
-  await fixture.ui.gameMouseTap({ x: 48, y: 327 });
-
-  assert.deepEqual(prepareCalls, [{}, { force: true }]);
-  assert.equal(clicks, 2);
-  assert.ok(
-    fixture.messages.some((message) => message.includes("图标"))
+  await assert.rejects(
+    fixture.ui.gameMouseTap({ x: 48, y: 327 }),
+    /ADB click injection failed/
   );
+
+  assert.deepEqual(prepareCalls, []);
+  assert.equal(clicks, 1);
 });
 
-test("camp navigation retries ADB clicks without toggling the game mouse", async () => {
+test("camp navigation rechecks the game mouse once after two failed attempts", async () => {
   const fixture = createUi({
     transientCapture(label) {
       if (label === "camp-panel-verify-3") {
@@ -278,6 +395,13 @@ test("camp navigation retries ADB clicks without toggling the game mouse", async
       return [];
     }
   });
+  fixture.ui.config.adb = {
+    gameMouseCClickDelayMs: 0,
+    gameMouseCKeyEventDelayMs: 0
+  };
+  const cStates = [true, false];
+  fixture.vision.gameMouseCIconLit = async () => cStates.shift() ?? false;
+  fixture.adb.touchTap = async (x, y) => fixture.taps.push({ x, y });
   let summons = 0;
   let mouseReady = false;
   fixture.adb.prepareGameMouseForClick = async () => {
@@ -295,7 +419,7 @@ test("camp navigation retries ADB clicks without toggling the game mouse", async
   });
 
   assert.equal(summons, 1);
-  assert.equal(fixture.taps.length, 9);
+  assert.equal(fixture.taps.length, 12);
 });
 
 test("map preparation closes the camp page, collapses chat, then confirms HUD", async () => {
@@ -682,6 +806,43 @@ test("destination verification walks forward only until the interaction text app
   assert.equal(verified, true);
   assert.deepEqual(fixture.keys, ["KEYCODE_W"]);
   assert.deepEqual(fixture.focusPoints, [{ x: 960, y: 600 }]);
+  assert.deepEqual(fixture.taps, []);
+});
+
+test("map teleport clicks the OCR-confirmed target row instead of fixed coordinates", async () => {
+  const fixture = createUi({
+    fastFrames: [[observation("公告板", 250, 560)]]
+  });
+  const result = await fixture.ui.tapMapDestinationByOcr(
+    { mapDestinationRegion: { left: 80, top: 120, right: 680, bottom: 1150 } },
+    {
+      name: "公告板",
+      mapTexts: ["公告板", "公告版"],
+      mapTextMode: "exact",
+      x: 270,
+      y: 577
+    }
+  );
+
+  assert.equal(result.text, "公告板");
+  assert.deepEqual(fixture.taps, [{ x: 260, y: 570 }]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("地图 OCR 已确认目标传送点"))
+  );
+});
+
+test("map teleport refuses a fixed fallback when the target name is not OCR-confirmed", async () => {
+  const fixture = createUi({
+    fastFrames: [[observation("交易摊位", 250, 560)]]
+  });
+
+  await assert.rejects(
+    fixture.ui.tapMapDestinationByOcr(
+      {},
+      { name: "公告板", x: 270, y: 577 }
+    ),
+    /TELEPORT_TARGET_OCR_NOT_FOUND/
+  );
   assert.deepEqual(fixture.taps, []);
 });
 
@@ -1253,6 +1414,8 @@ test("post-login click flows use input keyevent 70 and no host release config", 
     );
     assert.equal(config.adb.gameMouseToggleKey, 70);
     assert.equal(config.adb.gameMouseToggleSettleMs, 350);
+    assert.deepEqual(config.adb.gameMouseHudInitialTapPoint, { x: 1782, y: 1110 });
+    assert.deepEqual(config.adb.gameMouseHudTapPoint, { x: 1865, y: 1130 });
     assert.equal(Object.hasOwn(config.mumu, "hostMouseUnlock"), false);
     assert.equal(
       Object.hasOwn(config.flows.openCampPanel[0], "hostMouseUnlockBeforeCampChannel"),
