@@ -44,8 +44,13 @@ actor RuntimeService {
         let marker = destination.appending(path: ".bundle-version")
         if fileManager.fileExists(atPath: destination.appending(path: "src/main.mjs").path),
            (try? String(contentsOf: marker, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) == bundleVersion {
-            try ensureRuntimeConfig(at: destination)
-            return false
+            // A local Beta can keep the same App build number while the
+            // bundled runtime code changes. Do not let an old Runtime/current
+            // survive solely because its version marker still matches.
+            if runtimeCodeMatches(bundled: bundled, installed: destination) {
+                try ensureRuntimeConfig(at: destination)
+                return false
+            }
         }
         try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         let staging = destination.deletingLastPathComponent().appending(path: "installing", directoryHint: .isDirectory)
@@ -74,6 +79,31 @@ actor RuntimeService {
             throw error
         }
         return replacedExistingRuntime
+    }
+
+    private func runtimeCodeMatches(bundled: URL, installed: URL) -> Bool {
+        let roots = ["src", "scripts", "plugins"]
+        var relativeFiles = ["config.example.json", "package.json", "package-lock.json"]
+        for root in roots {
+            let rootURL = bundled.appending(path: root, directoryHint: .isDirectory)
+            guard let enumerator = fileManager.enumerator(
+                at: rootURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else { return false }
+            for case let file as URL in enumerator {
+                let values = try? file.resourceValues(forKeys: [.isRegularFileKey])
+                guard values?.isRegularFile == true else { continue }
+                let relative = file.path.replacingOccurrences(of: bundled.path + "/", with: "")
+                relativeFiles.append(relative)
+            }
+        }
+        return relativeFiles.allSatisfy { relative in
+            let source = bundled.appending(path: relative)
+            let target = installed.appending(path: relative)
+            return fileManager.fileExists(atPath: target.path) &&
+                fileManager.contentsEqual(atPath: source.path, andPath: target.path)
+        }
     }
 
     /// Creates a secret-free first-launch configuration. Existing settings are
@@ -307,6 +337,7 @@ actor RuntimeService {
                 "maxAttempts": 6,
                 "intervalMs": 500,
                 "hud": true,
+                "gameMouse": true,
                 "controlLabel": "队伍卡片旗帜展开"
             ]
             flows["openTeamPanel"] = openFlow

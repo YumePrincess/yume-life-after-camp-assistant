@@ -365,7 +365,16 @@ export async function waitForGameReady(context, signal) {
     if (typeof ui.androidTouchTap === "function") {
       return ui.androidTouchTap(point, signal);
     }
-    return ui.tap(point, signal);
+    // Never fall back to GameUi.tap here: older runtimes made that path
+    // summon the in-game mouse and could fail login before the HUD exists.
+    if (typeof adb.touchTap === "function") {
+      await adb.touchTap(point.x, point.y, signal);
+      await ui.afterAction?.(signal);
+      return;
+    }
+    throw new Error(
+      "ADB_TOUCH_TAP_UNAVAILABLE: 登录阶段禁止回退到游戏鼠标点击"
+    );
   };
   const promotions = {
     maxDismissAttemptsPerPage: 4,

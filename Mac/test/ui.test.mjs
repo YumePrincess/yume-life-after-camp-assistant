@@ -14,7 +14,7 @@ test("camp page is recognized by two stable, region-bound anchors", () => {
   );
 });
 
-test("a visible game-mouse icon skips keyevent 70 and uses Android touch tap", async () => {
+test("a marked game-mouse entry skips keyevent 70 when the icon is visible", async () => {
   const fixture = createUi();
   const touchTaps = [];
   fixture.vision.gameMouseIconVisible = async () => true;
@@ -24,7 +24,7 @@ test("a visible game-mouse icon skips keyevent 70 and uses Android touch tap", a
     prepareCalls += 1;
   };
 
-  await fixture.ui.tap({ x: 48, y: 327 });
+  await fixture.ui.gameMouseTap({ x: 48, y: 327 });
 
   assert.equal(prepareCalls, 0);
   assert.deepEqual(touchTaps, [{ x: 48, y: 327 }]);
@@ -88,6 +88,26 @@ test("retry-only game-mouse fallback waits until the first panel tap fails", asy
     { x: 50, y: 325 },
     { x: 50, y: 325 }
   ]);
+});
+
+test("a HUD label alone never enables game-mouse detection", async () => {
+  const fixture = createUi({
+    fastFrames: [[observation("调整", 100, 100)]]
+  });
+  fixture.vision.gameMouseIconVisible = async () => {
+    throw new Error("ordinary HUD retry must not inspect the game-mouse icon");
+  };
+
+  await fixture.ui.tapUntilAnyTexts({
+    texts: ["调整"],
+    x: 50,
+    y: 325,
+    maxAttempts: 1,
+    intervalMs: 1,
+    controlLabel: "队伍卡片旗帜展开"
+  });
+
+  assert.deepEqual(fixture.taps, []);
 });
 
 test("dynamic camp content alone never confirms the camp page", () => {

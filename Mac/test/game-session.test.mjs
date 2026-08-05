@@ -61,6 +61,20 @@ test("zero promotion pages reaches HUD without blindly tapping the map area", as
   assert.match(fixture.messages.at(-1), /未出现活动宣传页/);
 });
 
+test("pre-login fallback uses Android touch and never GameUi.tap", async () => {
+  const fixture = createFixture([["登录游戏"], ["背包"]]);
+  const touchTaps = [];
+  fixture.context.ui.androidTouchTap = undefined;
+  fixture.context.ui.tap = async () => {
+    throw new Error("pre-login must not use GameUi.tap");
+  };
+  fixture.context.adb.touchTap = async (x, y) => touchTaps.push({ x, y });
+
+  await waitForGameReady(fixture.context);
+
+  assert.deepEqual(touchTaps, [{ x: 960, y: 945 }]);
+});
+
 test("the newspaper is recognized as a promotion page", async () => {
   const fixture = createFixture([["登录游戏"], ["明日希望报"], ["背包"]]);
   await waitForGameReady(fixture.context);

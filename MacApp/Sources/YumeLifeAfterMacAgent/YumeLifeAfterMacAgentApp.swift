@@ -1,7 +1,37 @@
 import SwiftUI
+import AppKit
+
+final class YumeLifeAfterMacAgentAppDelegate: NSObject, NSApplicationDelegate {
+    private var terminationInProgress = false
+
+    func applicationShouldTerminateAfterLastWindowClosed(
+        _ sender: NSApplication
+    ) -> Bool {
+        true
+    }
+
+    func applicationShouldTerminate(
+        _ sender: NSApplication
+    ) -> NSApplication.TerminateReply {
+        guard !terminationInProgress else { return .terminateNow }
+        terminationInProgress = true
+        Task {
+            // The LaunchAgent is owned by the App. Stopping it on normal App
+            // termination prevents the web console from keeping this device
+            // online and accepting tasks after the UI has been closed.
+            _ = try? await RuntimeService.shared.run(["stop"], timeout: 30)
+            await MainActor.run {
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+        }
+        return .terminateLater
+    }
+}
 
 @main
 struct YumeLifeAfterMacAgentApp: App {
+    @NSApplicationDelegateAdaptor(YumeLifeAfterMacAgentAppDelegate.self)
+    private var appDelegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {

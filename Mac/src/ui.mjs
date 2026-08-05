@@ -996,7 +996,6 @@ export class GameUi {
           ...action,
           gameMouse:
             action.gameMouse === true ||
-            action.controlLabel === "队伍卡片旗帜展开" ||
             (action.gameMouseOnRetry === true && performedTaps > 0)
         },
         signal
