@@ -79,11 +79,11 @@ const FIXED_TRANSLATIONS = {
     fr: "L’Agent local a commencé à exécuter la tâche",
     ja: "ローカル Agent がタスクの実行を開始しました"
   },
-  "巡逻队伍已创建并分享到营地频道": {
-    "zh-tw": "巡邏隊伍已建立並分享到營地頻道",
-    en: "The patrol team was created and shared in the camp channel",
-    fr: "L’équipe de patrouille a été créée et partagée dans le canal du camp",
-    ja: "巡回チームを作成し、キャンプチャンネルで共有しました"
+  "巡逻队伍已创建并分别分享到营地频道和场景频道": {
+    "zh-tw": "巡邏隊伍已建立並分別分享到營地頻道和場景頻道",
+    en: "The patrol team was created and shared in both the camp and scene channels",
+    fr: "L’équipe de patrouille a été créée et partagée dans les canaux du camp et de la scène",
+    ja: "巡回チームを作成し、キャンプチャンネルとシーンチャンネルで共有しました"
   },
   "困难巡逻已确认，队伍已切换为保卫古籍并分享": {
     "zh-tw": "困難巡邏已確認，隊伍已切換為保衛古籍並分享",
@@ -91,11 +91,11 @@ const FIXED_TRANSLATIONS = {
     fr: "Patrouille difficile confirmée ; l’équipe est passée à Défense du livre ancien et l’a partagée",
     ja: "高難度巡回を確認し、チームを古書防衛に切り替えて共有しました"
   },
-  "已再次分享到营地频道": {
-    "zh-tw": "已再次分享到營地頻道",
-    en: "Shared in the camp channel again",
-    fr: "Partagé à nouveau dans le canal du camp",
-    ja: "キャンプチャンネルに再度共有しました"
+  "已再次分享到营地频道和场景频道": {
+    "zh-tw": "已再次分享到營地頻道和場景頻道",
+    en: "Shared in the camp and scene channels again",
+    fr: "Partagé à nouveau dans les canaux du camp et de la scène",
+    ja: "キャンプチャンネルとシーンチャンネルに再度共有しました"
   },
   "已到巡逻任务结束时间": {
     "zh-tw": "已到巡邏任務結束時間",

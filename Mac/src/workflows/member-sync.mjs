@@ -30,7 +30,11 @@ export async function runMemberSync(context, command, _bundle, signal) {
     progressRange: { start: 0.56, end: 0.82, step: "member_profile_scan" }
   });
   await updateWorkflowProgress(context, 0.86, "member_profile_complete");
-  const members = normalizeMembers(contribution, details, activity);
+  const members = normalizeMembers(
+    alignContributionRowsToRoster(contribution, details),
+    details,
+    activity
+  );
   if (!members.length) throw new Error("No member rows recognized; snapshot was not uploaded");
   await updateWorkflowProgress(context, 0.91, "member_snapshot");
   await context.api.snapshot(
@@ -71,7 +75,8 @@ export async function runContributionSync(context, command, _bundle, signal) {
     expectedCount: expectedMemberCount,
     progressRange: { start: 0.08, end: 0.72, step: "contribution_scan" }
   });
-  const rows = normalizeContribution(rawRows);
+  const alignedRows = alignContributionRowsToRoster(rawRows, memberRoster);
+  const rows = normalizeContribution(alignedRows);
   const locallyFiltered = Math.max(0, rawRows.length - rows.length);
   await updateWorkflowProgress(context, 0.78, "contribution_validate");
   await updateWorkflowProgress(context, 0.86, "contribution_snapshot");
@@ -229,7 +234,10 @@ export async function captureContribution(context, signal, options = {}) {
     "member-contribution",
     context.config.tables.contribution,
     signal,
-    { progressRange: scanProgressRange }
+    {
+      expectedCount: options.expectedCount,
+      progressRange: scanProgressRange
+    }
   );
   const minimumRows = Math.max(
     1,
@@ -250,7 +258,10 @@ export async function captureContribution(context, signal, options = {}) {
       "member-contribution-retry",
       context.config.tables.contribution,
       signal,
-      { progressRange: scanProgressRange }
+      {
+        expectedCount: options.expectedCount,
+        progressRange: scanProgressRange
+      }
     );
   }
   return rows;
@@ -552,9 +563,11 @@ export async function capturePagedTable(
   const { vision, adb, ui, report } = context;
   const byName = new Map();
   const memberDetailsMode = label === "member-details";
+  const contributionTableMode = label.startsWith("member-contribution");
   let stagnantPages = 0;
   let previousFingerprint = "";
   let previousRows = [];
+  const pageNameAliases = new Map();
   let scannedPages = 0;
   const expectedCount = Number.isFinite(Number(options.expectedCount))
     ? Math.max(1, Number(options.expectedCount))
@@ -595,13 +608,24 @@ export async function capturePagedTable(
               !definition.headerPattern.some((value) => row.name.includes(value))
           )
         : [];
+      const contributionNeedsRecovery =
+        label.startsWith("member-contribution") &&
+        attemptRows.length > 0 &&
+        attemptRows.some((row) =>
+          [
+            "weeklyContribution",
+            "technologyPointsUsed",
+            "materialContribution"
+          ].some((field) => !/\d/.test(String(row[field] || "")))
+        );
       if (
         (!attemptRows.length ||
           (definition.extractionMode === "hybrid" &&
-            attemptRows.length < minimumRowsPerPage)) &&
+            attemptRows.length < minimumRowsPerPage) ||
+          contributionNeedsRecovery) &&
         typeof vision.extractTableRows === "function"
       ) {
-        attemptRows = await vision.extractTableRows(
+        const recoveredRows = await vision.extractTableRows(
           attemptFrame.path,
           definition,
           attemptLabel,
@@ -615,6 +639,7 @@ export async function capturePagedTable(
           );
           return [];
         });
+        attemptRows = mergeContributionRows(attemptRows, recoveredRows);
       }
       if (!frame || attemptRows.length > rows.length) {
         frame = attemptFrame;
@@ -633,8 +658,27 @@ export async function capturePagedTable(
         row.name &&
         !definition.headerPattern.some((value) => row.name.includes(value))
     );
-    if (!memberDetailsMode) {
+    if (memberDetailsMode) {
+      // Member pages also overlap at the swipe boundary. Reconcile that one
+      // boundary before adding the page to the global map so an OCR spelling
+      // variant on the next page cannot consume a second roster slot.
+      // Remember any correction: when the same page is captured twice, the
+      // next boundary may otherwise alternate between the raw OCR spelling
+      // and the corrected canonical spelling and consume a second slot.
+      const rawRows = rows;
+      rows = applyPageNameAliases(rawRows, pageNameAliases);
       rows = reconcilePageRows(previousRows, rows);
+      for (let index = 0; index < Math.min(rawRows.length, rows.length); index += 1) {
+        const sourceKey = memberProfileNameKey(rawRows[index]?.name);
+        const canonicalName = String(rows[index]?.name || "").trim();
+        if (
+          sourceKey &&
+          canonicalName &&
+          sourceKey !== memberProfileNameKey(canonicalName)
+        ) {
+          pageNameAliases.set(sourceKey, canonicalName);
+        }
+      }
     }
     const memberPageNovelty = memberDetailsMode
       ? pageNovelMemberCount(rows, byName)
@@ -727,6 +771,7 @@ export async function capturePagedTable(
       if (
         !byName.has(rowKey) &&
         !memberDetailsMode &&
+        !contributionTableMode &&
         expectedCount !== null &&
         byName.size >= expectedCount
       ) {
@@ -781,7 +826,12 @@ export async function capturePagedTable(
     // stopping as soon as the header count is reached would skip the tail and
     // make the final reconciliation depend on page order. The final pass
     // below deduplicates and caps the organized roster to the header total.
-    if (!memberDetailsMode && expectedCount !== null && byName.size >= expectedCount) {
+    if (
+      !memberDetailsMode &&
+      !contributionTableMode &&
+      expectedCount !== null &&
+      byName.size >= expectedCount
+    ) {
       await report(
         "info",
         `${label}_expected_count_reached`,
@@ -845,6 +895,114 @@ export async function capturePagedTable(
     return reconciled;
   }
   return rows;
+}
+
+function mergeContributionRows(primary, recovered) {
+  if (!Array.isArray(recovered) || !recovered.length) return primary;
+  if (!Array.isArray(primary) || !primary.length) return recovered;
+  const fields = [
+    "name",
+    "weeklyContribution",
+    "technologyPointsUsed",
+    "materialContribution"
+  ];
+  const merged = primary.map((row, index) => {
+    const fallback = recovered[index];
+    if (!fallback) return row;
+    const merged = { ...row };
+    for (const field of fields) {
+      if (!String(merged[field] || "").trim() && String(fallback[field] || "").trim()) {
+        merged[field] = fallback[field];
+      }
+    }
+    return merged;
+  });
+  return recovered.length > merged.length
+    ? [...merged, ...recovered.slice(merged.length)]
+    : merged;
+}
+
+export function alignContributionRowsToRoster(rows, roster) {
+  const members = (roster || [])
+    .map((item) => ({
+      name: String(item?.name || "").trim(),
+      key: contributionNameKey(item?.name)
+    }))
+    .filter((item) => item.name && item.key);
+  const byCanonicalName = new Map();
+  for (const row of rows || []) {
+    const sourceKey = contributionNameKey(row?.name);
+    if (!sourceKey) continue;
+    const exact = members.filter((member) => member.key === sourceKey);
+    let matched = exact.length === 1 ? exact[0] : null;
+    // The mayor card places a small role badge immediately after the name.
+    // OCR sometimes returns that badge as one extra Han character (for
+    // example 雨梦也). Only accept a unique one/two-character prefix/suffix
+    // correction against the authoritative member roster; never create a new
+    // member from a contribution-only OCR string.
+    if (!matched) {
+      const candidates = members.filter((member) => {
+        const difference = Math.abs(member.key.length - sourceKey.length);
+        return (
+          difference > 0 &&
+          difference <= 2 &&
+          (member.key.startsWith(sourceKey) || sourceKey.startsWith(member.key))
+        );
+      });
+      matched = candidates.length === 1 ? candidates[0] : null;
+    }
+    // Contribution data is subordinate to the profile roster. An OCR-only
+    // name must never create a new member or reach the server as a candidate.
+    if (!matched) continue;
+    const canonicalRow = { ...row, name: matched.name };
+    const canonicalKey = contributionNameKey(matched.name);
+    const previous = byCanonicalName.get(canonicalKey);
+    byCanonicalName.set(
+      canonicalKey,
+      previous
+        ? mergeContributionRecord(previous, canonicalRow)
+        : canonicalRow
+    );
+  }
+  return [...byCanonicalName.values()];
+}
+
+function mergeContributionRecord(current, incoming) {
+  const merged = { ...current, name: current.name || incoming.name };
+  for (const field of [
+    "weeklyContribution",
+    "technologyPointsUsed",
+    "materialContribution"
+  ]) {
+    const existing = String(merged[field] || "").trim();
+    const next = String(incoming[field] || "").trim();
+    if (!existing) {
+      if (next) merged[field] = next;
+      continue;
+    }
+    if (/^\d+$/.test(existing) && /^\d+$/.test(next)) {
+      // Overlap pages can produce one complete row and one row with a dropped
+      // zero. Keep a populated numeric observation rather than allowing the
+      // later partial OCR pass to erase a real contribution; do not replace a
+      // non-zero value with an arbitrary larger OCR number.
+      if (Number(existing) === 0 && Number(next) > 0) merged[field] = next;
+    }
+  }
+  return merged;
+}
+
+function applyPageNameAliases(rows, aliases) {
+  return rows.map((row) => {
+    const canonicalName = aliases.get(memberProfileNameKey(row?.name));
+    return canonicalName ? { ...row, name: canonicalName } : row;
+  });
+}
+
+function contributionNameKey(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, "");
 }
 
 function reconcileMemberDetailRows(rows, expectedCount = null) {

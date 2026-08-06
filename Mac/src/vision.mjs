@@ -183,7 +183,6 @@ export class Vision {
         signal
       );
     }
-    if (!this.advisor.enabled) return [];
     const isContribution =
       columnKeys.length === 4 &&
       [
@@ -200,6 +199,7 @@ export class Vision {
         signal
       );
     }
+    if (!this.advisor.enabled) return [];
     const isMemberDetails = [
       "identity",
       "profession",
@@ -246,15 +246,27 @@ export class Vision {
   }
 
   async readMemberExpectedTotal(signal) {
-    const frame = await this.capture("member-count-header", signal);
     const countRegions = {
       members: { left: 345, top: 225, right: 430, bottom: 295 },
-      citizens: { left: 470, top: 225, right: 535, bottom: 295 }
+      citizens: { left: 470, top: 225, right: 535, bottom: 295 },
+      membersExpanded: { left: 300, top: 220, right: 455, bottom: 305 },
+      citizensExpanded: { left: 430, top: 220, right: 580, bottom: 305 },
+      header: { left: 100, top: 215, right: 680, bottom: 320 }
     };
     let memberObservations = [];
     let citizenObservations = [];
+    let fallbackObservations = [];
     let lastError;
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const memberSamples = [];
+    const citizenSamples = [];
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      // A new frame is essential here. Re-running OCR over the same image only
+      // repeats the same bad segmentation and was the reason five consecutive
+      // runs failed on an otherwise healthy member page.
+      const frame = await this.capture(
+        `member-count-header-${attempt}`,
+        signal
+      );
       try {
         [memberObservations, citizenObservations] = await Promise.all([
           this.ocrRegion(
@@ -264,6 +276,7 @@ export class Vision {
             signal,
             "accurate",
             0.2,
+            8,
             5
           ),
           this.ocrRegion(
@@ -273,56 +286,108 @@ export class Vision {
             signal,
             "accurate",
             0.2,
+            8,
             5
           )
         ]);
-        if (
-          parsePopulationCapacity(memberObservations, 110) !== null &&
-          parsePopulationCapacity(citizenObservations, 10) !== null
-        ) {
-          break;
+        memberSamples.push(...memberObservations.map((item) => item.text));
+        citizenSamples.push(...citizenObservations.map((item) => item.text));
+        let memberCount = parsePopulationCapacity(memberObservations, 110);
+        let citizenCount = parsePopulationCapacity(citizenObservations, 10);
+
+        // The citizen fraction is small and can be merged with its icon by
+        // OCR. Use a wider crop before treating the header as unreadable.
+        if (memberCount === null || citizenCount === null) {
+          const [memberExpanded, citizenExpanded] = await Promise.all([
+            memberCount === null
+              ? this.ocrRegion(
+                  frame.path,
+                  countRegions.membersExpanded,
+                  `member-count-expanded-${attempt}`,
+                  signal,
+                  "accurate",
+                  0.1,
+                  8,
+                  5
+                )
+              : Promise.resolve([]),
+            citizenCount === null
+              ? this.ocrRegion(
+                  frame.path,
+                  countRegions.citizensExpanded,
+                  `citizen-count-expanded-${attempt}`,
+                  signal,
+                  "accurate",
+                  0.1,
+                  8,
+                  5
+                )
+              : Promise.resolve([])
+          ]);
+          memberSamples.push(...memberExpanded.map((item) => item.text));
+          citizenSamples.push(...citizenExpanded.map((item) => item.text));
+          memberCount ??= parsePopulationCapacity(memberExpanded, 110);
+          citizenCount ??= parsePopulationCapacity(citizenExpanded, 10);
+        }
+
+        // Final fallback: OCR the complete header at high scale, but parse
+        // each fraction only inside its own horizontal area. This prevents a
+        // valid member fraction from being mistaken for citizen capacity.
+        if (memberCount === null || citizenCount === null) {
+          fallbackObservations = await this.ocrRegion(
+            frame.path,
+            countRegions.header,
+            `member-count-header-fallback-${attempt}`,
+            signal,
+            "accurate",
+            0.1,
+            5,
+            5
+          );
+          memberSamples.push(...fallbackObservations.map((item) => item.text));
+          citizenSamples.push(...fallbackObservations.map((item) => item.text));
+          memberCount ??= parsePopulationCapacity(
+            observationsInHorizontalRegion(fallbackObservations, {
+              left: 280,
+              top: 215,
+              right: 455,
+              bottom: 320
+            }),
+            110
+          );
+          citizenCount ??= parsePopulationCapacity(
+            observationsInHorizontalRegion(fallbackObservations, {
+              left: 430,
+              top: 215,
+              right: 580,
+              bottom: 320
+            }),
+            10
+          );
+        }
+        if (memberCount !== null && citizenCount !== null) {
+          return memberCount + citizenCount;
         }
       } catch (error) {
         lastError = error;
         if (signal?.aborted) throw error;
       }
     }
-    const memberCount = parsePopulationCapacity(memberObservations, 110);
-    const citizenCount = parsePopulationCapacity(citizenObservations, 10);
-    let fallbackObservations = [];
-    if (memberCount === null || citizenCount === null) {
-      try {
-        fallbackObservations = await this.ocrRegion(
-          frame.path,
-          { left: 100, top: 220, right: 680, bottom: 320 },
-          "member-count-header-fallback",
-          signal,
-          "accurate",
-          0.2
-        );
-      } catch (error) {
-        lastError = error;
-        if (signal?.aborted) throw error;
-      }
+    if (
+      lastError &&
+      !memberSamples.length &&
+      !citizenSamples.length &&
+      !fallbackObservations.length
+    ) {
+      throw lastError;
     }
-    if (memberCount === null || citizenCount === null) {
-      if (
-        lastError &&
-        !memberObservations.length &&
-        !citizenObservations.length &&
-        !fallbackObservations.length
-      ) {
-        throw lastError;
-      }
-      throw new Error(
-        `MEMBER_COUNT_UNREADABLE: expected member and citizen current counts, OCR=${JSON.stringify({
-          members: memberObservations.map((item) => item.text),
-          citizens: citizenObservations.map((item) => item.text),
-          fallback: fallbackObservations.map((item) => item.text)
-        })}`
-      );
-    }
-    return memberCount + citizenCount;
+    throw new Error(
+      `MEMBER_COUNT_UNREADABLE: expected member and citizen current counts, OCR=${JSON.stringify({
+        members: memberSamples.slice(-24),
+        citizens: citizenSamples.slice(-24),
+        fallback: fallbackObservations.map((item) => item.text)
+      })}`
+    );
   }
 
   async #extractContributionRows(imagePath, definition, label, signal) {
@@ -337,10 +402,80 @@ export class Vision {
       signal,
       "accurate",
       memberOcrMinimum,
-      1,
+      2,
       Math.max(1, Number(this.config.vision?.memberTableTimeoutSeconds) || 2)
     );
-    const rows = parseTable(observations, definition);
+    let rows = parseTable(observations, definition);
+    const numericFields = [
+      "weeklyContribution",
+      "technologyPointsUsed",
+      "materialContribution"
+    ];
+    if (
+      rows.length &&
+      rows.some((row) =>
+        numericFields.some((field) => !hasContributionNumber(row[field]))
+      )
+    ) {
+      // Full-table OCR is good at names but can drop a small 0 or a value
+      // beside a role icon. Re-read only the incomplete numeric columns at a
+      // larger scale and assign each value back to its existing row center.
+      // The column bounds come from the existing table definition, so no new
+      // device-specific click coordinates are introduced.
+      const rowCenters = contributionRowCenters(observations, definition.region);
+      const tableWidth = definition.region.right - definition.region.left;
+      const columnRegions = Object.fromEntries(
+        definition.columns
+          .filter((column) => numericFields.includes(column.key))
+          .map((column) => [
+            column.key,
+            {
+              left: definition.region.left + tableWidth * column.left,
+              top: definition.region.top,
+              right: definition.region.left + tableWidth * column.right,
+              bottom: definition.region.bottom
+            }
+          ])
+      );
+      const missingFields = numericFields.filter((field) =>
+        rows.some((row) => !hasContributionNumber(row[field]))
+      );
+      const recovered = await Promise.all(
+        missingFields.map(async (field) => ({
+          field,
+          observations: await this.ocrRegion(
+            imagePath,
+            columnRegions[field],
+            `${label}-${field}-column-recovery`,
+            signal,
+            "accurate",
+            0.1,
+            4,
+            2
+          )
+        }))
+      );
+      const recoveryValues = new Map(
+        recovered.map(({ field, observations: values }) => [
+          field,
+          assignContributionColumnValues(
+            values,
+            rowCenters,
+            rows.length,
+            definition.region
+          )
+        ])
+      );
+      rows = rows.map((row, index) => {
+        const merged = { ...row };
+        for (const field of missingFields) {
+          if (hasContributionNumber(merged[field])) continue;
+          const value = recoveryValues.get(field)?.[index];
+          if (value) merged[field] = value;
+        }
+        return merged;
+      });
+    }
     const region = definition.region;
     const nameColumn = definition.columns.find(
       (column) => column.key === "name"
@@ -1044,6 +1179,83 @@ export class Vision {
   }
 }
 
+function hasContributionNumber(value) {
+  return /\d/.test(String(value || ""));
+}
+
+function contributionRowCenters(observations, region) {
+  const visible = (observations || [])
+    .filter((item) => {
+      const x = centerX(item);
+      const y = centerY(item);
+      return x >= region.left && x <= region.right && y >= region.top && y <= region.bottom;
+    })
+    .sort((left, right) => centerY(left) - centerY(right));
+  const medianHeight = medianNumber(visible.map((item) => item.height)) || 24;
+  const threshold = Math.max(14, medianHeight * 0.75);
+  const groups = [];
+  for (const item of visible) {
+    const y = centerY(item);
+    const current = groups.at(-1);
+    if (!current || Math.abs(y - current.center) > threshold) {
+      groups.push({ center: y, count: 1 });
+    } else {
+      current.center = (current.center * current.count + y) / ++current.count;
+    }
+  }
+  return groups.map((group) => group.center);
+}
+
+function assignContributionColumnValues(
+  observations,
+  rowCenters,
+  rowCount,
+  region
+) {
+  const centers = rowCenters.length >= rowCount
+    ? rowCenters.slice(0, rowCount)
+    : Array.from(
+        { length: rowCount },
+        (_, index) =>
+          region.top +
+          ((region.bottom - region.top) * (index + 0.25)) / rowCount
+      );
+  const spacing = centers.length > 1
+    ? medianNumber(centers.slice(1).map((value, index) => value - centers[index]))
+    : region.bottom - region.top;
+  const values = Array.from({ length: rowCount }, () => null);
+  for (const item of observations || []) {
+    const text = String(item.text || "")
+      .normalize("NFKC")
+      .replace(/[OoＯｏ]/g, "0")
+      .replace(/[,\s]/g, "");
+    const match = text.match(/\d+/);
+    if (!match) continue;
+    let nearest = 0;
+    let distance = Infinity;
+    centers.forEach((center, index) => {
+      const candidateDistance = Math.abs(centerY(item) - center);
+      if (candidateDistance < distance) {
+        nearest = index;
+        distance = candidateDistance;
+      }
+    });
+    if (distance <= Math.max(24, spacing * 0.45)) {
+      const existing = values[nearest];
+      if (
+        !existing ||
+        Number(item.confidence) > Number(existing.confidence)
+      ) {
+        values[nearest] = {
+          value: match[0],
+          confidence: Number(item.confidence) || 0
+        };
+      }
+    }
+  }
+  return values.map((item) => item?.value || "");
+}
+
 export function safeSipsCropRegion(region, sourceWidth, sourceHeight) {
   const width = Math.max(1, Math.round(region.right - region.left));
   const height = Math.max(1, Math.round(region.bottom - region.top));
@@ -1161,6 +1373,23 @@ function parsePopulationCounts(observations) {
         item.current >= 0 &&
         item.current <= item.capacity
     );
+}
+
+function observationsInHorizontalRegion(observations, region) {
+  return (observations || []).filter((item) => {
+    const x = Number(item.x) || 0;
+    const width = Number(item.width) || 0;
+    const center = x + width / 2;
+    const y = Number(item.y) || 0;
+    const height = Number(item.height) || 0;
+    const centerY = y + height / 2;
+    return (
+      center >= region.left &&
+      center < region.right &&
+      centerY >= region.top &&
+      centerY < region.bottom
+    );
+  });
 }
 
 function centerX(item) {

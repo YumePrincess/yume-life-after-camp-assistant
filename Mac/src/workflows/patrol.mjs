@@ -22,7 +22,7 @@ export async function runPatrol(context, command, bundle, signal) {
   await updateWorkflowProgress(context, 0.18, "patrol_team_share");
   await sharePatrolTeam(context, signal);
   await updateWorkflowProgress(context, 0.22, "patrol_team_wait");
-  await report("info", "patrol_team", "巡逻队伍已创建并分享到营地频道");
+  await report("info", "patrol_team", "巡逻队伍已创建并分别分享到营地频道和场景频道");
 
   let consecutiveFullTeamFrames = 0;
   while (true) {
@@ -129,7 +129,7 @@ export async function runPatrol(context, command, bundle, signal) {
     );
     if (Date.now() >= nextShareAt) {
       await sharePatrolTeam(context, signal);
-      await report("info", "patrol_share", "已再次分享到营地频道");
+      await report("info", "patrol_share", "已再次分享到营地频道和场景频道");
       nextShareAt = Date.now() + patrol.shareIntervalMinutes * 60_000;
     }
     const deadlineDelay = millisecondsUntil(timezone, patrol.deadline);
@@ -914,12 +914,104 @@ export async function sharePatrolTeam(context, signal) {
     );
   }
 
-  const recruitAttempts = Math.max(
+  const shareAttempts = Math.max(
     1,
-    Math.min(15, Number(controls.recruitAttempts) || 15)
+    Math.min(
+      10,
+      Number(controls.channelAttempts) ||
+        Number(controls.recruitAttempts) ||
+        10
+    )
   );
-  const campChannelTextRegion =
-    controls.campChannelTextRegion || controls.channelMenuRegion;
+
+  const common = {
+    controls,
+    ui,
+    adb,
+    vision,
+    report,
+    sleep,
+    settleMs,
+    recruitMenuWaitMs,
+    shareAttempts
+  };
+  const channelTargets = [
+    {
+      key: "camp",
+      text: "营地频道",
+      texts: controls.campChannelTexts || ["营地频道"],
+      textRegion: controls.campChannelTextRegion || controls.channelMenuRegion,
+      successTexts: controls.successTexts || ["成功分享至营地频道", "分享成功"]
+    },
+    {
+      key: "scene",
+      text: "场景频道",
+      texts: controls.sceneChannelTexts || ["场景频道", "场景"],
+      textRegion:
+        controls.sceneChannelTextRegion ||
+        controls.campChannelTextRegion ||
+        controls.channelMenuRegion,
+      successTexts: controls.sceneSuccessTexts || ["成功分享至场景频道", "分享成功"]
+    }
+  ];
+  for (const target of channelTargets) {
+    const result = await sharePatrolChannel(
+      context,
+      signal,
+      common,
+      target
+    );
+    if (result.skipped) {
+      await report(
+        "info",
+        "patrol_share_skipped_no_target",
+        `连续 ${result.noTargetMenuAttempts} 次点击“招募”均未弹出分享目标选项；当前队伍可能已满员，本次${target.text}分享跳过，不计为任务失败`
+      );
+      return;
+    }
+    await report(
+      "info",
+      "patrol_share_success",
+      `已确认“成功分享至${target.text}”`
+    );
+    if (target.key === "camp" && typeof context.resetScheduledRetry === "function") {
+      await context
+        .resetScheduledRetry("patrol_share_camp_channel_clicked", signal)
+        .then((reset) => {
+          if (reset) {
+            return report(
+              "info",
+              "patrol_share_retry_counter_reset",
+              "已成功点击“营地频道”，本次定时/固定分享任务的失败重试次数已清零，后续按 6 次上限重新计算"
+            );
+          }
+          return undefined;
+        })
+        .catch(async (error) => {
+          await report(
+            "warning",
+            "patrol_share_retry_counter_reset_failed",
+            "已点击“营地频道”，但暂时无法同步清零定时重试次数；不影响本次分享继续执行",
+            { reason: error.message }
+          );
+        });
+    }
+    await sleep(settleMs, signal);
+  }
+}
+
+async function sharePatrolChannel(context, signal, common, target) {
+  const {
+    controls,
+    ui,
+    adb,
+    vision,
+    report,
+    sleep,
+    settleMs,
+    recruitMenuWaitMs,
+    shareAttempts
+  } = common;
   const recruitTextRegion = controls.recruitTextRegion || {
     left: 220,
     top: 1_040,
@@ -944,22 +1036,31 @@ export async function sharePatrolTeam(context, signal) {
     controls.recruitOverlayDismissPoint || { x: 1800, y: 900 },
     recruitOverlayRegion
   );
+  const fullTeamTexts = controls.fullTeamTexts || [
+    "队伍已满员，无法再加入",
+    "队伍已满员"
+  ];
+  const fullTeamRegion = controls.fullTeamRegion || {
+    left: 400,
+    top: 120,
+    right: 1_400,
+    bottom: 360
+  };
   let channelMenuVisible = false;
-  for (let attempt = 1; attempt <= recruitAttempts; attempt += 1) {
+  let noTargetMenuAttempts = 0;
+  for (let attempt = 1; attempt <= shareAttempts; attempt += 1) {
     await report(
       "info",
       attempt === 1
         ? "patrol_share_recruit"
         : "patrol_share_recruit_focus_retry",
       attempt === 1
-        ? "已确认队伍页面，点击“招募”"
-        : `第 ${attempt - 1} 次点击后仍未识别到“营地频道”；执行第 ${attempt}/${recruitAttempts} 次重新 OCR 并点击“招募”`
+        ? `已确认队伍页面，点击“招募”准备分享${target.text}`
+        : `第 ${attempt - 1} 次点击后仍未识别到“${target.text}”；执行第 ${attempt}/${shareAttempts} 次重新 OCR 并点击“招募”`
     );
-    // “更换队伍”和“招募”同在左侧区域。每一次点击前都重新截图，只接受
-    // 底部招募行内的文字；不再根据旧画面或固定坐标盲点。
-    screen = await capturePatrolScreen(
+    const screen = await capturePatrolScreen(
       vision,
-      `patrol-share-recruit-verify-${attempt}`,
+      `patrol-share-${target.key}-recruit-verify-${attempt}`,
       signal
     );
     const recruitMatch = findTextInRegion(
@@ -972,7 +1073,7 @@ export async function sharePatrolTeam(context, signal) {
       await report(
         "warning",
         "patrol_share_recruit_unverified",
-        `第 ${attempt}/${recruitAttempts} 次点击前未在底部招募行 OCR 确认“招募”；不会点击“更换队伍”或任何固定坐标`
+        `第 ${attempt}/${shareAttempts} 次点击前未在底部招募行 OCR 确认“招募”；不会点击“更换队伍”或任何固定坐标`
       );
       await sleep(settleMs, signal);
       continue;
@@ -981,148 +1082,145 @@ export async function sharePatrolTeam(context, signal) {
       "info",
       "patrol_share_recruit_verified",
       `OCR 已在底部招募行确认“招募”，点击固定招募按钮中心 (${Math.round(recruitPoint.x)},${Math.round(recruitPoint.y)})`,
-      {
-        point: recruitPoint,
-        recognizedTextBounds: {
-          x: recruitMatch.x,
-          y: recruitMatch.y,
-          width: recruitMatch.width,
-          height: recruitMatch.height
-        }
-      }
+      { point: recruitPoint }
     );
-    // “招募”是队伍 HUD 的真实鼠标按钮，沿用统一的 ADB
-    // 统一检查右下角图标并使用 ADB 触屏点击；不调用宿主机输入或低层右键事件。
     await tapPatrolHudMouse(ui, adb, recruitPoint, signal, sleep);
+    // The full-team toast is deterministic but short-lived. Sample once
+    // immediately after the recruit tap before waiting for the channel menu;
+    // the later menu capture remains the normal-path/backup check.
+    const immediateFullTeamScreen = await capturePatrolScreen(
+      vision,
+      `patrol-share-${target.key}-full-team-immediate-${attempt}`,
+      signal
+    );
+    const immediateFullTeamMatch = findAnyTextInRegion(
+      vision,
+      immediateFullTeamScreen.observations,
+      fullTeamTexts,
+      fullTeamRegion
+    );
+    if (immediateFullTeamMatch) {
+      await report(
+        "info",
+        "patrol_share_full_team_confirmed",
+        `点击“招募”后立即识别到“${immediateFullTeamMatch.text}”；确认队伍已满员，本次${target.text}分享跳过，不计为任务失败`
+      );
+      return { skipped: true, noTargetMenuAttempts: 1 };
+    }
     await report(
       "info",
       "patrol_share_channel_wait",
-      "已点击“招募”，等待 3 秒让频道列表稳定后再 OCR 确认“营地频道”"
+      `已点击“招募”，等待 3 秒让分享${target.text}列表稳定后再 OCR`
     );
     await sleep(recruitMenuWaitMs, signal);
-    screen = await capturePatrolScreen(
+    const menuScreen = await capturePatrolScreen(
       vision,
-      `patrol-share-channel-menu-${attempt}`,
+      `patrol-share-${target.key}-channel-menu-${attempt}`,
       signal
     );
+    const fullTeamMatch = findAnyTextInRegion(
+      vision,
+      menuScreen.observations,
+      fullTeamTexts,
+      fullTeamRegion
+    );
+    if (fullTeamMatch) {
+      await report(
+        "info",
+        "patrol_share_full_team_hint",
+        `点击“招募”后检测到短暂提示“${fullTeamMatch.text}”；仅作为满员辅助证据，仍继续检查分享目标选项`
+      );
+    }
     const inviteOverlayMatch = findAnyTextInRegion(
       vision,
-      screen.observations,
+      menuScreen.observations,
       recruitOverlayTexts,
       recruitOverlayRegion
     );
     if (inviteOverlayMatch) {
+      noTargetMenuAttempts += 1;
       await report(
         "warning",
         "patrol_share_invite_overlay_detected",
-        `点击“招募”误打开邀请卡片（识别到“${inviteOverlayMatch.text}”）；点击卡片边框外空白点 (${Math.round(recruitOverlayDismissPoint.x)},${Math.round(recruitOverlayDismissPoint.y)}) 关闭后重试招募（第 ${attempt}/${recruitAttempts} 次）`,
-        {
-          dismissPoint: recruitOverlayDismissPoint,
-          overlayRegion: recruitOverlayRegion
-        }
+        `点击“招募”误打开邀请卡片（识别到“${inviteOverlayMatch.text}”）；点击卡片边框外空白点 (${Math.round(recruitOverlayDismissPoint.x)},${Math.round(recruitOverlayDismissPoint.y)}) 关闭后重试招募（第 ${attempt}/${shareAttempts} 次）`,
+        { dismissPoint: recruitOverlayDismissPoint, overlayRegion: recruitOverlayRegion }
       );
       await tapPatrolMouse(ui, recruitOverlayDismissPoint, signal);
+      if (noTargetMenuAttempts >= 5) {
+        return { skipped: true, noTargetMenuAttempts };
+      }
       await sleep(settleMs, signal);
       continue;
     }
-    channelMenuVisible = hasTextInRegion(
+    const channelMatch = findAnyTextInRegion(
       vision,
-      screen.observations,
-      "营地频道",
-      campChannelTextRegion
-    );
-    if (channelMenuVisible) {
-      await report(
-        "info",
-        "patrol_share_camp_channel_verified",
-        "OCR 已确认校准行中的“营地频道”，将点击固定的营地频道行中心，不使用 OCR 文字框坐标"
-      );
-      break;
-    }
-  }
-  if (!channelMenuVisible) {
-    throw new Error(
-      "PATROL_SHARE_CHANNEL_MENU_UNVERIFIED: 点击招募后未识别到“营地频道”，未执行盲点"
-    );
-  }
-
-  const channelAttempts = Math.max(
-    1,
-    Math.min(6, Number(controls.channelAttempts) || 6)
-  );
-  for (let attempt = 1; attempt <= channelAttempts; attempt += 1) {
-    await report(
-      "info",
-      "patrol_share_camp_channel",
-      `已确认分享频道列表，点击“营地频道”${attempt > 1 ? "（重试）" : ""}`
-    );
-    const channelMatch = findTextInRegion(
-      vision,
-      screen.observations,
-      "营地频道",
-      campChannelTextRegion
+      menuScreen.observations,
+      target.texts,
+      target.textRegion
     );
     if (!channelMatch) {
+      noTargetMenuAttempts += 1;
       await report(
         "warning",
-        "patrol_share_channel_text_lost",
-        `第 ${attempt}/${channelAttempts} 次分享前未再次识别到“营地频道”，返回招募阶段重新打开频道列表`
+        "patrol_share_channel_menu_unverified",
+        `第 ${attempt}/${shareAttempts} 轮点击“招募”后未识别到“${target.text}”；等待 3 秒后重新点击“招募”再识别`
       );
-      break;
+      if (fullTeamMatch) {
+        await report(
+          "info",
+          "patrol_share_full_team_confirmed",
+          `“${fullTeamMatch.text}”与未出现分享目标选项同时成立，判定队伍已满员；本次${target.text}分享跳过，不计为任务失败`
+        );
+        return { skipped: true, noTargetMenuAttempts };
+      }
+      if (noTargetMenuAttempts >= 5) {
+        return { skipped: true, noTargetMenuAttempts };
+      }
+      continue;
     }
-    // “可分享目标”是模态弹窗。频道菜单的位置会随队伍卡片布局而偏移，
-    // 所以只用 OCR 定位到的“营地频道”文字中心点击。
-    const campChannelPoint = observationCenter(channelMatch);
+    channelMenuVisible = true;
+    noTargetMenuAttempts = 0;
     await report(
       "info",
-      "patrol_share_camp_channel_click",
-      `已在 OCR 确认后使用 ADB 鼠标左键点击“营地频道”文字中心 (${Math.round(campChannelPoint.x)},${Math.round(campChannelPoint.y)})`,
-      {
-        point: campChannelPoint,
-        recognizedTextBounds: {
-          x: channelMatch.x,
-          y: channelMatch.y,
-          width: channelMatch.width,
-          height: channelMatch.height
-        }
-      }
+      `patrol_share_${target.key}_channel_verified`,
+      `第 ${attempt}/${shareAttempts} 轮已 OCR 确认“${target.text}”，将点击文字中心`
     );
-    await tapPatrolMouse(ui, campChannelPoint, signal);
+    const channelPoint = observationCenter(channelMatch);
+    await report(
+      "info",
+      `patrol_share_${target.key}_channel_click`,
+      `已在 OCR 确认后使用 ADB 鼠标左键点击“${target.text}”文字中心 (${Math.round(channelPoint.x)},${Math.round(channelPoint.y)})`,
+      { point: channelPoint }
+    );
+    await tapPatrolMouse(ui, channelPoint, signal);
     await sleep(settleMs, signal);
-    screen = await capturePatrolScreen(
+    const resultScreen = await capturePatrolScreen(
       vision,
-      `patrol-share-result-${attempt}`,
+      `patrol-share-${target.key}-result-${attempt}`,
       signal
     );
-    const success = (controls.successTexts || [
-      "成功分享至营地频道",
-      "分享成功"
-    ]).some((text) =>
+    const success = target.successTexts.some((text) =>
       hasTextInRegion(
         vision,
-        screen.observations,
+        resultScreen.observations,
         text,
         controls.successRegion
       )
     );
-    if (success) {
-      await report(
-        "info",
-        "patrol_share_success",
-        "已确认“成功分享至营地频道”"
-      );
-      return;
-    }
-    const menuStillOpen = hasTextInRegion(
-      vision,
-      screen.observations,
-      "营地频道",
-      campChannelTextRegion
+    if (success) return { skipped: false, success: true };
+    await report(
+      "warning",
+      "patrol_share_result_unverified_retry",
+      `第 ${attempt}/${shareAttempts} 轮点击“${target.text}”后未确认分享成功；返回队伍页重新点击“招募”`
     );
-    if (!menuStillOpen) break;
+  }
+  if (!channelMenuVisible) {
+    throw new Error(
+      `PATROL_SHARE_CHANNEL_MENU_UNVERIFIED: 点击招募后连续 ${shareAttempts} 轮未识别到“${target.text}”，未执行盲点`
+    );
   }
   throw new Error(
-    "PATROL_SHARE_UNVERIFIED: 未识别到“成功分享至营地频道”，不会虚报分享成功"
+    `PATROL_SHARE_UNVERIFIED: ${shareAttempts} 轮点击“${target.text}”后未识别到分享成功，不会虚报分享成功`
   );
 }
 

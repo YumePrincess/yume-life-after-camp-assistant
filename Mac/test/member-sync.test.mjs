@@ -3,11 +3,64 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   capturePagedTable,
+  alignContributionRowsToRoster,
   dedupeStaffAssignments,
   assertContributionComplete,
   reconcilePageRows,
   selectActivityWarningRows
 } from "../src/workflows/member-sync.mjs";
+
+test("contribution OCR role badges are aligned to the authoritative roster", () => {
+  assert.deepEqual(
+    alignContributionRowsToRoster(
+      [
+        {
+          name: "雨梦也",
+          weeklyContribution: "1",
+          technologyPointsUsed: "81339",
+          materialContribution: "2293389"
+        },
+        { name: "星河踏月归✨", weeklyContribution: "0" }
+      ],
+      [{ name: "雨梦" }, { name: "星河踏月归✨" }]
+    ).map((row) => row.name),
+    ["雨梦", "星河踏月归✨"]
+  );
+});
+
+test("contribution rows keep all three values while deduplicating against the roster", () => {
+  const rows = alignContributionRowsToRoster(
+    [
+      {
+        name: "雨梦也",
+        weeklyContribution: "1",
+        technologyPointsUsed: "81339",
+        materialContribution: "2293389"
+      },
+      {
+        name: "雨梦",
+        weeklyContribution: "1",
+        technologyPointsUsed: "",
+        materialContribution: "2293389"
+      },
+      {
+        name: "OCR乱码",
+        weeklyContribution: "999",
+        technologyPointsUsed: "999",
+        materialContribution: "999"
+      }
+    ],
+    [{ name: "雨梦" }]
+  );
+  assert.deepEqual(rows, [
+    {
+      name: "雨梦",
+      weeklyContribution: "1",
+      technologyPointsUsed: "81339",
+      materialContribution: "2293389"
+    }
+  ]);
+});
 
 test("contribution and inactivity scans wait three seconds after paging and stop at eleven pages", async () => {
   for (const file of ["config.json", "config.example.json"]) {

@@ -717,7 +717,7 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
       async capture(label) {
         if (
           label === "patrol-share-team-page" ||
-          label.startsWith("patrol-share-recruit-verify")
+          label.includes("-recruit-verify-")
         ) {
           return {
             path: "team.png",
@@ -727,10 +727,22 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
             ]
           };
         }
-        if (label === "patrol-share-channel-menu-1") {
+        if (label === "patrol-share-camp-channel-menu-1") {
           return {
             path: "channels.png",
             observations: [observation("营地频道", 350, 870)]
+          };
+        }
+        if (label === "patrol-share-scene-channel-menu-1") {
+          return {
+            path: "channels.png",
+            observations: [observation("场景频道", 350, 870)]
+          };
+        }
+        if (label.includes("-scene-result-")) {
+          return {
+            path: "success.png",
+            observations: [observation("成功分享至场景频道", 780, 210)]
           };
         }
         return {
@@ -760,6 +772,8 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
 
   assert.deepEqual(taps, [
     { x: 343, y: 1128 },
+    { x: 420, y: 890 },
+    { x: 343, y: 1128 },
     { x: 420, y: 890 }
   ]);
   assert.ok(sleeps.includes(3_000));
@@ -785,13 +799,13 @@ test("book-defense patrol share verifies and clicks the fixed camp-channel row",
             observations: [observation("保卫古籍", 160, 20)]
           };
         }
-        if (label.startsWith("patrol-share-recruit-verify")) {
+        if (label.includes("-recruit-verify-")) {
           return {
             path: "team.png",
             observations: [observation("招募", 300, 1100)]
           };
         }
-        if (label.startsWith("patrol-share-channel-menu")) {
+        if (label.startsWith("patrol-share-camp-channel-menu")) {
           channelAttempts += 1;
           return {
             path: "channels.png",
@@ -799,6 +813,18 @@ test("book-defense patrol share verifies and clicks the fixed camp-channel row",
               channelAttempts === 1
                 ? []
                 : [observation("营地频道", 350, 870)]
+          };
+        }
+        if (label.startsWith("patrol-share-scene-channel-menu")) {
+          return {
+            path: "channels.png",
+            observations: [observation("场景频道", 350, 870)]
+          };
+        }
+        if (label.includes("-scene-result-")) {
+          return {
+            path: "success.png",
+            observations: [observation("成功分享至场景频道", 780, 210)]
           };
         }
         return {
@@ -823,6 +849,8 @@ test("book-defense patrol share verifies and clicks the fixed camp-channel row",
   assert.deepEqual(taps, [
     { x: 343, y: 1128 },
     { x: 343, y: 1128 },
+    { x: 420, y: 890 },
+    { x: 343, y: 1128 },
     { x: 420, y: 890 }
   ]);
 });
@@ -841,7 +869,7 @@ test("patrol share closes the invite card and retries recruit", async () => {
       async capture(label) {
         if (
           label === "patrol-share-team-page" ||
-          label.startsWith("patrol-share-recruit-verify")
+          label.includes("-recruit-verify-")
         ) {
           return {
             path: "team.png",
@@ -851,7 +879,7 @@ test("patrol share closes the invite card and retries recruit", async () => {
             ]
           };
         }
-        if (label.startsWith("patrol-share-channel-menu")) {
+        if (label.startsWith("patrol-share-camp-channel-menu")) {
           channelMenus += 1;
           return {
             path: "invite-or-channel.png",
@@ -859,6 +887,18 @@ test("patrol share closes the invite card and retries recruit", async () => {
               channelMenus === 1
                 ? [observation("邀请", 300, 200), observation("推荐组队", 350, 300)]
                 : [observation("营地频道", 350, 870)]
+          };
+        }
+        if (label.startsWith("patrol-share-scene-channel-menu")) {
+          return {
+            path: "channels.png",
+            observations: [observation("场景频道", 350, 870)]
+          };
+        }
+        if (label.includes("-scene-result-")) {
+          return {
+            path: "success.png",
+            observations: [observation("成功分享至场景频道", 780, 210)]
           };
         }
         return {
@@ -885,6 +925,123 @@ test("patrol share closes the invite card and retries recruit", async () => {
   assert.deepEqual(taps, [
     { x: 343, y: 1128 },
     { x: 1450, y: 920 },
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 },
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 }
+  ]);
+});
+
+test("a short full-team toast skips both channel shares without failing", async () => {
+  const taps = [];
+  const reports = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    adb: {},
+    vision: {
+      async capture(label) {
+        if (label === "patrol-share-team-page" || label.includes("-recruit-verify-")) {
+          return {
+            path: "team.png",
+            observations: [
+              observation("保卫古籍", 160, 20),
+              observation("招募", 300, 1100)
+            ]
+          };
+        }
+        if (label.includes("-full-team-immediate-")) {
+          return {
+            path: "toast.png",
+            observations: [observation("队伍已满员，无法再加入", 620, 245)]
+          };
+        }
+        return { path: "empty.png", observations: [] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await sharePatrolTeam(context);
+
+  assert.deepEqual(taps, [{ x: 343, y: 1128 }]);
+  assert.ok(reports.includes("patrol_share_full_team_confirmed"));
+  assert.ok(reports.includes("patrol_share_skipped_no_target"));
+});
+
+test("camp and scene sharing each get their own retry budget", async () => {
+  const taps = [];
+  let campMenus = 0;
+  let sceneMenus = 0;
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    adb: {},
+    vision: {
+      async capture(label) {
+        if (label === "patrol-share-team-page" || label.includes("-recruit-verify-")) {
+          return {
+            path: "team.png",
+            observations: [observation("招募", 300, 1100)]
+          };
+        }
+        if (label.includes("-camp-channel-menu-")) {
+          campMenus += 1;
+          return {
+            path: "camp.png",
+            observations: campMenus === 1 ? [] : [observation("营地频道", 350, 870)]
+          };
+        }
+        if (label.includes("-scene-channel-menu-")) {
+          sceneMenus += 1;
+          return {
+            path: "scene.png",
+            observations: sceneMenus === 1 ? [] : [observation("场景频道", 350, 870)]
+          };
+        }
+        if (label.includes("-camp-result-")) {
+          return { path: "camp-result.png", observations: [observation("分享成功", 780, 210)] };
+        }
+        if (label.includes("-scene-result-")) {
+          return { path: "scene-result.png", observations: [observation("分享成功", 780, 210)] };
+        }
+        return { path: "empty.png", observations: [] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await sharePatrolTeam(context);
+
+  assert.equal(campMenus, 2);
+  assert.equal(sceneMenus, 2);
+  assert.deepEqual(taps, [
+    { x: 343, y: 1128 },
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 },
+    { x: 343, y: 1128 },
     { x: 343, y: 1128 },
     { x: 420, y: 890 }
   ]);
@@ -1249,7 +1406,7 @@ function patrolUiConfig() {
         right: 480,
         bottom: 1180
       },
-      recruitAttempts: 6,
+      recruitAttempts: 10,
       channelMenuRegion: {
         left: 280,
         top: 760,
@@ -1263,7 +1420,7 @@ function patrolUiConfig() {
         bottom: 960
       },
       campChannelPoint: { x: 416, y: 895 },
-      channelAttempts: 6,
+      channelAttempts: 10,
       successTexts: ["成功分享至营地频道", "分享成功"],
       successRegion: {
         left: 650,
