@@ -503,16 +503,51 @@ actor RuntimeService {
     }
 
     func logs() async -> String {
-        let root = runtimeRoot
-        let candidates = [
-            root.appending(path: "logs/agent.log"),
-            root.appending(path: "logs/agent-error.log")
-        ]
-        return candidates.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
-            .joined(separator: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .suffix(600)
-            .joined(separator: "\n")
+        // LaunchAgent and the App can briefly disagree about the active
+        // runtime during an update. Read the managed runtime first, then the
+        // bundle/development fallbacks, so the App never presents an empty
+        // log view merely because one runtime path was replaced.
+        var roots: [URL] = [runtimeRoot]
+        roots.append(applicationSupport.appending(path: "Runtime/current", directoryHint: .isDirectory))
+        if let bundled = Bundle.main.resourceURL?.appending(path: "Runtime", directoryHint: .isDirectory) {
+            roots.append(bundled)
+        }
+        let development = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Mac", directoryHint: .isDirectory)
+        roots.append(development)
+
+        var lines: [(index: Int, value: String)] = []
+        var seen = Set<String>()
+        var index = 0
+        for root in roots {
+            for name in ["agent.log", "agent-error.log"] {
+                let file = root.appending(path: "logs/\(name)")
+                guard seen.insert(file.path).inserted,
+                      let data = try? Data(contentsOf: file) else { continue }
+                let text = String(decoding: data, as: UTF8.self)
+                for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+                    lines.append((index, String(line)))
+                    index += 1
+                }
+            }
+        }
+
+        // Both streams begin with an ISO-8601 timestamp. Merge them instead
+        // of returning all stderr after stdout; this keeps task events and
+        // diagnostics together in the same order users see in Workers.
+        let ordered = lines.sorted { left, right in
+            let leftTimestamp = String(left.value.prefix(24))
+            let rightTimestamp = String(right.value.prefix(24))
+            let leftLooksTimed = leftTimestamp.count == 24 && leftTimestamp.contains("T")
+            let rightLooksTimed = rightTimestamp.count == 24 && rightTimestamp.contains("T")
+            if leftLooksTimed && rightLooksTimed, leftTimestamp != rightTimestamp {
+                return leftTimestamp < rightTimestamp
+            }
+            return left.index < right.index
+        }
+        return ordered.suffix(600).map(\.value).joined(separator: "\n")
     }
 
     /// Truncate both streams in place so a running Agent can continue writing

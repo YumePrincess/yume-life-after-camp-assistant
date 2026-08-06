@@ -119,6 +119,10 @@ final class AppModel: ObservableObject {
             .joined(separator: "\n")
     }
 
+    var visibleLogLines: [String] {
+        visibleLogText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
     func openCurrentTaskLogs() {
         logRunIdFilter = health?.activeRunId
         selection = .logs

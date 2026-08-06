@@ -1081,10 +1081,11 @@ export async function waitForGameReady(context, signal) {
       }
     }
 
-    const announcement = announcements.enabled && !loginClicked
-      ? announcements.texts.find((text) =>
-          vision.find(frame.observations, text)
-        )
+    // The system announcement can appear both before the login tap and
+    // immediately after it. It is still the same top-right-X panel; do not
+    // let the post-login promotion fallback send a bottom-safe-area tap.
+    const announcement = announcements.enabled && !ready
+      ? announcementText
       : null;
     if (announcement && announcementClosures < announcements.maxClosures) {
       announcementClosures += 1;
@@ -1192,17 +1193,33 @@ export async function waitForGameReady(context, signal) {
         "本地模型以连续极高置信度确认 HUD；仍等待 OCR 连续稳定后再开始任务点击"
       );
     }
+    if (actionableAdvice?.state === "prelogin_announcement") {
+      if (announcementClosures < announcements.maxClosures) {
+        announcementClosures += 1;
+        guardedAdvice = null;
+        await report(
+          "info",
+          "local_model_guarded_announcement",
+          "本地模型确认系统公告，正在点击右上角 X 关闭，不使用宣传页底部关闭区域",
+          {
+            closure: announcementClosures,
+            maxClosures: announcements.maxClosures
+          }
+        );
+        await tapBeforeLogin(announcements.closePoint);
+        await ui.afterAction(signal);
+        continue;
+      }
+      guardedAdvice = null;
+    }
     if (
       loginClicked &&
-      ["promotion", "promotion_newspaper", "prelogin_announcement"].includes(
+      ["promotion", "promotion_newspaper"].includes(
         actionableAdvice?.state
       )
     ) {
       const classifiedState = actionableAdvice.state;
-      const state =
-        classifiedState === "prelogin_announcement"
-          ? "promotion"
-          : classifiedState;
+      const state = classifiedState;
       const dismissAttempt = reservePromotionDismissAttempt(state);
       if (dismissAttempt != null) {
         guardedAdvice = null;
@@ -1261,14 +1278,9 @@ export async function waitForGameReady(context, signal) {
           const guardedCandidate =
             (
               advisorConfig.mode === "guarded" &&
-              ["login", "promotion", "promotion_newspaper", "hud"].includes(
+              ["login", "promotion", "promotion_newspaper", "prelogin_announcement", "hud"].includes(
                 advice?.state
               )
-            ) ||
-            (
-              advisorConfig.mode === "guarded" &&
-              loginClicked &&
-              advice?.state === "prelogin_announcement"
             );
           const guardedCandidateAccepted =
             guardedCandidate &&

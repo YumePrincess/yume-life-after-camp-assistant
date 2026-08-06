@@ -139,7 +139,7 @@ test("an activity call-to-action closes a post-login promotion at the calibrated
   );
 });
 
-test("guarded AI reclassifies a post-login announcement prediction as a promotion", async () => {
+test("guarded AI closes a post-login system announcement with the top-right X", async () => {
   const fixture = createFixture(
     [["登录游戏"], [], [], [], ["背包"]],
     {
@@ -154,11 +154,11 @@ test("guarded AI reclassifies a post-login announcement prediction as a promotio
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
     { x: 960, y: 945 },
-    { x: 960, y: 1035 }
+    { x: 1742, y: 155 }
   ]);
   assert.ok(
     fixture.messages.some((message) =>
-      message.includes("全屏公告式画面")
+      message.includes("本地模型确认系统公告")
     )
   );
 });
@@ -192,6 +192,22 @@ test("pre-login announcement closes by its top-right X before clicking login", a
   ]);
   assert.ok(
     fixture.messages.some((message) => message.includes("登录角色前的系统公告"))
+  );
+});
+
+test("a system announcement shown after the login tap still closes by its top-right X", async () => {
+  const fixture = createFixture([
+    ["点击登录游戏"],
+    ["系统公告", "经典服", "亲爱的幸存者"],
+    ["背包"]
+  ]);
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [
+    { x: 960, y: 945 },
+    { x: 1742, y: 155 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("右上角关闭按钮"))
   );
 });
 

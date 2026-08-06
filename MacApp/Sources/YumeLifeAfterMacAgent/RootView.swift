@@ -326,11 +326,21 @@ struct LogsView: View {
             }
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(model.visibleLogText.isEmpty ? model.text("No log entries yet.") : model.visibleLogText)
-                        .font(.system(size: 12, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .id("bottom")
+                    if model.visibleLogLines.isEmpty {
+                        Text(model.text("No log entries yet."))
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .id("bottom")
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(model.visibleLogLines.enumerated()), id: \.offset) { item in
+                                Text(item.element)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            Color.clear.frame(height: 1).id("bottom")
+                        }
+                    }
                 }
                 .glassPanel(radius: 20, padding: 16)
                 .onChange(of: model.visibleLogText) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
@@ -477,6 +487,7 @@ struct UnsupportedPlatformView: View {
 }
 
 struct AboutView: View {
+    @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     private var versionDescription: String {
         let version = Bundle.main.object(
@@ -498,8 +509,9 @@ struct AboutView: View {
             Image(nsImage: NSApp.applicationIconImage).resizable().scaledToFit().frame(width: 72, height: 72)
             Text("Yume Life After Mac Agent").font(.title.bold())
             Text(versionDescription).foregroundStyle(.secondary)
-            Text("A local control center for the LifeAfter camp assistant.").multilineTextAlignment(.center)
-            Text("Copyright © 2026 Yume Internet LLC. All rights reserved.")
+            Text(model.text("A local control center for the LifeAfter camp assistant."))
+                .multilineTextAlignment(.center)
+            Text(model.text("Copyright © 2026 Yume Internet LLC. All rights reserved."))
                 .font(.caption).foregroundStyle(.secondary)
         }.padding(22).frame(width: 460, height: 350).background(AppBackdrop())
     }
