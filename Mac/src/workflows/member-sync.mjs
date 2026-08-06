@@ -604,10 +604,25 @@ export async function capturePagedTable(
       memberDetailsMode &&
       expectedPageCount !== null &&
       page + 1 === expectedPageCount;
+    // Once the calculated last page is incomplete, the two permitted
+    // continuation pages are tail pages too.  They must use the expanded
+    // full-page crop as-is; applying the normal five-row alignment pass here
+    // can shift the first row and create an artificial partial/duplicate row.
+    const scheduledLastContinuationPage =
+      memberDetailsMode &&
+      expectedPageCount !== null &&
+      page + 1 > expectedPageCount &&
+      page + 1 <= maxMemberPageCount;
     const fullPageRead =
-      hasFullPageDefinition && (tailFullPagePending || scheduledLastPage);
+      hasFullPageDefinition &&
+      (tailFullPagePending || scheduledLastPage || scheduledLastContinuationPage);
     const currentTailReason =
-      tailFullPageReason || (scheduledLastPage ? "scheduled-last" : null);
+      tailFullPageReason ||
+      (scheduledLastPage
+        ? "scheduled-last"
+        : scheduledLastContinuationPage
+          ? "scheduled-last-continuation"
+          : null);
     const pageDefinition = fullPageRead
       ? memberFullPageDefinition(definition)
       : definition;
@@ -723,24 +738,26 @@ export async function capturePagedTable(
         !pageDefinition.headerPattern.some((value) => row.name.includes(value))
     );
     if (memberDetailsMode) {
-      // Member pages also overlap at the swipe boundary. Reconcile that one
-      // boundary before adding the page to the global map so an OCR spelling
-      // variant on the next page cannot consume a second roster slot.
-      // Remember any correction: when the same page is captured twice, the
-      // next boundary may otherwise alternate between the raw OCR spelling
-      // and the corrected canonical spelling and consume a second slot.
+      // Normal pages are deliberately non-overlapping five-row windows. Do
+      // not run cross-page aliasing/reconciliation on them: a visually valid
+      // row whose OCR name resembles a previous row must remain a candidate.
+      // Only the calculated tail and its continuation pages are allowed to
+      // reconcile OCR variants because those pages are read as one expanded
+      // end-page crop and may legitimately contain a repeated final row.
       const rawRows = rows;
-      rows = applyPageNameAliases(rawRows, pageNameAliases);
-      rows = reconcilePageRows(previousRows, rows);
-      for (let index = 0; index < Math.min(rawRows.length, rows.length); index += 1) {
-        const sourceKey = memberProfileNameKey(rawRows[index]?.name);
-        const canonicalName = String(rows[index]?.name || "").trim();
-        if (
-          sourceKey &&
-          canonicalName &&
-          sourceKey !== memberProfileNameKey(canonicalName)
-        ) {
-          pageNameAliases.set(sourceKey, canonicalName);
+      if (fullPageRead || !hasFullPageDefinition) {
+        rows = applyPageNameAliases(rawRows, pageNameAliases);
+        rows = reconcilePageRows(previousRows, rows);
+        for (let index = 0; index < Math.min(rawRows.length, rows.length); index += 1) {
+          const sourceKey = memberProfileNameKey(rawRows[index]?.name);
+          const canonicalName = String(rows[index]?.name || "").trim();
+          if (
+            sourceKey &&
+            canonicalName &&
+            sourceKey !== memberProfileNameKey(canonicalName)
+          ) {
+            pageNameAliases.set(sourceKey, canonicalName);
+          }
         }
       }
     }
@@ -855,10 +872,23 @@ export async function capturePagedTable(
     const fingerprint = rows.map((row) => row.name).join("|");
     let added = 0;
     let rejectedAfterExpectedCount = 0;
-    for (const row of rows) {
-      const rowKey = memberDetailsMode
+    for (const [rowIndex, row] of rows.entries()) {
+      const baseRowKey = memberDetailsMode
         ? memberProfileNameKey(row.name)
         : row.name;
+      let rowKey = baseRowKey;
+      // A normal five-row page is not allowed to lose a row merely because
+      // fast OCR returned the same spelling twice (the classic example is
+      // avatar text such as “2025”). Preserve the row under a page-local
+      // collision key and let the expanded tail pass do the only permitted
+      // end-page deduplication.
+      if (memberDetailsMode && hasFullPageDefinition && !fullPageRead && rowKey) {
+        let collision = 0;
+        while (byName.has(rowKey)) {
+          collision += 1;
+          rowKey = `${baseRowKey}\u0000normal-page-${page + 1}-row-${rowIndex}-${collision}`;
+        }
+      }
       if (!rowKey) continue;
       const current = byName.get(rowKey) || {};
       if (
@@ -872,10 +902,17 @@ export async function capturePagedTable(
         continue;
       }
       if (!byName.has(rowKey)) added += 1;
+      const storedRow = memberDetailsMode && hasFullPageDefinition
+        ? {
+            ...row,
+            __memberPage: page + 1,
+            __memberTail: fullPageRead
+          }
+        : row;
       byName.set(
         rowKey,
         memberDetailsMode
-          ? mergeMemberProfileRows(current, row)
+          ? mergeMemberProfileRows(current, storedRow)
           : { ...current, ...row }
       );
     }
@@ -906,9 +943,12 @@ export async function capturePagedTable(
       memberDetailsMode && expectedCount !== null
         ? reconcileMemberDetailRows([...byName.values()], expectedCount).length
         : null;
+    const scheduledTailPage =
+      currentTailReason === "scheduled-last" ||
+      currentTailReason === "scheduled-last-continuation";
     const scheduledLastNeedsContinuation =
       memberDetailsMode &&
-      currentTailReason === "scheduled-last" &&
+      scheduledTailPage &&
       expectedCount !== null &&
       organizedMemberCount < expectedCount &&
       page + 1 < maxMemberPageCount;
@@ -917,7 +957,7 @@ export async function capturePagedTable(
       fullPageRead &&
       (currentTailReason === "stagnant" ||
         (currentTailReason === "incomplete" && rows.length < memberRowsPerPage) ||
-        (currentTailReason === "scheduled-last" && !scheduledLastNeedsContinuation))
+        (scheduledTailPage && !scheduledLastNeedsContinuation))
     ) {
       await report(
         "info",
@@ -986,12 +1026,25 @@ export async function capturePagedTable(
       );
       break;
     }
-    stagnantPages =
-      added === 0 || fingerprint === previousFingerprint ? stagnantPages + 1 : 0;
+    const beforeCalculatedTail =
+      memberDetailsMode &&
+      hasFullPageDefinition &&
+      expectedPageCount !== null &&
+      page + 1 < expectedPageCount;
+    // A repeated OCR spelling on a normal page is not evidence that the
+    // list reached its end when the header-derived tail is still ahead. Keep
+    // the calculated N-page scan moving; only N and the permitted tail pages
+    // may use stagnant-page termination.
+    stagnantPages = beforeCalculatedTail
+      ? 0
+      : added === 0 || fingerprint === previousFingerprint
+        ? stagnantPages + 1
+        : 0;
     const repeatedMemberPage =
       memberDetailsMode &&
       page > 0 &&
       !scheduledLastNeedsContinuation &&
+      fullPageRead &&
       (fingerprint === previousFingerprint ||
         (added === 0 && rows.length >= memberRowsPerPage));
     if (repeatedMemberPage && hasFullPageDefinition) {
@@ -1016,7 +1069,12 @@ export async function capturePagedTable(
       );
       break;
     }
-    if (stagnantPages >= definition.pagination.stopAfterStagnantPages) break;
+    if (
+      !beforeCalculatedTail &&
+      stagnantPages >= definition.pagination.stopAfterStagnantPages
+    ) {
+      break;
+    }
     previousFingerprint = fingerprint;
     previousRows = rows.map((row) => ({ ...row }));
     const memberPageLimitReached =
@@ -1046,12 +1104,17 @@ export async function capturePagedTable(
       // MuMu accelerates a single long mouse swipe near the endpoint. That
       // can jump past one or more 95px rows. Send the same calibrated drag as
       // small MOVE segments and release immediately at the exact 475px
-      // (5-row) endpoint so the next page starts on a row boundary.
+      // (5-row) endpoint so the next page starts on a row boundary. The
+      // calibrated duration is shortened by 30% to increase speed without
+      // changing either endpoint or the segmented path.
       await memberAlignmentSwipe(
         adb,
         swipeFrom,
         swipeTo,
-        definition.pagination.durationMs,
+        Math.max(
+          100,
+          Math.round((Number(definition.pagination.durationMs) || 1_000) * 0.7)
+        ),
         signal
       );
     } else {
@@ -1163,7 +1226,10 @@ async function alignMemberDetailsPage(
             ? adjustment.anchorY - adjustment.distance
             : adjustment.anchorY + adjustment.distance
       },
-      Math.max(800, Number(pagination.rowAlignmentDurationMs) || 1_000),
+      Math.max(
+        100,
+        Math.round((Number(pagination.rowAlignmentDurationMs) || 1_000) * 0.7)
+      ),
       signal
     );
     await (context.sleep || delay)(
@@ -1293,7 +1359,10 @@ function memberRowAlignmentAdjustment(bands, region, page, pagination) {
     region.top + (region.bottom - region.top) * 0.42
   );
   if (visibleFirstHeight < fullThreshold && next.length >= rowHeight * 0.7) {
-    const distance = Math.max(1, Math.round(rowHeight - visibleFirstHeight));
+    // A 1–5px correction is below the effective MuMu input quantization and
+    // often leaves the list visually unchanged. Use 10px as the minimum
+    // correction while retaining the measured distance for larger offsets.
+    const distance = Math.max(10, Math.round(rowHeight - visibleFirstHeight));
     // The top black member-count bar can cover the first row after a swipe.
     // Move the list down by exactly the missing part so that row is complete;
     // do this once per page because a second correction can skip a row.
@@ -1452,10 +1521,21 @@ function contributionNameKey(value) {
 
 function reconcileMemberDetailRows(rows, expectedCount = null) {
   const reconciled = [];
+  const hasTailMetadata = rows.some((row) =>
+    Object.prototype.hasOwnProperty.call(row || {}, "__memberTail")
+  );
   for (const row of rows) {
-    const duplicateIndex = reconciled.findIndex((existing) =>
-      sameMemberProfileIdentity(existing, row) &&
-      similarMemberProfileName(existing.name, row.name)
+    const duplicateIndex = reconciled.findIndex(
+      (existing) =>
+        // Normal pages are guaranteed non-overlapping and must retain all
+        // five candidates. Only a row from an expanded tail page may merge
+        // with another candidate, which keeps legitimate look-alike names
+        // from being discarded before the header-count cap is applied.
+        (!hasTailMetadata ||
+          existing.__memberTail === true ||
+          row.__memberTail === true) &&
+        sameMemberProfileIdentity(existing, row) &&
+        similarMemberProfileName(existing.name, row.name)
     );
     if (duplicateIndex < 0) {
       reconciled.push(row);

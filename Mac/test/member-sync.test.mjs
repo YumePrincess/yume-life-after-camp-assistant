@@ -429,6 +429,83 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
   );
 });
 
+test("incomplete calculated tail keeps both continuation pages in full-page mode", async () => {
+  const swipes = [];
+  const definitions = [];
+  const tailPages = [
+    [{ name: "成员6" }, { name: "成员7" }],
+    [{ name: "成员8" }, { name: "成员9" }],
+    [{ name: "成员10" }]
+  ];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        definitions.push({
+          page: Number(label.match(/member-details-(\d+)/)?.[1] || 1),
+          bottom: definition.region.bottom,
+          rowsPerPage: definition.pagination.rowsPerPage
+        });
+        const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
+        if (definition.region.bottom === 810) {
+          return tailPages[page - 2] || [];
+        }
+        return Array.from({ length: 5 }, (_, index) => ({
+          name: `成员${index + 1}`
+        }));
+      }
+    },
+    adb: {
+      async mouseSwipe(from, to, durationMs) {
+        swipes.push({ from, to, durationMs });
+      }
+    },
+    ui: { async afterAction() {} },
+    async report() {}
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 30,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 10,
+        maxExtraPagesAfterExpected: 2,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 6,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1000
+      }
+    },
+    undefined,
+    { expectedCount: 10 }
+  );
+  assert.equal(rows.length, 10);
+  assert.deepEqual(
+    definitions.map(({ bottom, rowsPerPage }) => ({ bottom, rowsPerPage })),
+    [
+      { bottom: 780, rowsPerPage: 5 },
+      { bottom: 810, rowsPerPage: 6 },
+      { bottom: 810, rowsPerPage: 6 },
+      { bottom: 810, rowsPerPage: 6 }
+    ]
+  );
+  assert.deepEqual(
+    swipes.map(({ durationMs }) => durationMs),
+    [700, 700, 700]
+  );
+});
+
 test("member profile scan allows at most two pages after an incomplete calculated tail", async () => {
   const swipes = [];
   const reports = [];
