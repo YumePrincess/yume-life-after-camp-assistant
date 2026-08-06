@@ -1153,6 +1153,9 @@ async function handleAdminApi(
     if (permissions.includes("demo:preview") && permissions.length > 1) {
       return problem("Demo 权限必须单独使用", 400, "demo_permission_exclusive");
     }
+    if (permissions.includes("system:admin") && permissions.length > 1) {
+      return problem("系统最高权限必须单独使用", 400, "system_permission_exclusive");
+    }
     const issued = await issueTemporaryKey(env, {
       name,
       expiresAt: expiry.toISOString(),
@@ -1198,6 +1201,9 @@ async function handleAdminApi(
     }
     if (permissions.includes("demo:preview") && permissions.length > 1) {
       return problem("Demo 权限必须单独使用", 400, "demo_permission_exclusive");
+    }
+    if (permissions.includes("system:admin") && permissions.length > 1) {
+      return problem("系统最高权限必须单独使用", 400, "system_permission_exclusive");
     }
     const updated = await updateTemporaryKeyPermissions(env, { id, permissions });
     if (!updated) {

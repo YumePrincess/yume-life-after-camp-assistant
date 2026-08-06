@@ -54,6 +54,14 @@ describe("admin permissions", () => {
     expect(hasPermission(overview, "task:interrupt")).toBe(false);
   });
 
+  it("treats system admin access as equivalent to the OIDC full permission", () => {
+    const system = session("temporary_key", ["system:admin"]);
+
+    expect(hasPermission(system, "keys:manage")).toBe(true);
+    expect(hasPermission(system, "admin:technology")).toBe(true);
+    expect(hasPermission(system, "plugin:patrol:run")).toBe(true);
+  });
+
   it("keeps previously issued legacy permissions usable", () => {
     const legacy = session("temporary_key", ["identity:review"]);
 

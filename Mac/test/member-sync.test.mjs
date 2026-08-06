@@ -80,6 +80,17 @@ test("contribution and inactivity scans wait three seconds after paging and stop
       );
     }
     assert.equal(config.tables.members.ocrMinimumConfidence, 0.3);
+    assert.deepEqual(config.tables.members.pagination.from, { x: 1700, y: 700 });
+    assert.deepEqual(config.tables.members.pagination.to, { x: 1700, y: 225 });
+    assert.deepEqual(config.tables.members.pagination.firstPageFrom, { x: 1700, y: 700 });
+    assert.deepEqual(config.tables.members.pagination.firstPageTo, { x: 1700, y: 225 });
+    assert.deepEqual(config.tables.members.pagination.fullPageRegion, {
+      left: 115,
+      top: 285,
+      right: 1800,
+      bottom: 810
+    });
+    assert.equal(config.tables.members.pagination.fullPageRows, 6);
     assert.deepEqual(
       config.flows.resetMemberPanelForRescan.map((action) => action.op),
       ["clickText", "waitAnyText", "clickText", "waitAnyText"]
@@ -336,6 +347,175 @@ test("member profile pagination reaches the bottom before organizing to the head
   );
 });
 
+test("member profile scan uses five-row pages and a full tail page", async () => {
+  const swipes = [];
+  const definitions = [];
+  const pages = [
+    Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 1}` })),
+    Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 6}` })),
+    Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 11}` })),
+    Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 11}` }))
+  ];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        definitions.push({
+          label,
+          region: definition.region,
+          rowsPerPage: definition.pagination.rowsPerPage
+        });
+        if (definition.region.bottom === 810) {
+          return Array.from({ length: 6 }, (_, index) => ({ name: `成员${index + 11}` }));
+        }
+        const page = Number(label.match(/-(\d+)(?:-retry|$)/)?.[1] || 1);
+        return pages[Math.min(page - 1, pages.length - 1)];
+      }
+    },
+    adb: {
+      async mouseSwipe(from, to) {
+        swipes.push({ from, to });
+      }
+    },
+    ui: { async afterAction() {} },
+    async report() {}
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 10,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 3,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 6,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 16 }
+  );
+  assert.equal(rows.length, 16);
+  assert.equal(swipes.length, 3);
+  assert.deepEqual(swipes.slice(0, 2), [
+    {
+      from: { x: 1700, y: 700 },
+      to: { x: 1700, y: 225 }
+    },
+    {
+      from: { x: 1700, y: 700 },
+      to: { x: 1700, y: 225 }
+    }
+  ]);
+  assert.deepEqual(
+    definitions.map(({ region, rowsPerPage }) => ({ bottom: region.bottom, rowsPerPage })),
+    [
+      { bottom: 780, rowsPerPage: 5 },
+      { bottom: 780, rowsPerPage: 5 },
+      { bottom: 780, rowsPerPage: 5 },
+      { bottom: 810, rowsPerPage: 6 }
+    ]
+  );
+});
+
+test("member profile scan allows at most two pages after an incomplete calculated tail", async () => {
+  const swipes = [];
+  const reports = [];
+  const pages = [
+    Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 1}` })),
+    Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 6}` })),
+    [
+      { name: "成员12" },
+      { name: "成员13" },
+      { name: "成员14" },
+      { name: "成员15" },
+      { name: "成员11" }
+    ],
+    [
+      { name: "成员13" },
+      { name: "成员14" },
+      { name: "成员15" },
+      { name: "成员11" },
+      { name: "成员12" }
+    ],
+    [
+      { name: "成员14" },
+      { name: "成员15" },
+      { name: "成员11" },
+      { name: "成员12" },
+      { name: "成员13" }
+    ],
+    [
+      { name: "成员15" },
+      { name: "成员11" },
+      { name: "成员12" },
+      { name: "成员13" },
+      { name: "成员14" }
+    ]
+  ];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
+        if (definition.region.bottom === 810) {
+          return pages[3];
+        }
+        return pages[Math.min(page - 1, pages.length - 1)];
+      }
+    },
+    adb: {
+      async mouseSwipe(from, to) {
+        swipes.push({ from, to });
+      }
+    },
+    ui: { async afterAction() {} },
+    async report(_level, step, message, payload) {
+      reports.push({ step, message, payload });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 30,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 10,
+        maxExtraPagesAfterExpected: 2,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 16 }
+  );
+  assert.equal(rows.length, 15);
+  assert.ok(swipes.length <= 5);
+  assert.ok(reports.some(({ step }) => step === "member_details_expected_page_incomplete"));
+  assert.ok(reports.some(({ step }) => step === "member-details_page_limit_reached"));
+});
+
 test("member profile reconciliation never exceeds the header total", async () => {
   const rows = await capturePagedTable(
     {
@@ -380,6 +560,56 @@ test("member profile reconciliation never exceeds the header total", async () =>
   assert.deepEqual(
     rows.map((row) => row.name),
     ["成员一", "成员二", "成员三", "成员四", "成员五"]
+  );
+});
+
+test("member profile reconciliation never undercounts a complete raw roster", async () => {
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture(label) {
+          return { path: `${label}.png`, observations: [] };
+        },
+        async extractTableRows() {
+          return [
+            {
+              name: "模型一",
+              weeklyContribution: "100",
+              roommateName: "同居"
+            },
+            {
+              name: "模型一号",
+              weeklyContribution: "100",
+              roommateName: "同居"
+            }
+          ];
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 1,
+        from: { x: 1, y: 2 },
+        to: { x: 1, y: 1 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 2 }
+  );
+
+  assert.equal(rows.length, 2);
+  assert.deepEqual(
+    rows.map((row) => row.name).sort(),
+    ["模型一", "模型一号"].sort()
   );
 });
 

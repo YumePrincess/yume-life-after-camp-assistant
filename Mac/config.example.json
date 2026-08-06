@@ -346,13 +346,13 @@
     "members": {
       "extractionMode": "hybrid",
       "ocrMinimumConfidence": 0.3,
-      "region": { "left": 115, "top": 285, "right": 1800, "bottom": 810 },
+      "region": { "left": 115, "top": 285, "right": 1800, "bottom": 780 },
       "rowAnchorTop": 315,
       "columns": [
         {
           "key": "identity",
           "stackedKeys": ["name", "campTitle"],
-          "left": 0,
+          "left": 0.08,
           "right": 0.318
         },
         { "key": "profession", "left": 0.318, "right": 0.46 },
@@ -365,10 +365,23 @@
       "headerPattern": ["全部成员", "输入玩家昵称", "营地招募"],
       "pagination": {
         "from": { "x": 1700, "y": 700 },
-        "to": { "x": 1700, "y": 350 },
-        "durationMs": 650,
+        "to": { "x": 1700, "y": 225 },
+        "firstPageFrom": { "x": 1700, "y": 700 },
+        "firstPageTo": { "x": 1700, "y": 225 },
+        "durationMs": 1000,
+        "settleAfterSwipeMs": 2000,
         "rowsPerPage": 5,
         "minimumRowsPerPage": 5,
+        "maxIncompletePageRetries": 3,
+        "maxExtraPagesAfterExpected": 2,
+        "fullPageRegion": { "left": 115, "top": 285, "right": 1800, "bottom": 810 },
+        "fullPageRows": 6,
+        "maxRowAlignments": 1,
+        "rowHeightPx": 95,
+        "rowColorThreshold": 0.3,
+        "rowColorSampleStepPx": 5,
+        "rowAlignmentDurationMs": 1000,
+        "rowAlignmentSettleMs": 2000,
         "maxPages": 30,
         "stopAfterStagnantPages": 3
       }

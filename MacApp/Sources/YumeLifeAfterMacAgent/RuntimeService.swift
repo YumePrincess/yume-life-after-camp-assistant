@@ -519,19 +519,31 @@ actor RuntimeService {
         roots.append(development)
 
         var lines: [(index: Int, value: String)] = []
-        var seen = Set<String>()
+        var seenFiles = Set<String>()
+        var seenLines = Set<String>()
         var index = 0
+        func append(_ text: String) {
+            for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+                let value = String(line)
+                guard !value.isEmpty, seenLines.insert(value).inserted else { continue }
+                lines.append((index, value))
+                index += 1
+            }
+        }
         for root in roots {
             for name in ["agent.log", "agent-error.log"] {
                 let file = root.appending(path: "logs/\(name)")
-                guard seen.insert(file.path).inserted,
+                guard seenFiles.insert(file.path).inserted,
                       let data = try? Data(contentsOf: file) else { continue }
-                let text = String(decoding: data, as: UTF8.self)
-                for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-                    lines.append((index, String(line)))
-                    index += 1
-                }
+                append(String(decoding: data, as: UTF8.self))
             }
+        }
+
+        // The control script resolves the same managed Runtime/current path
+        // used by launchd. Include its live tail as a fallback for upgrades or
+        // external-volume mounts where direct file reads can briefly lag.
+        if let commandOutput = try? await run(["logs"], timeout: 10) {
+            append(commandOutput)
         }
 
         // Both streams begin with an ISO-8601 timestamp. Merge them instead
@@ -547,7 +559,10 @@ actor RuntimeService {
             }
             return left.index < right.index
         }
-        return ordered.suffix(600).map(\.value).joined(separator: "\n")
+        // The App's “全部日志” view must not silently discard older task
+        // events. The source files are already bounded by the runtime's log
+        // retention policy, so return the complete merged set here.
+        return ordered.map(\.value).joined(separator: "\n")
     }
 
     /// Truncate both streams in place so a running Agent can continue writing
@@ -567,10 +582,11 @@ actor RuntimeService {
         agentName: String,
         agentToken: String,
         debugToken: String,
+        adminKey: String,
         mumuInstanceName: String,
         allowUnsignedLocalPlugins: Bool
     ) throws {
-        try saveCredentials(agentToken: agentToken, debugToken: debugToken)
+        try saveCredentials(agentToken: agentToken, debugToken: debugToken, adminKey: adminKey)
         let root = runtimeRoot
         let path = root.appending(path: "config.json")
         let template = root.appending(path: "config.example.json")
@@ -621,10 +637,16 @@ actor RuntimeService {
         return credentials
     }
 
-    private func saveCredentials(agentToken: String, debugToken: String) throws {
+    private func saveCredentials(agentToken: String, debugToken: String, adminKey: String) throws {
         try fileManager.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: applicationSupport.path)
-        let credentials = StoredCredentials(agentToken: agentToken, debugToken: debugToken)
+        let credentials = StoredCredentials(
+            agentToken: agentToken,
+            debugToken: debugToken,
+            adminKey: adminKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil
+                : adminKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
         let data = try JSONEncoder().encode(credentials)
         try data.write(to: credentialsFile, options: [.atomic, .completeFileProtection])
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: credentialsFile.path)
@@ -783,6 +805,7 @@ actor RuntimeService {
 struct StoredCredentials: Codable, Sendable {
     let agentToken: String
     let debugToken: String
+    let adminKey: String?
 }
 
 private extension FileManager {

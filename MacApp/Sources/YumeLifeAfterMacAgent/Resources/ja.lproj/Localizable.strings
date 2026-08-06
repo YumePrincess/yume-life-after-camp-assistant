@@ -63,6 +63,7 @@
 "Agent ID" = "Agent ID";
 "Agent token" = "Agent トークン";
 "Local debug token" = "ローカルデバッグトークン";
+"Admin access Key (optional)" = "管理画面アクセス Key（任意）";
 "Appearance" = "外観";
 "Language" = "言語";
 "Theme" = "テーマ";
@@ -85,6 +86,7 @@
 "Task submitted successfully." = "タスクを正常に送信しました。";
 "Open Camp admin and sign in first." = "先に野営地管理を開いてログインしてください。";
 "The admin response was invalid." = "管理画面の応答が無効です。";
+"The admin access Key is invalid." = "管理画面アクセス Key が無効です。";
 "The selected plugin could not be accessed." = "選択したプラグインにアクセスできません。";
 "Plugin installed. Restart the Agent to activate it." = "プラグインをインストールしました。Agent の再起動後に有効になります。";
 "All plugins are up to date." = "すべてのプラグインは最新です。";

@@ -63,6 +63,7 @@
 "Agent ID" = "Agent 編號";
 "Agent token" = "Agent 權杖";
 "Local debug token" = "本機偵錯權杖";
+"Admin access Key (optional)" = "後台存取 Key（選填）";
 "Appearance" = "外觀";
 "Language" = "語言";
 "Theme" = "主題";
@@ -85,6 +86,7 @@
 "Task submitted successfully." = "任務已成功提交。";
 "Open Camp admin and sign in first." = "請先開啟營地管理後台並登入。";
 "The admin response was invalid." = "管理後台回應無效。";
+"The admin access Key is invalid." = "後台存取 Key 無效。";
 "The selected plugin could not be accessed." = "無法存取所選外掛。";
 "Plugin installed. Restart the Agent to activate it." = "外掛已安裝，重新啟動 Agent 後生效。";
 "All plugins are up to date." = "所有外掛皆為最新版本。";

@@ -6,12 +6,27 @@ export function parseTable(observations, definition) {
     .filter((item) => inside(item, region))
     .sort((a, b) => centerY(a) - centerY(b) || a.x - b.x);
   const medianHeight = median(visible.map((item) => item.height)) || 24;
+  const fixedRowHeight = Number(definition.pagination?.rowHeightPx);
+  const fixedRowAnchor = Number(
+    definition.rowAnchorTop ?? definition.pagination?.rowAnchorTop
+  );
+  const useFixedRowSlots =
+    Number.isFinite(fixedRowHeight) &&
+    fixedRowHeight > 0 &&
+    Number.isFinite(fixedRowAnchor);
   const rows = [];
   for (const item of visible) {
     const y = centerY(item);
-    let row = rows.find((candidate) => Math.abs(candidate.y - y) <= medianHeight * 0.7);
+    const slot = useFixedRowSlots
+      ? Math.floor((y - fixedRowAnchor) / fixedRowHeight)
+      : null;
+    let row = rows.find((candidate) =>
+      useFixedRowSlots
+        ? candidate.slot === slot
+        : Math.abs(candidate.y - y) <= medianHeight * 0.7
+    );
     if (!row) {
-      row = { y, items: [] };
+      row = { y, items: [], slot };
       rows.push(row);
     }
     row.items.push(item);

@@ -317,6 +317,11 @@ struct LogsView: View {
                 if model.logRunIdFilter != nil {
                     Button("Current task only") { }
                         .buttonStyle(GlassButtonStyle())
+                } else if model.latestRunId != nil {
+                    Button("Current task") { model.openCurrentTaskLogs() }
+                        .buttonStyle(GlassButtonStyle())
+                }
+                if model.logRunIdFilter != nil {
                     Button("All logs") { model.showAllLogs() }
                         .buttonStyle(GlassButtonStyle())
                 }
@@ -429,6 +434,7 @@ struct SettingsView: View {
                     TextField("MuMu container name", text: $model.mumuInstanceName)
                     SecureField("Agent token", text: $model.agentToken)
                     SecureField("Local debug token", text: $model.debugToken)
+                    SecureField("Admin access Key (optional)", text: $model.adminKey)
                     Button("Import legacy Keychain credentials…") {
                         Task { await model.loadStoredCredentials() }
                     }
@@ -582,6 +588,7 @@ struct SetupAssistantView: View {
                 .foregroundStyle(.secondary)
             SecureField("Agent token", text: $model.agentToken).textFieldStyle(.roundedBorder)
             SecureField("Local debug token", text: $model.debugToken).textFieldStyle(.roundedBorder)
+            SecureField("Admin access Key (optional)", text: $model.adminKey).textFieldStyle(.roundedBorder)
                     Button("Import legacy Keychain credentials…") {
                         Task { await model.loadStoredCredentials() }
             }

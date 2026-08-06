@@ -63,6 +63,7 @@
 "Agent ID" = "Identifiant Agent";
 "Agent token" = "Jeton Agent";
 "Local debug token" = "Jeton de débogage local";
+"Admin access Key (optional)" = "Clé d’accès admin (facultative)";
 "Appearance" = "Apparence";
 "Language" = "Langue";
 "Theme" = "Thème";
@@ -85,6 +86,7 @@
 "Task submitted successfully." = "La tâche a bien été envoyée.";
 "Open Camp admin and sign in first." = "Ouvrez d’abord l’administration du camp et connectez-vous.";
 "The admin response was invalid." = "La réponse de l’administration est invalide.";
+"The admin access Key is invalid." = "La clé d’accès admin est invalide.";
 "The selected plugin could not be accessed." = "Impossible d’accéder à l’extension sélectionnée.";
 "Plugin installed. Restart the Agent to activate it." = "Extension installée. Redémarrez l’Agent pour l’activer.";
 "All plugins are up to date." = "Toutes les extensions sont à jour.";

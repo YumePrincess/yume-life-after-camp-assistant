@@ -67,6 +67,7 @@
 "Agent ID" = "Agent ID";
 "Agent token" = "Agent token";
 "Local debug token" = "Local debug token";
+"Admin access Key (optional)" = "Admin access Key (optional)";
 "Appearance" = "Appearance";
 "Language" = "Language";
 "Theme" = "Theme";
@@ -89,6 +90,7 @@
 "Task submitted successfully." = "Task submitted successfully.";
 "Open Camp admin and sign in first." = "Open Camp admin and sign in first.";
 "The admin response was invalid." = "The admin response was invalid.";
+"The admin access Key is invalid." = "The admin access Key is invalid.";
 "The selected plugin could not be accessed." = "The selected plugin could not be accessed.";
 "Plugin installed. Restart the Agent to activate it." = "Plugin installed. Restart the Agent to activate it.";
 "All plugins are up to date." = "All plugins are up to date.";

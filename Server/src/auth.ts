@@ -22,6 +22,7 @@ const STATE_DURATION_MS = 10 * 60 * 1000;
 const DEFAULT_SESSION_CHECK_SECONDS = 5;
 
 export const ADMIN_PERMISSIONS = builtPermissionCatalog().map((item) => item.key);
+export const SYSTEM_ADMIN_PERMISSION = "system:admin";
 export type AdminPermission = string;
 
 const MODULE_PERMISSION_ALIASES = (() => {
@@ -187,7 +188,11 @@ export function hasPermission(
   permission: AdminPermission
 ): boolean {
   const permissions = sessionPermissions(session);
-  if (permissions.includes("*") || permissions.includes(permission)) return true;
+  if (
+    permissions.includes("*") ||
+    permissions.includes(SYSTEM_ADMIN_PERMISSION) ||
+    permissions.includes(permission)
+  ) return true;
   return (MODULE_PERMISSION_ALIASES.get(permission) ?? []).some((alias) =>
     permissions.includes(alias)
   );

@@ -68,6 +68,7 @@ export interface PermissionCatalogEntry {
 }
 
 export const CORE_PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
+  { key: "system:admin", label: "系统最高权限", pluginId: null, aliases: [] },
   { key: "demo:preview", label: "Demo · 全后台只读", pluginId: null, aliases: [] },
   { key: "admin:overview", label: "控制台", pluginId: null, aliases: ["task:run"] },
   { key: "admin:general", label: "基础设置", pluginId: null, aliases: ["config:write"] },

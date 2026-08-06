@@ -67,6 +67,7 @@
 "Agent ID" = "Agent 编号";
 "Agent token" = "Agent 令牌";
 "Local debug token" = "本地调试令牌";
+"Admin access Key (optional)" = "后台访问 Key（可选）";
 "Appearance" = "外观";
 "Language" = "语言";
 "Theme" = "主题";
@@ -89,6 +90,7 @@
 "Task submitted successfully." = "任务已成功提交。";
 "Open Camp admin and sign in first." = "请先打开营地管理后台并登录。";
 "The admin response was invalid." = "管理后台响应无效。";
+"The admin access Key is invalid." = "后台访问 Key 无效。";
 "The selected plugin could not be accessed." = "无法访问所选插件。";
 "Plugin installed. Restart the Agent to activate it." = "插件已安装，重新启动 Agent 后生效。";
 "All plugins are up to date." = "所有插件均为最新版本。";

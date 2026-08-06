@@ -57,9 +57,10 @@ try {
   profiles = normalizeProfiles(
     await capturePagedTable(
       context,
-      "member-profile-current",
+      "member-details",
       config.tables.members,
-      controller.signal
+      controller.signal,
+      { expectedCount: expectedProfiles }
     )
   );
   if (profiles.length !== expectedProfiles) {

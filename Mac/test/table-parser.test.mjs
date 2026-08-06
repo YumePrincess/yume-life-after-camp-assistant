@@ -2,8 +2,61 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   normalizeMembers,
-  normalizeProfiles
+  normalizeProfiles,
+  parseTable
 } from "../src/table-parser.mjs";
+
+test("member row slots merge stacked badges without creating a sixth member", () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0, right: 0.318, stackedKeys: ["name", "campTitle"] },
+      { key: "profession", left: 0.318, right: 0.46 }
+    ],
+    pagination: { rowHeightPx: 95 }
+  };
+  const observations = [
+    { text: "模型5号", x: 250, y: 300, width: 120, height: 36 },
+    { text: "启航", x: 250, y: 340, width: 80, height: 28 },
+    { text: "伐木专家", x: 700, y: 325, width: 120, height: 30 },
+    { text: "欲斩", x: 250, y: 395, width: 80, height: 36 },
+    { text: "启航", x: 250, y: 435, width: 80, height: 28 },
+    { text: "伐木专家", x: 700, y: 420, width: 120, height: 30 }
+  ];
+  assert.deepEqual(
+    parseTable(observations, definition).map(({ name, campTitle }) => ({ name, campTitle })),
+    [
+      { name: "模型5号", campTitle: "启航" },
+      { name: "欲斩", campTitle: "启航" }
+    ]
+  );
+});
+
+test("member identity column excludes text rendered inside the avatar", () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318, stackedKeys: ["name", "campTitle"] },
+      { key: "profession", left: 0.318, right: 0.46 }
+    ],
+    pagination: { rowHeightPx: 95 }
+  };
+  const observations = [
+    { text: "2025", x: 145, y: 315, width: 75, height: 32 },
+    { text: "雨梦", x: 275, y: 315, width: 70, height: 36 },
+    { text: "特级厨师", x: 700, y: 315, width: 130, height: 30 },
+    { text: "20251", x: 145, y: 410, width: 75, height: 32 },
+    { text: "青在", x: 275, y: 410, width: 70, height: 36 },
+    { text: "步枪兵王", x: 700, y: 410, width: 130, height: 30 }
+  ];
+
+  assert.deepEqual(
+    parseTable(observations, definition).map(({ name }) => name),
+    ["雨梦", "青在"]
+  );
+});
 
 test("similar member names are never fuzzy-merged", () => {
   const rows = normalizeMembers(

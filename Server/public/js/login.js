@@ -38,7 +38,9 @@
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      target.textContent = payload.error || "临时 Key 登录失败。";
+      target.textContent = window.MrzhI18n?.t
+        ? window.MrzhI18n.t(payload.error || "临时 Key 登录失败。")
+        : payload.error || "临时 Key 登录失败。";
       return;
     }
     location.replace(payload.returnTo || "/admin");

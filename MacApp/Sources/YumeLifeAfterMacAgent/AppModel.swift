@@ -9,6 +9,7 @@ final class AppModel: ObservableObject {
     @Published var plugins: [AgentPlugin] = []
     @Published var logText = ""
     @Published var logRunIdFilter: String?
+    @Published private(set) var latestRunId: String?
     @Published var isBusy = false
     @Published var statusMessage = ""
     @Published var alertMessage: String?
@@ -18,6 +19,7 @@ final class AppModel: ObservableObject {
     @Published var agentName: String
     @Published var agentToken: String
     @Published var debugToken: String
+    @Published var adminKey: String
     @Published var mumuInstanceName: String
     @Published var allowUnsignedPlugins: Bool
     @Published var language: String
@@ -51,12 +53,14 @@ final class AppModel: ObservableObject {
         // that approval belongs to a user-initiated credential action.
         agentToken = ""
         debugToken = ""
+        adminKey = ""
         mumuInstanceName = defaults.string(forKey: "mumuInstanceName") ?? "Life After CN Auto"
         allowUnsignedPlugins = defaults.bool(forKey: "allowUnsignedPlugins")
         language = defaults.string(forKey: "language") ?? Self.preferredLanguage()
         theme = AppTheme(rawValue: defaults.string(forKey: "theme") ?? "system") ?? .system
         setupCompleted = defaults.bool(forKey: "setupCompleted")
         logRunIdFilter = nil
+        latestRunId = nil
         isAppleSilicon = Self.platformIsAppleSilicon()
     }
 
@@ -83,10 +87,11 @@ final class AppModel: ObservableObject {
             if let credentials = try? await runtime.loadCredentials() {
                 agentToken = credentials.agentToken
                 debugToken = credentials.debugToken
+                adminKey = credentials.adminKey ?? ""
             }
         }
         catch { alertMessage = error.localizedDescription }
-        browser.load(baseURL: serverURL)
+        browser.load(baseURL: serverURL, adminKey: adminKey)
         await refreshAll()
         pollingTask?.cancel()
         pollingTask = Task { [weak self] in
@@ -108,7 +113,9 @@ final class AppModel: ObservableObject {
         } else {
             health = nil
         }
-        logText = await runtime.logs()
+        let refreshedLogs = await runtime.logs()
+        logText = refreshedLogs
+        latestRunId = Self.latestRunId(in: refreshedLogs) ?? latestRunId
     }
 
     var visibleLogText: String {
@@ -124,7 +131,7 @@ final class AppModel: ObservableObject {
     }
 
     func openCurrentTaskLogs() {
-        logRunIdFilter = health?.activeRunId
+        logRunIdFilter = health?.activeRunId ?? latestRunId
         selection = .logs
     }
 
@@ -227,7 +234,7 @@ final class AppModel: ObservableObject {
         }
         do {
             try await persistSettings()
-            browser.load(baseURL: serverURL)
+            browser.load(baseURL: serverURL, adminKey: adminKey)
             statusMessage = text("Settings saved")
         } catch { alertMessage = error.localizedDescription }
     }
@@ -236,6 +243,7 @@ final class AppModel: ObservableObject {
         if let credentials = try? await runtime.loadCredentials() {
             agentToken = credentials.agentToken
             debugToken = credentials.debugToken
+            adminKey = credentials.adminKey ?? ""
             statusMessage = text("Saved credentials loaded")
             return
         }
@@ -250,6 +258,7 @@ final class AppModel: ObservableObject {
         }
         agentToken = storedAgentToken
         debugToken = storedDebugToken
+        adminKey = ""
         statusMessage = text("Saved credentials loaded")
     }
 
@@ -285,7 +294,7 @@ final class AppModel: ObservableObject {
             _ = try await runtime.health(debugToken: debugToken)
             UserDefaults.standard.set(true, forKey: "setupCompleted")
             setupCompleted = true
-            browser.load(baseURL: serverURL)
+            browser.load(baseURL: serverURL, adminKey: adminKey)
             statusMessage = text("Setup completed")
             setupProgressMessage = ""
             await refreshAll()
@@ -302,6 +311,7 @@ final class AppModel: ObservableObject {
             agentName: agentName,
             agentToken: agentToken,
             debugToken: debugToken,
+            adminKey: adminKey,
             mumuInstanceName: mumuInstanceName,
             allowUnsignedLocalPlugins: allowUnsignedPlugins
         )
@@ -358,6 +368,19 @@ final class AppModel: ObservableObject {
         if preferred.hasPrefix("ja") { return "ja" }
         if preferred.hasPrefix("fr") { return "fr" }
         return "en"
+    }
+
+    private static func latestRunId(in logs: String) -> String? {
+        for line in logs.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+            let value = String(line)
+            let jsonText = value.split(separator: " ", maxSplits: 1).last.map(String.init) ?? value
+            guard let data = jsonText.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let runId = object["runId"] as? String,
+                  !runId.isEmpty else { continue }
+            return runId
+        }
+        return nil
     }
 
     private static func platformIsAppleSilicon() -> Bool {

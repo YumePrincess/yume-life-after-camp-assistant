@@ -569,14 +569,63 @@ export async function capturePagedTable(
   let previousRows = [];
   const pageNameAliases = new Map();
   let scannedPages = 0;
+  let tailFullPagePending = false;
+  let tailFullPageReason = null;
+  const memberPageRetries = new Map();
+  const hasFullPageDefinition =
+    memberDetailsMode && Boolean(definition.pagination?.fullPageRegion);
   const expectedCount = Number.isFinite(Number(options.expectedCount))
     ? Math.max(1, Number(options.expectedCount))
     : null;
-  for (let page = 0; page < definition.pagination.maxPages; page += 1) {
+  const memberRowsPerPage = Math.max(
+    1,
+    Number(definition.pagination.rowsPerPage) ||
+      Number(definition.pagination.minimumRowsPerPage) ||
+      1
+  );
+  const maxMemberPageRetries = Math.max(
+    1,
+    Number(definition.pagination.maxIncompletePageRetries) || 3
+  );
+  const expectedPageCount =
+    memberDetailsMode && expectedCount !== null
+      ? Math.max(1, Math.ceil(expectedCount / memberRowsPerPage))
+      : null;
+  const maxMemberPageCount =
+    expectedPageCount === null
+      ? null
+      : expectedPageCount + Math.max(
+          0,
+          Number(definition.pagination.maxExtraPagesAfterExpected) || 2
+        );
+  for (let page = 0; page < definition.pagination.maxPages; ) {
     scannedPages = page + 1;
+    const scheduledLastPage =
+      memberDetailsMode &&
+      expectedPageCount !== null &&
+      page + 1 === expectedPageCount;
+    const fullPageRead =
+      hasFullPageDefinition && (tailFullPagePending || scheduledLastPage);
+    const currentTailReason =
+      tailFullPageReason || (scheduledLastPage ? "scheduled-last" : null);
+    const pageDefinition = fullPageRead
+      ? memberFullPageDefinition(definition)
+      : definition;
+    tailFullPagePending = false;
+    tailFullPageReason = null;
     const pageStartedAt = Date.now();
     let frame;
     let rows = [];
+    let preparedFrame = null;
+    if (memberDetailsMode && page > 0 && !fullPageRead) {
+      preparedFrame = await alignMemberDetailsPage(
+        context,
+        `${label}-${page + 1}`,
+        pageDefinition,
+        page,
+        signal
+      );
+    }
     const minimumRowsPerPage = Math.max(
       1,
       Number(definition.pagination.minimumRowsPerPage) || 1
@@ -586,12 +635,15 @@ export async function capturePagedTable(
         readAttempt === 1
           ? `${label}-${page + 1}`
           : `${label}-${page + 1}-retry-${readAttempt}`;
-      const attemptFrame = await captureTableFrame(
-        context,
-        attemptLabel,
-        definition,
-        signal
-      );
+      const attemptFrame =
+        preparedFrame ||
+        (await captureTableFrame(
+          context,
+          attemptLabel,
+          pageDefinition,
+          signal
+        ));
+      preparedFrame = null;
       // The fast native parser is only available for definitions carrying
       // calibrated regions/columns. Test doubles and plugin-defined tables
       // may intentionally provide capture observations without that layout;
@@ -599,15 +651,21 @@ export async function capturePagedTable(
       // throwing while reading an undefined region.
       const canParseNative =
         Array.isArray(attemptFrame.observations) &&
-        definition.region &&
-        Array.isArray(definition.columns);
+        pageDefinition.region &&
+        Array.isArray(pageDefinition.columns);
       let attemptRows = canParseNative
-        ? parseTable(attemptFrame.observations, definition).filter(
+        ? parseTable(attemptFrame.observations, pageDefinition).filter(
             (row) =>
               row.name &&
-              !definition.headerPattern.some((value) => row.name.includes(value))
+              !pageDefinition.headerPattern.some((value) => row.name.includes(value))
           )
         : [];
+      if (memberDetailsMode) {
+        const visibleRows = fullPageRead
+          ? Number(pageDefinition.pagination.fullPageRows) || 7
+          : Number(definition.pagination.rowsPerPage) || 5;
+        attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
+      }
       const contributionNeedsRecovery =
         label.startsWith("member-contribution") &&
         attemptRows.length > 0 &&
@@ -625,11 +683,11 @@ export async function capturePagedTable(
           contributionNeedsRecovery) &&
         typeof vision.extractTableRows === "function"
       ) {
-        const recoveredRows = await vision.extractTableRows(
-          attemptFrame.path,
-          definition,
-          attemptLabel,
-          signal
+          const recoveredRows = await vision.extractTableRows(
+            attemptFrame.path,
+            pageDefinition,
+            attemptLabel,
+            signal
         ).catch(async (error) => {
           await report(
             "warning",
@@ -640,6 +698,12 @@ export async function capturePagedTable(
           return [];
         });
         attemptRows = mergeContributionRows(attemptRows, recoveredRows);
+        if (memberDetailsMode) {
+          const visibleRows = fullPageRead
+            ? Number(pageDefinition.pagination.fullPageRows) || 7
+            : Number(definition.pagination.rowsPerPage) || 5;
+          attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
+        }
       }
       if (!frame || attemptRows.length > rows.length) {
         frame = attemptFrame;
@@ -656,7 +720,7 @@ export async function capturePagedTable(
     rows = rows.filter(
       (row) =>
         row.name &&
-        !definition.headerPattern.some((value) => row.name.includes(value))
+        !pageDefinition.headerPattern.some((value) => row.name.includes(value))
     );
     if (memberDetailsMode) {
       // Member pages also overlap at the swipe boundary. Reconcile that one
@@ -694,7 +758,7 @@ export async function capturePagedTable(
     if (shouldRecoverMemberPage) {
       const recoveredRows = await vision.extractTableRows(
         frame.path,
-        definition,
+        pageDefinition,
         `${label}-${page + 1}-page-recovery`,
         signal,
         { forceMemberAdvisor: true }
@@ -710,7 +774,7 @@ export async function capturePagedTable(
       const reconciledRecovery = recoveredRows.filter(
         (row) =>
           row.name &&
-          !definition.headerPattern.some((value) =>
+          !pageDefinition.headerPattern.some((value) =>
             row.name.includes(value)
           )
       );
@@ -732,7 +796,10 @@ export async function capturePagedTable(
             recoveredNames: reconciledRecovery.map((row) => row.name)
           }
         );
-        rows = reconciledRecovery;
+        const visibleRows = fullPageRead
+          ? Number(pageDefinition.pagination.fullPageRows) || 7
+          : Number(definition.pagination.rowsPerPage) || 5;
+        rows = reconciledRecovery.slice(0, Math.max(1, visibleRows));
       } else {
         await report(
           "warning",
@@ -745,6 +812,32 @@ export async function capturePagedTable(
         );
       }
     }
+    if (memberDetailsMode && !fullPageRead && rows.length < memberRowsPerPage) {
+      const retryCount = (memberPageRetries.get(page) || 0) + 1;
+      if (retryCount <= maxMemberPageRetries) {
+        memberPageRetries.set(page, retryCount);
+        await report(
+          "warning",
+          "member_details_page_incomplete_retry",
+          `第 ${page + 1} 页只确认 ${rows.length}/${memberRowsPerPage} 行，保持当前位置重读，不推进到下一页（第 ${retryCount}/${maxMemberPageRetries} 次）`,
+          { page: page + 1, recognizedRows: rows.length, expectedRows: memberRowsPerPage }
+        );
+        continue;
+      }
+      if (hasFullPageDefinition) {
+        // A normal five-row crop may hide the final partial row. Re-read the
+        // same position with the expanded tail crop before deciding that this
+        // is the last page; do not swipe away from an incomplete page.
+        tailFullPagePending = true;
+        tailFullPageReason = "incomplete";
+        memberPageRetries.delete(page);
+        continue;
+      }
+      throw new Error(
+        `MEMBER_DETAILS_PAGE_INCOMPLETE: page ${page + 1} recognized ${rows.length}/${memberRowsPerPage} rows`
+      );
+    }
+    memberPageRetries.delete(page);
     options.observedParsedRows =
       (Number(options.observedParsedRows) || 0) + rows.length;
     let reachedActivityBoundary = false;
@@ -809,6 +902,54 @@ export async function capturePagedTable(
       scanProgress,
       options.progressRange?.step || `${label}_page`
     );
+    const organizedMemberCount =
+      memberDetailsMode && expectedCount !== null
+        ? reconcileMemberDetailRows([...byName.values()], expectedCount).length
+        : null;
+    const scheduledLastNeedsContinuation =
+      memberDetailsMode &&
+      currentTailReason === "scheduled-last" &&
+      expectedCount !== null &&
+      organizedMemberCount < expectedCount &&
+      page + 1 < maxMemberPageCount;
+    if (
+      memberDetailsMode &&
+      fullPageRead &&
+      (currentTailReason === "stagnant" ||
+        (currentTailReason === "incomplete" && rows.length < memberRowsPerPage) ||
+        (currentTailReason === "scheduled-last" && !scheduledLastNeedsContinuation))
+    ) {
+      await report(
+        "info",
+        "member_details_tail_complete",
+        `已按顶部 ${expectedCount} 名成员计算末页为第 ${expectedPageCount} 页，并整页读取末页；末页整理为 ${organizedMemberCount} 行，停止继续滚动`,
+        {
+          page: page + 1,
+          expectedPageCount,
+          maxMemberPageCount,
+          recognizedRows: rows.length,
+          recognized: byName.size,
+          organizedMemberCount,
+          expectedCount,
+          scheduledLastNeedsContinuation
+        }
+      );
+      break;
+    }
+    if (scheduledLastNeedsContinuation) {
+      await report(
+        "warning",
+        "member_details_expected_page_incomplete",
+        `预计末页第 ${expectedPageCount} 页整理出 ${organizedMemberCount}/${expectedCount} 名，继续向下补读（最多到第 ${maxMemberPageCount} 页）`,
+        {
+          page: page + 1,
+          expectedPageCount,
+          maxMemberPageCount,
+          organizedMemberCount,
+          expectedCount
+        }
+      );
+    }
     if (reachedActivityBoundary) {
       await report(
         "info",
@@ -847,23 +988,80 @@ export async function capturePagedTable(
     }
     stagnantPages =
       added === 0 || fingerprint === previousFingerprint ? stagnantPages + 1 : 0;
-    if (stagnantPages >= definition.pagination.stopAfterStagnantPages) break;
-    previousFingerprint = fingerprint;
-    previousRows = rows.map((row) => ({ ...row }));
-    if (page + 1 >= definition.pagination.maxPages) {
+    const repeatedMemberPage =
+      memberDetailsMode &&
+      page > 0 &&
+      !scheduledLastNeedsContinuation &&
+      (fingerprint === previousFingerprint ||
+        (added === 0 && rows.length >= memberRowsPerPage));
+    if (repeatedMemberPage && hasFullPageDefinition) {
+      // A repeated complete page means the five-row drag has reached the
+      // bottom and clamped. Re-read this same position once with the full
+      // tail crop, then stop; do not spend several more swipes on the same
+      // final page.
+      tailFullPagePending = true;
+      tailFullPageReason = "stagnant";
+      continue;
+    }
+    if (currentTailReason === "stagnant" && expectedCount !== null && byName.size >= expectedCount) {
       await report(
         "info",
-        `${label}_page_limit_reached`,
-        `已扫描配置上限 ${definition.pagination.maxPages} 页，不再继续翻页`
+        "member_details_tail_complete",
+        `已在末页整页重读后达到顶部报告的 ${expectedCount} 名成员，结束成员列表扫描`,
+        {
+          expectedCount,
+          recognized: byName.size,
+          page: page + 1
+        }
       );
       break;
     }
-    await adb.mouseSwipe(
-      definition.pagination.from,
-      definition.pagination.to,
-      definition.pagination.durationMs,
-      signal
-    );
+    if (stagnantPages >= definition.pagination.stopAfterStagnantPages) break;
+    previousFingerprint = fingerprint;
+    previousRows = rows.map((row) => ({ ...row }));
+    const memberPageLimitReached =
+      memberDetailsMode &&
+      maxMemberPageCount !== null &&
+      page + 1 >= maxMemberPageCount;
+    if (memberPageLimitReached || page + 1 >= definition.pagination.maxPages) {
+      await report(
+        "info",
+        `${label}_page_limit_reached`,
+        memberPageLimitReached
+          ? `已达到顶部人数计算末页 ${expectedPageCount} 页后的最多补读 ${maxMemberPageCount - expectedPageCount} 页（上限第 ${maxMemberPageCount} 页），不再继续翻页`
+          : `已扫描配置上限 ${definition.pagination.maxPages} 页，不再继续翻页`,
+        { expectedPageCount, maxMemberPageCount }
+      );
+      break;
+    }
+    const swipeFrom =
+      memberDetailsMode && page === 0 && definition.pagination.firstPageFrom
+        ? definition.pagination.firstPageFrom
+        : definition.pagination.from;
+    const swipeTo =
+      memberDetailsMode && page === 0 && definition.pagination.firstPageTo
+        ? definition.pagination.firstPageTo
+        : definition.pagination.to;
+    if (memberDetailsMode) {
+      // MuMu accelerates a single long mouse swipe near the endpoint. That
+      // can jump past one or more 95px rows. Send the same calibrated drag as
+      // small MOVE segments and release immediately at the exact 475px
+      // (5-row) endpoint so the next page starts on a row boundary.
+      await memberAlignmentSwipe(
+        adb,
+        swipeFrom,
+        swipeTo,
+        definition.pagination.durationMs,
+        signal
+      );
+    } else {
+      await adb.mouseSwipe(
+        swipeFrom,
+        swipeTo,
+        definition.pagination.durationMs,
+        signal
+      );
+    }
     const fixedPageSettle =
       label.startsWith("member-contribution") || label.startsWith("member-activity");
     const settleAfterSwipeMs = fixedPageSettle
@@ -874,6 +1072,7 @@ export async function capturePagedTable(
     } else {
       await ui.afterAction(signal);
     }
+    page += 1;
   }
   const rows = [...byName.values()];
   if (memberDetailsMode) {
@@ -895,6 +1094,252 @@ export async function capturePagedTable(
     return reconciled;
   }
   return rows;
+}
+
+async function alignMemberDetailsPage(
+  context,
+  label,
+  definition,
+  page,
+  signal
+) {
+  const { vision, adb, report } = context;
+  // Pixel-band alignment is a real-device enhancement. Keep the existing
+  // OCR-only path for lightweight test doubles and plugin-defined tables.
+  if (
+    !definition?.region ||
+    typeof vision?.probe !== "function" ||
+    typeof adb?.mouseSwipe !== "function"
+  ) {
+    return null;
+  }
+  let frame = await captureTableFrame(
+    context,
+    `${label}-alignment`,
+    definition,
+    signal
+  );
+  const pagination = definition.pagination || {};
+  const maxAdjustments = Math.max(
+    0,
+    Math.min(3, Number(pagination.maxRowAlignments) || 1)
+  );
+  for (let attempt = 1; attempt <= maxAdjustments; attempt += 1) {
+    const bands = await readMemberColorBands(
+      vision,
+      frame.path,
+      definition.region,
+      pagination,
+      signal
+    );
+    const adjustment = memberRowAlignmentAdjustment(
+      bands,
+      definition.region,
+      page,
+      pagination
+    );
+    if (!adjustment) return frame;
+    await report(
+      "info",
+      "member_details_row_alignment",
+      `第 ${page + 1} 页检测到${adjustment.reason}，顶部黑色总数条下边界到首行下边界实际显示 ${adjustment.visibleFirstHeight}px；按 95-${adjustment.visibleFirstHeight}=${adjustment.distance}px ${adjustment.direction === "up" ? "上移" : "下移"}，使首行完整对齐后再读取 5 行`,
+      {
+        page: page + 1,
+        attempt,
+        direction: adjustment.direction,
+        distance: adjustment.distance,
+        visibleFirstHeight: adjustment.visibleFirstHeight,
+        rowHeight: adjustment.rowHeight,
+        bands: bands.slice(0, 8)
+      }
+    );
+    await memberAlignmentSwipe(
+      adb,
+      { x: adjustment.x, y: adjustment.anchorY },
+      {
+        x: adjustment.x,
+        y:
+          adjustment.direction === "up"
+            ? adjustment.anchorY - adjustment.distance
+            : adjustment.anchorY + adjustment.distance
+      },
+      Math.max(800, Number(pagination.rowAlignmentDurationMs) || 1_000),
+      signal
+    );
+    await (context.sleep || delay)(
+      Math.max(500, Number(pagination.rowAlignmentSettleMs) || 1_000),
+      signal
+    );
+    frame = await captureTableFrame(
+      context,
+      `${label}-alignment-${attempt + 1}`,
+      definition,
+      signal
+    );
+  }
+  return frame;
+}
+
+async function memberAlignmentSwipe(adb, from, to, durationMs, signal) {
+  if (typeof adb.shell !== "function") {
+    await adb.mouseSwipe(from, to, durationMs, signal);
+    return;
+  }
+  const distance = Math.abs(Number(to.y) - Number(from.y));
+  const steps = Math.max(2, Math.ceil(distance / 10));
+  const intervalMs = Math.max(80, Math.round(durationMs / steps));
+  const shellMotion = async (action, y) => {
+    await adb.shell(
+      ["input", "mouse", "motionevent", action, Math.round(from.x), Math.round(y)],
+      { signal, timeoutMs: 5_000 }
+    );
+  };
+  await shellMotion("DOWN", from.y);
+  for (let step = 1; step <= steps; step += 1) {
+    await (delay)(intervalMs, signal);
+    const progress = step / steps;
+    await shellMotion("MOVE", from.y + (to.y - from.y) * progress);
+  }
+  await (delay)(intervalMs, signal);
+  await shellMotion("UP", to.y);
+}
+
+async function readMemberColorBands(
+  vision,
+  imagePath,
+  region,
+  pagination,
+  signal
+) {
+  if (!imagePath) return [];
+  const step = Math.max(5, Number(pagination.rowColorSampleStepPx) || 10);
+  // Use several columns and take the median. A single point can land on a
+  // profession/scene glyph and make a complete background band look clipped.
+  const sampleXFractions = [0.38, 0.52, 0.63, 0.75, 0.9];
+  const points = [];
+  for (let y = region.top + 5; y <= region.bottom - 5; y += step) {
+    for (const fraction of sampleXFractions) {
+      points.push({
+        x: Math.round(region.left + (region.right - region.left) * fraction),
+        y
+      });
+    }
+  }
+  let probes;
+  try {
+    probes = await vision.probe(imagePath, points, 6, signal);
+  } catch {
+    return [];
+  }
+  const ordered = (Array.isArray(probes) ? probes : [])
+    .map((probe) => ({
+      y: Number(probe?.y),
+      value: Number(
+        probe?.meanBlue ?? probe?.meanGreen ?? probe?.meanRed ?? 0
+      )
+    }))
+    .filter(
+      (probe) => Number.isFinite(probe.y) && Number.isFinite(probe.value)
+    )
+    .sort((left, right) => left.y - right.y);
+  if (!ordered.length) return [];
+  const threshold = Number.isFinite(Number(pagination.rowColorThreshold))
+    ? Number(pagination.rowColorThreshold)
+    : 0.3;
+  const byY = new Map();
+  for (const sample of ordered) {
+    const values = byY.get(sample.y) || [];
+    values.push(sample.value);
+    byY.set(sample.y, values);
+  }
+  const bands = [];
+  for (const [y, values] of byY) {
+    const kind = medianValue(values) >= threshold ? "light" : "dark";
+    const previous = bands.at(-1);
+    if (!previous || previous.kind !== kind) {
+      bands.push({ kind, start: y, end: y + step });
+    } else {
+      previous.end = y + step;
+    }
+  }
+  // The horizontal separator immediately below the column header can form a
+  // one-sample dark band before the first alternating row color. It is not a
+  // clipped member row; remove that artifact before measuring the first row.
+  while (
+    bands.length > 1 &&
+    bands[0].end - bands[0].start <= step * 2
+  ) {
+    bands.shift();
+  }
+  return bands.map((band) => ({
+    ...band,
+    length: Math.max(0, band.end - band.start)
+  }));
+}
+
+function memberRowAlignmentAdjustment(bands, region, page, pagination) {
+  if (!Array.isArray(bands) || bands.length < 2) return null;
+  const rowHeight = Math.max(1, Number(pagination.rowHeightPx) || 95);
+  const first = bands[0];
+  const next = bands[1];
+  const fullThreshold = rowHeight - 4;
+  const sampleStart = region.top + 5;
+  // A one-sample header separator may have been removed from the first band.
+  // Add that top gap back so the measured value is the actual visible height,
+  // not merely the number of classified color samples.
+  const visibleFirstHeight =
+    first.length + Math.max(0, first.start - sampleStart);
+  const anchorY = Math.round(
+    region.top + (region.bottom - region.top) * 0.42
+  );
+  if (visibleFirstHeight < fullThreshold && next.length >= rowHeight * 0.7) {
+    const distance = Math.max(1, Math.round(rowHeight - visibleFirstHeight));
+    // The top black member-count bar can cover the first row after a swipe.
+    // Move the list down by exactly the missing part so that row is complete;
+    // do this once per page because a second correction can skip a row.
+    return {
+      direction: "down",
+      distance,
+      visibleFirstHeight,
+      rowHeight,
+      anchorY,
+      x: Math.round(region.left + (region.right - region.left) * 0.94),
+      reason: "首行顶部被黑色人数条遮挡"
+    };
+  }
+  return null;
+}
+
+function medianValue(values) {
+  const sorted = values
+    .filter((value) => Number.isFinite(Number(value)))
+    .map(Number)
+    .sort((left, right) => left - right);
+  if (!sorted.length) return null;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.max(minimum, Math.min(maximum, Math.round(value)));
+}
+
+function memberFullPageDefinition(definition) {
+  const fullPageRegion = definition.pagination?.fullPageRegion;
+  if (!fullPageRegion) return definition;
+  return {
+    ...definition,
+    region: { ...fullPageRegion },
+    pagination: {
+      ...definition.pagination,
+      rowsPerPage: Math.max(
+        Number(definition.pagination.fullPageRows) || 0,
+        Number(definition.pagination.rowsPerPage) || 1
+      )
+    }
+  };
 }
 
 function mergeContributionRows(primary, recovered) {
@@ -1038,7 +1483,41 @@ function reconcileMemberDetailRows(rows, expectedCount = null) {
       )
       .slice(0, Number(expectedCount))
       .sort((left, right) => left.index - right.index);
-    return ranked.map(({ row }) => row);
+    const capped = ranked.map(({ row }) => row);
+    // Fuzzy OCR reconciliation must never turn an already complete raw
+    // roster into an under-count. If a pair was merged too aggressively,
+    // restore distinct raw candidates until the header count is satisfied;
+    // exact duplicate keys were already removed by the page map.
+    if (capped.length < Number(expectedCount) && rows.length >= Number(expectedCount)) {
+      const restored = [...capped];
+      const used = new Set(restored.map((row) => memberProfileNameKey(row.name)));
+      for (const row of rows) {
+        if (restored.length >= Number(expectedCount)) break;
+        const key = memberProfileNameKey(row.name);
+        if (!key || used.has(key)) continue;
+        restored.push(row);
+        used.add(key);
+      }
+      return restored.slice(0, Number(expectedCount));
+    }
+    return capped;
+  }
+  if (
+    expectedCount !== null &&
+    Number.isFinite(Number(expectedCount)) &&
+    rows.length >= Number(expectedCount) &&
+    reconciled.length < Number(expectedCount)
+  ) {
+    const restored = [...reconciled];
+    const used = new Set(restored.map((row) => memberProfileNameKey(row.name)));
+    for (const row of rows) {
+      if (restored.length >= Number(expectedCount)) break;
+      const key = memberProfileNameKey(row.name);
+      if (!key || used.has(key)) continue;
+      restored.push(row);
+      used.add(key);
+    }
+    return restored.slice(0, Number(expectedCount));
   }
   return reconciled;
 }
@@ -1171,12 +1650,24 @@ function similarMemberProfileName(left, right) {
   const rightLetters = rightName.match(/[\p{L}\p{N}]+/gu)?.join("") || "";
   // Keep intentional display-name decorations as distinct members.
   if (!leftLetters || leftLetters === rightLetters) return false;
+  // Equal-length names that differ by one Han character are valid distinct
+  // players far more often than they are OCR suffix variants (for example
+  // “天-行” and “天-者”). Never merge those names only because the profile
+  // fields happen to be identical on the same page.
+  if (Array.from(leftLetters).length === Array.from(rightLetters).length) {
+    return false;
+  }
   const minimumLength = Math.min(
     Array.from(leftLetters).length,
     Array.from(rightLetters).length
   );
   const maximumDistance = minimumLength >= 8 ? 2 : 1;
-  return memberNameDistance(leftLetters, rightLetters) <= maximumDistance;
+  const shorter = leftLetters.length <= rightLetters.length ? leftLetters : rightLetters;
+  const longer = leftLetters.length <= rightLetters.length ? rightLetters : leftLetters;
+  return (
+    longer.startsWith(shorter) &&
+    memberNameDistance(leftLetters, rightLetters) <= maximumDistance
+  );
 }
 
 function memberNameDistance(left, right) {

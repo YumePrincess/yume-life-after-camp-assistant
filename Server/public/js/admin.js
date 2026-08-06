@@ -133,7 +133,10 @@
       throw new Error("登录已失效");
     }
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+      const message = payload.error || `HTTP ${response.status}`;
+      throw new Error(window.MrzhI18n?.t ? window.MrzhI18n.t(message) : message);
+    }
     return payload;
   }
 
@@ -147,6 +150,7 @@
   function permissionName(value) {
     return state.bootstrap?.permissionCatalog?.find((item) => item.key === value)?.label || (
       {
+        "system:admin": "系统最高权限",
         "demo:preview": "Demo · 全后台只读",
         "admin:overview": "控制台",
         "admin:general": "基础设置",
@@ -182,6 +186,7 @@
     const permissions = state.bootstrap?.session?.permissions || [];
     return (
       permissions.includes("*") ||
+      permissions.includes("system:admin") ||
       permissions.includes(permission) ||
       permissionAliases(permission).some((alias) =>
         permissions.includes(alias)
@@ -360,14 +365,26 @@
       if (!root) continue;
       root.replaceChildren();
       for (const permission of catalog.filter((item) =>
-        item.key === "demo:preview" || item.key.startsWith("admin:") || item.key.startsWith("plugin:") || item.key === "technology-history:manage"
+        item.key === "system:admin" || item.key === "demo:preview" || item.key.startsWith("admin:") || item.key.startsWith("plugin:") || item.key === "technology-history:manage"
       )) {
         const label = create("label");
         const checkbox = create("input");
         checkbox.type = "checkbox";
         checkbox.name = name;
         checkbox.value = permission.key;
-        label.append(checkbox, create("span", "", permission.label));
+        checkbox.addEventListener("change", () => {
+          const siblings = [...root.querySelectorAll(`input[name="${name}"]`)];
+          if (checkbox.checked && checkbox.value === "system:admin") {
+            siblings.forEach((item) => { if (item !== checkbox) item.checked = false; });
+          } else if (checkbox.checked && checkbox.value !== "system:admin") {
+            const system = siblings.find((item) => item.value === "system:admin");
+            if (system) system.checked = false;
+          }
+        });
+        label.append(
+          checkbox,
+          create("span", "", window.MrzhI18n.t(permission.label || permission.key))
+        );
         root.append(label);
       }
     }
