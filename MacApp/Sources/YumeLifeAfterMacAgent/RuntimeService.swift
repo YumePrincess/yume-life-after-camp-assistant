@@ -286,6 +286,45 @@ actor RuntimeService {
                     changed = true
                 }
                 table["pagination"] = pagination
+                if tableName == "members" {
+                    // Member pagination is a calibrated device layout, not a
+                    // user preference. Older persistent configs used 700 ->
+                    // 350 (about four rows), while the current member parser
+                    // requires the existing calibrated 700 -> 225 movement.
+                    // Keep the persistent runtime in sync with the bundled
+                    // member definition on every App update.
+                    table["region"] = [
+                        "left": 115,
+                        "top": 285,
+                        "right": 1800,
+                        "bottom": 780
+                    ]
+                    pagination["from"] = ["x": 1700, "y": 700]
+                    pagination["to"] = ["x": 1700, "y": 225]
+                    pagination["firstPageFrom"] = ["x": 1700, "y": 700]
+                    pagination["firstPageTo"] = ["x": 1700, "y": 225]
+                    pagination["durationMs"] = 1000
+                    pagination["settleAfterSwipeMs"] = 2000
+                    pagination["rowsPerPage"] = 5
+                    pagination["minimumRowsPerPage"] = 5
+                    pagination["maxIncompletePageRetries"] = 3
+                    pagination["maxExtraPagesAfterExpected"] = 2
+                    pagination["fullPageRegion"] = [
+                        "left": 115,
+                        "top": 285,
+                        "right": 1800,
+                        "bottom": 810
+                    ]
+                    pagination["fullPageRows"] = 6
+                    pagination["maxRowAlignments"] = 1
+                    pagination["rowHeightPx"] = 95
+                    pagination["rowColorThreshold"] = 0.3
+                    pagination["rowColorSampleStepPx"] = 5
+                    pagination["rowAlignmentDurationMs"] = 1000
+                    pagination["rowAlignmentSettleMs"] = 2000
+                    table["pagination"] = pagination
+                    changed = true
+                }
                 tables[tableName] = table
             }
             object["tables"] = tables
