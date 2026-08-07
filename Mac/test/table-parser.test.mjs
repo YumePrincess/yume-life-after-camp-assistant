@@ -33,6 +33,32 @@ test("member row slots merge stacked badges without creating a sixth member", ()
   );
 });
 
+test("tail member crop skips the half-visible previous row", () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 810 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0, right: 0.318, stackedKeys: ["name"] },
+      { key: "profession", left: 0.318, right: 0.46 }
+    ],
+    pagination: {
+      rowHeightPx: 95,
+      skipLeadingPartialRows: true
+    }
+  };
+  const observations = [
+    { text: "上一页成员", x: 250, y: 275, width: 140, height: 30 },
+    { text: "成员一", x: 250, y: 320, width: 100, height: 36 },
+    { text: "步枪兵王", x: 700, y: 320, width: 120, height: 30 },
+    { text: "成员二", x: 250, y: 415, width: 100, height: 36 },
+    { text: "伐木专家", x: 700, y: 415, width: 120, height: 30 }
+  ];
+  assert.deepEqual(
+    parseTable(observations, definition).map(({ name }) => name),
+    ["成员一", "成员二"]
+  );
+});
+
 test("member identity column excludes text rendered inside the avatar", () => {
   const definition = {
     region: { left: 115, top: 285, right: 1800, bottom: 780 },

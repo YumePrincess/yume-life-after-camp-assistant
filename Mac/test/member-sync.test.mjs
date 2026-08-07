@@ -90,7 +90,7 @@ test("contribution and inactivity scans wait three seconds after paging and stop
       right: 1800,
       bottom: 810
     });
-    assert.equal(config.tables.members.pagination.fullPageRows, 6);
+    assert.equal(config.tables.members.pagination.fullPageRows, 5);
     assert.deepEqual(
       config.flows.resetMemberPanelForRescan.map((action) => action.op),
       ["clickText", "waitAnyText", "clickText", "waitAnyText"]
@@ -368,7 +368,7 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
           rowsPerPage: definition.pagination.rowsPerPage
         });
         if (definition.region.bottom === 810) {
-          return Array.from({ length: 6 }, (_, index) => ({ name: `成员${index + 11}` }));
+          return Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 12}` }));
         }
         const page = Number(label.match(/-(\d+)(?:-retry|$)/)?.[1] || 1);
         return pages[Math.min(page - 1, pages.length - 1)];
@@ -395,7 +395,7 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
         minimumRowsPerPage: 1,
         stopAfterStagnantPages: 3,
         fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
-        fullPageRows: 6,
+        fullPageRows: 5,
         from: { x: 1700, y: 700 },
         to: { x: 1700, y: 225 },
         firstPageFrom: { x: 1700, y: 700 },
@@ -424,7 +424,7 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
       { bottom: 780, rowsPerPage: 5 },
       { bottom: 780, rowsPerPage: 5 },
       { bottom: 780, rowsPerPage: 5 },
-      { bottom: 810, rowsPerPage: 6 }
+      { bottom: 810, rowsPerPage: 5 }
     ]
   );
 });
@@ -479,7 +479,7 @@ test("incomplete calculated tail keeps both continuation pages in full-page mode
         stopAfterStagnantPages: 10,
         maxExtraPagesAfterExpected: 2,
         fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
-        fullPageRows: 6,
+        fullPageRows: 5,
         from: { x: 1700, y: 700 },
         to: { x: 1700, y: 225 },
         firstPageFrom: { x: 1700, y: 700 },
@@ -495,15 +495,82 @@ test("incomplete calculated tail keeps both continuation pages in full-page mode
     definitions.map(({ bottom, rowsPerPage }) => ({ bottom, rowsPerPage })),
     [
       { bottom: 780, rowsPerPage: 5 },
-      { bottom: 810, rowsPerPage: 6 },
-      { bottom: 810, rowsPerPage: 6 },
-      { bottom: 810, rowsPerPage: 6 }
+      { bottom: 810, rowsPerPage: 5 },
+      { bottom: 810, rowsPerPage: 5 },
+      { bottom: 810, rowsPerPage: 5 }
     ]
   );
   assert.deepEqual(
     swipes.map(({ durationMs }) => durationMs),
     [700, 700, 700]
   );
+});
+
+test("tail recovery keeps a valid native row when the advisor drops it", async () => {
+  const recoveryCalls = [];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        if (label.includes("page-recovery")) {
+          recoveryCalls.push(label);
+          return [
+            { name: "送你颗星星" },
+            { name: "长乐未央" },
+            { name: "是你吻开笔墨" },
+            { name: "可见一斑" }
+          ];
+        }
+        if (definition.region.bottom === 810) {
+          return [
+            { name: "长乐未央" },
+            { name: "长乐未央" },
+            { name: "是你吻开笔墨" },
+            { name: "Orange" },
+            { name: "可见一斑" }
+          ];
+        }
+        return Array.from({ length: 5 }, (_, index) => ({
+          name: `成员${index + 1}`
+        }));
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: { async afterAction() {} },
+    async report() {}
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 10,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 3,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 5,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 10 }
+  );
+  assert.equal(rows.length, 10);
+  assert.deepEqual(
+    rows.slice(5).map((row) => row.name),
+    ["送你颗星星", "长乐未央", "是你吻开笔墨", "可见一斑", "Orange"]
+  );
+  assert.equal(recoveryCalls.length, 1);
 });
 
 test("member profile scan allows at most two pages after an incomplete calculated tail", async () => {

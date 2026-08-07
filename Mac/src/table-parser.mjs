@@ -39,8 +39,11 @@ export function parseTable(observations, definition) {
     leftPx: region.left + width * column.left,
     rightPx: region.left + width * column.right
   }));
-  return rows
-    .sort((a, b) => a.y - b.y)
+  const orderedRows = rows.sort((a, b) => a.y - b.y);
+  const rowsWithoutLeadingPartial = definition.pagination?.skipLeadingPartialRows
+    ? orderedRows.filter((row) => row.slot === null || row.slot >= 0)
+    : orderedRows;
+  return rowsWithoutLeadingPartial
     .map((row) => {
       const output = Object.fromEntries(bounds.map((column) => [column.key, []]));
       for (const item of row.items.sort((a, b) => a.x - b.x)) {

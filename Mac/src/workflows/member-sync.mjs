@@ -795,28 +795,50 @@ export async function capturePagedTable(
             row.name.includes(value)
           )
       );
+      const visibleRows = fullPageRead
+        ? Number(pageDefinition.pagination.fullPageRows) || 7
+        : Number(definition.pagination.rowsPerPage) || 5;
       const originalNovelty = pageNovelMemberCount(rows, byName);
       const recoveredNovelty = pageNovelMemberCount(
         reconciledRecovery,
         byName
       );
+      // The forced member advisor can correct a duplicated OCR name while
+      // omitting another valid row (the live failure was a tail page where
+      // it returned four rows and dropped Orange). For the calculated tail,
+      // combine the stronger recovery candidates with the original native
+      // candidates instead of rejecting the recovery solely because it has
+      // fewer raw rows. The expanded tail crop already excludes the sticky
+      // current-player row at the bottom of the page.
+      const recoveryCandidates = fullPageRead
+        ? mergeMemberRecoveryCandidates(
+            reconciledRecovery,
+            rows,
+            Math.max(1, visibleRows)
+          )
+        : reconciledRecovery;
+      const recoveryCandidateNovelty = pageNovelMemberCount(
+        recoveryCandidates,
+        byName
+      );
+      const shouldUseRecovery = fullPageRead
+        ? recoveryCandidateNovelty > originalNovelty
+        : reconciledRecovery.length >= rows.length &&
+          recoveredNovelty > originalNovelty;
       if (
-        reconciledRecovery.length >= rows.length &&
-        recoveredNovelty > originalNovelty
+        shouldUseRecovery
       ) {
         await report(
           "info",
           "member_details_page_recovered",
-          `第 ${page + 1} 页强化重读恢复了 ${recoveredNovelty - originalNovelty} 名新的成员候选`,
+          `第 ${page + 1} 页强化重读恢复了 ${recoveryCandidateNovelty - originalNovelty} 名新的成员候选`,
           {
             beforeNames: rows.map((row) => row.name),
-            recoveredNames: reconciledRecovery.map((row) => row.name)
+            recoveredNames: recoveryCandidates.map((row) => row.name),
+            rawRecoveredNames: reconciledRecovery.map((row) => row.name)
           }
         );
-        const visibleRows = fullPageRead
-          ? Number(pageDefinition.pagination.fullPageRows) || 7
-          : Number(definition.pagination.rowsPerPage) || 5;
-        rows = reconciledRecovery.slice(0, Math.max(1, visibleRows));
+        rows = recoveryCandidates.slice(0, Math.max(1, visibleRows));
       } else {
         await report(
           "warning",
@@ -824,7 +846,8 @@ export async function capturePagedTable(
           `第 ${page + 1} 页强化重读未能安全增加唯一成员，继续翻页或执行整页重扫`,
           {
             names: rows.map((row) => row.name),
-            recoveredNames: reconciledRecovery.map((row) => row.name)
+            recoveredNames: recoveryCandidates.map((row) => row.name),
+            rawRecoveredNames: reconciledRecovery.map((row) => row.name)
           }
         );
       }
@@ -1403,6 +1426,11 @@ function memberFullPageDefinition(definition) {
     region: { ...fullPageRegion },
     pagination: {
       ...definition.pagination,
+      // The tail crop begins immediately below the black member-count bar.
+      // Its first visible band is the lower half of the previous row; it is
+      // never a new member and must be discarded before taking the five full
+      // rows that follow it.
+      skipLeadingPartialRows: true,
       rowsPerPage: Math.max(
         Number(definition.pagination.fullPageRows) || 0,
         Number(definition.pagination.rowsPerPage) || 1
@@ -1647,6 +1675,23 @@ function pageNovelMemberCount(rows, byName) {
     added += 1;
   }
   return added;
+}
+
+function mergeMemberRecoveryCandidates(recoveredRows, originalRows, limit) {
+  const merged = [];
+  const seen = new Set();
+  const add = (row) => {
+    const key = memberProfileNameKey(row?.name);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push(row);
+  };
+  for (const row of recoveredRows) add(row);
+  for (const row of originalRows) {
+    if (merged.length >= limit) break;
+    add(row);
+  }
+  return merged.slice(0, limit);
 }
 
 function memberProfileNameKey(value) {

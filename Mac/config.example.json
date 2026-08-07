@@ -375,7 +375,7 @@
         "maxIncompletePageRetries": 3,
         "maxExtraPagesAfterExpected": 2,
         "fullPageRegion": { "left": 115, "top": 285, "right": 1800, "bottom": 810 },
-        "fullPageRows": 6,
+        "fullPageRows": 5,
         "maxRowAlignments": 1,
         "rowHeightPx": 95,
         "rowColorThreshold": 0.3,
