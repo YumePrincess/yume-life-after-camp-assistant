@@ -563,7 +563,62 @@ export async function deleteTechnologyVoteHistory(
   return result.meta.changes ?? 0;
 }
 
-export async function listMembers(env: Env, limit = 200): Promise<Record<string, unknown>[]> {
+const MEMBER_PROFILE_SNAPSHOT_SETTING = "member_profile_snapshot";
+
+type MemberProfileSnapshotRow = {
+  id: string;
+  name: string;
+  profession: string | null;
+  manor_level: number | null;
+  roommate_name: string | null;
+  camp_title: string | null;
+  weekly_contribution: number;
+  technology_points_used: number;
+  material_contribution: number;
+  last_seen_at: string;
+};
+
+async function readMemberProfileSnapshot(
+  env: Env
+): Promise<MemberProfileSnapshotRow[] | null> {
+  const row = await env.DB.prepare(
+    "SELECT value FROM settings WHERE key = ?"
+  )
+    .bind(MEMBER_PROFILE_SNAPSHOT_SETTING)
+    .first<{ value: string }>();
+  if (!row?.value) return null;
+  try {
+    const value = JSON.parse(row.value) as unknown;
+    if (!Array.isArray(value)) return null;
+    return value.filter(
+      (item): item is MemberProfileSnapshotRow =>
+        Boolean(item) && typeof item === "object" &&
+        typeof (item as Record<string, unknown>).id === "string" &&
+        typeof (item as Record<string, unknown>).name === "string"
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function writeMemberProfileSnapshot(
+  env: Env,
+  rows: MemberProfileSnapshotRow[]
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET
+       value = excluded.value,
+       updated_at = excluded.updated_at`
+  )
+    .bind(MEMBER_PROFILE_SNAPSHOT_SETTING, JSON.stringify(rows), isoNow())
+    .run();
+}
+
+async function listStoredMembers(
+  env: Env,
+  limit = 200
+): Promise<Record<string, unknown>[]> {
   const result = await env.DB.prepare(
     `SELECT id, name, profession, manor_level, roommate_name, camp_title,
             weekly_contribution, technology_points_used, material_contribution,
@@ -575,6 +630,39 @@ export async function listMembers(env: Env, limit = 200): Promise<Record<string,
     .bind(limit)
     .all<Record<string, unknown>>();
   return result.results;
+}
+
+export async function listMembers(env: Env, limit = 200): Promise<Record<string, unknown>[]> {
+  const snapshot = await readMemberProfileSnapshot(env);
+  if (snapshot === null) return listStoredMembers(env, limit);
+
+  // Profile snapshots are authoritative for the member count and names. Live
+  // contribution values are overlaid from the legacy member rows so a profile
+  // refresh never erases values collected by the contribution task.
+  const stored = await listStoredMembers(env, Math.max(limit, snapshot.length));
+  const storedByName = new Map(
+    stored.map((member) => [String(member.name || ""), member])
+  );
+  return snapshot
+    .map((profile) => {
+      const live = storedByName.get(profile.name);
+      return {
+        ...profile,
+        weekly_contribution:
+          live?.weekly_contribution ?? profile.weekly_contribution,
+        technology_points_used:
+          live?.technology_points_used ?? profile.technology_points_used,
+        material_contribution:
+          live?.material_contribution ?? profile.material_contribution
+      };
+    })
+    .sort(
+      (left, right) =>
+        Number(right.weekly_contribution || 0) -
+          Number(left.weekly_contribution || 0) ||
+        String(left.name).localeCompare(String(right.name))
+    )
+    .slice(0, limit);
 }
 
 export async function listActivityWarnings(
@@ -692,6 +780,21 @@ export async function replaceMemberSnapshot(
     await env.DB.prepare(
       "DELETE FROM members WHERE source_run_id IS NULL OR source_run_id <> ?"
     ).bind(input.runId).run();
+    await writeMemberProfileSnapshot(
+      env,
+      input.members.map((member, index) => ({
+        id: `profile_${input.runId}_${index}`,
+        name: member.name,
+        profession: member.profession,
+        manor_level: member.manorLevel,
+        roommate_name: member.roommateName,
+        camp_title: member.campTitle,
+        weekly_contribution: member.weeklyContribution,
+        technology_points_used: member.technologyPointsUsed,
+        material_contribution: member.materialContribution,
+        last_seen_at: input.capturedAt
+      }))
+    );
   }
 }
 
@@ -708,14 +811,14 @@ export async function updateContributionSnapshot(
     }>;
   }
 ): Promise<ContributionReconciliation> {
-  const current = await env.DB.prepare(
-    "SELECT name, weekly_contribution FROM members ORDER BY name"
-  ).all<{ name: string; weekly_contribution: number }>();
+  // The profile snapshot is the authoritative roster. Contributions enrich
+  // those rows only; this path never creates a member record.
+  const current = await listMembers(env);
   const reconciliation = reconcileContributionMembers(
     input.members,
-    current.results.map((member) => ({
-      name: member.name,
-      weeklyContribution: member.weekly_contribution
+    current.map((member) => ({
+      name: String(member.name || ""),
+      weeklyContribution: Number(member.weekly_contribution) || 0
     }))
   );
   const statements = reconciliation.updates.map((member) =>
@@ -735,6 +838,28 @@ export async function updateContributionSnapshot(
     )
   );
   if (statements.length) await env.DB.batch(statements);
+
+  const snapshot = await readMemberProfileSnapshot(env);
+  if (snapshot !== null && reconciliation.updates.length) {
+    const updatesByName = new Map(
+      reconciliation.updates.map((member) => [member.name, member])
+    );
+    await writeMemberProfileSnapshot(
+      env,
+      snapshot.map((profile) => {
+        const update = updatesByName.get(profile.name);
+        return update
+          ? {
+              ...profile,
+              weekly_contribution: update.weeklyContribution,
+              technology_points_used: update.technologyPointsUsed,
+              material_contribution: update.materialContribution,
+              last_seen_at: input.capturedAt
+            }
+          : profile;
+      })
+    );
+  }
   return reconciliation;
 }
 
@@ -1029,6 +1154,21 @@ export async function updateMemberProfiles(
     await env.DB.prepare(
       "DELETE FROM members WHERE source_run_id IS NULL OR source_run_id <> ?"
     ).bind(input.runId).run();
+    await writeMemberProfileSnapshot(
+      env,
+      input.members.map((member, index) => ({
+        id: `profile_${input.runId}_${index}`,
+        name: member.name,
+        profession: member.profession,
+        manor_level: member.manorLevel,
+        roommate_name: member.roommateName,
+        camp_title: member.campTitle,
+        weekly_contribution: member.weeklyContribution,
+        technology_points_used: 0,
+        material_contribution: 0,
+        last_seen_at: input.capturedAt
+      }))
+    );
   }
 }
 
@@ -1043,6 +1183,14 @@ export async function removeCurrentMembers(
     await env.DB.prepare(
       `DELETE FROM members WHERE name IN (${placeholders})`
     ).bind(...batch).run();
+  }
+  const snapshot = await readMemberProfileSnapshot(env);
+  if (snapshot !== null) {
+    const removed = new Set(names);
+    await writeMemberProfileSnapshot(
+      env,
+      snapshot.filter((member) => !removed.has(member.name))
+    );
   }
 }
 

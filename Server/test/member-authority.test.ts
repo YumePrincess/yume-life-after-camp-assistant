@@ -73,6 +73,11 @@ describe("authoritative member profile snapshot", () => {
     expect(cleanup).toBeDefined();
     expect(cleanup?.args).toEqual(["profile-run-latest"]);
     expect(cleanup?.run).toHaveBeenCalledOnce();
+    const authoritativeSnapshot = recorder.prepared.find((statement) =>
+      statement.sql.includes("INSERT INTO settings")
+    );
+    expect(authoritativeSnapshot?.args[0]).toBe("member_profile_snapshot");
+    expect(JSON.parse(String(authoritativeSnapshot?.args[1]))).toHaveLength(1);
   });
 
   it("does not erase the roster when a profile scan has no usable rows", async () => {
