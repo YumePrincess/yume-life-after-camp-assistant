@@ -987,6 +987,13 @@ export async function updateMemberProfiles(
     }>;
   }
 ): Promise<void> {
+  // The Agent has already scanned, reconciled, and de-duplicated the member
+  // table. Do not use the display name as the server-side reconciliation key:
+  // OCR-safe names can contain symbols and visually similar variants, and a
+  // name conflict here would silently reduce the accepted snapshot. The
+  // stable ID is derived from the exact name submitted by the Agent, so this
+  // path accepts the authoritative payload as-is and only updates the row
+  // belonging to that exact submitted identity.
   const statements: D1PreparedStatement[] = [];
   for (const member of input.members) {
     const memberId = await stableMemberId(member.name);
@@ -996,7 +1003,8 @@ export async function updateMemberProfiles(
            id, name, profession, manor_level, roommate_name, camp_title,
            weekly_contribution, last_seen_at, source_run_id
          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
            profession = excluded.profession,
            manor_level = excluded.manor_level,
            roommate_name = excluded.roommate_name,

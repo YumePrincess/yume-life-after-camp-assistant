@@ -62,6 +62,8 @@ describe("authoritative member profile snapshot", () => {
     const upsert = recorder.prepared.find((statement) =>
       statement.sql.includes("INSERT INTO members")
     );
+    expect(upsert?.sql).toContain("ON CONFLICT(id) DO UPDATE SET");
+    expect(upsert?.sql).not.toContain("ON CONFLICT(name)");
     expect(upsert?.sql).not.toContain(
       "weekly_contribution = excluded.weekly_contribution"
     );
