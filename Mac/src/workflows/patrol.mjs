@@ -3,7 +3,33 @@ import { clockMinutes, reached, zonedClock } from "../clock.mjs";
 import { updateWorkflowProgress } from "./progress.mjs";
 
 export async function runPatrol(context, command, bundle, signal) {
+  try {
+    return await runPatrolWorkflow(context, command, bundle, signal);
+  } catch (error) {
+    if (
+      !signal?.aborted &&
+      !context.suppressScheduledRetry &&
+      context.patrolTeamPhase &&
+      context.patrolTeamPhase !== "precreate"
+    ) {
+      await cleanupPatrolTeamOnFailure(context, signal, error).catch(
+        async (cleanupError) => {
+          await context.report(
+            "warning",
+            "patrol_failure_team_cleanup_failed",
+            "巡逻任务失败后的离队清理未完成；保留原始失败原因，不覆盖任务错误",
+            { reason: cleanupError.message }
+          );
+        }
+      );
+    }
+    throw error;
+  }
+}
+
+async function runPatrolWorkflow(context, command, bundle, signal) {
   const { ui, vision, report } = context;
+  context.patrolTeamPhase = "precreate";
   const patrol = bundle.automationConfig.tasks.patrol;
   const timezone = bundle.automationConfig.timezone;
   const campName = String(bundle.campConfig?.campName || "").trim();
@@ -17,7 +43,9 @@ export async function runPatrol(context, command, bundle, signal) {
   await updateWorkflowProgress(context, 0.08, "patrol_notice_board");
   await ui.executeFlow("teleportNoticeBoard", {}, signal);
   await updateWorkflowProgress(context, 0.13, "patrol_team_create");
+  context.patrolTeamPhase = "creating";
   await createPatrolTeam(context, signal);
+  context.patrolTeamPhase = "created";
   await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
   await updateWorkflowProgress(context, 0.18, "patrol_team_share");
   await sharePatrolTeam(context, signal);
@@ -144,6 +172,111 @@ export async function runPatrol(context, command, bundle, signal) {
   await updateWorkflowProgress(context, 0.97, "patrol_cleanup");
   await report("info", "patrol_done", "已到巡逻任务结束时间");
   await closePatrolPanelBeforeExit(context, signal);
+}
+
+export async function cleanupPatrolTeamOnFailure(context, signal, failure) {
+  if (context.patrolFailureCleanupDone || signal?.aborted) return false;
+  context.patrolFailureCleanupDone = true;
+  const { ui, vision, report } = context;
+  const controls = context.config?.patrolTeamUi || {};
+  const sleep = context.sleep || delay;
+  let screen = await capturePatrolScreen(
+    vision,
+    "patrol-failure-team-panel-check",
+    signal
+  );
+  let panelVisible = patrolTeamPanelVisible(
+    vision,
+    screen.observations,
+    context.config
+  );
+  if (!panelVisible && context.patrolTeamPhase !== "precreate") {
+    await report(
+      "warning",
+      "patrol_failure_team_reopen",
+      "巡逻任务失败后未看到队伍页面；尝试重新进入队伍页面以执行“离开队伍”清理",
+      { reason: failure?.message || "unknown" }
+    );
+    try {
+      await ui.executeFlow("openTeamPanel", {}, signal);
+      await sleep(1_500, signal);
+      screen = await capturePatrolScreen(
+        vision,
+        "patrol-failure-team-panel-after-reopen",
+        signal
+      );
+      panelVisible = patrolTeamPanelVisible(
+        vision,
+        screen.observations,
+        context.config
+      );
+    } catch (error) {
+      await report(
+        "warning",
+        "patrol_failure_team_reopen_unverified",
+        "巡逻失败后的队伍页面重新打开未确认；不盲点离队按钮",
+        { reason: error.message }
+      );
+    }
+  }
+  const leaveMatch = findTextInRegion(
+    vision,
+    screen.observations,
+    "离开队伍",
+    controls.leaveTeamTextRegion || {
+      left: 0,
+      top: 0,
+      right: 1920,
+      bottom: 1200
+    }
+  );
+  if (!leaveMatch) {
+    await report(
+      "warning",
+      "patrol_failure_team_leave_unverified",
+      panelVisible
+        ? "巡逻任务失败后已在队伍页面，但未 OCR 确认红色“离开队伍”按钮；不盲点离队"
+        : "巡逻任务失败后未 OCR 确认队伍页面及“离开队伍”按钮；跳过离队清理",
+      { reason: failure?.message || "unknown" }
+    );
+    return false;
+  }
+  const leavePoint = observationCenter(leaveMatch);
+  await report(
+    "warning",
+    "patrol_failure_team_leave",
+    "巡逻任务失败；已 OCR 确认队伍页面的“离开队伍”按钮，正在点击清理队伍状态",
+    { leavePoint }
+  );
+  await tapPatrolMouse(ui, leavePoint, signal);
+  await sleep(1_500, signal);
+  const after = await capturePatrolScreen(
+    vision,
+    "patrol-failure-team-after-leave",
+    signal
+  );
+  const stillVisible = findTextInRegion(
+    vision,
+    after.observations,
+    "离开队伍",
+    controls.leaveTeamTextRegion || {
+      left: 0,
+      top: 0,
+      right: 1920,
+      bottom: 1200
+    }
+  );
+  await report(
+    stillVisible ? "warning" : "info",
+    stillVisible
+      ? "patrol_failure_team_leave_unverified"
+      : "patrol_failure_team_left",
+    stillVisible
+      ? "点击“离开队伍”后仍识别到该按钮，离队状态未确认"
+      : "巡逻失败后的队伍清理完成，已确认“离开队伍”按钮消失",
+    { leavePoint }
+  );
+  return !stillVisible;
 }
 
 export async function startHardPatrolWithRetry(context, signal) {

@@ -112,6 +112,35 @@ test("C icon background contamination is not treated as yellow", async () => {
   assert.equal(await vision.gameMouseCIconLit(), false);
 });
 
+test("member table OCR starts at the identity column and excludes avatar artwork", async () => {
+  const vision = new Vision({
+    adb: { screenWidth: 1920, screenHeight: 1200 },
+    vision: { mode: "fast", memberTableTimeoutSeconds: 2 },
+    localVisionModel: { enabled: false }
+  }, {});
+  let ocrRegion = null;
+  vision.captureSource = async () => ({ path: "/private/tmp/member-table.png" });
+  vision.ocrRegion = async (_path, region) => {
+    ocrRegion = region;
+    return [];
+  };
+
+  const frame = await vision.captureTable("member-details", {
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ]
+  });
+
+  assert.equal(frame.path, "/private/tmp/member-table.png");
+  assert.equal(ocrRegion.left, 249.8);
+  assert.equal(ocrRegion.right, 1800);
+});
+
 test("member identity keeps the first OCR line as the player name", () => {
   assert.deepEqual(
     inferMemberIdentity([

@@ -1149,56 +1149,82 @@ export class GameUi {
       };
     };
 
-    await this.report(
-      "info",
-      "patrol_close_team_panel_once",
-      "巡逻队伍满员；只点击一次队伍页左下角返回箭头，等待 5 秒后确认 HUD，避免重复点击误开营地聊天"
+    const maxAttempts = Math.max(
+      1,
+      Math.min(6, Number(action.maxAttempts) || 6)
     );
-    await this.tapAction(action, signal);
-    await delay(Math.max(5_000, Number(action.settleAfterClickMs) || 5_000), signal);
-
-    let screen = await inspect("patrol-close-team-panel-after-wait");
-    const chatOpen = Boolean(screen.collapse) || screen.chatMatches.length >= 2;
-    if (chatOpen) {
+    const settleAfterClickMs = Math.max(
+      5_000,
+      Number(action.settleAfterClickMs) || 5_000
+    );
+    let screen = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       await this.report(
-        "warning",
-        "patrol_close_team_chat_detected",
-        screen.collapse
-          ? "关闭队伍时误打开了营地聊天；先点击 OCR 识别到的“收起”关闭聊天，再重新确认 HUD 和交互选项"
-          : "关闭队伍后识别到营地聊天但未读到“收起”；点击右下角校准的收起位置关闭聊天，再重新确认 HUD 和交互选项"
+        attempt === 1 ? "info" : "warning",
+        attempt === 1
+          ? "patrol_close_team_panel_once"
+          : "patrol_close_team_panel_retry",
+        attempt === 1
+          ? "巡逻队伍满员；点击一次队伍页左下角返回箭头，等待 5 秒后确认 HUD"
+          : `点击后仍识别到队伍面板且未确认 HUD；重试点击队伍页左下角返回箭头（第 ${attempt}/${maxAttempts} 次），每次等待 5 秒`
       );
-      const collapsePoint = screen.collapse
-        ? center(screen.collapse)
-        : action.collapsePoint || { x: 1740, y: 1110 };
-      await this.tapAction({ ...collapsePoint, hud: true }, signal);
-      await delay(
-        Math.max(1_000, Number(action.collapseSettleMs) || 1_500),
-        signal
-      );
-      screen = await inspect("patrol-close-team-panel-after-chat-collapse");
-    }
+      await this.tapAction(action, signal);
+      await delay(settleAfterClickMs, signal);
 
-    if (screen.collapse || screen.chatMatches.length >= 2) {
-      throw new Error(
-        "PATROL_CLOSE_TEAM_CHAT_DID_NOT_CLOSE: 已尝试点击收起，但仍识别到营地聊天界面"
+      screen = await inspect(
+        attempt === 1
+          ? "patrol-close-team-panel-after-wait"
+          : `patrol-close-team-panel-after-retry-${attempt}`
       );
-    }
-    if (screen.panelMatches.length > 0) {
-      if (screen.hudMatches.length < minimumHudTexts) {
-        throw new Error(
-          "PATROL_CLOSE_TEAM_PANEL_DID_NOT_CLOSE: 一次点击并等待后仍识别到队伍面板，且未确认 HUD；停止以避免重复点击"
+      const chatOpen = Boolean(screen.collapse) || screen.chatMatches.length >= 2;
+      if (chatOpen) {
+        await this.report(
+          "warning",
+          "patrol_close_team_chat_detected",
+          screen.collapse
+            ? "关闭队伍时误打开了营地聊天；先点击 OCR 识别到的“收起”关闭聊天，再重新确认 HUD 和交互选项"
+            : "关闭队伍后识别到营地聊天但未读到“收起”；点击右下角校准的收起位置关闭聊天，再重新确认 HUD 和交互选项"
+        );
+        const collapsePoint = screen.collapse
+          ? center(screen.collapse)
+          : action.collapsePoint || { x: 1740, y: 1110 };
+        await this.tapAction({ ...collapsePoint, hud: true }, signal);
+        await delay(
+          Math.max(1_000, Number(action.collapseSettleMs) || 1_500),
+          signal
+        );
+        screen = await inspect(
+          attempt === 1
+            ? "patrol-close-team-panel-after-chat-collapse"
+            : `patrol-close-team-panel-after-chat-collapse-${attempt}`
         );
       }
-      await this.report(
-        "warning",
-        "patrol_close_team_panel_text_stale",
-        "队伍面板关闭后 OCR 仍残留“调整/离开队伍”文字，但 HUD 已确认且右下角没有“收起”；按已关闭处理，不重复点击"
-      );
-    }
-    if (screen.hudMatches.length < minimumHudTexts) {
-      throw new Error(
-        `PATROL_CLOSE_TEAM_HUD_UNVERIFIED: 关闭队伍后仅识别到 ${screen.hudMatches.length} 个 HUD 锚点，至少需要 ${minimumHudTexts} 个`
-      );
+
+      if (screen.collapse || screen.chatMatches.length >= 2) {
+        throw new Error(
+          "PATROL_CLOSE_TEAM_CHAT_DID_NOT_CLOSE: 已尝试点击收起，但仍识别到营地聊天界面"
+        );
+      }
+      if (screen.panelMatches.length > 0) {
+        if (screen.hudMatches.length >= minimumHudTexts) {
+          await this.report(
+            "warning",
+            "patrol_close_team_panel_text_stale",
+            "队伍面板关闭后 OCR 仍残留“调整/离开队伍”文字，但 HUD 已确认且右下角没有“收起”；按已关闭处理，不重复点击"
+          );
+          break;
+        }
+        if (attempt < maxAttempts) continue;
+        throw new Error(
+          `PATROL_CLOSE_TEAM_PANEL_DID_NOT_CLOSE: 点击返回并等待后仍识别到队伍面板，且未确认 HUD；已重试 ${maxAttempts} 次`
+        );
+      }
+      if (screen.hudMatches.length >= minimumHudTexts) break;
+      if (attempt >= maxAttempts) {
+        throw new Error(
+          `PATROL_CLOSE_TEAM_HUD_UNVERIFIED: 关闭队伍后仅识别到 ${screen.hudMatches.length} 个 HUD 锚点，至少需要 ${minimumHudTexts} 个；已重试 ${maxAttempts} 次`
+        );
+      }
     }
     await this.report(
       "info",

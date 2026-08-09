@@ -1066,6 +1066,31 @@ test("patrol team close accepts stale leave-team OCR when HUD is already visible
   );
 });
 
+test("patrol team close retries the return arrow when the panel remains without HUD", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("调整", 80, 40)],
+      [observation("调整", 80, 40)],
+      [observation("综合", 40, 1080), observation("世界", 110, 1080)]
+    ]
+  });
+
+  await fixture.ui.closePatrolTeamPanelBeforeAccept({
+    x: 74,
+    y: 1110,
+    hud: true,
+    settleAfterClickMs: 1,
+    collapseSettleMs: 1,
+    maxAttempts: 6
+  });
+
+  assert.ok(fixture.taps.length >= 2 && fixture.taps.length <= 6);
+  assert.ok(fixture.taps.every((point) => point.x === 74 && point.y === 1110));
+  assert.ok(
+    fixture.messages.some((message) => message.includes("重试点击队伍页左下角返回箭头"))
+  );
+});
+
 test("patrol result exit uses the calibrated HUD return arrow until bottom HUD anchors appear", async () => {
   const fixture = createUi({
     fastFrames: [
@@ -1395,6 +1420,7 @@ test("patrol acceptance uses the guarded close flow with a five-second settle", 
         hudTexts: ["综合", "世界", "场景", "营地", "队伍"],
         hudRegion: { left: 0, top: 930, right: 760, bottom: 1200 },
         minimumHudTexts: 2,
+        maxAttempts: 6,
         collapseText: "收起",
         collapseRegion: { left: 1450, top: 850, right: 1900, bottom: 1150 },
         collapsePoint: { x: 1740, y: 1110 },

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   closePatrolPanelBeforeExit,
+  cleanupPatrolTeamOnFailure,
   createPatrolTeam,
   patrolTeamIsFull,
   removeFirstPatrolMemberOutsideCamp,
@@ -187,6 +188,56 @@ test("patrol deadline continues to center cleanup when final panel OCR is stale"
   await closePatrolPanelBeforeExit(context);
 
   assert.ok(reports.includes("patrol_deadline_panel_close_unverified_continue"));
+});
+
+test("patrol failures leave an existing team through the OCR-confirmed red button", async () => {
+  const taps = [];
+  const reports = [];
+  let captures = 0;
+  const context = {
+    patrolTeamPhase: "created",
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async executeFlow() {
+        throw new Error("team page should already be visible");
+      }
+    },
+    vision: {
+      async capture() {
+        captures += 1;
+        return {
+          path: "failure-team.png",
+          observations: captures === 1
+            ? [observation("离开队伍", 1500, 1080)]
+            : []
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report(_level, step) {
+      reports.push(step);
+    },
+    async sleep() {}
+  };
+
+  assert.equal(
+    await cleanupPatrolTeamOnFailure(
+      context,
+      undefined,
+      new Error("PATROL_TEAM_MENU_DID_NOT_OPEN")
+    ),
+    true
+  );
+  assert.deepEqual(taps, [{ x: 1570, y: 1100 }]);
+  assert.ok(reports.includes("patrol_failure_team_leave"));
+  assert.ok(reports.includes("patrol_failure_team_left"));
 });
 
 test("patrol team creation follows only region-verified live-device steps", async () => {

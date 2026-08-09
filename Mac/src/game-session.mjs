@@ -783,7 +783,22 @@ export async function waitForGameReady(context, signal) {
       await report(
         "info",
         "game_ready_probe",
-        `HUD 探测：频道锚点=${channelSummary}；频道高精度OCR=${probeSummary}；阻塞=${blockSummary}；登录等待=${postLoginWaitSatisfied ? "完成" : "未完成"}；加载静默=${loadingQuietSatisfied ? "完成" : "未完成"}；连续帧=${readyStreak}；OCR状态=${healthSummary}；本轮=${Date.now() - loopStartedAt}ms`
+        `HUD 探测：频道锚点=${channelSummary}；频道高精度OCR=${probeSummary}；阻塞=${blockSummary}；登录等待=${postLoginWaitSatisfied ? "完成" : "未完成"}；加载静默=${loadingQuietSatisfied ? "完成" : "未完成"}；连续帧=${readyStreak}；OCR状态=${healthSummary}；本轮=${Date.now() - loopStartedAt}ms`,
+        {
+          recognizedTexts: frame.observations
+            .map((item) => String(item?.text || "").trim())
+            .filter(Boolean)
+            .slice(0, 120),
+          channelMatches: channelReadyMatches.map((item) => item.text),
+          accurateChannelTexts: channelProbe.texts?.slice(0, 80) || [],
+          accurateChannelMatches: channelProbe.matches || [],
+          readyTexts: readyMatches.map((item) => item.text),
+          blockingTexts: blockingMatches,
+          loadingProgressVisible,
+          readyStreak,
+          postLoginWaitSatisfied,
+          loadingQuietSatisfied
+        }
       );
     }
     if (

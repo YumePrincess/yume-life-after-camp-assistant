@@ -572,6 +572,7 @@ export async function capturePagedTable(
   let tailFullPagePending = false;
   let tailFullPageReason = null;
   const memberPageRetries = new Map();
+  let memberPageHadExactCollision = false;
   const hasFullPageDefinition =
     memberDetailsMode && Boolean(definition.pagination?.fullPageRegion);
   const expectedCount = Number.isFinite(Number(options.expectedCount))
@@ -599,6 +600,7 @@ export async function capturePagedTable(
           Number(definition.pagination.maxExtraPagesAfterExpected) || 2
         );
   for (let page = 0; page < definition.pagination.maxPages; ) {
+    memberPageHadExactCollision = false;
     scannedPages = page + 1;
     const scheduledLastPage =
       memberDetailsMode &&
@@ -676,10 +678,16 @@ export async function capturePagedTable(
           )
         : [];
       if (memberDetailsMode) {
-        const visibleRows = fullPageRead
-          ? Number(pageDefinition.pagination.fullPageRows) || 7
-          : Number(definition.pagination.rowsPerPage) || 5;
-        attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
+        // The member OCR crop deliberately starts at the identity-column
+        // boundary, but keep this guard here as well for older/plugin vision
+        // providers that may still return a token from the avatar area.  It
+        // must run before the visible-row slice; otherwise an avatar token
+        // can consume one of the five slots and hide the real member below it.
+        attemptRows = filterMemberDetailRows(attemptRows);
+        if (!fullPageRead) {
+          const visibleRows = Number(definition.pagination.rowsPerPage) || 5;
+          attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
+        }
       }
       const contributionNeedsRecovery =
         label.startsWith("member-contribution") &&
@@ -714,10 +722,11 @@ export async function capturePagedTable(
         });
         attemptRows = mergeContributionRows(attemptRows, recoveredRows);
         if (memberDetailsMode) {
-          const visibleRows = fullPageRead
-            ? Number(pageDefinition.pagination.fullPageRows) || 7
-            : Number(definition.pagination.rowsPerPage) || 5;
-          attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
+          attemptRows = filterMemberDetailRows(attemptRows);
+          if (!fullPageRead) {
+            const visibleRows = Number(definition.pagination.rowsPerPage) || 5;
+            attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
+          }
         }
       }
       if (!frame || attemptRows.length > rows.length) {
@@ -744,12 +753,21 @@ export async function capturePagedTable(
       // Only the calculated tail and its continuation pages are allowed to
       // reconcile OCR variants because those pages are read as one expanded
       // end-page crop and may legitimately contain a repeated final row.
-      const rawRows = rows;
+      const rawRows = filterMemberDetailRows(rows);
+      memberPageHadExactCollision = hasSuspiciousMemberCollision(
+        rawRows,
+        byName
+      );
+      // Exact OCR duplicates are not separate members.  Collapse them before
+      // counting/adding the page, while retaining the collision signal above
+      // so the row-by-row advisor recovery can still correct a bad read.
+      rows = collapseExactMemberDetailRows(rawRows);
       if (fullPageRead || !hasFullPageDefinition) {
-        rows = applyPageNameAliases(rawRows, pageNameAliases);
+        const sourceRows = rows;
+        rows = applyPageNameAliases(rows, pageNameAliases);
         rows = reconcilePageRows(previousRows, rows);
-        for (let index = 0; index < Math.min(rawRows.length, rows.length); index += 1) {
-          const sourceKey = memberProfileNameKey(rawRows[index]?.name);
+        for (let index = 0; index < Math.min(sourceRows.length, rows.length); index += 1) {
+          const sourceKey = memberProfileNameKey(sourceRows[index]?.name);
           const canonicalName = String(rows[index]?.name || "").trim();
           if (
             sourceKey &&
@@ -768,7 +786,11 @@ export async function capturePagedTable(
       memberDetailsMode &&
       frame?.path &&
       (rows.length < minimumRowsPerPage ||
+        memberPageHadExactCollision ||
         hasSuspiciousMemberCollision(rows, byName) ||
+        (fullPageRead &&
+          memberPageNovelty < rows.length &&
+          rows.length >= memberRowsPerPage) ||
         (expectedCount !== null &&
           byName.size < expectedCount &&
           memberPageNovelty === 0));
@@ -788,12 +810,14 @@ export async function capturePagedTable(
         );
         return [];
       });
-      const reconciledRecovery = recoveredRows.filter(
-        (row) =>
-          row.name &&
-          !pageDefinition.headerPattern.some((value) =>
-            row.name.includes(value)
-          )
+      const reconciledRecovery = collapseExactMemberDetailRows(
+        filterMemberDetailRows(recoveredRows).filter(
+          (row) =>
+            row.name &&
+            !pageDefinition.headerPattern.some((value) =>
+              row.name.includes(value)
+            )
+        )
       );
       const visibleRows = fullPageRead
         ? Number(pageDefinition.pagination.fullPageRows) || 7
@@ -811,10 +835,11 @@ export async function capturePagedTable(
       // fewer raw rows. The expanded tail crop already excludes the sticky
       // current-player row at the bottom of the page.
       const recoveryCandidates = fullPageRead
-        ? mergeMemberRecoveryCandidates(
+          ? mergeMemberRecoveryCandidates(
             reconciledRecovery,
             rows,
-            Math.max(1, visibleRows)
+            Math.max(1, visibleRows),
+            byName
           )
         : reconciledRecovery;
       const recoveryCandidateNovelty = pageNovelMemberCount(
@@ -822,7 +847,9 @@ export async function capturePagedTable(
         byName
       );
       const shouldUseRecovery = fullPageRead
-        ? recoveryCandidateNovelty > originalNovelty
+        ? recoveryCandidateNovelty > originalNovelty ||
+          (memberPageNovelty < rows.length &&
+            recoveryCandidates.length >= rows.length)
         : reconciledRecovery.length >= rows.length &&
           recoveredNovelty > originalNovelty;
       if (
@@ -895,23 +922,11 @@ export async function capturePagedTable(
     const fingerprint = rows.map((row) => row.name).join("|");
     let added = 0;
     let rejectedAfterExpectedCount = 0;
-    for (const [rowIndex, row] of rows.entries()) {
+    for (const row of rows) {
       const baseRowKey = memberDetailsMode
         ? memberProfileNameKey(row.name)
         : row.name;
-      let rowKey = baseRowKey;
-      // A normal five-row page is not allowed to lose a row merely because
-      // fast OCR returned the same spelling twice (the classic example is
-      // avatar text such as “2025”). Preserve the row under a page-local
-      // collision key and let the expanded tail pass do the only permitted
-      // end-page deduplication.
-      if (memberDetailsMode && hasFullPageDefinition && !fullPageRead && rowKey) {
-        let collision = 0;
-        while (byName.has(rowKey)) {
-          collision += 1;
-          rowKey = `${baseRowKey}\u0000normal-page-${page + 1}-row-${rowIndex}-${collision}`;
-        }
-      }
+      const rowKey = baseRowKey;
       if (!rowKey) continue;
       const current = byName.get(rowKey) || {};
       if (
@@ -1431,12 +1446,44 @@ function memberFullPageDefinition(definition) {
       // never a new member and must be discarded before taking the five full
       // rows that follow it.
       skipLeadingPartialRows: true,
-      rowsPerPage: Math.max(
-        Number(definition.pagination.fullPageRows) || 0,
-        Number(definition.pagination.rowsPerPage) || 1
-      )
+      // `fullPageRows` is the maximum number of rows returned from the
+      // expanded crop; keep the calibrated row spacing/count for anchor
+      // inference so a missing online-state OCR token is not redistributed
+      // across the larger crop.
+      rowsPerPage: Number(definition.pagination.rowsPerPage) || 1
     }
   };
+}
+
+function isMemberAvatarArtifact(value) {
+  const text = String(value || "")
+    .trim()
+    .normalize("NFKC")
+    .replace(/\s+/g, "");
+  // The avatar artwork carries a printed 2025/20251-style year marker.  It
+  // is outside the identity column in the calibrated crop, but this guard is
+  // also required for legacy/plugin OCR providers that still return it.
+  return /^2025\d*$/u.test(text);
+}
+
+function filterMemberDetailRows(rows) {
+  return (rows || []).filter(
+    (row) => row?.name && !isMemberAvatarArtifact(row.name)
+  );
+}
+
+function collapseExactMemberDetailRows(rows) {
+  const byName = new Map();
+  for (const row of rows || []) {
+    const key = memberProfileNameKey(row?.name);
+    if (!key) continue;
+    const previous = byName.get(key);
+    byName.set(
+      key,
+      previous ? mergeMemberProfileRows(previous, row) : { ...row }
+    );
+  }
+  return [...byName.values()];
 }
 
 function mergeContributionRows(primary, recovered) {
@@ -1677,17 +1724,41 @@ function pageNovelMemberCount(rows, byName) {
   return added;
 }
 
-function mergeMemberRecoveryCandidates(recoveredRows, originalRows, limit) {
+function mergeMemberRecoveryCandidates(
+  recoveredRows,
+  originalRows,
+  limit,
+  existingMembers = null
+) {
   const merged = [];
   const seen = new Set();
+  const existing =
+    existingMembers instanceof Map
+      ? new Set(existingMembers.keys())
+      : new Set(
+          (existingMembers || [])
+            .map((row) => memberProfileNameKey(row?.name || row))
+            .filter(Boolean)
+        );
   const add = (row) => {
     const key = memberProfileNameKey(row?.name);
     if (!key || seen.has(key)) return;
     seen.add(key);
     merged.push(row);
   };
-  for (const row of recoveredRows) add(row);
-  for (const row of originalRows) {
+  // The tail can contain a sticky copy of the current player.  If the
+  // advisor returns the missing row but lists already-known rows first,
+  // adding recovered rows in source order can fill the limit before the
+  // native-only candidates are considered.  Prefer candidates that are new
+  // to the roster, then retain the strongest recovered/native row for any
+  // remaining slots.
+  const candidates = [...(recoveredRows || []), ...(originalRows || [])];
+  candidates.sort((left, right) => {
+    const leftNovel = existing.has(memberProfileNameKey(left?.name)) ? 0 : 1;
+    const rightNovel = existing.has(memberProfileNameKey(right?.name)) ? 0 : 1;
+    return rightNovel - leftNovel;
+  });
+  for (const row of candidates) {
     if (merged.length >= limit) break;
     add(row);
   }

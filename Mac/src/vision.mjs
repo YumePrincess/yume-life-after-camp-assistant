@@ -8,6 +8,38 @@ import { parseTable } from "./table-parser.mjs";
 
 export { isPlausibleMemberName } from "./member-name.mjs";
 
+function isMemberDetailsDefinition(definition) {
+  const keys = new Set(
+    (definition?.columns || []).map((column) => column?.key)
+  );
+  return [
+    "identity",
+    "profession",
+    "manorLevel",
+    "onlineState",
+    "roommateName"
+  ].every((key) => keys.has(key));
+}
+
+function memberDetailsOcrRegion(definition) {
+  const region = definition?.region || {};
+  const width = Math.max(1, Number(region.right) - Number(region.left));
+  const identity = (definition?.columns || []).find(
+    (column) => column?.key === "identity"
+  );
+  const identityLeft = Number.isFinite(Number(identity?.left))
+    ? Number(identity.left)
+    : 0;
+  const left = Math.max(
+    Number(region.left) || 0,
+    Math.min(
+      Number(region.right) || Number(region.left) || 0,
+      (Number(region.left) || 0) + width * identityLeft
+    )
+  );
+  return { ...region, left };
+}
+
 export class Vision {
   constructor(config, adb) {
     this.config = config;
@@ -121,6 +153,35 @@ export class Vision {
     const minimumConfidence = Number.isFinite(configuredMinimum)
       ? Math.max(0.1, Math.min(0.6, configuredMinimum))
       : 0.25;
+    if (isMemberDetailsDefinition(definition)) {
+      // Do not run the table OCR over the avatar column.  Avatar artwork has
+      // printed year marks such as 2025, and a full-screen OCR pass can turn
+      // those marks into fake member names before the table parser gets a
+      // chance to apply the identity-column bounds.
+      const frame = await this.captureSource(label, signal);
+      let observations = [];
+      try {
+        observations = await this.ocrRegion(
+          frame.path,
+          memberDetailsOcrRegion(definition),
+          `${label}-table-values`,
+          signal,
+          this.config.vision.mode,
+          minimumConfidence,
+          1,
+          Math.max(
+            1,
+            Number(this.config.vision?.memberTableTimeoutSeconds) || 2
+          )
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        // Keep the source frame for the advisor recovery path; the caller's
+        // existing empty-page/retry handling decides whether to reread it.
+        observations = [];
+      }
+      return { path: frame.path, observations };
+    }
     return this.#capture(label, signal, false, this.config.vision.mode, {
       minimumConfidence
     });
@@ -535,7 +596,7 @@ export class Vision {
       : 0.3;
     let observations = await this.ocrRegion(
       imagePath,
-      definition.region,
+      memberDetailsOcrRegion(definition),
       `${label}-values`,
       signal,
       "accurate",
@@ -646,7 +707,7 @@ export class Vision {
       await this.#cropImage(
         imagePath,
         {
-          left: region.left,
+          left: memberDetailsOcrRegion(definition).left,
           top: cropTop,
           right: region.right,
           bottom: cropBottom

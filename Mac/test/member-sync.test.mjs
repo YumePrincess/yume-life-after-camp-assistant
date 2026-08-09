@@ -90,7 +90,7 @@ test("contribution and inactivity scans wait three seconds after paging and stop
       right: 1800,
       bottom: 810
     });
-    assert.equal(config.tables.members.pagination.fullPageRows, 5);
+    assert.equal(config.tables.members.pagination.fullPageRows, 7);
     assert.deepEqual(
       config.flows.resetMemberPanelForRescan.map((action) => action.op),
       ["clickText", "waitAnyText", "clickText", "waitAnyText"]
@@ -424,6 +424,7 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
       { bottom: 780, rowsPerPage: 5 },
       { bottom: 780, rowsPerPage: 5 },
       { bottom: 780, rowsPerPage: 5 },
+      { bottom: 810, rowsPerPage: 5 },
       { bottom: 810, rowsPerPage: 5 }
     ]
   );
@@ -479,7 +480,7 @@ test("incomplete calculated tail keeps both continuation pages in full-page mode
         stopAfterStagnantPages: 10,
         maxExtraPagesAfterExpected: 2,
         fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
-        fullPageRows: 5,
+        fullPageRows: 7,
         from: { x: 1700, y: 700 },
         to: { x: 1700, y: 225 },
         firstPageFrom: { x: 1700, y: 700 },
@@ -797,6 +798,69 @@ test("member profiles keep names that differ by decorative symbols", async () =>
 
   assert.equal(rows.length, 5);
   assert.equal(rows[0].name, "#愿✨");
+});
+
+test("member scans discard avatar year text and collapse exact duplicate rows", async () => {
+  const recoveryLabels = [];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, _definition, label) {
+        if (label.includes("page-recovery")) {
+          recoveryLabels.push(label);
+          return [
+            { name: "成员一" },
+            { name: "成员二" },
+            { name: "成员三" },
+            { name: "成员四" },
+            { name: "成员五" }
+          ];
+        }
+        return [
+          { name: "成员一" },
+          { name: "成员二" },
+          { name: "成员三" },
+          { name: "成员三" },
+          { name: "2025" },
+          { name: "成员四" },
+          { name: "成员五" }
+        ];
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: { async afterAction() {} },
+    async report() {}
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 1,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 1,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 7
+      }
+    },
+    undefined,
+    { expectedCount: 5 }
+  );
+
+  assert.deepEqual(rows.map((row) => row.name), [
+    "成员一",
+    "成员二",
+    "成员三",
+    "成员四",
+    "成员五"
+  ]);
+  assert.equal(recoveryLabels.length, 1);
 });
 
 test("conflicting data under the same OCR name triggers strengthened name recovery", async () => {

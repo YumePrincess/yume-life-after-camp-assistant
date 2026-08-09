@@ -315,7 +315,7 @@ actor RuntimeService {
                         "right": 1800,
                         "bottom": 810
                     ]
-                    pagination["fullPageRows"] = 6
+                    pagination["fullPageRows"] = 7
                     pagination["maxRowAlignments"] = 1
                     pagination["rowHeightPx"] = 95
                     pagination["rowColorThreshold"] = 0.3
@@ -470,7 +470,8 @@ actor RuntimeService {
                 "chatTexts": ["营地频道", "成员", "私聊", "萌芽邀约", "聊天室"],
                 "chatRegion": ["left": 1200, "top": 100, "right": 1900, "bottom": 1150],
                 "settleAfterClickMs": 5000,
-                "collapseSettleMs": 1500
+                "collapseSettleMs": 1500,
+                "maxAttempts": 6
             ]]
             changed = true
         }

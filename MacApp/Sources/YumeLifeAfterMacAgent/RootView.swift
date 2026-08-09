@@ -336,15 +336,15 @@ struct LogsView: View {
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                             .id("bottom")
                     } else {
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(model.visibleLogLines.enumerated()), id: \.offset) { item in
-                                Text(item.element)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            Color.clear.frame(height: 1).id("bottom")
-                        }
+                        // Keep the complete visible log in one selectable text
+                        // view.  Making each line its own Text limits macOS
+                        // selection/copy to one event, which is especially
+                        // inconvenient when copying a multi-line OCR trace.
+                        Text(verbatim: model.visibleLogText)
+                            .font(.system(size: 12, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .id("bottom")
                     }
                 }
                 .glassPanel(radius: 20, padding: 16)
