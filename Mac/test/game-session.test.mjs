@@ -74,6 +74,21 @@ test("stable HUD sends the game-mouse key once after login, not before it", asyn
   assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
 });
 
+test("login without a stable world HUD stops at the post-login hard timeout", async () => {
+  const fixture = createFixture([["登录游戏"]]);
+  fixture.context.config.timeouts.postLoginHudTimeoutSeconds = 1;
+
+  await assert.rejects(
+    waitForGameReady(fixture.context),
+    /Timed out waiting for world HUD after login for 1s/
+  );
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("点击金色登录按钮后 1 秒仍未识别到")
+    )
+  );
+});
+
 test("pre-login fallback uses Android touch and never GameUi.tap", async () => {
   const fixture = createFixture([["登录游戏"], ["背包"]]);
   const touchTaps = [];

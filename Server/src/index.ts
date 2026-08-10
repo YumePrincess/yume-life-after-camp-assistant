@@ -1341,7 +1341,15 @@ async function handleAdminApi(
   if (eventMatch && method === "GET") {
     const runId = eventMatch[1];
     if (!runId) return problem("Run not found", 404);
-    return json({ events: await listRunEvents(env, runId) });
+    const url = new URL(request.url);
+    const afterId = Number(url.searchParams.get("afterId"));
+    const limit = Number(url.searchParams.get("limit"));
+    return json({
+      ...(await listRunEvents(env, runId, {
+        ...(Number.isInteger(afterId) && afterId > 0 ? { afterId } : {}),
+        ...(Number.isInteger(limit) && limit > 0 ? { limit } : {})
+      }))
+    });
   }
   return problem("Not found", 404, "not_found");
 }

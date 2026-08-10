@@ -7,8 +7,15 @@ import {
   patrolTeamIsFull,
   removeFirstPatrolMemberOutsideCamp,
   sharePatrolTeam,
-  startHardPatrolWithRetry
+  startHardPatrolWithRetry,
+  dailyDeadlineAt
 } from "../src/workflows/patrol.mjs";
+
+test("patrol daily deadline is resolved in the configured timezone", () => {
+  const now = new Date("2026-08-10T09:00:00.000Z");
+  const deadline = dailyDeadlineAt("Asia/Shanghai", "16:00", now);
+  assert.equal(deadline, Date.parse("2026-08-10T08:00:00.000Z"));
+});
 
 test("hard patrol acceptance retries the complete flow while the route list remains visible", async () => {
   let flowAttempts = 0;

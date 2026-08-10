@@ -16,6 +16,7 @@ import {
   validatePublicOverview,
   validateTechnologyConfig
 } from "./validate";
+import { zonedDateKey, zonedDateTimeToIso } from "./time";
 
 function isoNow(): string {
   return new Date().toISOString();
@@ -1181,6 +1182,52 @@ export async function getRun(env: Env, runId: string): Promise<TaskRun | null> {
     .first<TaskRun>();
 }
 
+export async function findActiveRunForAgent(
+  env: Env,
+  agentId: string,
+  excludeRunId?: string,
+  includeQueued = true
+): Promise<TaskRun | null> {
+  const stateClause = includeQueued
+    ? "task_runs.state IN ('queued', 'claimed', 'running', 'cancelling')"
+    : "task_runs.state IN ('claimed', 'running', 'cancelling')";
+  const result = await env.DB.prepare(
+    `SELECT task_runs.*
+     FROM task_runs
+     JOIN command_queue ON command_queue.run_id = task_runs.id
+     WHERE command_queue.agent_id = ?
+       AND command_queue.type = 'run_task'
+       AND ${stateClause}
+       AND (? IS NULL OR task_runs.id <> ?)
+     ORDER BY task_runs.created_at ASC
+     LIMIT 1`
+  )
+    .bind(agentId, excludeRunId ?? null, excludeRunId ?? null)
+    .first<TaskRun>();
+  return result ?? null;
+}
+
+export async function listQueueGuardRuns(
+  env: Env,
+  agentId: string
+): Promise<TaskRun[]> {
+  const result = await env.DB.prepare(
+    `SELECT task_runs.*
+     FROM task_runs
+     JOIN command_queue ON command_queue.run_id = task_runs.id
+     WHERE command_queue.agent_id = ?
+       AND command_queue.type = 'run_task'
+       AND command_queue.state = 'queued'
+       AND task_runs.trigger_mode = 'scheduled'
+       AND task_runs.state = 'queued'
+       AND json_extract(task_runs.detail_json, '$.queueGuard.waitUntil') IS NOT NULL
+     ORDER BY task_runs.created_at ASC`
+  )
+    .bind(agentId)
+    .all<TaskRun>();
+  return result.results;
+}
+
 export async function listRecentRuns(env: Env, limit = 50): Promise<TaskRun[]> {
   const result = await env.DB.prepare(
     "SELECT * FROM task_runs ORDER BY created_at DESC LIMIT ?"
@@ -1330,14 +1377,29 @@ export async function expireUnclaimedRuns(
 export async function listRunEvents(
   env: Env,
   runId: string,
-  limit = 200
-): Promise<Record<string, unknown>[]> {
-  const result = await env.DB.prepare(
-    "SELECT id, level, step, message, detail_json, created_at FROM task_events WHERE run_id = ? ORDER BY id DESC LIMIT ?"
-  )
-    .bind(runId, limit)
-    .all<Record<string, unknown>>();
-  return result.results;
+  options: { afterId?: number; limit?: number } = {}
+): Promise<{ events: Record<string, unknown>[]; nextAfterId: number | null }> {
+  const limit = Math.max(1, Math.min(1000, Number(options.limit) || 1000));
+  const afterId = Number.isInteger(options.afterId) && options.afterId! > 0
+    ? options.afterId
+    : null;
+  const result = afterId == null
+    ? await env.DB.prepare(
+        "SELECT id, level, step, message, detail_json, created_at FROM task_events WHERE run_id = ? ORDER BY id ASC LIMIT ?"
+      )
+        .bind(runId, limit)
+        .all<Record<string, unknown>>()
+    : await env.DB.prepare(
+        "SELECT id, level, step, message, detail_json, created_at FROM task_events WHERE run_id = ? AND id > ? ORDER BY id ASC LIMIT ?"
+      )
+        .bind(runId, afterId, limit)
+        .all<Record<string, unknown>>();
+  const events = result.results;
+  const lastId = events.length ? Number(events[events.length - 1]?.id) : null;
+  return {
+    events,
+    nextAfterId: events.length >= limit && Number.isFinite(lastId) ? lastId : null
+  };
 }
 
 export async function updateRun(
@@ -1413,6 +1475,24 @@ export async function requestRunCancellation(env: Env, runId: string): Promise<b
     ).bind(now, runId)
   ]);
   return (runResult?.meta.changes ?? 0) > 0;
+}
+
+export async function suppressScheduledRetry(
+  env: Env,
+  runId: string,
+  reason: string
+): Promise<TaskRun | null> {
+  const current = await getRun(env, runId);
+  if (!current) return null;
+  const detail = safeJsonObject(current.detail_json);
+  return updateRun(env, {
+    runId,
+    detail: {
+      ...detail,
+      suppressScheduledRetry: true,
+      retrySuppressionReason: reason
+    }
+  });
 }
 
 export async function appendRunEvent(
@@ -1580,15 +1660,52 @@ export async function completeCommand(
     const detail = safeJsonObject(completedRun.detail_json);
     const suppressScheduledRetry = detail.suppressScheduledRetry === true;
     const retryLimit = Math.max(0, Math.min(6, Number(detail.scheduledRetryLimit) || 0));
-    const retryAttempt = Math.max(0, Number(detail.scheduledRetryAttempt) || 0);
-    if (suppressScheduledRetry) {
+    const retryAttempt = scheduledRetryAttempt(
+      detail,
+      completedRun.schedule_key
+    );
+    let patrolDeadlineAt = Date.parse(String(detail.patrolDeadlineAt || ""));
+    // Runs created before the deadline field was persisted still get the same
+    // protection. Reconstruct their deadline from the run's local date and
+    // the stored patrol payload (falling back to current automation config).
+    if (
+      !Number.isFinite(patrolDeadlineAt) &&
+      (completedRun.task_key === "patrol" || detail.patrol)
+    ) {
+      try {
+        const bundle = await getConfigBundle(env);
+        const timezone = bundle.automationConfig.timezone;
+        const patrol = detail.patrol && typeof detail.patrol === "object"
+          ? detail.patrol
+          : bundle.automationConfig.tasks.patrol;
+        const localDate =
+          completedRun.local_date ||
+          zonedDateKey(new Date(completedRun.created_at), timezone);
+        patrolDeadlineAt = Date.parse(
+          zonedDateTimeToIso(
+            localDate,
+            String(patrol.deadline),
+            timezone
+          )
+        );
+      } catch {
+        patrolDeadlineAt = Number.NaN;
+      }
+    }
+    const patrolDeadlineExceeded =
+      Number.isFinite(patrolDeadlineAt) && Date.now() >= patrolDeadlineAt;
+    if (suppressScheduledRetry || patrolDeadlineExceeded) {
       await appendRunEvent(env, {
         runId: completedRun.id,
         level: "warning",
         step: "scheduled_retry_suppressed",
-        message: "任务已进入结束收尾阶段；本次收尾错误不再按失败重试次数重新启动任务",
+        message: patrolDeadlineExceeded
+          ? "巡逻任务已超过后台设置的截止时间；本次失败不再按定时重试次数重新启动任务"
+          : "任务已进入结束收尾阶段；本次收尾错误不再按失败重试次数重新启动任务",
         detail: {
-          reason: detail.retrySuppressionReason || "task_cleanup"
+          reason: patrolDeadlineExceeded
+            ? "patrol_deadline_exceeded"
+            : detail.retrySuppressionReason || "task_cleanup"
         }
       });
     } else if (retryAttempt < retryLimit) {
@@ -1648,6 +1765,17 @@ function safeJsonObject(value: string | null): Record<string, any> {
   } catch {
     return {};
   }
+}
+
+export function scheduledRetryAttempt(
+  detail: Record<string, any>,
+  scheduleKey: string | null
+): number {
+  const detailAttempt = Math.max(0, Number(detail.scheduledRetryAttempt) || 0);
+  const keyAttempts = [...String(scheduleKey || "").matchAll(/(?:^|:)retry:(\d+)(?=:|$)/g)]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value));
+  return Math.max(detailAttempt, ...keyAttempts, 0);
 }
 
 export async function reconcileTerminalRunCommands(env: Env): Promise<number> {

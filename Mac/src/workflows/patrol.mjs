@@ -1,16 +1,21 @@
 import { delay } from "../process.mjs";
-import { clockMinutes, reached, zonedClock } from "../clock.mjs";
+import { reached, zonedClock } from "../clock.mjs";
 import { updateWorkflowProgress } from "./progress.mjs";
 
 export async function runPatrol(context, command, bundle, signal) {
   try {
     return await runPatrolWorkflow(context, command, bundle, signal);
   } catch (error) {
-    if (
+    const deadlineExceeded =
+      Number.isFinite(context.patrolDeadlineAt) &&
+      Date.now() >= context.patrolDeadlineAt;
+    const shouldCleanup =
       !signal?.aborted &&
       !context.suppressScheduledRetry &&
       context.patrolTeamPhase &&
-      context.patrolTeamPhase !== "precreate"
+      context.patrolTeamPhase !== "precreate";
+    if (
+      shouldCleanup
     ) {
       await cleanupPatrolTeamOnFailure(context, signal, error).catch(
         async (cleanupError) => {
@@ -23,6 +28,15 @@ export async function runPatrol(context, command, bundle, signal) {
         }
       );
     }
+    if (deadlineExceeded) {
+      context.suppressScheduledRetry = true;
+      context.suppressScheduledRetryReason = "patrol_deadline_exceeded";
+      await context.report(
+        "warning",
+        "patrol_deadline_retry_suppressed",
+        "巡逻任务已超过后台设置的截止时间；本次失败不再发起定时重试"
+      );
+    }
     throw error;
   }
 }
@@ -33,6 +47,10 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
   const patrol = bundle.automationConfig.tasks.patrol;
   const timezone = bundle.automationConfig.timezone;
   const campName = String(bundle.campConfig?.campName || "").trim();
+  const patrolDeadlineAt = dailyDeadlineAt(timezone, patrol.deadline);
+  context.patrolDeadlineAt = patrolDeadlineAt;
+
+  assertPatrolBeforeDeadline(patrolDeadlineAt);
 
   await updateWorkflowProgress(context, 0.04, "patrol_prepare");
   await report(
@@ -54,7 +72,7 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
 
   let consecutiveFullTeamFrames = 0;
   while (true) {
-    if (reached(timezone, patrol.deadline)) {
+    if (Date.now() >= patrolDeadlineAt) {
       throw new Error("巡逻截止前队伍人数仍未达到 4 人");
     }
     let screen = await capturePatrolScreen(
@@ -138,14 +156,11 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
     readyAt
   });
   await updateWorkflowProgress(context, 0.76, "patrol_ready");
-  const deadlineWindowMs = Math.max(
-    1,
-    millisecondsUntil(timezone, patrol.deadline)
-  );
+  const deadlineWindowMs = Math.max(1, patrolDeadlineAt - Date.now());
   let nextShareAt = Date.now() + patrol.shareIntervalMinutes * 60_000;
 
-  while (!reached(timezone, patrol.deadline)) {
-    const remainingMs = millisecondsUntil(timezone, patrol.deadline);
+  while (Date.now() < patrolDeadlineAt) {
+    const remainingMs = Math.max(0, patrolDeadlineAt - Date.now());
     const elapsedFraction = Math.min(
       1,
       Math.max(0, (deadlineWindowMs - remainingMs) / deadlineWindowMs)
@@ -160,7 +175,7 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
       await report("info", "patrol_share", "已再次分享到营地频道和场景频道");
       nextShareAt = Date.now() + patrol.shareIntervalMinutes * 60_000;
     }
-    const deadlineDelay = millisecondsUntil(timezone, patrol.deadline);
+    const deadlineDelay = Math.max(250, patrolDeadlineAt - Date.now());
     const shareDelay = Math.max(0, nextShareAt - Date.now());
     await delay(Math.max(250, Math.min(deadlineDelay, shareDelay)), signal);
   }
@@ -1107,28 +1122,6 @@ export async function sharePatrolTeam(context, signal) {
       "patrol_share_success",
       `已确认“成功分享至${target.text}”`
     );
-    if (target.key === "camp" && typeof context.resetScheduledRetry === "function") {
-      await context
-        .resetScheduledRetry("patrol_share_camp_channel_clicked", signal)
-        .then((reset) => {
-          if (reset) {
-            return report(
-              "info",
-              "patrol_share_retry_counter_reset",
-              "已成功点击“营地频道”，本次定时/固定分享任务的失败重试次数已清零，后续按 6 次上限重新计算"
-            );
-          }
-          return undefined;
-        })
-        .catch(async (error) => {
-          await report(
-            "warning",
-            "patrol_share_retry_counter_reset_failed",
-            "已点击“营地频道”，但暂时无法同步清零定时重试次数；不影响本次分享继续执行",
-            { reason: error.message }
-          );
-        });
-    }
     await sleep(settleMs, signal);
   }
 }
@@ -1803,9 +1796,28 @@ function slotShowsMember(observations) {
   return numericTokens.length >= 1 && nameLikeTokens.length >= 1;
 }
 
-function millisecondsUntil(timezone, value) {
-  const now = zonedClock(timezone);
-  const seconds =
-    (clockMinutes(value) - now.minute) * 60 - now.second;
-  return Math.max(250, seconds * 1000);
+function assertPatrolBeforeDeadline(deadlineAt) {
+  if (Date.now() >= deadlineAt) {
+    throw new Error("巡逻任务已超过后台设置的截止时间");
+  }
+}
+
+export function dailyDeadlineAt(timezone, value, now = new Date()) {
+  const local = zonedClock(timezone, now);
+  const [year, month, day] = local.date.split("-").map(Number);
+  const [hour, minute] = String(value).split(":").map(Number);
+  const wallClock = Date.UTC(year, month - 1, day, hour, minute, 0);
+  const reference = zonedClock(timezone, new Date(wallClock));
+  const [referenceYear, referenceMonth, referenceDay] = reference.date
+    .split("-")
+    .map(Number);
+  const referenceWallClock = Date.UTC(
+    referenceYear,
+    referenceMonth - 1,
+    referenceDay,
+    Math.floor(reference.minute / 60),
+    reference.minute % 60,
+    reference.second
+  );
+  return wallClock - (referenceWallClock - wallClock);
 }

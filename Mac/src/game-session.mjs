@@ -449,10 +449,18 @@ export async function waitForGameReady(context, signal) {
     ...config.preLoginAnnouncements
   };
   let deadline = Date.now() + config.timeouts.gameLaunchSeconds * 1000;
+  const postLoginHudTimeoutSeconds = Math.max(
+    1,
+    Number(config.timeouts.postLoginHudTimeoutSeconds) || 300
+  );
   let dismissedPages = 0;
   const promotionDismissAttempts = new Map();
   let newspaperSeen = false;
   let loginClicked = false;
+  // Keep the post-login phase active across a relaunch so the healthy-process
+  // watchdog cannot extend it indefinitely. A fresh login-button click after
+  // a relaunch is allowed to start a fresh five-minute protection window.
+  let loginAttempted = false;
   let loginClickedAt = 0;
   let lastLoginClickAt = 0;
   let lastLoginAccurateOcrAt = 0;
@@ -970,7 +978,13 @@ export async function waitForGameReady(context, signal) {
     if (login && Date.now() - lastLoginClickAt >= 5_000) {
       await tapBeforeLogin(config.adb.loginButton);
       loginClicked = true;
+      loginAttempted = true;
       loginClickedAt = Date.now();
+      // Once the gold login button has been clicked, the startup watchdog is
+      // no longer allowed to extend itself because the game process is
+      // healthy. The only successful terminal state is a stable world HUD
+      // after the login and promotion pages have been cleared.
+      deadline = loginClickedAt + postLoginHudTimeoutSeconds * 1000;
       lastLoginClickAt = Date.now();
       dismissedPages = 0;
       promotionDismissAttempts.clear();
@@ -1010,7 +1024,9 @@ export async function waitForGameReady(context, signal) {
       );
       await tapBeforeLogin(config.adb.loginButton);
       loginClicked = true;
+      loginAttempted = true;
       loginClickedAt = Date.now();
+      deadline = loginClickedAt + postLoginHudTimeoutSeconds * 1000;
       lastLoginClickAt = Date.now();
       dismissedPages = 0;
       promotionDismissAttempts.clear();
@@ -1057,7 +1073,7 @@ export async function waitForGameReady(context, signal) {
         )
       : null;
     if (updateState) {
-      if (!updateObserved) {
+      if (!updateObserved && !loginClicked) {
         deadline = Math.max(
           deadline,
           Date.now() + updates.timeoutSeconds * 1000
@@ -1415,6 +1431,7 @@ export async function waitForGameReady(context, signal) {
 
     await delay(800, signal);
     if (
+      !loginAttempted &&
       Date.now() >= deadline &&
       config.timeouts.neverAbortHealthyTaskOnTimeout
     ) {
@@ -1426,6 +1443,22 @@ export async function waitForGameReady(context, signal) {
       deadline = Date.now() +
         Math.max(180, Number(config.timeouts.gameLaunchSeconds) || 180) * 1000;
     }
+  }
+  if (loginAttempted) {
+    const loginAttemptTimestamp = loginClickedAt || lastLoginClickAt;
+    await report(
+      "error",
+      "login_hud_timeout",
+      `点击金色登录按钮后 ${postLoginHudTimeoutSeconds} 秒仍未识别到登录完成并稳定的世界 HUD，任务终止`,
+      {
+        timeoutSeconds: postLoginHudTimeoutSeconds,
+        loginClickedAt: new Date(loginAttemptTimestamp).toISOString(),
+        dismissedPages
+      }
+    );
+    throw new Error(
+      `Timed out waiting for world HUD after login for ${postLoginHudTimeoutSeconds}s`
+    );
   }
   throw new Error(
     updateObserved

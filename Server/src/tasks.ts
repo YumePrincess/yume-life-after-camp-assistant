@@ -205,6 +205,11 @@ export async function enqueueTask(
   }
   if (input.taskKey === "patrol") {
     detail.patrol = input.bundle.automationConfig.tasks.patrol;
+    detail.patrolDeadlineAt = zonedDateTimeToIso(
+      localDate,
+      input.bundle.automationConfig.tasks.patrol.deadline,
+      input.bundle.automationConfig.timezone
+    );
   }
   if (input.taskKey === "automation_routine") {
     if (!input.routine) throw new Error("Automation routine payload is required");
@@ -220,6 +225,11 @@ export async function enqueueTask(
     }
     if (routineTasks.has("patrol")) {
       detail.patrol = input.bundle.automationConfig.tasks.patrol;
+      detail.patrolDeadlineAt = zonedDateTimeToIso(
+        localDate,
+        input.bundle.automationConfig.tasks.patrol.deadline,
+        input.bundle.automationConfig.timezone
+      );
     }
   }
 

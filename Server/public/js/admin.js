@@ -54,6 +54,8 @@
     eventRefreshTimer: null,
     eventRefreshInFlight: false,
     eventSignature: "",
+    eventEntries: [],
+    eventLastId: null,
     runActionMenu: null,
     identityApplications: { page: 1, total: 0, items: [] },
     identityCodes: { page: 1, total: 0, items: [] },
@@ -1825,6 +1827,8 @@
     stopEventRefresh();
     state.activeEventRunId = runId;
     state.eventSignature = "";
+    state.eventEntries = [];
+    state.eventLastId = null;
     const root = byId("run-events");
     root.replaceChildren(create("p", "empty-state", "正在加载…"));
     byId("run-dialog").showModal();
@@ -1847,10 +1851,32 @@
     state.eventRefreshInFlight = true;
     const root = byId("run-events");
     try {
-      const payload = await request(`/api/admin/runs/${encodeURIComponent(runId)}/events`);
+      let afterId = state.eventLastId;
+      let fetched = [];
+      let nextAfterId = null;
+      do {
+        const params = new URLSearchParams({ limit: "1000" });
+        if (afterId != null) params.set("afterId", String(afterId));
+        const payload = await request(
+          `/api/admin/runs/${encodeURIComponent(runId)}/events?${params}`
+        );
+        fetched = [...fetched, ...(payload.events || [])];
+        nextAfterId = payload.nextAfterId ?? null;
+        afterId = nextAfterId;
+      } while (nextAfterId != null && fetched.length < 100_000);
       if (state.activeEventRunId !== runId) return;
+      if (state.eventLastId == null) {
+        state.eventEntries = fetched;
+      } else if (fetched.length) {
+        state.eventEntries = [...state.eventEntries, ...fetched];
+      }
+      state.eventLastId =
+        state.eventEntries.length
+          ? Number(state.eventEntries[state.eventEntries.length - 1].id)
+          : null;
+      const events = state.eventEntries;
       const signature = JSON.stringify(
-        payload.events.map((event) => [
+        events.map((event) => [
           event.id,
           event.level,
           event.step,
@@ -1861,10 +1887,10 @@
       if (signature === state.eventSignature) return;
       state.eventSignature = signature;
       root.replaceChildren();
-      if (!payload.events.length) {
+      if (!events.length) {
         root.append(create("p", "empty-state", "暂无步骤事件。"));
       }
-      for (const event of payload.events) {
+      for (const event of events) {
         const row = create("article", "event-item");
         row.append(
           create("span", `status-${event.level}`, event.level),
@@ -1889,6 +1915,8 @@
     }
     state.activeEventRunId = null;
     state.eventSignature = "";
+    state.eventEntries = [];
+    state.eventLastId = null;
   }
 
   function collectConfig(section) {

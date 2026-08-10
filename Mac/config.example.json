@@ -113,6 +113,7 @@
   },
   "timeouts": {
     "gameLaunchSeconds": 180,
+    "postLoginHudTimeoutSeconds": 300,
     "screenTransitionSeconds": 180,
     "actionDelayMs": 250,
     "neverAbortHealthyTaskOnTimeout": true

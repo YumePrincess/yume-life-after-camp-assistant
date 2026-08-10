@@ -324,24 +324,6 @@ async function executeCommand(command, signal) {
   vision.beginTask();
   try {
     const bootstrap = await api.bootstrap(command.runId, signal);
-    let runDetail = parseRunDetail(bootstrap.run?.detail_json);
-    context.resetScheduledRetry = async (reason, resetSignal) => {
-      const retryLimit = Math.max(0, Number(runDetail.scheduledRetryLimit) || 0);
-      const retryAttempt = Math.max(0, Number(runDetail.scheduledRetryAttempt) || 0);
-      if (retryLimit <= 0 || retryAttempt <= 0) return false;
-      runDetail = {
-        ...runDetail,
-        scheduledRetryAttempt: 0,
-        scheduledRetryResetReason: reason,
-        scheduledRetryResetAt: new Date().toISOString()
-      };
-      await api.updateRun(
-        command.runId,
-        { detail: runDetail },
-        resetSignal || signal
-      );
-      return true;
-    };
     context.memberRoster = Array.isArray(bootstrap.memberRoster)
       ? bootstrap.memberRoster.filter((member) => member?.name)
       : [];

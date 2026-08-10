@@ -1,5 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { completeCommand, reconcileTerminalRunCommands } from "../src/db";
+import {
+  completeCommand,
+  reconcileTerminalRunCommands,
+  scheduledRetryAttempt
+} from "../src/db";
+
+describe("scheduled retry accounting", () => {
+  it("trusts the persisted retry suffix when a run detail was reset by an older agent", () => {
+    expect(
+      scheduledRetryAttempt(
+        { scheduledRetryAttempt: 0 },
+        "patrol:2026-08-10:retry:1"
+      )
+    ).toBe(1);
+    expect(
+      scheduledRetryAttempt(
+        { scheduledRetryAttempt: 1 },
+        "patrol:2026-08-10:retry:1:retry:2"
+      )
+    ).toBe(2);
+  });
+});
 
 describe("completeCommand", () => {
   it("does not schedule a retry after patrol terminal cleanup failure", async () => {
