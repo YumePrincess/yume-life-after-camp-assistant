@@ -123,7 +123,7 @@
     "dismissRetryCooldownMs": 15000,
     "initialWaitMs": 7000,
     "betweenPagesMs": 4000,
-    "dismissPoint": { "x": 80, "y": 1080 },
+    "dismissPoint": { "x": 960, "y": 1140 },
     "signatureTexts": ["立即前往", "前往查看", "前往活动", "活动时间"],
     "activityPageTexts": ["推荐", "活动", "臻藏"],
     "activityPageRegion": { "left": 0, "top": 0, "right": 450, "bottom": 1050 },

@@ -391,9 +391,9 @@ export async function waitForGameReady(context, signal) {
     dismissRetryCooldownMs: 15_000,
     initialWaitMs: 7_000,
     betweenPagesMs: 1_800,
-    // The promotion close action uses the calibrated bottom-left page-return
-    // key center. This avoids tapping the activity content by drift.
-    dismissPoint: { x: 80, y: 1080 },
+    // Normal promotion pages close from the blank strip below the 1/2/newspaper
+    // page indicators, not from the activity page's return arrow.
+    dismissPoint: { x: 960, y: 1140 },
     signatureTexts: ["立即前往", "前往查看", "前往活动", "活动时间"],
     activityPageTexts: ["推荐", "活动", "臻藏"],
     activityPageRegion: {
@@ -444,10 +444,6 @@ export async function waitForGameReady(context, signal) {
         y: Number(configuredActivityPageBackPoint.y)
       }
     : { x: 80, y: 1080 };
-  // Use the actual return-key center for every post-login promotion close.
-  // Keeping one calibrated point also makes the accidental activity-page
-  // recovery and the normal promotion dismissal identical.
-  promotions.dismissPoint = { ...activityPageBackPoint };
   const updates = {
     enabled: true,
     timeoutSeconds: 1800,
