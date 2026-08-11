@@ -306,7 +306,7 @@ export class Vision {
     }));
   }
 
-  async readMemberExpectedTotal(signal) {
+  async readMemberExpectedBreakdown(signal) {
     const countRegions = {
       members: { left: 345, top: 225, right: 430, bottom: 295 },
       citizens: { left: 470, top: 225, right: 535, bottom: 295 },
@@ -353,14 +353,27 @@ export class Vision {
         ]);
         memberSamples.push(...memberObservations.map((item) => item.text));
         citizenSamples.push(...citizenObservations.map((item) => item.text));
-        let memberCount = parsePopulationCapacity(memberObservations, 110);
-        let citizenCount = parsePopulationCapacity(citizenObservations, 10);
+        // The header contains two fractions: formal citizens X/N and sailing
+        // citizens A/B. X and A are online/current counts and must not be
+        // added to the roster total; only N + B is the expected roster size.
+        // A zero-capacity sailing-citizen fraction (0/0) is valid and must be
+        // accepted instead of triggering a broad fallback OCR pass.
+        let memberFraction = parsePopulationFraction(
+          memberObservations,
+          110,
+          { minimumCapacity: 1 }
+        );
+        let citizenFraction = parsePopulationFraction(
+          citizenObservations,
+          10,
+          { minimumCapacity: 0 }
+        );
 
         // The citizen fraction is small and can be merged with its icon by
         // OCR. Use a wider crop before treating the header as unreadable.
-        if (memberCount === null || citizenCount === null) {
+        if (memberFraction === null || citizenFraction === null) {
           const [memberExpanded, citizenExpanded] = await Promise.all([
-            memberCount === null
+            memberFraction === null
               ? this.ocrRegion(
                   frame.path,
                   countRegions.membersExpanded,
@@ -372,7 +385,7 @@ export class Vision {
                   5
                 )
               : Promise.resolve([]),
-            citizenCount === null
+            citizenFraction === null
               ? this.ocrRegion(
                   frame.path,
                   countRegions.citizensExpanded,
@@ -387,14 +400,22 @@ export class Vision {
           ]);
           memberSamples.push(...memberExpanded.map((item) => item.text));
           citizenSamples.push(...citizenExpanded.map((item) => item.text));
-          memberCount ??= parsePopulationCapacity(memberExpanded, 110);
-          citizenCount ??= parsePopulationCapacity(citizenExpanded, 10);
+          memberFraction ??= parsePopulationFraction(
+            memberExpanded,
+            110,
+            { minimumCapacity: 1 }
+          );
+          citizenFraction ??= parsePopulationFraction(
+            citizenExpanded,
+            10,
+            { minimumCapacity: 0 }
+          );
         }
 
         // Final fallback: OCR the complete header at high scale, but parse
         // each fraction only inside its own horizontal area. This prevents a
         // valid member fraction from being mistaken for citizen capacity.
-        if (memberCount === null || citizenCount === null) {
+        if (memberFraction === null || citizenFraction === null) {
           fallbackObservations = await this.ocrRegion(
             frame.path,
             countRegions.header,
@@ -407,27 +428,35 @@ export class Vision {
           );
           memberSamples.push(...fallbackObservations.map((item) => item.text));
           citizenSamples.push(...fallbackObservations.map((item) => item.text));
-          memberCount ??= parsePopulationCapacity(
+          memberFraction ??= parsePopulationFraction(
             observationsInHorizontalRegion(fallbackObservations, {
               left: 280,
               top: 215,
               right: 455,
               bottom: 320
             }),
-            110
+            110,
+            { minimumCapacity: 1 }
           );
-          citizenCount ??= parsePopulationCapacity(
+          citizenFraction ??= parsePopulationFraction(
             observationsInHorizontalRegion(fallbackObservations, {
               left: 430,
               top: 215,
               right: 580,
               bottom: 320
             }),
-            10
+            10,
+            { minimumCapacity: 0 }
           );
         }
-        if (memberCount !== null && citizenCount !== null) {
-          return memberCount + citizenCount;
+        if (memberFraction !== null && citizenFraction !== null) {
+          return {
+            formalCurrent: memberFraction.current,
+            formalTotal: memberFraction.capacity,
+            sailingCurrent: citizenFraction.current,
+            sailingTotal: citizenFraction.capacity,
+            total: memberFraction.capacity + citizenFraction.capacity
+          };
         }
       } catch (error) {
         lastError = error;
@@ -449,6 +478,11 @@ export class Vision {
         fallback: fallbackObservations.map((item) => item.text)
       })}`
     );
+  }
+
+  async readMemberExpectedTotal(signal) {
+    const breakdown = await this.readMemberExpectedBreakdown(signal);
+    return breakdown.total;
   }
 
   async #extractContributionRows(imagePath, definition, label, signal) {
@@ -1408,10 +1442,25 @@ function medianNumber(values) {
 }
 
 export function parsePopulationCapacity(observations, maximumCapacity) {
+  return parsePopulationFraction(observations, maximumCapacity, {
+    minimumCapacity: 1
+  })?.capacity ?? null;
+}
+
+export function parsePopulationFraction(
+  observations,
+  maximumCapacity,
+  options = {}
+) {
+  const minimumCapacity = Number.isFinite(Number(options.minimumCapacity))
+    ? Number(options.minimumCapacity)
+    : 1;
   const candidates = parsePopulationCounts(observations).filter(
-    (item) => item.capacity > 0 && item.capacity <= maximumCapacity
+    (item) =>
+      item.capacity >= minimumCapacity &&
+      item.capacity <= maximumCapacity
   );
-  return candidates[0]?.capacity ?? null;
+  return candidates[0] ?? null;
 }
 
 function parsePopulationCounts(observations) {

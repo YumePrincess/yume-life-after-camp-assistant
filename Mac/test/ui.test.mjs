@@ -846,6 +846,32 @@ test("map teleport refuses a fixed fallback when the target name is not OCR-conf
   assert.deepEqual(fixture.taps, []);
 });
 
+test("map estate-list anchors force a marker-tab click before target OCR", async () => {
+  const fixture = createUi({
+    fastFrames: [[
+      observation("查看庄园", 360, 35),
+      observation("标志查看", 160, 35),
+      observation("中心花园", 260, 100),
+      observation("1a", 150, 145),
+      observation("1b", 150, 185)
+    ]]
+  });
+
+  await fixture.ui.ensureMapDestinationList({
+    mapModeText: "标志查看",
+    mapEstateMarkerTexts: ["中心花园", "1a", "1b"],
+    mapEstateMinimumMarkers: 2,
+    mapModeDelayMs: 0
+  });
+
+  assert.deepEqual(fixture.taps, [{ x: 170, y: 45 }]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("查看庄园") && message.includes("标志查看")
+    )
+  );
+});
+
 test("destination approach sends five W presses per round and stops after six rounds", async () => {
   const fixture = createUi({
     fastFrames: Array.from({ length: 7 }, () => [])

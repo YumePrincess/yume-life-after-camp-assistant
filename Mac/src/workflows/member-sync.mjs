@@ -440,7 +440,29 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
     2,
     3
   ), "member_header_read");
-  const expectedMembers = await context.vision.readMemberExpectedTotal(signal);
+  const memberCountBreakdown =
+    typeof context.vision.readMemberExpectedBreakdown === "function"
+      ? await context.vision.readMemberExpectedBreakdown(signal)
+      : {
+          formalCurrent: null,
+          formalTotal: await context.vision.readMemberExpectedTotal(signal),
+          sailingCurrent: null,
+          sailingTotal: 0
+        };
+  const expectedMembers = memberCountBreakdown.total ??
+    memberCountBreakdown.formalTotal + memberCountBreakdown.sailingTotal;
+  await context.report(
+    "info",
+    "member_header_count",
+    `顶部人数识别：正式市民 ${memberCountBreakdown.formalCurrent ?? "?"}/${memberCountBreakdown.formalTotal}，启航市民 ${memberCountBreakdown.sailingCurrent ?? "?"}/${memberCountBreakdown.sailingTotal}，合计 ${expectedMembers} 名（当前在线人数不计入总数）`,
+    {
+      formalCurrent: memberCountBreakdown.formalCurrent,
+      formalTotal: memberCountBreakdown.formalTotal,
+      sailingCurrent: memberCountBreakdown.sailingCurrent,
+      sailingTotal: memberCountBreakdown.sailingTotal,
+      total: expectedMembers
+    }
+  );
   const scanProgressRange = progressRangeSlice(options.progressRange, 0.1);
   const scanMemberDetails = () =>
     capturePagedTable(

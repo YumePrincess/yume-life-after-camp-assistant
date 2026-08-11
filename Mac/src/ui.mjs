@@ -1403,8 +1403,8 @@ export class GameUi {
   }
 
   async attemptTeleport(action, destination, signal) {
-    await this.ensureMapOpen(action, signal);
-    await this.ensureMapDestinationList(action, signal);
+    const mapState = await this.ensureMapOpen(action, signal);
+    await this.ensureMapDestinationList(action, signal, mapState);
     const scrollSteps = Math.max(
       0,
       Math.min(20, Number(destination.scrollSteps) || 0)
@@ -1781,7 +1781,7 @@ export class GameUi {
           "map_open_verified",
           `已通过地图固定文字确认页面打开：${verified.text}`
         );
-        return;
+        return { marker: verified };
       }
       if (
         typeof this.vision.captureAccurateTransient === "function" &&
@@ -1801,7 +1801,7 @@ export class GameUi {
             "map_open_verified_accurate",
             `已通过高精度 OCR 确认地图页面打开：${accurateVerified.text}`
           );
-          return;
+          return { marker: accurateVerified };
         }
       }
       if (
@@ -1869,22 +1869,115 @@ export class GameUi {
     );
   }
 
-  async ensureMapDestinationList(action, signal) {
+  async ensureMapDestinationList(action, signal, mapState = {}) {
     const modeText = action.mapModeText || "标志查看";
-    const frame = await this.vision.captureTransient(
+    const estateMarkerTexts = action.mapEstateMarkerTexts || [
+      "中心花园",
+      "1a",
+      "1b",
+      "2a",
+      "2b"
+    ];
+    const estateRegion = action.mapEstateRegion || {
+      left: 80,
+      top: 60,
+      right: 620,
+      bottom: 700
+    };
+    let frame = await this.vision.captureTransient(
       "teleport-map-mode",
       signal
     );
-    const modeButton = this.vision.find(
+    const hasEstateMarkers = (observations) =>
+      estateMarkerTexts.filter((text) =>
+        this.findInRegion(observations, text, estateRegion, "includes")
+      ).length >= Math.max(
+        1,
+        Math.min(
+          estateMarkerTexts.length,
+          Number(action.mapEstateMinimumMarkers) || 2
+        )
+      );
+    let estateView = hasEstateMarkers(frame.observations);
+    let modeButton = this.vision.find(
       frame.observations,
       modeText,
       "includes"
     );
+    const estateTab = this.vision.find(
+      frame.observations,
+      action.mapEstateTabText || "查看庄园",
+      "includes"
+    );
+    const modeTabIsHighlighted = await this.mapTabIsHighlighted(
+      frame,
+      modeButton,
+      action,
+      signal
+    );
+    const estateTabIsHighlighted = await this.mapTabIsHighlighted(
+      frame,
+      estateTab,
+      action,
+      signal
+    );
+    if (estateTabIsHighlighted === true) estateView = true;
+    if (!modeButton && mapState?.marker?.text === modeText) {
+      // The verification frame already identified the mode tab, but a fast
+      // OCR frame taken immediately afterwards can miss it. Reuse only that
+      // OCR-confirmed point; never fall back to a fixed map-mode coordinate.
+      modeButton = mapState.marker;
+    }
+    if (
+      !modeButton &&
+      typeof this.vision.captureAccurateTransient === "function"
+    ) {
+      const accurate = await this.vision.captureAccurateTransient(
+        "teleport-map-mode-accurate",
+        signal
+      ).catch(() => null);
+      if (accurate) {
+        frame = accurate;
+        estateView = hasEstateMarkers(accurate.observations);
+        modeButton = this.vision.find(
+          accurate.observations,
+          modeText,
+          "includes"
+        );
+        const accurateEstateTab = this.vision.find(
+          accurate.observations,
+          action.mapEstateTabText || "查看庄园",
+          "includes"
+        );
+        if (
+          (await this.mapTabIsHighlighted(
+            accurate,
+            accurateEstateTab,
+            action,
+            signal
+          )) === true
+        ) {
+          estateView = true;
+        }
+      }
+    }
     if (modeButton) {
+      const alreadyOnMarkerTab =
+        modeTabIsHighlighted === true && estateView !== true;
+      if (alreadyOnMarkerTab) {
+        await this.report(
+          "info",
+          "map_mode_verified",
+          `已确认顶部“${modeText}”为金黄色当前页，直接重新 OCR 地图目标列表`
+        );
+        return;
+      }
       await this.report(
         "info",
         "map_mode_switch",
-        `已识别并点击“${modeText}”切换到可选传送点列表`
+        estateView
+          ? `已识别左侧“查看庄园”列表（${estateMarkerTexts.filter((text) => this.findInRegion(frame.observations, text, estateRegion, "includes")).join("、")}），点击“${modeText}”切换到可选传送点列表；随后重新 OCR 地图目标列表`
+          : `已识别并点击“${modeText}”切换到可选传送点列表；随后重新 OCR 地图目标列表`
       );
       await this.tap(center(modeButton), signal);
       await delay(action.mapModeDelayMs || 800, signal);
@@ -1899,6 +1992,48 @@ export class GameUi {
       await this.tap(action.mapModeButton, signal);
       await delay(action.mapModeDelayMs || 800, signal);
     }
+  }
+
+  async mapTabIsHighlighted(frame, match, action, signal) {
+    if (
+      action.mapTabColorDetection === false ||
+      !match ||
+      !frame?.path ||
+      typeof this.vision.probe !== "function"
+    ) {
+      return null;
+    }
+    const x = Number(match.x) || 0;
+    const y = Number(match.y) || 0;
+    const width = Math.max(1, Number(match.width) || 1);
+    const height = Math.max(1, Number(match.height) || 1);
+    const offset = Math.max(12, Math.round(width * 0.75));
+    const probes = await this.vision.probe(
+      frame.path,
+      [
+        { x: Math.max(0, x - offset), y: y + height / 2 },
+        { x: x + width + offset, y: y + height / 2 }
+      ],
+      Math.max(8, Number(action.mapTabColorProbeRadius) || 16),
+      signal
+    ).catch(() => []);
+    const minimumWarmPoints = Math.max(
+      1,
+      Math.min(2, Number(action.mapTabColorMinimumWarmPoints) || 1)
+    );
+    const warmPoints = probes.filter((probe) => {
+      const red = Number(probe.meanRed);
+      const green = Number(probe.meanGreen);
+      const blue = Number(probe.meanBlue);
+      const saturation = Number(probe.meanSaturation);
+      return (
+        [red, green, blue, saturation].every(Number.isFinite) &&
+        red - blue >= 0.08 &&
+        green - blue >= 0.03 &&
+        saturation >= 0.12
+      );
+    });
+    return warmPoints.length >= minimumWarmPoints;
   }
 
   async openCampPanelViaChat(action, signal) {
@@ -2741,8 +2876,8 @@ export class GameUi {
   }
 
   async teleportByText(action, signal) {
-    await this.ensureMapOpen(action, signal);
-    await this.ensureMapDestinationList(action, signal);
+    const mapState = await this.ensureMapOpen(action, signal);
+    await this.ensureMapDestinationList(action, signal, mapState);
     await this.tapMapDestinationByOcr(
       action,
       {
@@ -2791,8 +2926,8 @@ export class GameUi {
     }
     if (result.state === "cooldown") {
       await delay(action.cooldownSeconds * 1000, signal);
-      await this.ensureMapOpen(action, signal);
-      await this.ensureMapDestinationList(action, signal);
+      const mapState = await this.ensureMapOpen(action, signal);
+      await this.ensureMapDestinationList(action, signal, mapState);
       await this.tapMapDestinationByOcr(
         action,
         {

@@ -35,6 +35,14 @@ test("OCR and device text without a safe fixed template is preserved", () => {
 test("safe count templates translate without translating OCR fields", () => {
   assert.equal(
     localizeTaskEvent(
+      "member_header_count",
+      "顶部人数识别：正式市民 4/93，启航市民 0/0，合计 93 名（当前在线人数不计入总数）",
+      "en"
+    ),
+    "Header counts: formal citizens 4/93, sailing citizens 0/0; total 93 (current online counts are excluded)"
+  );
+  assert.equal(
+    localizeTaskEvent(
       "member-details_page",
       "第 3 页识别 6 行，累计 17 名成员（耗时 1200ms）",
       "en"

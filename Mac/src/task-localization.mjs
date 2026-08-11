@@ -131,6 +131,15 @@ const FIXED_TRANSLATIONS = {
 
 const PATTERN_TRANSLATIONS = [
   {
+    test: /^顶部人数识别：正式市民 (\d+)\/(\d+)，启航市民 (\d+)\/(\d+)，合计 (\d+) 名（当前在线人数不计入总数）$/,
+    values: {
+      "zh-tw": "頂部人數識別：正式市民 $1/$2，啟航市民 $3/$4，合計 $5 人（目前在線人數不計入總數）",
+      en: "Header counts: formal citizens $1/$2, sailing citizens $3/$4; total $5 (current online counts are excluded)",
+      fr: "Comptage en haut de page : citoyens officiels $1/$2, citoyens de l’expédition $3/$4 ; total $5 (les présents ne sont pas comptés)",
+      ja: "上部人数を認識：正式市民 $1/$2、航海市民 $3/$4、合計 $5 人（現在オンラインの人数は合計に含めません）"
+    }
+  },
+  {
     test: /^开始界面流程：(.+)$/,
     values: {
       "zh-tw": "開始介面流程：$1",

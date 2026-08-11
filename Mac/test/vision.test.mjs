@@ -4,6 +4,7 @@ import {
   inferMemberIdentity,
   isPlausibleMemberName,
   parsePopulationCapacity,
+  parsePopulationFraction,
   safeSipsCropRegion
 } from "../src/vision.mjs";
 import { Vision } from "../src/vision.mjs";
@@ -186,6 +187,39 @@ test("parses total members from the fraction denominator", () => {
     parsePopulationCapacity([{ text: "102/110", x: 350 }], 110),
     110
   );
+  assert.deepEqual(
+    parsePopulationFraction([{ text: "4/93", x: 350 }], 110, {
+      minimumCapacity: 1
+    }),
+    { current: 4, capacity: 93 }
+  );
+  assert.deepEqual(
+    parsePopulationFraction([{ text: "0/0", x: 490 }], 10, {
+      minimumCapacity: 0
+    }),
+    { current: 0, capacity: 0 }
+  );
+});
+
+test("member header total accepts 0/0 sailing citizens without fallback contamination", async () => {
+  const vision = new Vision({
+    vision: {},
+    localVisionModel: { enabled: false }
+  }, {});
+  vision.capture = async () => ({ path: "/private/tmp/member-header.png" });
+  vision.ocrRegion = async (_path, _region, label) =>
+    label.startsWith("member-count-")
+      ? [{ text: "4/93", x: 350 }]
+      : [{ text: "0/0", x: 490 }];
+
+  assert.deepEqual(await vision.readMemberExpectedBreakdown(), {
+    formalCurrent: 4,
+    formalTotal: 93,
+    sailingCurrent: 0,
+    sailingTotal: 0,
+    total: 93
+  });
+  assert.equal(await vision.readMemberExpectedTotal(), 93);
 });
 
 test("accepts zero online citizens and split OCR fragments", () => {
