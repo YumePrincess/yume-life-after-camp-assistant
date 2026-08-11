@@ -83,9 +83,7 @@ function taskSchedule(
   allowMultiple = true
 ): { source: Record<string, unknown>; enabled: boolean; time: string; times: string[] } {
   const source = object(value, field);
-  const time = text(source.time, `${field}.time`, { max: 5 });
-  assertClock(time, `${field}.time`);
-  const rawTimes = source.times === undefined ? [time] : source.times;
+  const rawTimes = source.times === undefined ? [source.time] : source.times;
   if (!Array.isArray(rawTimes) || rawTimes.length < 1 || rawTimes.length > 12) {
     throw new Error(`${field}.times must contain between 1 and 12 times`);
   }
@@ -97,6 +95,11 @@ function taskSchedule(
     assertClock(parsed, `${field}.times[${index}]`);
     return parsed;
   });
+  const time =
+    source.time === undefined || source.time === ""
+      ? times[0] ?? ""
+      : text(source.time, `${field}.time`, { max: 5 });
+  assertClock(time, `${field}.time`);
   return {
     source,
     enabled: boolean(source.enabled, `${field}.enabled`),
@@ -302,6 +305,12 @@ export function validateTechnologyConfig(value: unknown): TechnologyConfig {
     catalog,
     fixedByWeekday,
     fixedByDate,
+    voteLimit: integer(
+      source.voteLimit === undefined ? 6 : source.voteLimit,
+      "technologyConfig.voteLimit",
+      0,
+      12
+    ),
     limits: {
       core: integer(limits.core, "technologyConfig.limits.core", 0, 6),
       general: integer(limits.general, "technologyConfig.limits.general", 0, 6)

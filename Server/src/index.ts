@@ -426,13 +426,8 @@ async function handlePublicApi(
       );
     }
     const allowed = new Set(summary.options.map((option) => option.key));
-    const requestedSelections = [
-      ...new Set(
-        body.selections
-          .map((value) => String(value))
-          .filter((value) => allowed.has(value))
-      )
-    ];
+    const rawSelections = [...new Set(body.selections.map((value) => String(value)))];
+    const requestedSelections = rawSelections.filter((value) => allowed.has(value));
     const fixed = new Set(
       bundle.technologyConfig.fixedByDate[summary.pollDate] ??
         bundle.technologyConfig.fixedByWeekday[
@@ -445,18 +440,27 @@ async function handlePublicApi(
       catalog: bundle.technologyConfig.catalog,
       allowedKeys: allowed,
       satisfiedKeys: fixed,
-      maximum: 6
+      maximum: bundle.technologyConfig.voteLimit
     });
-    if (!normalized.selections.length || normalized.error) {
+    const isWithdrawal = rawSelections.length === 0;
+    if (
+      (!isWithdrawal && !normalized.selections.length) ||
+      (!isWithdrawal && normalized.error)
+    ) {
       return problem(
-        normalized.error ?? "每人请选择 1 至 6 项开放投票的科技",
+        normalized.error ??
+          `每人请选择 1 至 ${bundle.technologyConfig.voteLimit} 项开放投票的科技`,
         400,
         "invalid_selections"
       );
     }
-    const selections = normalized.selections;
-    if (selections.length > 6) {
-      return problem("每人请选择 1 至 6 项开放投票的科技", 400, "invalid_selections");
+    const selections = isWithdrawal ? [] : normalized.selections;
+    if (selections.length > bundle.technologyConfig.voteLimit) {
+      return problem(
+        `每人请选择 1 至 ${bundle.technologyConfig.voteLimit} 项开放投票的科技`,
+        400,
+        "invalid_selections"
+      );
     }
     let renewalGraceUsed = false;
     if (!publicTestVote && identityRecord?.ok) {
@@ -492,6 +496,7 @@ async function handlePublicApi(
           !publicTestVote && identityRecord?.ok
             ? identityRecord.code.expires_at
             : null,
+        voteWithdrawn: isWithdrawal,
         publicTestVote
       },
       200,
@@ -1230,6 +1235,36 @@ async function handleAdminApi(
     }
     const current = await getConfigBundle(env);
     const submitted = validateConfigBundle(await readJsonObject(request, 300_000));
+    if (section === "technology") {
+      const voteSummary = await buildVoteSummary(env, current);
+      if (!voteSummary.isOpen) {
+        const normalizeKeys = (value: unknown) =>
+          [...new Set(Array.isArray(value) ? value.map(String) : [])].sort();
+        const effectiveFixed = (config: ConfigBundle) =>
+          normalizeKeys(
+            config.technologyConfig.fixedByDate[voteSummary.pollDate] ??
+              config.technologyConfig.fixedByWeekday[
+                String(weekdayForDateKey(voteSummary.pollDate))
+              ]
+          );
+        const votingCatalog = (config: ConfigBundle) =>
+          config.technologyConfig.catalog
+            .map((item) => ({ key: item.key, enabledForVoting: item.enabledForVoting }))
+            .sort((left, right) => left.key.localeCompare(right.key));
+        if (
+          JSON.stringify(effectiveFixed(current)) !==
+            JSON.stringify(effectiveFixed(submitted)) ||
+          JSON.stringify(votingCatalog(current)) !==
+            JSON.stringify(votingCatalog(submitted))
+        ) {
+          return problem(
+            "投票截止至每日刷新前不能修改当前投票结果或固定科技",
+            409,
+            "technology_result_locked"
+          );
+        }
+      }
+    }
     const next = validateConfigBundle({
       ...current,
       ...(section === "general"

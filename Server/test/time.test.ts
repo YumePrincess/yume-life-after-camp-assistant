@@ -84,4 +84,23 @@ describe("technology target date", () => {
       )
     ).toBe("2026-07-27");
   });
+
+  it("keeps the next-day result through midnight until the daily refresh", () => {
+    expect(
+      nextTechnologyTargetDate(
+        new Date("2026-07-26T18:30:00.000Z"),
+        "Asia/Shanghai",
+        "02:00",
+        "03:00"
+      )
+    ).toBe("2026-07-27");
+    expect(
+      nextTechnologyTargetDate(
+        new Date("2026-07-27T19:01:00.000Z"),
+        "Asia/Shanghai",
+        "02:00",
+        "03:00"
+      )
+    ).toBe("2026-07-29");
+  });
 });

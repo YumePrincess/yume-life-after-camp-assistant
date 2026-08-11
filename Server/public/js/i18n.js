@@ -116,13 +116,18 @@
       "工业科技": "Industrial technology",
       "其他科技": "Other technologies",
       "每人最多选择 6 项科技。": "Each person may select up to 6 technologies.",
+      "每人最多选择 {limit} 项科技。": "Each person may select up to {limit} technologies.",
+      "每人投票上限（0–12）": "Per-person vote limit (0–12)",
       "前置科技：{name}": "Prerequisite: {name}",
       "已同时选择前置科技：{name}": "Prerequisite selected too: {name}",
       "选择该科技及其前置科技后将超过 6 票。":
         "This technology and its prerequisite would exceed the 6-vote limit.",
+      "选择该科技及其前置科技后将超过 {limit} 票。":
+        "This technology and its prerequisite would exceed the {limit}-vote limit.",
       "取消前置科技时，依赖它的科技也会一并取消。":
         "Technologies that depend on the removed prerequisite were also deselected.",
       "全部可选科技（每人最多 6 票）": "All voting options (up to 6 votes per person)",
+      "全部可选科技（每人最多 {limit} 票）": "All voting options (up to {limit} votes per person)",
       "固定科技适用日期": "Fixed-technology day",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "Choose a date, then set its fixed technologies from the catalog. Filters only change what is shown and never alter saved settings.",
@@ -174,6 +179,10 @@
       "共 {count} 人投票 · 截止 {closesAt}": "{count} voters · closes {closesAt}",
       "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
         "Open {opensAt}–{closesAt} {timezone} · {count} voters",
+      "当前可投票": "Voting is open",
+      "当前未开放": "Voting is closed",
+      "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。":
+        "Each person may cast up to {limit} votes. When voting more than once, the latest result is used. Submit without selecting technologies to withdraw your vote or submit a blank ballot.",
       "当前不在科技投票开放时间内。": "Technology voting is currently closed.",
       "更新于 {date}": "Updated {date}",
       "已同步 {date}": "Synced {date}",
@@ -262,6 +271,8 @@
       "未命名营地": "Unnamed camp",
       "投票已保存，可在截止前再次修改。":
         "Vote saved. You can change it again before the deadline.",
+      "投票已撤回，当前不计入投票人数。": "Vote withdrawn. It is not counted.",
+      "不选择任何科技并提交，可撤回当前投票且不计入投票人数。": "Submit with no technology selected to withdraw your current vote; it will not be counted.",
       "请至少选择一项科技。": "Select at least one technology.",
       "正在提交…": "Submitting…",
       "登录状态已失效，请重新登录。": "Your sign-in state expired. Please sign in again.",
@@ -449,13 +460,18 @@
       "工业科技": "Technologie industrielle",
       "其他科技": "Autres technologies",
       "每人最多选择 6 项科技。": "Chaque personne peut choisir jusqu’à 6 technologies.",
+      "每人最多选择 {limit} 项科技。": "Chaque personne peut choisir jusqu’à {limit} technologies.",
+      "每人投票上限（0–12）": "Limite de votes par personne (0–12)",
       "前置科技：{name}": "Prérequis : {name}",
       "已同时选择前置科技：{name}": "Prérequis également sélectionné : {name}",
       "选择该科技及其前置科技后将超过 6 票。":
         "Cette technologie et son prérequis dépasseraient la limite de 6 votes.",
+      "选择该科技及其前置科技后将超过 {limit} 票。":
+        "Cette technologie et son prérequis dépasseraient la limite de {limit} votes.",
       "取消前置科技时，依赖它的科技也会一并取消。":
         "Les technologies dépendantes ont aussi été désélectionnées.",
       "全部可选科技（每人最多 6 票）": "Toutes les technologies (6 votes maximum par personne)",
+      "全部可选科技（每人最多 {limit} 票）": "Toutes les technologies ({limit} votes maximum par personne)",
       "固定科技适用日期": "Jour des technologies fixes",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "Choisissez une date, puis définissez ses technologies fixes depuis le catalogue. Les filtres modifient uniquement l’affichage.",
@@ -507,6 +523,10 @@
       "共 {count} 人投票 · 截止 {closesAt}": "{count} votants · clôture {closesAt}",
       "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
         "Ouvert de {opensAt} à {closesAt} {timezone} · {count} votants",
+      "当前可投票": "Le vote est ouvert",
+      "当前未开放": "Le vote est fermé",
+      "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。":
+        "Chaque personne peut voter au maximum {limit} fois. En cas de votes multiples, le dernier résultat est retenu. Envoyez sans sélectionner de technologie pour retirer votre vote ou envoyer un bulletin blanc.",
       "当前不在科技投票开放时间内。": "Le vote technologique est actuellement fermé.",
       "更新于 {date}": "Mis à jour {date}",
       "已同步 {date}": "Synchronisé {date}",
@@ -595,6 +615,8 @@
       "未命名营地": "Camp sans nom",
       "投票已保存，可在截止前再次修改。":
         "Vote enregistré. Vous pouvez le modifier avant la date limite.",
+      "投票已撤回，当前不计入投票人数。": "Vote retiré. Il n’est pas comptabilisé.",
+      "不选择任何科技并提交，可撤回当前投票且不计入投票人数。": "Envoyez le formulaire sans sélectionner de technologie pour retirer votre vote ; il ne sera pas comptabilisé.",
       "请至少选择一项科技。": "Sélectionnez au moins une technologie.",
       "正在提交…": "Envoi…",
       "登录状态已失效，请重新登录。": "Votre session a expiré. Reconnectez-vous.",
@@ -785,13 +807,18 @@
       "工业科技": "工業技術",
       "其他科技": "その他の技術",
       "每人最多选择 6 项科技。": "1人につき最大6件まで選択できます。",
+      "每人最多选择 {limit} 项科技。": "1人につき最大{limit}件まで選択できます。",
+      "每人投票上限（0–12）": "1人あたりの投票上限（0～12）",
       "前置科技：{name}": "前提技術：{name}",
       "已同时选择前置科技：{name}": "前提技術も選択しました：{name}",
       "选择该科技及其前置科技后将超过 6 票。":
         "この技術と前提技術を選ぶと6票の上限を超えます。",
+      "选择该科技及其前置科技后将超过 {limit} 票。":
+        "この技術と前提技術を選ぶと{limit}票の上限を超えます。",
       "取消前置科技时，依赖它的科技也会一并取消。":
         "前提技術を外したため、依存する技術も選択解除しました。",
       "全部可选科技（每人最多 6 票）": "投票可能な全技術（1人最大6票）",
+      "全部可选科技（每人最多 {limit} 票）": "投票可能な全技術（1人最大{limit}票）",
       "固定科技适用日期": "固定技術の曜日",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "日付を選び、一覧からその日の固定技術を設定します。絞り込みは表示だけに作用し、保存済み設定は変更しません。",
@@ -843,6 +870,10 @@
       "共 {count} 人投票 · 截止 {closesAt}": "{count}人が投票 · 締切 {closesAt}",
       "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
         "受付時間 {opensAt}～{closesAt} {timezone} · {count}人が投票",
+      "当前可投票": "現在投票できます",
+      "当前未开放": "現在は受付時間外です",
+      "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。":
+        "1人あたり最大{limit}票まで投票できます。複数回投票した場合は最新の結果が有効です。技術を選択せずに送信すると投票を撤回、または空票を送信できます。",
       "当前不在科技投票开放时间内。": "現在は技術投票の受付時間外です。",
       "更新于 {date}": "更新 {date}",
       "已同步 {date}": "同期済み {date}",
@@ -931,6 +962,8 @@
       "未命名营地": "名称未設定の野営地",
       "投票已保存，可在截止前再次修改。":
         "投票を保存しました。締切前であれば再度変更できます。",
+      "投票已撤回，当前不计入投票人数。": "投票を撤回しました。投票人数には含まれません。",
+      "不选择任何科技并提交，可撤回当前投票且不计入投票人数。": "科技を選択せずに送信すると、現在の投票を撤回できます。投票人数には含まれません。",
       "请至少选择一项科技。": "技術を1つ以上選択してください。",
       "正在提交…": "送信中…",
       "登录状态已失效，请重新登录。": "ログイン状態が失効しました。再度ログインしてください。",
@@ -1114,13 +1147,18 @@
       "工业科技": "工業科技",
       "其他科技": "其他科技",
       "每人最多选择 6 项科技。": "每人最多選擇 6 項科技。",
+      "每人最多选择 {limit} 项科技。": "每人最多選擇 {limit} 項科技。",
+      "每人投票上限（0–12）": "每人投票上限（0–12）",
       "前置科技：{name}": "前置科技：{name}",
       "已同时选择前置科技：{name}": "已同時選擇前置科技：{name}",
       "选择该科技及其前置科技后将超过 6 票。":
         "選擇該科技及其前置科技後將超過 6 票。",
+      "选择该科技及其前置科技后将超过 {limit} 票。":
+        "選擇該科技及其前置科技後將超過 {limit} 票。",
       "取消前置科技时，依赖它的科技也会一并取消。":
         "取消前置科技時，依賴它的科技也會一併取消。",
       "全部可选科技（每人最多 6 票）": "全部可選科技（每人最多 6 票）",
+      "全部可选科技（每人最多 {limit} 票）": "全部可選科技（每人最多 {limit} 票）",
       "固定科技适用日期": "固定科技適用日期",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "先選擇日期，再從目錄設定當日固定科技；篩選只影響目前顯示，不會變更已儲存設定。",
@@ -1172,6 +1210,10 @@
       "共 {count} 人投票 · 截止 {closesAt}": "共 {count} 人投票 · 截止 {closesAt}",
       "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
         "開放時間 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票",
+      "当前可投票": "目前可投票",
+      "当前未开放": "目前未開放",
+      "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。":
+        "每人最多可投票 {limit} 票，多次投票以最新一次投票結果為準，不選擇科技提交投票可以撤回投票或投空票。",
       "当前不在科技投票开放时间内。": "目前不在科技投票開放時間內。",
       "更新于 {date}": "更新於 {date}",
       "已同步 {date}": "已同步 {date}",
@@ -1259,6 +1301,8 @@
       "成员信息": "成員資訊",
       "未命名营地": "未命名營地",
       "投票已保存，可在截止前再次修改。": "投票已儲存，可在截止前再次修改。",
+      "投票已撤回，当前不计入投票人数。": "投票已撤回，目前不計入投票人數。",
+      "不选择任何科技并提交，可撤回当前投票且不计入投票人数。": "不選擇任何科技並提交，即可撤回目前投票，且不計入投票人數。",
       "请至少选择一项科技。": "請至少選擇一項科技。",
       "正在提交…": "正在提交…",
       "登录状态已失效，请重新登录。": "登入狀態已失效，請重新登入。",

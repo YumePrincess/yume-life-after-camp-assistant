@@ -436,16 +436,26 @@ export async function listBallots(
   )
     .bind(pollDate)
     .all<{ selections_json: string }>();
-  return result.results.map((row) => ({
-    selections: parseJson<string[]>(row.selections_json, [])
-  }));
+  return result.results
+    .map((row) => parseJson<unknown>(row.selections_json, []))
+    .filter((value): value is unknown[] => Array.isArray(value) && value.length > 0)
+    .map((value) => ({ selections: value.map(String) }));
 }
 
 export async function listVotePollDates(env: Env): Promise<string[]> {
   const result = await env.DB.prepare(
-    "SELECT DISTINCT poll_date FROM tech_ballots ORDER BY poll_date DESC"
-  ).all<{ poll_date: string }>();
-  return result.results.map((row) => row.poll_date);
+    "SELECT poll_date, selections_json FROM tech_ballots ORDER BY poll_date DESC"
+  ).all<{ poll_date: string; selections_json: string }>();
+  return [
+    ...new Set(
+      result.results
+        .filter((row) => {
+          const selections = parseJson<unknown>(row.selections_json, []);
+          return Array.isArray(selections) && selections.length > 0;
+        })
+        .map((row) => row.poll_date)
+    )
+  ];
 }
 
 export async function saveTechnologyVoteHistory(

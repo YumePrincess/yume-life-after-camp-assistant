@@ -87,6 +87,7 @@ export async function buildVoteSummary(
     closesAt: bundle.campConfig.voteWindowEnd,
     isOpen,
     timezone,
+    voteLimit: bundle.technologyConfig.voteLimit,
     options,
     ballotCount: ballots.length,
     projectedPlan: {

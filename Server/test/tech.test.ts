@@ -74,10 +74,32 @@ const technologyConfig: TechnologyConfig = {
     "7": []
   },
   fixedByDate: {},
+  voteLimit: 6,
   limits: { core: 2, general: 1 }
 };
 
 describe("buildTechnologyPlan", () => {
+  it("accepts an empty ballot as a withdrawal", () => {
+    expect(
+      normalizeBallotSelections({
+        selections: [],
+        catalog: technologyConfig.catalog,
+        allowedKeys: new Set(technologyConfig.catalog.map((item) => item.key))
+      })
+    ).toEqual({ selections: [] });
+  });
+
+  it("enforces the configured per-person vote limit", () => {
+    const result = normalizeBallotSelections({
+      selections: ["wrong-core", "vote-core", "general-a"],
+      catalog: technologyConfig.catalog,
+      allowedKeys: new Set(technologyConfig.catalog.map((item) => item.key)),
+      maximum: 2
+    });
+    expect(result.selections).toEqual([]);
+    expect(result.error).toContain("超过 2 票");
+  });
+
   it("keeps fixed tech and fills remaining slots by vote", () => {
     const voteOptions: VoteOption[] = technologyConfig.catalog.map((item) => ({
       ...item,
@@ -115,6 +137,7 @@ describe("buildTechnologyPlan", () => {
           "7": []
         },
         fixedByDate: {},
+        voteLimit: 6,
         limits: { core: 6, general: 6 }
       },
       voteOptions: [...agriculture, ...other].map((item, index) => ({
@@ -226,6 +249,7 @@ describe("technology prerequisites", () => {
         "7": []
       },
       fixedByDate: {},
+      voteLimit: 6,
       limits: { core: limit, general: 6 }
     };
   }

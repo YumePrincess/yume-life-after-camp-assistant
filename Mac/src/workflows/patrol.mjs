@@ -64,6 +64,10 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
   context.patrolTeamPhase = "creating";
   await createPatrolTeam(context, signal);
   context.patrolTeamPhase = "created";
+  // Team creation can leave the page in 3D mode. The flow only taps the
+  // existing 3D-mode control when that label is actually present; an already
+  // 2D team page is left unchanged.
+  await ui.executeFlow("ensurePatrolTeamTwoD", {}, signal);
   await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
   await updateWorkflowProgress(context, 0.18, "patrol_team_share");
   await sharePatrolTeam(context, signal);

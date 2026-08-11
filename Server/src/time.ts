@@ -190,15 +190,20 @@ export function nextTechnologyTargetDate(
   taskClock: string,
   resetClock: string
 ): string {
+  // The public/admin vote page represents the next effective technology day.
+  // Keep that date stable across the vote close and the midnight boundary;
+  // only the configured daily refresh advances it. The task clock is retained
+  // in the signature for callers/config compatibility.
   const parts = zonedParts(now, timezone);
   const localDate = dateKey(parts);
-  const nextRunDate =
-    minuteOfDay(parts) < clockToMinutes(taskClock)
-      ? localDate
-      : addDaysToDateKey(localDate, 1);
-  return clockToMinutes(taskClock) < clockToMinutes(resetClock)
-    ? nextRunDate
-    : addDaysToDateKey(nextRunDate, 1);
+  const refreshDate =
+    minuteOfDay(parts) < clockToMinutes(resetClock)
+      ? addDaysToDateKey(localDate, -1)
+      : localDate;
+  // Validate the legacy task clock even though the daily refresh is now the
+  // only boundary that changes the displayed target date.
+  clockToMinutes(taskClock);
+  return addDaysToDateKey(refreshDate, 1);
 }
 
 /** Returns the most recent technology effective date at the daily reset. */

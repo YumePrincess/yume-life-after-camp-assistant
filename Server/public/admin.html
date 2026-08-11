@@ -363,7 +363,7 @@
                 <span id="next-tech-date" class="date-badge"></span>
               </div>
               <p class="technology-help">
-                目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。
+                目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。农业行和其他科技行上限均为 6；每人投票上限可单独设置。
               </p>
               <div class="technology-editor-toolbar">
                 <div class="technology-date-picker">
@@ -373,6 +373,10 @@
                 <div class="technology-limits">
                   <span id="technology-core-count">农业科技 0 / 6</span>
                   <span id="technology-general-count">其他科技 0 / 6</span>
+                  <label class="field technology-vote-limit-field">
+                    <span>每人投票上限（0–12）</span>
+                    <input id="technology-vote-limit" type="number" min="0" max="12" step="1" value="6" />
+                  </label>
                 </div>
               </div>
               <div class="technology-preview-heading">

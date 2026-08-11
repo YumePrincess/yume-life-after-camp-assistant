@@ -105,6 +105,8 @@
           <div class="date-badge" id="poll-date">--</div>
         </div>
         <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
+        <p id="vote-limit-description" class="muted vote-limit-description">每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。</p>
+        <p id="vote-window-state" class="vote-window-state">当前未开放</p>
         <div class="identity-vote-row">
           <label class="field identity-code-field">
             <span>身份识别码（必填）</span>
@@ -130,7 +132,6 @@
           </button>
         </div>
         <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
-        <p class="vote-list-label">全部可选科技（每人最多 6 票）</p>
         <div id="vote-options" class="vote-options" aria-live="polite"></div>
         <div class="action-row">
           <button id="submit-vote" class="button button-primary" type="button">提交投票</button>

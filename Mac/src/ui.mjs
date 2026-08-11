@@ -2150,10 +2150,85 @@ export class GameUi {
         await this.report(
           "info",
           "camp_chat_verified",
-          "已确认聊天层，继续点击营地频道和市政厅图标；本步骤不重复发送 keyevent 70"
+          "已确认聊天层；将按频道→营地频道→市政厅顺序继续，不重复发送 keyevent 70"
         );
-        await this.tap(action.campChannelButton || { x: 1740, y: 355 }, signal);
-        await delay(action.channelDelayMs || 500, signal);
+        const stableChatNavigation =
+          Boolean(action.chatTabText && action.campChannelText);
+        if (stableChatNavigation) {
+          await delay(Number(action.chatCardSettleMs) || 3000, signal);
+          await this.clickText(
+            action.chatTabText,
+            {
+              region: action.chatTabRegion,
+              mode: action.chatTabMode || "exact",
+              timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
+              strictTimeout: true
+            },
+            signal
+          );
+          await this.report(
+            "info",
+            "camp_chat_channel_tab_clicked",
+            `已等待 ${Number(action.chatCardSettleMs) || 3000}ms 并点击聊天顶部“${action.chatTabText}”`
+          );
+          await delay(Number(action.chatTabSettleMs) || 3000, signal);
+          await this.clickText(
+            action.campChannelText,
+            {
+              region: action.campChannelRegion,
+              mode: action.campChannelMode || "includes",
+              timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
+              strictTimeout: true
+            },
+            signal
+          );
+          await delay(Number(action.campChannelSettleMs) || 3000, signal);
+          let channelFrame = await this.vision.captureTransient(
+            `camp-channel-verify-${attempt}`,
+            signal
+          );
+          let channelReady = (action.campChannelReadyTexts || ["营地频道"]).some(
+            (text) =>
+              this.findInRegion(
+                channelFrame.observations,
+                text,
+                action.campChannelReadyRegion
+              )
+          );
+          if (
+            !channelReady &&
+            typeof this.vision.captureAccurateTransient === "function"
+          ) {
+            channelFrame = await this.vision.captureAccurateTransient(
+              `camp-channel-verify-accurate-${attempt}`,
+              signal
+            );
+            channelReady = (action.campChannelReadyTexts || ["营地频道"]).some(
+              (text) =>
+                this.findInRegion(
+                  channelFrame.observations,
+                  text,
+                  action.campChannelReadyRegion
+                )
+            );
+          }
+          if (!channelReady) {
+            throw new Error(
+              "CAMP_CHANNEL_NOT_VERIFIED: 点击频道和营地后未确认顶部营地频道"
+            );
+          }
+          await this.report(
+            "info",
+            "camp_channel_verified",
+            "已确认顶部“营地频道”，且市政厅图标所在聊天页已稳定"
+          );
+        } else {
+          await this.tap(
+            action.campChannelButton || { x: 1740, y: 355 },
+            signal
+          );
+          await delay(action.channelDelayMs || 500, signal);
+        }
         await this.report(
           "info",
           "camp_city_hall_click",

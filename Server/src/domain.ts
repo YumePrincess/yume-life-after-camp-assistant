@@ -70,6 +70,7 @@ export interface TechnologyConfig {
   catalog: TechnologyDefinition[];
   fixedByWeekday: Record<string, string[]>;
   fixedByDate: Record<string, string[]>;
+  voteLimit: number;
   limits: {
     core: number;
     general: number;
@@ -151,6 +152,7 @@ export interface VoteSummary {
   closesAt: string;
   isOpen: boolean;
   timezone: string;
+  voteLimit: number;
   options: VoteOption[];
   ballotCount: number;
   projectedPlan: {

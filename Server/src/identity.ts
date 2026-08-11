@@ -1239,8 +1239,16 @@ export async function listVoteBallotDetails(
       updated_at: string;
       code_encrypted: string | null;
     }>();
+ const validRows = rows.results.filter((row) => {
+    try {
+      const selections = JSON.parse(row.selections_json);
+      return Array.isArray(selections) && selections.length > 0;
+    } catch {
+      return false;
+    }
+ });
   return Promise.all(
-    rows.results.map(async (row) => {
+    validRows.map(async (row) => {
       let identityCode = "—";
       if (row.code_encrypted) {
         try {

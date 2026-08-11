@@ -654,6 +654,12 @@
     if (sections.includes("technology")) {
       state.technologyDraft = JSON.parse(JSON.stringify(bundle.technologyConfig));
       state.technologyDraft.fixedByDate ||= {};
+      const voteLimitInput = byId("technology-vote-limit");
+      if (voteLimitInput) voteLimitInput.value = String(
+        Number.isInteger(state.technologyDraft.voteLimit) ?
+          state.technologyDraft.voteLimit :
+          6
+      );
       if (state.bootstrap?.voteSummary?.pollDate) {
         state.technologyDate = state.bootstrap.voteSummary.pollDate;
       }
@@ -679,7 +685,12 @@
   function scheduleTimes(taskKey) {
     const field = SCHEDULE_FIELDS[taskKey];
     const values = state.scheduleDrafts[taskKey];
-    if (Array.isArray(values) && values.length) return values;
+    if (Array.isArray(values) && values.length) {
+      const result = values.slice();
+      const primary = document.querySelector(`[name="${field?.time || ""}"]`);
+      if (primary) result[0] = String(primary.value || "").trim();
+      return result;
+    }
     return [String(getField(field?.time) || "").trim()];
   }
 
@@ -788,7 +799,7 @@
     if (!field) return;
     const times = [...byId("schedule-time-list").querySelectorAll("input[data-schedule-time]")]
       .map((control) => control.value.trim());
-    const invalid = times.some((value) => !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(value));
+    const invalid = times.some((value) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(value));
     if (!times.length || invalid) {
       byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("请为每次执行填写有效时间。");
       return;
@@ -1107,6 +1118,12 @@
   function renderTechnologyEditor() {
     const config = state.technologyDraft;
     if (!config) return;
+    const voteLimitInput = byId("technology-vote-limit");
+    if (voteLimitInput && document.activeElement !== voteLimitInput) {
+      voteLimitInput.value = String(
+        Number.isInteger(config.voteLimit) ? config.voteLimit : 6
+      );
+    }
     const campType =
       state.bootstrap?.configBundle?.campConfig?.currentCampType ||
       "agriculture";
@@ -1151,6 +1168,11 @@
     const fixed = new Set(
       config.fixedByDate[state.technologyDate] || []
     );
+    const currentVoteSummary = state.bootstrap?.voteSummary;
+    const technologyResultLocked = Boolean(
+      currentVoteSummary?.isOpen === false &&
+      state.technologyDate === currentVoteSummary.pollDate
+    );
     const coreCount = config.catalog.filter(
       (item) => fixed.has(item.key) && effectiveLane(item) === "core"
     ).length;
@@ -1164,7 +1186,6 @@
 
     const previewRoot = byId("technology-fixed-preview");
     previewRoot.replaceChildren();
-    const currentVoteSummary = state.bootstrap?.voteSummary;
     const showsCurrentProjection =
       state.technologyDate === currentVoteSummary?.pollDate;
     const projectedOrderByLane = new Map(
@@ -1293,6 +1314,10 @@
       const fixedInput = document.createElement("input");
       fixedInput.type = "checkbox";
       fixedInput.checked = fixed.has(item.key);
+      fixedInput.disabled = technologyResultLocked;
+      if (technologyResultLocked) {
+        fixedInput.title = "投票截止后至每日刷新前不可修改当前固定科技";
+      }
       fixedInput.addEventListener("change", () => {
         const keys = new Set(
           config.fixedByDate[state.technologyDate] || []
@@ -1324,6 +1349,10 @@
       const voteInput = document.createElement("input");
       voteInput.type = "checkbox";
       voteInput.checked = item.enabledForVoting;
+      voteInput.disabled = technologyResultLocked;
+      if (technologyResultLocked) {
+        voteInput.title = "投票截止后至每日刷新前不可修改当前投票配置";
+      }
       voteInput.addEventListener("change", () => {
         item.enabledForVoting = voteInput.checked;
         markTechnologyDirty();
@@ -2017,6 +2046,9 @@
       };
       next.automationConfig.routines = [];
     } else if (section === "technology") {
+      const rawVoteLimit = byId("technology-vote-limit")?.value;
+      const voteLimit = rawVoteLimit === "" ? 6 : Number(rawVoteLimit);
+      state.technologyDraft.voteLimit = voteLimit;
       next.technologyConfig = JSON.parse(
         JSON.stringify(state.technologyDraft)
       );

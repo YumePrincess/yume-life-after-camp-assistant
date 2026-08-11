@@ -322,6 +322,60 @@ test("camp navigation uses direct ADB clicks after the HUD phase", async () => {
   ]);
 });
 
+test("camp navigation waits and verifies channel then camp before city hall", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("频道", 1600, 50)],
+      [observation("营地", 1700, 355)]
+    ],
+    transientCapture(label) {
+      if (label === "camp-chat-verify-1") {
+        return [observation("营地频道", 1300, 115)];
+      }
+      if (label.startsWith("camp-channel-verify")) {
+        return [observation("营地频道", 900, 115)];
+      }
+      if (label.startsWith("camp-panel-verify")) {
+        return [
+          observation("量子时代", 330, 330),
+          observation("营地周活跃", 760, 320)
+        ];
+      }
+      return [];
+    }
+  });
+
+  await fixture.ui.openCampPanelViaChat({
+    attempts: 1,
+    chatDelayMs: 1,
+    chatCardSettleMs: 1,
+    chatTabSettleMs: 1,
+    campChannelSettleMs: 1,
+    chatNavigationTimeoutSeconds: 1,
+    chatReadyTexts: ["营地频道"],
+    chatReadyRegion: { left: 1200, top: 100, right: 1900, bottom: 1150 },
+    chatTabText: "频道",
+    chatTabMode: "exact",
+    chatTabRegion: { left: 1450, top: 0, right: 1900, bottom: 180 },
+    campChannelText: "营地",
+    campChannelMode: "includes",
+    campChannelRegion: { left: 1450, top: 120, right: 1900, bottom: 800 },
+    campChannelReadyTexts: ["营地频道"],
+    campChannelReadyRegion: { left: 700, top: 0, right: 1450, bottom: 180 },
+    verifySeconds: 1
+  });
+
+  assert.deepEqual(fixture.taps, [
+    { x: 250, y: 1060 },
+    { x: 1610, y: 60 },
+    { x: 1710, y: 365 },
+    { x: 980, y: 65 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("营地频道"))
+  );
+});
+
 test("an already-open camp chat skips the chat toggle and clicks city hall", async () => {
   const fixture = createUi({
     transientCapture(label) {
@@ -1373,6 +1427,31 @@ test("open team panel retries the flag expansion until the team card is visible"
       gameMouse: true,
       controlLabel: "队伍卡片旗帜展开"
     });
+  }
+});
+
+test("patrol creation changes 3D to 2D only when the 3D label is visible", async () => {
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    assert.deepEqual(config.flows.ensurePatrolTeamTwoD, [
+      {
+        op: "tapIfAnyText",
+        texts: ["3D模式"],
+        x: 1655,
+        y: 55,
+        hud: true,
+        region: { left: 1500, top: 0, right: 1850, bottom: 120 }
+      },
+      { op: "sleep", ms: 500 },
+      {
+        op: "waitAnyText",
+        texts: ["2D模式"],
+        region: { left: 1500, top: 0, right: 1850, bottom: 120 },
+        timeoutSeconds: 8
+      }
+    ]);
   }
 });
 

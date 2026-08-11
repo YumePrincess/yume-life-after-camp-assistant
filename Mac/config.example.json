@@ -456,6 +456,18 @@
         "chatButton": { "x": 250, "y": 1060 },
         "campChannelButton": { "x": 1740, "y": 355 },
         "campIconButton": { "x": 980, "y": 65 },
+        "chatCardSettleMs": 3000,
+        "chatTabText": "频道",
+        "chatTabMode": "exact",
+        "chatTabRegion": { "left": 1450, "top": 0, "right": 1900, "bottom": 180 },
+        "chatTabSettleMs": 3000,
+        "campChannelText": "营地",
+        "campChannelMode": "includes",
+        "campChannelRegion": { "left": 1450, "top": 120, "right": 1900, "bottom": 800 },
+        "campChannelSettleMs": 3000,
+        "campChannelReadyTexts": ["营地频道"],
+        "campChannelReadyRegion": { "left": 700, "top": 0, "right": 1450, "bottom": 180 },
+        "chatNavigationTimeoutSeconds": 8,
         "chatReadyTexts": ["营地频道", "成员", "私聊"],
         "chatReadyRegion": { "left": 1200, "top": 100, "right": 1900, "bottom": 1150 },
         "chatReadyMinimumTexts": 1,
@@ -655,6 +667,23 @@
       { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
       { "op": "tapIfAnyText", "texts": ["3D模式"], "x": 1655, "y": 55, "hud": true },
       { "op": "sleep", "ms": 500 }
+    ],
+    "ensurePatrolTeamTwoD": [
+      {
+        "op": "tapIfAnyText",
+        "texts": ["3D模式"],
+        "x": 1655,
+        "y": 55,
+        "hud": true,
+        "region": { "left": 1500, "top": 0, "right": 1850, "bottom": 120 }
+      },
+      { "op": "sleep", "ms": 500 },
+      {
+        "op": "waitAnyText",
+        "texts": ["2D模式"],
+        "region": { "left": 1500, "top": 0, "right": 1850, "bottom": 120 },
+        "timeoutSeconds": 8
+      }
     ],
     "closeTeamPanel": [
       {

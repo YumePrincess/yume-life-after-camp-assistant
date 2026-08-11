@@ -85,7 +85,7 @@ describe("five-task automation configuration", () => {
     expect(config.agentPolling.claimTimeoutMinutes).toBe(90);
   });
 
-  it("supports multiple daytime executions but keeps technology and patrol single-run", () => {
+  it("supports multiple daytime executions for non-technology, non-patrol tasks", () => {
     const config = validateAutomationConfig({
       timezone: "Asia/Shanghai",
       schedulerGraceMinutes: 5,
@@ -122,7 +122,7 @@ describe("five-task automation configuration", () => {
     expect(config.tasks.patrol.times).toEqual(["19:20"]);
   });
 
-  it("rejects multiple technology execution times", () => {
+  it("keeps technology and patrol as single scheduled times", () => {
     expect(() => validateAutomationConfig({
       timezone: "Asia/Shanghai",
       schedulerGraceMinutes: 5,
@@ -135,7 +135,45 @@ describe("five-task automation configuration", () => {
         maxRestarts: 2,
         restartCooldownSeconds: 8
       },
-      tasks: { tech_switch: { enabled: true, time: "02:00", times: ["02:00", "12:00"] } }
+      tasks: {
+        tech_switch: { enabled: true, time: "02:00", times: ["02:00", "12:00"] },
+        patrol: {
+          enabled: true,
+          time: "19:20",
+          times: ["19:20"],
+          teamReadyTime: "19:30",
+          shareIntervalMinutes: 10,
+          chatPollSeconds: 5,
+          deadline: "21:25"
+        }
+      }
     })).toThrow("tech_switch.times supports only one time");
+  });
+
+  it("rejects multiple patrol execution times", () => {
+    expect(() => validateAutomationConfig({
+      timezone: "Asia/Shanghai",
+      schedulerGraceMinutes: 5,
+      agentPolling: { activeSeconds: 2, idleSeconds: 300, windows: [] },
+      gameWatchdog: {
+        enabled: true,
+        healthCheckSeconds: 10,
+        actionTimeoutSeconds: 45,
+        frozenScreenSeconds: 90,
+        maxRestarts: 2,
+        restartCooldownSeconds: 8
+      },
+      tasks: {
+        patrol: {
+          enabled: true,
+          time: "19:20",
+          times: ["19:20", "20:20"],
+          teamReadyTime: "19:30",
+          shareIntervalMinutes: 10,
+          chatPollSeconds: 5,
+          deadline: "21:25"
+        }
+      }
+    })).toThrow("patrol.times supports only one time");
   });
 });

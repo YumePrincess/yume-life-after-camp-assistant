@@ -143,6 +143,11 @@
     return result;
   }
 
+  function configuredVoteLimit(summary) {
+    const value = Number(summary?.voteLimit);
+    return Number.isInteger(value) && value >= 0 && value <= 12 ? value : 6;
+  }
+
   function removeVoteAndDependents(summary, key) {
     const before = state.selections.size;
     state.selections.delete(key);
@@ -179,9 +184,11 @@
     }
     const required = requiredVoteKeys(summary, option.key);
     const additions = [...required].filter((key) => !state.selections.has(key));
-    if (state.selections.size + additions.length > 6) {
-      feedback.textContent = window.MrzhI18n.t(
-        "选择该科技及其前置科技后将超过 6 票。"
+    const voteLimit = configuredVoteLimit(summary);
+    if (state.selections.size + additions.length > voteLimit) {
+      feedback.textContent = window.MrzhI18n.format(
+        "选择该科技及其前置科技后将超过 {limit} 票。",
+        { limit: voteLimit }
       );
       return;
     }
@@ -206,11 +213,25 @@
         timezone: summary.timezone || ""
       })
     );
+    const voteLimit = configuredVoteLimit(summary);
+    setText(
+      "vote-limit-description",
+      window.MrzhI18n.format(
+        "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。",
+        { limit: voteLimit }
+      )
+    );
+    setText(
+      "vote-window-state",
+      window.MrzhI18n.t(summary.isOpen === false ? "当前未开放" : "当前可投票")
+    );
     const root = byId("vote-options");
     root.replaceChildren();
     renderVoteSelection(summary);
     byId("submit-vote").disabled =
       summary.isOpen === false || !summary.options?.length;
+    const identityInput = byId("identity-code");
+    if (identityInput) identityInput.disabled = summary.isOpen === false;
     if (!summary.options?.length) {
       root.append(create("p", "empty-state", "管理员尚未开放科技投票。"));
       return;
@@ -568,12 +589,10 @@
       feedback.textContent = window.MrzhI18n.t("当前不在科技投票开放时间内。");
       return;
     }
-    if (!state.selections.size) {
-      feedback.textContent = "请至少选择一项科技。";
-      return;
-    }
-    if (state.selections.size > 6) {
-      feedback.textContent = window.MrzhI18n.t("每人最多选择 6 项科技。");
+    if (state.selections.size > configuredVoteLimit(state.data?.voteSummary)) {
+      feedback.textContent = window.MrzhI18n.format("每人最多选择 {limit} 项科技。", {
+        limit: configuredVoteLimit(state.data?.voteSummary)
+      });
       return;
     }
     const identityCode = byId("identity-code").value.trim();
@@ -595,7 +614,9 @@
       state.selections.clear();
       if (state.data) state.data.voteSummary = summary;
       renderVote(summary);
-      feedback.textContent = "投票已保存，可在截止前再次修改。";
+      feedback.textContent = summary.voteWithdrawn
+        ? window.MrzhI18n.t("投票已撤回，当前不计入投票人数。")
+        : window.MrzhI18n.t("投票已保存，可在截止前再次修改。");
       setText(
         "vote-success-expiry",
         summary.publicTestVote
