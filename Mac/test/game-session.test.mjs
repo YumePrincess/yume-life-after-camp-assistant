@@ -108,7 +108,7 @@ test("the newspaper is recognized as a promotion page", async () => {
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
     { x: 960, y: 945 },
-    { x: 960, y: 1035 }
+    { x: 80, y: 1080 }
   ]);
   assert.match(fixture.messages.at(-1), /已关闭 1 张/);
 });
@@ -124,9 +124,9 @@ test("a newspaper remaining after the first tap is retried without consuming ano
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
     { x: 960, y: 945 },
-    { x: 960, y: 1035 },
-    { x: 960, y: 1035 },
-    { x: 960, y: 1035 }
+    { x: 80, y: 1080 },
+    { x: 80, y: 1080 },
+    { x: 80, y: 1080 }
   ]);
   assert.ok(
     fixture.messages.some((message) =>
@@ -145,11 +145,29 @@ test("an activity call-to-action closes a post-login promotion at the calibrated
   await waitForGameReady(fixture.context);
   assert.deepEqual(fixture.taps, [
     { x: 960, y: 945 },
-    { x: 960, y: 1035 }
+    { x: 80, y: 1080 }
   ]);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("活动宣传页特征")
+    )
+  );
+});
+
+test("an accidental activity page returns through the bottom-left back point", async () => {
+  const fixture = createFixture([
+    ["登录游戏"],
+    ["推荐", "活动", "臻藏"],
+    ["背包"]
+  ]);
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [
+    { x: 960, y: 945 },
+    { x: 80, y: 1080 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("检测到活动页面左侧")
     )
   );
 });
@@ -703,7 +721,15 @@ function createFixture(
         dismissRetryCooldownMs: 15_000,
         initialWaitMs: 0,
         betweenPagesMs: 0,
-        dismissPoint: { x: 960, y: 1035 },
+        dismissPoint: { x: 80, y: 1080 },
+        activityPageTexts: ["推荐", "活动", "臻藏"],
+        activityPageRegion: {
+          left: 0,
+          top: 0,
+          right: 450,
+          bottom: 1050
+        },
+        activityPageMinimumTexts: 3,
         signatureTexts: ["立即前往", "前往查看", "前往活动", "活动时间"],
         readyTexts: ["配方", "背包", "营地"],
         loadingTexts: ["加载中"],

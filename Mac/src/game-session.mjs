@@ -391,8 +391,18 @@ export async function waitForGameReady(context, signal) {
     dismissRetryCooldownMs: 15_000,
     initialWaitMs: 7_000,
     betweenPagesMs: 1_800,
-    dismissPoint: { x: 960, y: 1035 },
+    // The promotion close action uses the calibrated bottom-left page-return
+    // key center. This avoids tapping the activity content by drift.
+    dismissPoint: { x: 80, y: 1080 },
     signatureTexts: ["立即前往", "前往查看", "前往活动", "活动时间"],
+    activityPageTexts: ["推荐", "活动", "臻藏"],
+    activityPageRegion: {
+      left: 0,
+      top: 0,
+      right: 450,
+      bottom: 1050
+    },
+    activityPageMinimumTexts: 3,
     readyTexts: ["配方", "背包", "营地"],
     channelReadyTexts: ["综合", "世界", "场景", "营地", "队伍"],
     channelReadyRegion: {
@@ -412,6 +422,32 @@ export async function waitForGameReady(context, signal) {
     loadingQuietMs: 5_000,
     ...config.postLoginPromotions
   };
+  // Reuse the already calibrated bottom-left return tap used by the existing
+  // page-closing flow. The activity page is a mis-navigation of the promotion
+  // close action, so it must return through that same safe point rather than
+  // inventing another coordinate.
+  const configuredActivityPageBackAction = Array.isArray(
+    config.flows?.closeContribution
+  )
+    ? config.flows.closeContribution.find(
+        (action) =>
+          action?.op === "tap" &&
+          Number.isFinite(Number(action.x)) &&
+          Number.isFinite(Number(action.y))
+      )
+    : null;
+  const configuredActivityPageBackPoint =
+    promotions.activityPageBackPoint || configuredActivityPageBackAction;
+  const activityPageBackPoint = configuredActivityPageBackPoint
+    ? {
+        x: Number(configuredActivityPageBackPoint.x),
+        y: Number(configuredActivityPageBackPoint.y)
+      }
+    : { x: 80, y: 1080 };
+  // Use the actual return-key center for every post-login promotion close.
+  // Keeping one calibrated point also makes the accidental activity-page
+  // recovery and the normal promotion dismissal identical.
+  promotions.dismissPoint = { ...activityPageBackPoint };
   const updates = {
     enabled: true,
     timeoutSeconds: 1800,
@@ -694,6 +730,12 @@ export async function waitForGameReady(context, signal) {
       promotions.channelReadyTexts,
       promotions.channelReadyRegion
     );
+    const activityPageMatches = findReadyTextsInRegion(
+      vision,
+      frame.observations,
+      promotions.activityPageTexts,
+      promotions.activityPageRegion
+    );
     const ready = readyMatches[0]?.text || null;
     const loadingProgressRegion = promotions.loadingProgressRegion || {
       left: 360,
@@ -728,8 +770,6 @@ export async function waitForGameReady(context, signal) {
     const blockingMatches = readyBlockingTexts.filter((text) =>
       vision.find(frame.observations, text)
     );
-    const blocksReady = blockingMatches.length > 0 || loadingProgressVisible;
-    if (blocksReady) lastLoadingEvidenceAt = Date.now();
     const readyMinimumTexts = Math.max(
       1,
       Number(promotions.readyMinimumTexts) || 2
@@ -740,6 +780,20 @@ export async function waitForGameReady(context, signal) {
     );
     const channelHudReady =
       channelReadyMatches.length >= channelReadyMinimumTexts;
+    const activityPageMinimumTexts = Math.max(
+      3,
+      Number(promotions.activityPageMinimumTexts) || 3
+    );
+    const activityPageDetected =
+      loginClicked &&
+      !ready &&
+      !channelHudReady &&
+      activityPageMatches.length >= activityPageMinimumTexts;
+    const blocksReady =
+      blockingMatches.length > 0 ||
+      loadingProgressVisible ||
+      activityPageDetected;
+    if (blocksReady) lastLoadingEvidenceAt = Date.now();
     const configuredPostLoginWaitMs = Number(
       promotions.postLoginMinimumWaitMs
     );
@@ -1154,6 +1208,35 @@ export async function waitForGameReady(context, signal) {
         }
       );
       await ui.tap(promotions.dismissPoint, signal);
+      await ui.afterAction(signal);
+      continue;
+    }
+
+    // A promotion close tap can occasionally land on the game's activity
+    // center instead of dismissing the overlay. The left navigation's exact
+    // “推荐 / 活动 / 臻藏” combination identifies that page; return first,
+    // then let the next OCR pass decide whether the real promotion remains.
+    const activityPageBackAttempt = activityPageDetected
+      ? reservePromotionDismissAttempt("promotion_activity_page")
+      : null;
+    if (activityPageDetected && activityPageBackAttempt != null) {
+      const recognizedTexts = activityPageMatches.map((item) => item.text);
+      await report(
+        "warning",
+        activityPageBackAttempt === 1
+          ? "promotion_activity_page_back"
+          : "promotion_activity_page_back_retry",
+        activityPageBackAttempt === 1
+          ? `检测到活动页面左侧“${recognizedTexts.join("/")}”，正在点击左下角返回关闭`
+          : `活动页面仍未关闭，正在第 ${activityPageBackAttempt} 次点击左下角返回关闭`,
+        {
+          recognizedTexts,
+          point: activityPageBackPoint,
+          attempt: activityPageBackAttempt,
+          maxAttempts: promotions.maxDismissAttemptsPerPage
+        }
+      );
+      await ui.tap(activityPageBackPoint, signal);
       await ui.afterAction(signal);
       continue;
     }

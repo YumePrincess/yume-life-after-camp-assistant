@@ -1899,6 +1899,10 @@
         );
         root.append(row);
       }
+      // Events are rendered oldest-first so the run can be read as a timeline,
+      // but the useful state is always at the tail. Keep the newest event in
+      // view after the initial load and every polling refresh.
+      root.scrollTop = root.scrollHeight;
     } catch (error) {
       if (state.activeEventRunId === runId) {
         root.replaceChildren(create("p", "error-text", error.message));
