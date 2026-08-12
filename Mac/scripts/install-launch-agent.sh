@@ -72,6 +72,22 @@ if [[ "${bootstrap_succeeded}" != true ]]; then
   echo "Do not retry as root. Wait a moment and use Repair Agent again; if launchd remains stuck, log out and back in once." >&2
   exit 1
 fi
+# launchctl can return successfully before the per-user domain exposes the
+# service to print/kickstart. Wait for that registration boundary explicitly;
+# otherwise repair reports a misleading "Could not find service ... gui:501".
+service_loaded=false
+for _ in {1..40}; do
+  if launchctl print "${SERVICE_TARGET}" >/dev/null 2>&1; then
+    service_loaded=true
+    break
+  fi
+  sleep 0.25
+done
+if [[ "${service_loaded}" != true ]]; then
+  echo "${LABEL} was bootstrapped but did not appear in the user launchd domain." >&2
+  echo "Do not retry as root; wait briefly and use Repair Agent again." >&2
+  exit 1
+fi
 echo "Installed ${LABEL}; runtime and logs remain with this managed Agent installation."
 # A successful bootstrap can still need a few moments before launchd exposes
 # the process state. Reuse the bounded start/wait path instead of sampling

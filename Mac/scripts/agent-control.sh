@@ -46,6 +46,17 @@ bootstrap_agent() {
   return 1
 }
 
+wait_until_loaded() {
+  for _ in {1..40}; do
+    if is_loaded; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "${LABEL} was bootstrapped but is not visible in the user launchd domain yet." >&2
+  return 1
+}
+
 service_field() {
   local field=$1
   launchctl print "${SERVICE_TARGET}" 2>/dev/null |
@@ -82,8 +93,24 @@ start_agent() {
   require_plist
   if ! is_loaded; then
     bootstrap_agent
+    wait_until_loaded
   fi
-  launchctl kickstart -k "${SERVICE_TARGET}"
+  local kickstart_error=""
+  for _ in {1..20}; do
+    if kickstart_error=$(launchctl kickstart -k "${SERVICE_TARGET}" 2>&1); then
+      kickstart_error=""
+      break
+    fi
+    if ! is_loaded; then
+      sleep 0.5
+      continue
+    fi
+    sleep 0.5
+  done
+  if [[ -n "${kickstart_error}" ]]; then
+    echo "${kickstart_error}" >&2
+    return 1
+  fi
   wait_until_running
 }
 

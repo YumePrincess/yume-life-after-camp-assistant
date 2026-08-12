@@ -3045,7 +3045,9 @@ export class GameUi {
   async executeFlow(name, variables = {}, signal) {
     const actions = this.config.flows[name];
     if (!Array.isArray(actions) || !actions.length) {
-      throw new Error(`Flow "${name}" is not calibrated in Mac/config.json`);
+      throw new Error(
+        `Flow "${name}" is not calibrated in the active Runtime config.json`
+      );
     }
     await this.report("info", name, `开始界面流程：${name}`);
     for (const source of actions) {

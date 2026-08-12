@@ -19,11 +19,20 @@ actor RuntimeService {
            fileManager.fileExists(atPath: bundled.appending(path: "src/main.mjs").path) {
             return bundled
         }
+#if DEBUG
         let development = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
             .appending(path: "Mac", directoryHint: .isDirectory)
         return development
+#else
+        // A released App must never fall back to the source checkout. That
+        // path can live on an external development volume and would trigger a
+        // macOS permission prompt on every launch if the bundled/runtime copy
+        // were missing. The installer/bootstrap path reports the real missing
+        // runtime instead; it does not silently read project files.
+        return installed
+#endif
     }
 
     var credentialsFile: URL {
@@ -439,6 +448,33 @@ actor RuntimeService {
             flows["openTeamPanel"] = openFlow
             changed = true
         }
+        // Beta 86 added a post-creation 3D -> 2D check. Existing installed
+        // Runtime/current configs are deliberately preserved across upgrades,
+        // so older configs do not contain this newly introduced flow. Add it
+        // during migration without replacing a user's non-empty calibration.
+        if let existingTwoDFlow = flows["ensurePatrolTeamTwoD"] as? [[String: Any]],
+           !existingTwoDFlow.isEmpty {
+            // Keep an existing calibrated flow unchanged.
+        } else {
+            flows["ensurePatrolTeamTwoD"] = [
+                [
+                    "op": "tapIfAnyText",
+                    "texts": ["3D模式"],
+                    "x": 1655,
+                    "y": 55,
+                    "hud": true,
+                    "region": ["left": 1500, "top": 0, "right": 1850, "bottom": 120]
+                ],
+                ["op": "sleep", "ms": 500],
+                [
+                    "op": "waitAnyText",
+                    "texts": ["2D模式"],
+                    "region": ["left": 1500, "top": 0, "right": 1850, "bottom": 120],
+                    "timeoutSeconds": 8
+                ]
+            ]
+            changed = true
+        }
         if var campFlow = flows["openCampPanel"] as? [[String: Any]],
            !campFlow.isEmpty,
            campFlow[0]["op"] as? String == "openCampPanelViaChat" {
@@ -552,11 +588,16 @@ actor RuntimeService {
         if let bundled = Bundle.main.resourceURL?.appending(path: "Runtime", directoryHint: .isDirectory) {
             roots.append(bundled)
         }
+#if DEBUG
+        // Development-only fallback. Never include the source checkout in a
+        // Release App: it may be on a removable volume and reading it during
+        // the three-second log refresh would trigger a permission prompt.
         let development = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
             .appending(path: "Mac", directoryHint: .isDirectory)
         roots.append(development)
+#endif
 
         var lines: [(index: Int, value: String)] = []
         var seenFiles = Set<String>()
