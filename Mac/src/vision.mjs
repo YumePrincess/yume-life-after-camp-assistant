@@ -296,7 +296,12 @@ export class Vision {
         let citizenFraction = parsePopulationFraction(
           citizenObservations,
           10,
-          { minimumCapacity: 0 }
+          {
+            minimumCapacity: 0,
+            ignoreTrailingInfoGlyph: true,
+            allowDashSeparator: true,
+            maxDigits: 2
+          }
         );
 
         // The citizen fraction is small and can be merged with its icon by
@@ -338,7 +343,12 @@ export class Vision {
           citizenFraction ??= parsePopulationFraction(
             citizenExpanded,
             10,
-            { minimumCapacity: 0 }
+            {
+              minimumCapacity: 0,
+              ignoreTrailingInfoGlyph: true,
+              allowDashSeparator: true,
+              maxDigits: 2
+            }
           );
         }
 
@@ -376,7 +386,12 @@ export class Vision {
               bottom: 320
             }),
             10,
-            { minimumCapacity: 0 }
+            {
+              minimumCapacity: 0,
+              ignoreTrailingInfoGlyph: true,
+              allowDashSeparator: true,
+              maxDigits: 2
+            }
           );
         }
         // Vision can segment the two adjacent fractions differently from one
@@ -1283,7 +1298,10 @@ export function parsePopulationFraction(
 }
 
 function parsePopulationCounts(observations, options = {}) {
-  const joined = [...(observations || [])]
+  const maxDigits = Number.isInteger(Number(options.maxDigits))
+    ? Math.max(1, Math.min(3, Number(options.maxDigits)))
+    : 3;
+  let joined = [...(observations || [])]
     .sort((left, right) => left.x - right.x)
     .map((item) => String(item.text || ""))
     .join("")
@@ -1294,7 +1312,23 @@ function parsePopulationCounts(observations, options = {}) {
     // numbers as an acute mark, bracket, or CJK closing bracket. These glyphs
     // are safe to normalize only in the numeric header parser.
     .replace(/[´`′’'⁄∕╱〛】\]｜|¦]/g, "/");
-  return [...joined.matchAll(/(\d{1,3})\/(\d{1,3})/g)]
+  if (options.allowDashSeparator) {
+    // Low-confidence Vision output can render the slash as a short dash.
+    // This is enabled only for the bounded 0–10 sailing-citizen field.
+    joined = joined.replace(/[‐‑‒–—−-]/g, "/");
+  }
+  if (options.ignoreTrailingInfoGlyph) {
+    // The circled information icon immediately after the sailing count is
+    // sometimes merged as a trailing `1`, turning the real 0/0 into 0/01.
+    // The game never renders a leading-zero capacity, so only normalize this
+    // exact zero-capacity shape and leave a real 0/1 untouched.
+    joined = joined.replace(/(0\/0)[1lIi|!]+$/u, "$1");
+  }
+  const fractionPattern = new RegExp(
+    `(\\d{1,${maxDigits}})\\/(\\d{1,${maxDigits}})`,
+    "g"
+  );
+  return [...joined.matchAll(fractionPattern)]
     .flatMap((match) => {
       const current = Number.parseInt(match[1], 10);
       const capacity = Number.parseInt(match[2], 10);

@@ -225,6 +225,29 @@ test("parses total members from the fraction denominator", () => {
     { current: 0, capacity: 0 }
   );
   assert.deepEqual(
+    parsePopulationFraction([{ text: "0/01", x: 490 }], 10, {
+      minimumCapacity: 0,
+      ignoreTrailingInfoGlyph: true
+    }),
+    { current: 0, capacity: 0 }
+  );
+  for (const [text, current] of [
+    ["0/10", 0],
+    ["10/10", 10],
+    ["0-10", 0],
+    ["0-10/01-101", 0]
+  ]) {
+    assert.deepEqual(
+      parsePopulationFraction([{ text, x: 490 }], 10, {
+        minimumCapacity: 0,
+        ignoreTrailingInfoGlyph: true,
+        allowDashSeparator: true,
+        maxDigits: 2
+      }),
+      { current, capacity: 10 }
+    );
+  }
+  assert.deepEqual(
     parsePopulationFraction([{ text: "8´92", x: 350 }], 110, {
       minimumCapacity: 1
     }),
