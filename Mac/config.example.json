@@ -29,7 +29,7 @@
     "returnToCenterTimeoutSeconds": 60
   },
   "adb": {
-    "binary": "./Toolchain/platform-tools/adb",
+    "binary": "adb",
     "serial": "127.0.0.1:16480",
     "packageName": "com.netease.mrzh.mumumnqmacos_cps",
     "launchActivity": "com.netease.ntunisdk.external.protocol.ProtocolLauncher",

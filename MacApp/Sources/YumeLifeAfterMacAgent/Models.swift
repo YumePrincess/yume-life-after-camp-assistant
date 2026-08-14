@@ -44,6 +44,20 @@ struct AgentHealth: Decodable {
     let plugins: [HealthPlugin]?
 }
 
+enum AdbRuntimeSource: String, Sendable {
+    case system
+    case missing
+}
+
+struct AdbRuntimeInfo: Sendable {
+    let source: AdbRuntimeSource
+    let path: String?
+    let version: String?
+
+    static let missing = AdbRuntimeInfo(source: .missing, path: nil, version: nil)
+    var isAvailable: Bool { source != .missing }
+}
+
 struct HealthPlugin: Decodable, Identifiable {
     let id: String
     let version: String

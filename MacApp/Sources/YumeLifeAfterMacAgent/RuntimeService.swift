@@ -128,6 +128,13 @@ actor RuntimeService {
     /// owner-only credentials file outside the replaceable runtime and config
     /// only contains a marker.
     private func ensureRuntimeConfig(at runtime: URL) throws {
+        // Older App builds copied Swift's compiler module cache and bundled
+        // platform-tools into Runtime/current. Both are build/install
+        // artifacts, not runtime data; remove them during every bootstrap so
+        // an App update repairs existing installations as well as fresh ones.
+        try? fileManager.removeItem(at: runtime.appending(path: "bin/module-cache", directoryHint: .isDirectory))
+        try? fileManager.removeItem(at: runtime.appending(path: "module-cache", directoryHint: .isDirectory))
+        try? fileManager.removeItem(at: runtime.appending(path: "Toolchain/platform-tools", directoryHint: .isDirectory))
         let config = runtime.appending(path: "config.json")
         if fileManager.fileExists(atPath: config.path) {
             // 27.0 renamed only the historical built-in identity. A custom
@@ -187,6 +194,10 @@ actor RuntimeService {
                 object["mumu"] = mumu
             }
             var adb = object["adb"] as? [String: Any] ?? [:]
+            if adb["binary"] as? String != "adb" {
+                adb["binary"] = "adb"
+                changed = true
+            }
             let toggleKeyIs70 = (adb["gameMouseToggleKey"] as? NSNumber)?.intValue == 70 ||
                 (adb["gameMouseToggleKey"] as? String) == "70"
             if !toggleKeyIs70 {
@@ -542,6 +553,9 @@ actor RuntimeService {
         guard nodePath() != nil else {
             throw RuntimeError.failed(String(localized: "Node.js is required. Install Node.js 22 arm64, then retry."))
         }
+        guard adbPath() != nil else {
+            throw RuntimeError.failed(String(localized: "ADB is required. Install Android platform-tools, then retry."))
+        }
         return try await process("/bin/zsh", [script] + arguments, workingDirectory: root, timeout: timeout)
     }
 
@@ -867,6 +881,11 @@ actor RuntimeService {
         return .missing
     }
 
+    func adbStatus() async -> AdbRuntimeInfo {
+        guard let adb = adbPath() else { return .missing }
+        return AdbRuntimeInfo(source: .system, path: adb, version: toolVersion(at: adb))
+    }
+
     /// Downloads the pinned arm64 Node.js runtime outside the App bundle.
     /// The Overview update action calls this before updating the JS runtime,
     /// so a Mac without a discoverable shell Node can still be repaired.
@@ -922,7 +941,31 @@ actor RuntimeService {
         return candidates.first(where: fileManager.isExecutableFile(atPath:))
     }
 
+    private func adbPath() -> String? {
+        var candidates = [
+            "/opt/homebrew/bin/adb",
+            "/usr/local/bin/adb",
+            "/opt/local/bin/adb",
+            "/usr/bin/adb"
+        ]
+        let home = fileManager.homeDirectoryForCurrentUser.path
+        candidates.append(contentsOf: [
+            "\(home)/Library/Android/sdk/platform-tools/adb",
+            "\(home)/.android/sdk/platform-tools/adb"
+        ])
+        if let path = ProcessInfo.processInfo.environment["PATH"] {
+            candidates.append(contentsOf: path.split(separator: ":").map {
+                URL(fileURLWithPath: String($0)).appending(path: "adb").path
+            })
+        }
+        return candidates.first(where: fileManager.isExecutableFile(atPath:))
+    }
+
     private func nodeVersion(at path: String) -> String? {
+        toolVersion(at: path)
+    }
+
+    private func toolVersion(at path: String) -> String? {
         let task = Process()
         let pipe = Pipe()
         task.executableURL = URL(fileURLWithPath: path)
@@ -936,10 +979,11 @@ actor RuntimeService {
             return nil
         }
         guard task.terminationStatus == 0 else { return nil }
-        return String(
+        let output = String(
             decoding: pipe.fileHandleForReading.readDataToEndOfFile(),
             as: UTF8.self
         ).trimmingCharacters(in: .whitespacesAndNewlines)
+        return output.split(whereSeparator: \.isNewline).first.map(String.init)
     }
 
     private func process(
@@ -955,12 +999,15 @@ actor RuntimeService {
             task.arguments = arguments
             task.currentDirectoryURL = workingDirectory
             // App launches do not inherit an interactive shell PATH. Add the
-            // external/local Node directory and bundled ADB explicitly so
+            // external/local Node and system ADB directories explicitly so
             // management scripts behave the same from the GUI and Terminal.
             var environment = ProcessInfo.processInfo.environment
-            var runtimePaths = [workingDirectory.appending(path: "Toolchain/platform-tools").path]
+            var runtimePaths: [String] = []
             if let node = nodePath() {
                 runtimePaths.insert(URL(fileURLWithPath: node).deletingLastPathComponent().path, at: 0)
+            }
+            if let adb = adbPath() {
+                runtimePaths.insert(URL(fileURLWithPath: adb).deletingLastPathComponent().path, at: 0)
             }
             let inheritedPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
             environment["PATH"] = (runtimePaths + [inheritedPath]).joined(separator: ":")

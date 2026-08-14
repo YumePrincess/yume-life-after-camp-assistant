@@ -5,7 +5,6 @@ SCRIPT_DIR=${0:A:h}
 APP_ROOT=${SCRIPT_DIR:h}
 PROJECT_ROOT=${APP_ROOT:h}
 MAC_ROOT="${PROJECT_ROOT}/Mac"
-PORTABLE_ROOT="${APP_ROOT}/.portable"
 # Match the DMG installation result by default: a build is placed directly in
 # /Applications. Override with YLA_DIST_ROOT for CI or a non-destructive local
 # build (for example YLA_DIST_ROOT="${APP_ROOT}/dist").
@@ -37,19 +36,11 @@ for helper in mrzh-vision-ocr mrzh-pixel-probe; do
   }
 done
 
-if [[ ! -x "${PORTABLE_ROOT}/Toolchain/platform-tools/adb" ]]; then
-  echo "Portable ADB toolchain is missing. Run: ./scripts/prepare-portable-runtime.sh" >&2
-  exit 1
-fi
-if [[ "$(/usr/bin/lipo -archs "${PORTABLE_ROOT}/Toolchain/platform-tools/adb")" != "arm64" ]]; then
-  echo "Bundled adb must be arm64-only. Re-run prepare-portable-runtime.sh." >&2
-  exit 1
-fi
-
 # A development build may still be running directly from dist. Stop it before
 # replacing the bundle so a stale process cannot write into the new runtime.
 killall YumeLifeAfterMacAgent 2>/dev/null || true
 
+cd "${APP_ROOT}"
 env CLANG_MODULE_CACHE_PATH=/private/tmp/yla-clang-cache \
   EnableSDKStatCaching=0 \
   swift build --disable-sandbox -c "${BUILD_CONFIGURATION}" --arch arm64 \
@@ -74,6 +65,7 @@ done
 rsync -a \
   --prune-empty-dirs \
   --exclude '.DS_Store' --exclude 'config.json' --exclude '.local-model' \
+  --exclude 'bin/module-cache' --exclude 'module-cache' \
   --exclude 'logs' --exclude 'snapshots' --exclude 'node_modules' \
   "${MAC_ROOT}/" "${APP_BUNDLE}/Contents/Resources/Runtime/"
 # A Core ML glyph model is optional at source checkout time. When the trained
@@ -83,25 +75,24 @@ SYMBOL_MODEL_SOURCE="${MAC_ROOT}/vision/SymbolClassifier.mlmodelc"
 if [[ -d "${SYMBOL_MODEL_SOURCE}" ]]; then
   cp -R "${SYMBOL_MODEL_SOURCE}" "${APP_BUNDLE}/Contents/Resources/Runtime/bin/SymbolClassifier.mlmodelc"
 fi
-mkdir -p "${APP_BUNDLE}/Contents/Resources/Runtime/Toolchain"
-cp -R "${PORTABLE_ROOT}/Toolchain/platform-tools" "${APP_BUNDLE}/Contents/Resources/Runtime/Toolchain/platform-tools"
-
 # Remove Intel slices from universal dependencies so the delivered app is
 # genuinely Apple-Silicon-only and never needs Rosetta on a clean Mac.
-while IFS= read -r -d '' mach_file; do
-  architectures=$(/usr/bin/lipo -archs "${mach_file}" 2>/dev/null || true)
-  [[ -z "${architectures}" ]] && continue
-  if [[ " ${architectures} " == *" arm64 "* && " ${architectures} " == *" x86_64 "* ]]; then
-    thinned="${mach_file}.arm64"
-    original_mode=$(/usr/bin/stat -f '%Lp' "${mach_file}")
-    /usr/bin/lipo "${mach_file}" -thin arm64 -output "${thinned}"
-    chmod "${original_mode}" "${thinned}"
-    mv "${thinned}" "${mach_file}"
-  elif [[ " ${architectures} " != *" arm64 "* ]]; then
-    echo "Non-arm64 Mach-O found in app runtime: ${mach_file}" >&2
-    exit 1
-  fi
-done < <(find "${APP_BUNDLE}/Contents/Resources/Runtime/Toolchain" -type f -print0)
+if [[ -d "${APP_BUNDLE}/Contents/Resources/Runtime/Toolchain" ]]; then
+  while IFS= read -r -d '' mach_file; do
+    architectures=$(/usr/bin/lipo -archs "${mach_file}" 2>/dev/null || true)
+    [[ -z "${architectures}" ]] && continue
+    if [[ " ${architectures} " == *" arm64 "* && " ${architectures} " == *" x86_64 "* ]]; then
+      thinned="${mach_file}.arm64"
+      original_mode=$(/usr/bin/stat -f '%Lp' "${mach_file}")
+      /usr/bin/lipo "${mach_file}" -thin arm64 -output "${thinned}"
+      chmod "${original_mode}" "${thinned}"
+      mv "${thinned}" "${mach_file}"
+    elif [[ " ${architectures} " != *" arm64 "* ]]; then
+      echo "Non-arm64 Mach-O found in app runtime: ${mach_file}" >&2
+      exit 1
+    fi
+  done < <(find "${APP_BUNDLE}/Contents/Resources/Runtime/Toolchain" -type f -print0)
+fi
 
 chmod +x "${APP_BUNDLE}/Contents/MacOS/YumeLifeAfterMacAgent"
 /usr/bin/strip -x "${APP_BUNDLE}/Contents/MacOS/YumeLifeAfterMacAgent" || true

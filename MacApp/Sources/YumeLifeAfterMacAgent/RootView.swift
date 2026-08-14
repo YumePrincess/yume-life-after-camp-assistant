@@ -36,6 +36,7 @@ struct RootView: View {
             Text(model.alertMessage ?? "")
         }
         .sheet(isPresented: $model.showAbout) { AboutView() }
+        .sheet(isPresented: $model.showUpdateWizard) { UpdateWizardView() }
     }
 
     @ViewBuilder private var detail: some View {
@@ -126,9 +127,26 @@ struct OverviewView: View {
                                 .padding(.horizontal, 10).padding(.vertical, 6)
                                 .background(.thinMaterial, in: Capsule())
                         }
-                        Text(model.health?.adbSerial ?? model.text("ADB not connected"))
+                        Text(
+                            model.health?.adbSerial.flatMap { $0 == "auto" ? nil : $0 }
+                                ?? model.adbSummary
+                        )
                             .font(.callout.monospaced())
                             .foregroundStyle(.secondary)
+                        if model.health?.adbSerial == nil || model.health?.adbSerial == "auto" {
+                            HStack(spacing: 8) {
+                                Label(
+                                    model.adbSummary,
+                                    systemImage: model.adbInfo.isAvailable ? "checkmark.circle" : "exclamationmark.triangle"
+                                )
+                                .font(.caption)
+                                .foregroundStyle(model.adbInfo.isAvailable ? Color.secondary : Color.orange)
+                                if !model.adbInfo.isAvailable {
+                                    Button("Install Android platform-tools") { model.openAdbInstallGuide() }
+                                        .buttonStyle(.link)
+                                }
+                            }
+                        }
                         HStack(spacing: 8) {
                             Label(
                                 model.nodeSummary,
@@ -154,7 +172,8 @@ struct OverviewView: View {
                         }
                         .disabled(model.isBusy)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220, alignment: .topLeading)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 300, alignment: .topLeading)
                     .glassPanel()
                     VStack(spacing: 10) {
                         MetricCard(title: "Installed plugins", value: "\(model.plugins.count)", symbol: "puzzlepiece.extension")
@@ -167,7 +186,8 @@ struct OverviewView: View {
                         .buttonStyle(.plain)
                         .disabled(model.health?.activeRunId == nil)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220, alignment: .center)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 300, alignment: .center)
                     .glassPanel()
                 }
             }
@@ -209,6 +229,55 @@ private struct OverviewActionButton: View {
                 .frame(maxWidth: .infinity, minHeight: 40)
         }
         .help(help ?? "")
+    }
+}
+
+struct UpdateWizardView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Update runtime").font(.title2.bold())
+                    Text("The App runtime, dependencies and OCR helper are updated together.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if model.isBusy { ProgressView().controlSize(.small) }
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(model.updateSteps.enumerated()), id: \.offset) { _, step in
+                        Label(step, systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    if model.updateSteps.isEmpty {
+                        Text("Preparing update…").foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let result = model.updateResult {
+                Text(result)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(
+                        result.localizedCaseInsensitiveContains("failed") || result.contains("失败")
+                            ? .orange
+                            : .green
+                    )
+            }
+            HStack {
+                Spacer()
+                Button("Close") { dismiss() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(model.isBusy)
+            }
+        }
+        .padding(24)
+        .frame(width: 560, height: 420)
+        .background(AppBackdrop())
     }
 }
 
@@ -580,7 +649,7 @@ struct SetupAssistantView: View {
                 if model.setupStep < 2 {
                     Button("Continue") { model.setupStep += 1 }
                         .buttonStyle(PrimaryButtonStyle())
-                        .disabled(model.setupStep == 0 && !model.nodeInfo.isAvailable)
+                        .disabled(model.setupStep == 0 && (!model.nodeInfo.isAvailable || !model.adbInfo.isAvailable))
                 } else {
                     Button("Save, install and finish") { Task { await model.completeSetup() } }
                         .buttonStyle(PrimaryButtonStyle())
@@ -613,7 +682,21 @@ struct SetupAssistantView: View {
                         .buttonStyle(GlassButtonStyle())
                 }
             }
+            HStack(spacing: 10) {
+                Label(
+                    model.adbSummary,
+                    systemImage: model.adbInfo.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(model.adbInfo.isAvailable ? Color.secondary : Color.orange)
+                if !model.adbInfo.isAvailable {
+                    Button("Install Android platform-tools") { model.openAdbInstallGuide() }
+                        .buttonStyle(GlassButtonStyle())
+                }
+            }
             Text("Install Node.js 22 arm64 on this Mac before continuing. The App does not package Node.js.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Install Android platform-tools too. The App detects the system adb and does not package it.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -637,7 +720,7 @@ struct SetupAssistantView: View {
     private var finishStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Ready to install").font(.title.bold())
-            Text("The assistant will create config.json, register the launch agent, verify macOS Node.js and keep arm64 ADB/OCR resources inside the App.")
+            Text("The assistant will create config.json, register the launch agent, verify macOS Node.js and system ADB, then keep OCR resources inside the App.")
                 .foregroundStyle(.secondary)
             Label(model.serverURL, systemImage: "network")
             Label(model.agentName, systemImage: "desktopcomputer")

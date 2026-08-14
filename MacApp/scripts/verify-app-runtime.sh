@@ -3,7 +3,6 @@ set -euo pipefail
 
 APP_BUNDLE=${1:?Usage: verify-app-runtime.sh <Yume Life After Mac Agent.app>}
 RUNTIME="${APP_BUNDLE}/Contents/Resources/Runtime"
-ADB="${RUNTIME}/Toolchain/platform-tools/adb"
 
 if [[ -e "${RUNTIME}/Toolchain/node" ]]; then
   echo "The App bundle must not contain Node.js; use macOS Node or the external local runtime." >&2
@@ -21,12 +20,13 @@ require_arm64() {
   }
 }
 
-require_arm64 "${ADB}"
 require_arm64 "${RUNTIME}/bin/mrzh-vision-ocr"
 require_arm64 "${RUNTIME}/bin/mrzh-pixel-probe"
 
-export PATH="${RUNTIME}/Toolchain/platform-tools:/usr/bin:/bin:/usr/sbin:/sbin"
-"${ADB}" version >/dev/null
+if find "${RUNTIME}" -type d \( -name module-cache -o -name platform-tools \) -print -quit | grep -q .; then
+  echo "Build caches and bundled ADB must not be present in the App runtime." >&2
+  exit 1
+fi
 
 plugin_count=$(find "${RUNTIME}/plugins" -mindepth 2 -maxdepth 2 -name plugin.json | wc -l | tr -d ' ')
 [[ "${plugin_count}" == "5" ]] || { echo "Expected 5 built-in plugins, found ${plugin_count}" >&2; exit 1; }
@@ -37,4 +37,4 @@ for localization in en fr ja zh-Hans zh-Hant; do
   }
 done
 
-echo "Verified external-Node runtime, bundled ADB, OCR, plugins and localizations."
+echo "Verified external-Node and external-ADB runtime, OCR, plugins and localizations."

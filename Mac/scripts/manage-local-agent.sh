@@ -11,7 +11,7 @@ UNINSTALL_AGENT="${SCRIPT_DIR}/uninstall-launch-agent.sh"
 # selects macOS Node or the external Runtime/current/Toolchain/node copy.
 NODE_BIN="$(command -v node 2>/dev/null || true)"
 NPM_BIN="$(command -v npm 2>/dev/null || true)"
-export PATH="${MAC_ROOT}/Toolchain/platform-tools:${PATH}"
+ADB_BIN="$(command -v adb 2>/dev/null || true)"
 
 run_node() {
   [[ -x "${NODE_BIN}" ]] || { echo "macOS Node.js is missing. Install Node.js 22 arm64, then retry." >&2; return 127; }
@@ -53,8 +53,8 @@ install_dependencies() {
     echo "macOS Node.js is missing. Install Node.js 22 arm64 from https://nodejs.org/ and retry." >&2
     exit 1
   }
-  [[ -x "${MAC_ROOT}/Toolchain/platform-tools/adb" ]] || {
-    echo "Bundled arm64 ADB is missing from the runtime." >&2
+  [[ -x "${ADB_BIN}" ]] || {
+    echo "ADB is missing. Install Android platform-tools on this Mac, then retry." >&2
     exit 1
   }
   if [[ ! -x "${MAC_ROOT}/bin/mrzh-vision-ocr" ]]; then

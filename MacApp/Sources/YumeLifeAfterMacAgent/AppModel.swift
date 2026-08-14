@@ -28,8 +28,12 @@ final class AppModel: ObservableObject {
     @Published var setupCompleted: Bool
     @Published var setupStep = 0
     @Published var setupProgressMessage = ""
+    @Published var updateSteps: [String] = []
+    @Published var updateResult: String?
+    @Published var showUpdateWizard = false
     @Published private(set) var isAppleSilicon = false
     @Published private(set) var nodeInfo = NodeRuntimeInfo.missing
+    @Published private(set) var adbInfo = AdbRuntimeInfo.missing
 
     let browser = AdminBrowser()
     private let runtime = RuntimeService.shared
@@ -78,16 +82,35 @@ final class AppModel: ObservableObject {
         return text("Node.js not detected")
     }
 
+    var adbSummary: String {
+        if adbInfo.isAvailable {
+            return "ADB \(adbInfo.version ?? text("ADB available"))"
+        }
+        return text("ADB not detected")
+    }
+
     func bootstrap() async {
         guard isAppleSilicon else { return }
         do {
             let runtimeWasUpdated = try await runtime.installBundledRuntimeIfNeeded()
             nodeInfo = await runtime.nodeStatus()
+            adbInfo = await runtime.adbStatus()
             if runtimeWasUpdated {
+                updateSteps = [text("Synchronizing bundled runtime…")]
+                updateResult = nil
+                showUpdateWizard = true
+                updateSteps.append(text("Bundled runtime replaced."))
                 // The previous launchd process may still have the old modules
                 // in memory after Runtime/current is replaced. Repairing here
                 // unloads that process and starts the newly installed bundle.
-                _ = try await runtime.run(["repair"], timeout: 300)
+                if nodeInfo.isAvailable && adbInfo.isAvailable {
+                    updateSteps.append(text("Updating npm dependencies and rebuilding OCR…"))
+                    _ = try await runtime.run(["repair"], timeout: 300)
+                    updateSteps.append(text("Dependencies and OCR runtime updated."))
+                    updateResult = text("Update completed successfully.")
+                } else {
+                    updateResult = text("Install Android platform-tools too. The App detects the system adb and does not package it.")
+                }
             } else if setupCompleted {
                 // Opening the App is also the explicit local-agent start
                 // action. This keeps the web console online after a normal
@@ -100,7 +123,13 @@ final class AppModel: ObservableObject {
                 adminKey = credentials.adminKey ?? ""
             }
         }
-        catch { alertMessage = error.localizedDescription }
+        catch {
+            if showUpdateWizard {
+                updateSteps.append(error.localizedDescription)
+                updateResult = text("Update failed. Review the error and retry.")
+            }
+            alertMessage = error.localizedDescription
+        }
         browser.load(baseURL: serverURL, adminKey: adminKey)
         await refreshAll()
         pollingTask?.cancel()
@@ -116,13 +145,17 @@ final class AppModel: ObservableObject {
         await refreshStatusAndLogs()
         await refreshPlugins()
         nodeInfo = await runtime.nodeStatus()
+        adbInfo = await runtime.adbStatus()
     }
 
     func refreshStatusAndLogs(loadLogs: Bool = false) async {
         if !debugToken.isEmpty {
-            health = try? await runtime.health(debugToken: debugToken)
-        } else {
-            health = nil
+            // Keep the last successful health snapshot during a short
+            // transient launchd/HTTP gap. Clearing it on one failed poll was
+            // why a running task briefly appeared as “Agent offline”.
+            if let current = try? await runtime.health(debugToken: debugToken) {
+                health = current
+            }
         }
         if loadLogs || selection == .logs || logText.isEmpty {
             let refreshedLogs = await runtime.logs()
@@ -195,10 +228,26 @@ final class AppModel: ObservableObject {
         guard !isBusy else { return }
         isBusy = true
         statusMessage = text("Working…")
+        if action == "update" {
+            updateSteps = []
+            updateResult = nil
+            showUpdateWizard = true
+        }
         defer { isBusy = false }
         do {
             if action == "update" {
+                updateSteps.append(text("Synchronizing bundled runtime…"))
+                let runtimeChanged = try await runtime.installBundledRuntimeIfNeeded()
+                updateSteps.append(runtimeChanged
+                    ? text("Bundled runtime replaced.")
+                    : text("Bundled runtime already current."))
+                updateSteps.append(text("Checking macOS Node.js…"))
                 nodeInfo = try await runtime.ensureLocalNodeForUpdate()
+                adbInfo = await runtime.adbStatus()
+                guard adbInfo.isAvailable else {
+                    throw RuntimeError.failed(text("ADB is required. Install Android platform-tools, then retry."))
+                }
+                updateSteps.append(text("Updating npm dependencies and rebuilding OCR…"))
             }
             let timeout: TimeInterval = switch action {
             case "install": 1800
@@ -207,10 +256,18 @@ final class AppModel: ObservableObject {
             }
             let output = try await runtime.run([action], timeout: timeout)
             statusMessage = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if action == "update" {
+                updateSteps.append(text("Dependencies and OCR runtime updated."))
+                updateResult = text("Update completed successfully.")
+            }
             await refreshAll()
         } catch {
             alertMessage = error.localizedDescription
             statusMessage = text("Action failed")
+            if action == "update" {
+                updateSteps.append(error.localizedDescription)
+                updateResult = text("Update failed. Review the error and retry.")
+            }
         }
     }
 
@@ -310,11 +367,19 @@ final class AppModel: ObservableObject {
         setupStep = 0
         setupProgressMessage = ""
         setupCompleted = false
-        Task { nodeInfo = await runtime.nodeStatus() }
+        Task {
+            nodeInfo = await runtime.nodeStatus()
+            adbInfo = await runtime.adbStatus()
+        }
     }
 
     func openNodeInstallGuide() {
         guard let url = URL(string: "https://nodejs.org/en/download") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func openAdbInstallGuide() {
+        guard let url = URL(string: "https://developer.android.com/tools/releases/platform-tools") else { return }
         NSWorkspace.shared.open(url)
     }
 
@@ -336,6 +401,12 @@ final class AppModel: ObservableObject {
         guard nodeInfo.isAvailable else {
             setupStep = 0
             alertMessage = text("Node.js is required. Install Node.js 22 arm64, then retry.")
+            return
+        }
+        adbInfo = await runtime.adbStatus()
+        guard adbInfo.isAvailable else {
+            setupStep = 0
+            alertMessage = text("ADB is required. Install Android platform-tools, then retry.")
             return
         }
         isBusy = true
