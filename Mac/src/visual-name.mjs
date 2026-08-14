@@ -8,6 +8,34 @@ const VISUAL_LOOKALIKE_MAP = new Map([
 
 const NON_BREAKING_SPACES = /[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/gu;
 const ZERO_WIDTH_SPACES = /[\u200b\u200c\u200d\ufeff]/gu;
+// Keep only punctuation that is both common in display names and unlikely to
+// be a Vision hallucination. Decorative Unicode symbols, currency signs,
+// slashes, quotes and full-width emphasis marks are intentionally excluded
+// from the default player-name output.
+const SIMPLE_PLAYER_PUNCTUATION = new Set([
+  "#",
+  "-",
+  "_",
+  ".",
+  "·",
+  "・",
+  "'",
+  "’"
+]);
+const OCR_NOISE_PUNCTUATION = new Set([
+  "&",
+  "/",
+  "\\",
+  "¥",
+  "￥",
+  "\"",
+  "“",
+  "”",
+  "‘",
+  "’",
+  "!",
+  "！"
+]);
 const NON_NAME_MARKERS = new Set([
   "回归",
   "回归玩家",
@@ -36,6 +64,117 @@ export function normalizeVisualName(value) {
       .replace(/[0-9”")）]+$/u, "");
   }
   return text.replace(/^\s+|\s+$/gu, "");
+}
+
+function isPlayerTextCharacter(character) {
+  return /[\p{L}\p{N}]/u.test(character);
+}
+
+function isSimplePlayerPunctuation(character) {
+  return SIMPLE_PLAYER_PUNCTUATION.has(character);
+}
+
+/**
+ * Normalize a name for task execution. OCR is allowed to return decorative
+ * glyphs, but they must not become player identity data by default. Chinese,
+ * Japanese, Latin letters (including French accents), numbers, spaces and a
+ * small explicit punctuation allow-list remain. A symbol-only display name
+ * is retained as a last-resort candidate because it has no text fallback.
+ */
+export function normalizePlayerName(value, options = {}) {
+  const raw = normalizeVisualName(value);
+  if (!raw) return "";
+  if (options.preserveSymbols) return raw;
+
+  const characters = Array.from(raw);
+  const hasText = characters.some(isPlayerTextCharacter);
+  if (!hasText) return raw;
+
+  return characters
+    .filter(
+      (character) =>
+        isPlayerTextCharacter(character) ||
+        /\s/u.test(character) ||
+        isSimplePlayerPunctuation(character)
+    )
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+// Used only after two roster rows share the same text core. It may retain a
+// meaningful decorative symbol to distinguish those two players, but still
+// rejects the punctuation that Vision most often invents around a name.
+export function normalizePlayerNameVariant(value) {
+  const raw = normalizeVisualName(value);
+  if (!raw) return "";
+  const characters = Array.from(raw);
+  if (!characters.some(isPlayerTextCharacter)) return raw;
+  return characters
+    .filter(
+      (character) =>
+        isPlayerTextCharacter(character) ||
+        /\s/u.test(character) ||
+        isSimplePlayerPunctuation(character) ||
+        (!OCR_NOISE_PUNCTUATION.has(character) &&
+          /[\p{S}\p{P}]/u.test(character))
+    )
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+export function playerNameTextKey(value) {
+  const raw = normalizeVisualName(value).toLocaleLowerCase();
+  const text = Array.from(raw).filter(isPlayerTextCharacter).join("");
+  return text || normalizePlayerName(raw).replace(/\s+/gu, " ");
+}
+
+export function playerNameHasText(value) {
+  return Array.from(normalizeVisualName(value)).some(isPlayerTextCharacter);
+}
+
+export function playerNameSymbolSignature(value) {
+  return Array.from(normalizeVisualName(value))
+    .filter(
+      (character) =>
+        !isPlayerTextCharacter(character) && !/\s/u.test(character)
+    )
+    .join("");
+}
+
+export function normalizePlayerNameRows(rows) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    const rawName = normalizeVisualName(row?.rawName || row?.name);
+    const key = playerNameTextKey(rawName);
+    if (!key) continue;
+    const group = groups.get(key) || [];
+    group.push({ ...row, rawName });
+    groups.set(key, group);
+  }
+  return [...groups.values()].flatMap((group) => {
+    const byRawName = new Map();
+    for (const row of group) {
+      const rawKey = row.rawName || normalizePlayerName(row.name);
+      const previous = byRawName.get(rawKey);
+      byRawName.set(rawKey, previous ? { ...previous, ...row } : row);
+    }
+    const variants = [...byRawName.values()];
+    if (variants.length === 1 && !variants[0].__preserveNameSymbols) {
+      return [{
+        ...variants[0],
+        name: normalizePlayerName(variants[0].rawName),
+        rawName: variants[0].rawName
+      }];
+    }
+    return variants.map((row) => ({
+      ...row,
+      name: normalizePlayerNameVariant(row.rawName || row.name),
+      rawName: row.rawName || normalizeVisualName(row.name),
+      __preserveNameSymbols: true
+    }));
+  });
 }
 
 export function isNonNameMarker(value) {

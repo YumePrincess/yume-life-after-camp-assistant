@@ -1,5 +1,11 @@
 import { isPlausibleMemberName } from "./member-name.mjs";
-import { normalizeVisualName } from "./visual-name.mjs";
+import {
+  normalizePlayerName,
+  normalizePlayerNameRows,
+  normalizeVisualName,
+  playerNameSymbolSignature,
+  playerNameTextKey
+} from "./visual-name.mjs";
 
 export function parseTable(observations, definition) {
   const region = definition.region;
@@ -74,9 +80,13 @@ export function parseTable(observations, definition) {
             .map((item) => item.text.trim());
           for (const [index, key] of column.stackedKeys.entries()) {
             normalized[key] = stackedValues[index] || "";
+            if (key === "name") normalized.rawName = stackedValues[index] || "";
           }
         } else {
           normalized[column.key] = values.join(" ").trim();
+          if (column.key === "name") {
+            normalized.rawName = normalized[column.key];
+          }
         }
       }
       return normalized;
@@ -86,28 +96,46 @@ export function parseTable(observations, definition) {
 
 export function normalizeMembers(contributionRows, detailRows, activityRows = []) {
   const combined = [];
-  for (const row of contributionRows) {
-    const name = clean(row.name);
-    if (
-      !isPlausibleMemberName(name) ||
-      /玩家名|成员|姓名|贡献|职业/.test(name)
-    ) continue;
-    combined.push({ ...row, name });
-  }
-  for (const row of detailRows) {
-    const name = clean(row.name);
+  const normalizedDetails = normalizePlayerNameRows(detailRows);
+  for (const row of normalizedDetails) {
+    const name = row.__preserveNameSymbols
+      ? normalizePlayerName(row.name, { preserveSymbols: true })
+      : normalizePlayerName(row.rawName || row.name);
     if (
       !isPlausibleMemberName(name) ||
       /成员|姓名|贡献|职业/.test(name)
     ) continue;
-    const match = exactMember(combined, name);
+    combined.push({ ...row, name });
+  }
+  for (const row of contributionRows) {
+    const name = normalizePlayerName(row.rawName || row.name);
+    if (
+      !isPlausibleMemberName(name) ||
+      /玩家名|成员|姓名|贡献|职业/.test(name)
+    ) continue;
+    const matches = combined.filter(
+      (candidate) => exactNameKey(candidate.name) === exactNameKey(name)
+    );
+    const sourceSymbols = playerNameSymbolSignature(row.rawName || row.name);
+    const symbolMatches = matches.filter(
+      (candidate) => playerNameSymbolSignature(candidate.name) === sourceSymbols
+    );
+    const match =
+      symbolMatches.length === 1
+        ? symbolMatches[0]
+        : matches.length === 1
+          ? matches[0]
+          : null;
     if (match) Object.assign(match, row, { name: match.name });
-    else combined.push({ ...row, name });
+    else if (!normalizedDetails.length) combined.push({ ...row, name });
   }
   for (const row of activityRows) {
-    const name = clean(row.name);
+    const name = normalizePlayerName(row.rawName || row.name);
     if (!name || /成员|姓名|在线情况|职业/.test(name)) continue;
-    const match = exactMember(combined, name);
+    const matches = combined.filter(
+      (candidate) => exactNameKey(candidate.name) === exactNameKey(name)
+    );
+    const match = matches.length === 1 ? matches[0] : null;
     const normalized = {
       ...row,
       name,
@@ -137,7 +165,7 @@ export function normalizeMembers(contributionRows, detailRows, activityRows = []
 export function normalizeActivity(rows) {
   return rows
     .map((row) => ({
-      name: clean(row.name),
+      name: normalizePlayerName(row.rawName || row.name),
       lastActiveText: clean(row.onlineState) || null,
       inactiveDays: parseInactiveDays(row.onlineState)
     }))
@@ -170,9 +198,11 @@ export function normalizeProfiles(rows) {
   // result to the page header total before this field-only conversion. Do not
   // apply the contribution/activity name filters here: a legitimate display
   // name may contain words such as “成员”, or consist only of symbols.
-  return rows
+  return normalizePlayerNameRows(rows)
     .map((row) => {
-      const name = clean(row.name);
+      const name = row.__preserveNameSymbols
+        ? normalizePlayerName(row.name, { preserveSymbols: true })
+        : normalizePlayerName(row.rawName || row.name);
       if (!name) return null;
       return {
         name,
@@ -206,9 +236,7 @@ function exactMember(rows, name) {
 }
 
 function exactNameKey(value) {
-  return clean(value)
-    .normalize("NFKC")
-    .toLowerCase();
+  return playerNameTextKey(value);
 }
 
 export function normalizeStaff(rows) {
@@ -227,19 +255,56 @@ export function normalizeStaffGrid(observations, definition) {
       const items = observations
         .filter((item) => inside(item, slot.region))
         .sort((a, b) => centerY(a) - centerY(b) || a.x - b.x);
-      const nameBandBottom = slot.region.top +
-        (slot.region.bottom - slot.region.top) * 0.62;
-      const member = items.filter((item) => centerY(item) <= nameBandBottom).find(
-        (item) => !/市长|返回|公职人员|基础信息/.test(clean(item.text))
+      const lines = staffTextLines(items);
+      const member = lines.find(
+        (line) => !/返回|公职人员|基础信息|成员|职位/.test(line.text)
       );
       if (!member) return null;
+      const role = lines.find((line) => line !== member);
+      const rawMemberName = cleanStaffMemberName(member.text);
+      const memberName = normalizePlayerName(rawMemberName);
+      const roleName = cleanStaffRoleName(role?.text || clean(slot.roleName));
+      if (!memberName || !roleName || isGenericStaffRole(roleName)) return null;
       return {
         roleKey: slot.roleKey || `staff-${index + 1}`,
-        roleName: slot.roleName || `公职席位 ${index + 1}`,
-        memberName: normalizeVisualName(cleanStaffMemberName(member.text))
+        roleName: normalizeVisualName(roleName),
+        memberName,
+        rawMemberName: normalizeVisualName(rawMemberName)
       };
     })
     .filter(Boolean);
+}
+
+function staffTextLines(items) {
+  const lines = [];
+  for (const item of items) {
+    const text = clean(item.text);
+    if (!text || /返回|公职人员|基础信息/.test(text)) continue;
+    const y = centerY(item);
+    const tolerance = Math.max(8, (Number(item.height) || 24) * 0.65);
+    const line = lines.find((candidate) => Math.abs(candidate.y - y) <= tolerance);
+    if (line) {
+      line.items.push(item);
+      line.text = line.items
+        .sort((left, right) => left.x - right.x)
+        .map((value) => clean(value.text))
+        .join("");
+      line.y = line.items.reduce((sum, value) => sum + centerY(value), 0) / line.items.length;
+    } else {
+      lines.push({ y, items: [item], text });
+    }
+  }
+  return lines.sort((left, right) => left.y - right.y);
+}
+
+function isGenericStaffRole(value) {
+  return /^(?:公职席位|职位名称)\s*\d*$/u.test(clean(value));
+}
+
+function cleanStaffRoleName(value) {
+  // The game prefixes coloured officer labels with #G/#P/#W. The colour
+  // token is presentation metadata, not part of the officer name.
+  return clean(value).replace(/^#(?:B|D|G|K|O|P|R|U|W|Y)\s*/u, "");
 }
 
 function cleanStaffMemberName(value) {

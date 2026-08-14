@@ -86,7 +86,7 @@ struct YumeLifeAfterMacAgentApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup {
+        Window("Yume Life After Mac Agent", id: "main") {
             RootView()
                 .environmentObject(model)
                 .preferredColorScheme(model.theme.colorScheme)

@@ -942,7 +942,9 @@ test("staff names remove rendered ordinals and reconcile OCR decoration to the r
   const rows = normalizeStaffGrid(
     [
       { text: "4. 纸鸢”）", x: 600, y: 500, width: 160, height: 32 },
-      { text: "市长", x: 250, y: 800, width: 80, height: 32 }
+      { text: "#G春之音", x: 600, y: 540, width: 160, height: 32 },
+      { text: "雨梦", x: 250, y: 800, width: 80, height: 32 },
+      { text: "市长", x: 250, y: 840, width: 80, height: 32 }
     ],
     {
       slots: [
@@ -951,7 +953,24 @@ test("staff names remove rendered ordinals and reconcile OCR decoration to the r
       ]
     }
   );
-  assert.equal(rows[0].memberName, "纸鸢”)");
+  assert.equal(rows[0].memberName, "纸鸢");
+  assert.equal(rows[0].roleName, "春之音");
+  assert.equal(rows[1].memberName, "雨梦");
+  assert.equal(rows[1].roleName, "市长");
+  assert.equal(
+    normalizeStaffGrid(
+      [
+        { text: "Alice", x: 600, y: 500, width: 100, height: 32 },
+        { text: "#Z保留颜色文本", x: 600, y: 540, width: 160, height: 32 }
+      ],
+      {
+        slots: [
+          { roleKey: "staff-z", roleName: "公职席位 1", region: { left: 560, top: 470, right: 850, bottom: 590 } }
+        ]
+      }
+    )[0].roleName,
+    "#Z保留颜色文本"
+  );
   assert.equal(
     alignStaffNamesToRoster(rows, [{ name: "纸鸢" }])[0].memberName,
     "纸鸢"

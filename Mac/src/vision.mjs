@@ -4,7 +4,11 @@ import { MAC_ROOT } from "./config.mjs";
 import { runFile } from "./process.mjs";
 import { isPlausibleMemberName } from "./member-name.mjs";
 import { parseTable } from "./table-parser.mjs";
-import { normalizeIdentityLines, normalizeVisualName } from "./visual-name.mjs";
+import {
+  normalizeIdentityLines,
+  normalizePlayerName,
+  normalizeVisualName
+} from "./visual-name.mjs";
 
 export { isPlausibleMemberName } from "./member-name.mjs";
 
@@ -535,7 +539,14 @@ export class Vision {
       });
     }
     return rows
-      .map((row) => ({ ...row, name: normalizeVisualName(row.name) }))
+      .map((row) => {
+        const rawName = normalizeVisualName(row.rawName || row.name);
+        return {
+          ...row,
+          rawName,
+          name: normalizePlayerName(rawName)
+        };
+      })
       .filter((row) => isPlausibleMemberName(row.name));
   }
 
@@ -634,11 +645,13 @@ export class Vision {
         const nativeIdentity = normalizeIdentityLines(
           itemsInColumn(items, columnBounds.get("identity"))
         );
-        const nativeName = isPlausibleMemberName(nativeIdentity.name)
-          ? nativeIdentity.name
+        const rawName = normalizeVisualName(nativeIdentity.name);
+        const nativeName = isPlausibleMemberName(rawName)
+          ? normalizePlayerName(rawName)
           : "";
         return {
           name: nativeName,
+          rawName,
           campTitle:
             identity.campTitle || nativeIdentity.campTitle,
           profession:
@@ -672,7 +685,14 @@ export class Vision {
       memberOcrMinimum
     );
     return parseTable(observations, definition)
-      .map((row) => ({ ...row, name: normalizeVisualName(row.name) }))
+      .map((row) => {
+        const rawName = normalizeVisualName(row.rawName || row.name);
+        return {
+          ...row,
+          rawName,
+          name: normalizePlayerName(rawName)
+        };
+      })
       .filter(
       (row) =>
         isPlausibleMemberName(row.name) &&

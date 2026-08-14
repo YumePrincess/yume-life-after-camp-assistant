@@ -9,6 +9,7 @@ import {
 } from "../src/vision.mjs";
 import {
   joinVisualNameObservations,
+  normalizePlayerName,
   normalizeVisualName
 } from "../src/visual-name.mjs";
 import { Vision } from "../src/vision.mjs";
@@ -150,7 +151,7 @@ test("member identity keeps the first OCR line as the player name", () => {
     ]),
     { name: "青在", campTitle: "营地助手 称号" }
   );
-  assert.equal(isPlausibleMemberName("COSGH"), false);
+  assert.equal(isPlausibleMemberName("COSGH"), true);
   assert.equal(isPlausibleMemberName("青在✨"), true);
   assert.equal(isPlausibleMemberName("✨"), true);
   assert.equal(isPlausibleMemberName("#"), true);
@@ -168,6 +169,13 @@ test("visual name normalization preserves meaningful symbols and spaces", () => 
     ]),
     "「    」"
   );
+});
+
+test("player-name OCR keeps multilingual text and drops hallucinated symbols", () => {
+  assert.equal(normalizePlayerName("Alice♠"), "Alice");
+  assert.equal(normalizePlayerName("Élodie¥"), "Élodie");
+  assert.equal(normalizePlayerName("&/¥ew米“”！"), "ew米");
+  assert.equal(normalizePlayerName("「    」"), "「    」");
 });
 
 test("member identity drops returning-player markers without dropping the name", () => {

@@ -71,7 +71,10 @@ service_field() {
 
 wait_until_running() {
   local state pid
-  for _ in {1..20}; do
+  # Node can take longer than the launchd spawn transition on an external
+  # volume, especially immediately after App restart. Do not report a false
+  # failure while launchd is still moving from "spawn scheduled" to running.
+  for _ in {1..120}; do
     state=$(service_field "state")
     pid=$(service_field "pid")
     if [[ "${state}" == "running" && -n "${pid}" ]]; then
@@ -94,6 +97,10 @@ start_agent() {
   if ! is_loaded; then
     bootstrap_agent
     wait_until_loaded
+  fi
+  if [[ "$(service_field state)" == "running" && -n "$(service_field pid)" ]]; then
+    echo "${LABEL} is already running (pid $(service_field pid))."
+    return 0
   fi
   local kickstart_error=""
   for _ in {1..20}; do

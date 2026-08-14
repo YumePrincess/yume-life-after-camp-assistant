@@ -7,7 +7,13 @@ import {
   parseTable
 } from "../table-parser.mjs";
 import { isPlausibleMemberName } from "../member-name.mjs";
-import { normalizeVisualName } from "../visual-name.mjs";
+import {
+  normalizePlayerName,
+  normalizePlayerNameVariant,
+  normalizeVisualName,
+  playerNameSymbolSignature,
+  playerNameTextKey
+} from "../visual-name.mjs";
 import { delay } from "../process.mjs";
 import {
   progressForRange,
@@ -513,38 +519,58 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
 
 export function alignStaffNamesToRoster(staff, profiles) {
   const roster = (profiles || [])
-    .map((profile) => normalizeVisualName(profile?.name))
-    .filter(Boolean);
+    .map((profile) => {
+      const name = normalizePlayerName(profile?.name, { preserveSymbols: true });
+      return { name, key: playerNameTextKey(name) };
+    })
+    .filter((profile) => profile.name && profile.key);
   return (staff || []).map((row) => {
     // Staff cards render a numeric ordinal before the name. Vision may merge
     // it with the name in a recovery pass, so remove the ordinal here too;
     // this keeps the roster matcher deterministic even when the grid parser
     // is bypassed by a diagnostic or a future OCR path.
-    const candidate = normalizeVisualName(row?.memberName).replace(
+    const rawCandidate = normalizeVisualName(
+      row?.rawMemberName || row?.memberName
+    ).replace(
       /^\d{1,2}\s*(?:[.．、:：-]\s*|\s+)/u,
       ""
     );
+    const candidate = normalizePlayerName(rawCandidate);
     if (!candidate) return row;
-    const exact = roster.find((name) => name === candidate);
-    if (exact) return { ...row, memberName: exact };
+    const exact = roster.filter((profile) => profile.key === playerNameTextKey(candidate));
+    if (exact.length === 1) {
+      return { ...row, memberName: exact[0].name };
+    }
+    if (exact.length > 1) {
+      const candidateSymbols = playerNameSymbolSignature(rawCandidate);
+      const symbolMatch = exact.filter(
+        (profile) => playerNameSymbolSignature(profile.name) === candidateSymbols
+      );
+      if (symbolMatch.length === 1) {
+        return { ...row, memberName: symbolMatch[0].name };
+      }
+      return { ...row, memberName: candidate };
+    }
     // Staff rows can contain the returning-player/pioneer badge in the same
     // Vision box as the name. If exactly one roster name is visible inside
     // that box, keep the roster spelling and discard only the badge pixels.
+    const candidateCore = playerNameTextKey(candidate);
     const contained = roster.filter(
-      (name) => name.length >= 2 && candidate.includes(name)
+      (profile) => profile.key.length >= 2 && candidateCore.includes(profile.key)
     );
     if (contained.length === 1) {
-      return { ...row, memberName: contained[0] };
+      return { ...row, memberName: contained[0].name };
     }
-    const candidateCore = candidate.replace(/[\p{P}\p{S}]+$/gu, "");
-    const fuzzy = roster.filter((name) => {
-      if (candidateCore.startsWith(name) && candidateCore.length > name.length) {
-        return /^[\p{P}\p{S}]+$/u.test(candidateCore.slice(name.length));
+    const fuzzy = roster.filter((profile) => {
+      if (candidateCore.startsWith(profile.key) && candidateCore.length > profile.key.length) {
+        return /^[\p{P}\p{S}]+$/u.test(candidateCore.slice(profile.key.length));
       }
-      if (name.includes(candidateCore) && candidateCore.length >= 3) return true;
-      return candidateCore.length >= 2 && editDistance(candidateCore, name) <= 1;
+      if (profile.key.includes(candidateCore) && candidateCore.length >= 3) return true;
+      return candidateCore.length >= 2 && editDistance(candidateCore, profile.key) <= 1;
     });
-    return fuzzy.length === 1 ? { ...row, memberName: fuzzy[0] } : { ...row, memberName: candidate };
+    return fuzzy.length === 1
+      ? { ...row, memberName: fuzzy[0].name }
+      : { ...row, memberName: candidate };
   });
 }
 
@@ -787,6 +813,7 @@ export async function capturePagedTable(
           }
         }
       }
+      attemptRows = normalizeScannedNameRows(attemptRows);
       if (!frame || attemptRows.length > rows.length) {
         frame = attemptFrame;
         rows = attemptRows;
@@ -978,7 +1005,7 @@ export async function capturePagedTable(
     let rejectedAfterExpectedCount = 0;
     for (const row of rows) {
       const baseRowKey = memberDetailsMode
-        ? memberProfileNameKey(row.name)
+        ? memberProfileRowKey(row)
         : row.name;
       const rowKey = baseRowKey;
       if (!rowKey) continue;
@@ -1520,6 +1547,16 @@ function isMemberAvatarArtifact(value) {
   return /^2025\d*$/u.test(text);
 }
 
+function normalizeScannedNameRows(rows) {
+  return (rows || []).map((row) => {
+    const rawName = normalizeVisualName(row?.rawName || row?.name);
+    const name = row?.__preserveNameSymbols
+      ? normalizePlayerName(row?.name, { preserveSymbols: true })
+      : normalizePlayerName(rawName);
+    return { ...row, name, rawName };
+  });
+}
+
 function filterMemberDetailRows(rows) {
   return (rows || []).filter(
     (row) => row?.name && !isMemberAvatarArtifact(row.name)
@@ -1529,15 +1566,46 @@ function filterMemberDetailRows(rows) {
 function collapseExactMemberDetailRows(rows) {
   const byName = new Map();
   for (const row of rows || []) {
-    const key = memberProfileNameKey(row?.name);
+    const key = memberProfileNameKey(row?.name || row?.rawName);
     if (!key) continue;
-    const previous = byName.get(key);
-    byName.set(
-      key,
-      previous ? mergeMemberProfileRows(previous, row) : { ...row }
-    );
+    const group = byName.get(key) || [];
+    group.push(row);
+    byName.set(key, group);
   }
-  return [...byName.values()];
+  return [...byName.values()].flatMap((group) => {
+    const byRawName = new Map();
+    for (const row of group) {
+      const rawName = normalizeVisualName(row?.rawName || row?.name);
+      const rawKey = rawName || normalizePlayerName(row?.name);
+      const previous = byRawName.get(rawKey);
+      byRawName.set(
+        rawKey,
+        previous ? mergeMemberProfileRows(previous, row) : { ...row, rawName }
+      );
+    }
+    const variants = [...byRawName.values()];
+    if (variants.length <= 1) {
+      const row = variants[0];
+      if (!row) return [];
+      return [{
+        ...row,
+        name: normalizePlayerName(row.rawName || row.name),
+        rawName: normalizeVisualName(row.rawName || row.name)
+      }];
+    }
+    // Only a same-text collision earns a second look at decoration. This is
+    // the narrow exception requested for two real players whose visible
+    // names differ only by symbols; ordinary text+symbol names stay text-only.
+    return variants.map((row) => {
+      const rawName = normalizePlayerNameVariant(row.rawName || row.name);
+      return {
+        ...row,
+        name: rawName,
+        rawName: normalizeVisualName(row.rawName || row.name),
+        __preserveNameSymbols: true
+      };
+    });
+  });
 }
 
 function mergeContributionRows(primary, recovered) {
@@ -1569,15 +1637,24 @@ export function alignContributionRowsToRoster(rows, roster) {
   const members = (roster || [])
     .map((item) => ({
       name: String(item?.name || "").trim(),
-      key: contributionNameKey(item?.name)
+      key: contributionNameKey(item?.name),
+      symbols: playerNameSymbolSignature(item?.name)
     }))
     .filter((item) => item.name && item.key);
   const byCanonicalName = new Map();
   for (const row of rows || []) {
-    const sourceKey = contributionNameKey(row?.name);
+    const sourceRawName = normalizeVisualName(row?.rawName || row?.name);
+    const sourceKey = contributionNameKey(sourceRawName);
     if (!sourceKey) continue;
     const exact = members.filter((member) => member.key === sourceKey);
     let matched = exact.length === 1 ? exact[0] : null;
+    if (!matched && exact.length > 1) {
+      const sourceSymbols = playerNameSymbolSignature(sourceRawName);
+      const symbolMatches = exact.filter(
+        (member) => member.symbols === sourceSymbols
+      );
+      matched = symbolMatches.length === 1 ? symbolMatches[0] : null;
+    }
     // The mayor card places a small role badge immediately after the name.
     // OCR sometimes returns that badge as one extra Han character (for
     // example 雨梦也). Only accept a unique one/two-character prefix/suffix
@@ -1642,10 +1719,7 @@ function applyPageNameAliases(rows, aliases) {
 }
 
 function contributionNameKey(value) {
-  return String(value || "")
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/\s+/g, "");
+  return playerNameTextKey(value);
 }
 
 function reconcileMemberDetailRows(rows, expectedCount = null) {
@@ -1699,10 +1773,10 @@ function reconcileMemberDetailRows(rows, expectedCount = null) {
     // exact duplicate keys were already removed by the page map.
     if (capped.length < Number(expectedCount) && rows.length >= Number(expectedCount)) {
       const restored = [...capped];
-      const used = new Set(restored.map((row) => memberProfileNameKey(row.name)));
+      const used = new Set(restored.map((row) => memberProfileRowKey(row)));
       for (const row of rows) {
         if (restored.length >= Number(expectedCount)) break;
-        const key = memberProfileNameKey(row.name);
+        const key = memberProfileRowKey(row);
         if (!key || used.has(key)) continue;
         restored.push(row);
         used.add(key);
@@ -1718,10 +1792,10 @@ function reconcileMemberDetailRows(rows, expectedCount = null) {
     reconciled.length < Number(expectedCount)
   ) {
     const restored = [...reconciled];
-    const used = new Set(restored.map((row) => memberProfileNameKey(row.name)));
+    const used = new Set(restored.map((row) => memberProfileRowKey(row)));
     for (const row of rows) {
       if (restored.length >= Number(expectedCount)) break;
-      const key = memberProfileNameKey(row.name);
+      const key = memberProfileRowKey(row);
       if (!key || used.has(key)) continue;
       restored.push(row);
       used.add(key);
@@ -1758,7 +1832,9 @@ function hasSuspiciousMemberCollision(rows, byName) {
     // the same forced row-by-row reread as a conflicting duplicate.
     if (samePage) return true;
     pageRows.set(key, samePage || row);
-    const existing = byName.get(key);
+    const existing = byName.get(key) || [...byName.values()].find(
+      (candidate) => memberProfileNameKey(candidate?.name) === key
+    );
     if (existing && memberProfileDataConflicts(existing, row)) {
       return true;
     }
@@ -1770,7 +1846,7 @@ function pageNovelMemberCount(rows, byName) {
   const names = new Set(byName.keys());
   let added = 0;
   for (const row of rows) {
-    const key = memberProfileNameKey(row.name);
+    const key = memberProfileRowKey(row);
     if (!key || names.has(key)) continue;
     names.add(key);
     added += 1;
@@ -1791,11 +1867,15 @@ function mergeMemberRecoveryCandidates(
       ? new Set(existingMembers.keys())
       : new Set(
           (existingMembers || [])
-            .map((row) => memberProfileNameKey(row?.name || row))
+            .map((row) =>
+              typeof row === "object"
+                ? memberProfileRowKey(row)
+                : memberProfileNameKey(row)
+            )
             .filter(Boolean)
         );
   const add = (row) => {
-    const key = memberProfileNameKey(row?.name);
+    const key = memberProfileRowKey(row);
     if (!key || seen.has(key)) return;
     seen.add(key);
     merged.push(row);
@@ -1808,8 +1888,8 @@ function mergeMemberRecoveryCandidates(
   // remaining slots.
   const candidates = [...(recoveredRows || []), ...(originalRows || [])];
   candidates.sort((left, right) => {
-    const leftNovel = existing.has(memberProfileNameKey(left?.name)) ? 0 : 1;
-    const rightNovel = existing.has(memberProfileNameKey(right?.name)) ? 0 : 1;
+    const leftNovel = existing.has(memberProfileRowKey(left)) ? 0 : 1;
+    const rightNovel = existing.has(memberProfileRowKey(right)) ? 0 : 1;
     return rightNovel - leftNovel;
   });
   for (const row of candidates) {
@@ -1820,15 +1900,15 @@ function mergeMemberRecoveryCandidates(
 }
 
 function memberProfileNameKey(value) {
-  const normalized = String(value || "")
-    .trim()
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/\s+/g, "");
-  // Decorative symbols are part of the in-game display name. Removing them
-  // made distinct members such as "#愿✨" and "愿" collapse into one map
-  // entry, which caused the page count to be lower than the header count.
-  return normalized;
+  return playerNameTextKey(value);
+}
+
+function memberProfileRowKey(row) {
+  const key = memberProfileNameKey(row?.name || row?.rawName);
+  if (!key) return "";
+  if (!row?.__preserveNameSymbols) return key;
+  const variant = normalizePlayerNameVariant(row?.name || row?.rawName);
+  return variant ? `${key}\u0000${variant}` : key;
 }
 
 function memberProfileDataConflicts(left, right) {
