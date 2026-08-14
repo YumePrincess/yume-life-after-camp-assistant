@@ -282,7 +282,7 @@ struct UpdateWizardView: View {
             }
             HStack {
                 Spacer()
-                if model.updateResult != nil {
+                if !model.isBusy, model.updateResult != nil {
                     Button(model.text("Close")) { dismiss() }
                         .buttonStyle(PrimaryButtonStyle())
                 }
@@ -291,7 +291,7 @@ struct UpdateWizardView: View {
         .padding(24)
         .frame(width: 560, height: 420)
         .background(AppBackdrop())
-        .interactiveDismissDisabled(model.updateResult == nil)
+        .interactiveDismissDisabled(model.isBusy || model.updateResult == nil)
     }
 }
 
