@@ -35,19 +35,34 @@
             <p class="eyebrow">ADMIN MENU</p>
             <strong>管理菜单</strong>
           </div>
-          <a class="admin-nav-item" href="#overview" data-nav-target="overview" aria-current="page" hidden>控制台</a>
-          <a class="admin-nav-item" href="#general" data-nav-target="general" hidden>基础设置</a>
-          <a class="admin-nav-item" href="#tasks" data-nav-target="tasks" hidden>任务计划</a>
-          <a class="admin-nav-item" href="#agent" data-nav-target="agent" hidden>执行策略</a>
-          <a class="admin-nav-item" href="#plugins" data-nav-target="plugins" hidden>Workers 插件</a>
-          <a class="admin-nav-item" href="#technology" data-nav-target="technology" data-worker-plugin="technology" hidden>科技管理</a>
-          <a class="admin-nav-item" href="#technology-history" data-nav-target="technology-history" data-worker-plugin="technology" hidden>科技投票历史</a>
-          <a class="admin-nav-item" href="#identity-applications" data-nav-target="identity-applications" hidden>识别码审批</a>
-          <a class="admin-nav-item" href="#identity-codes" data-nav-target="identity-codes" hidden>身份识别码</a>
-          <a class="admin-nav-item" href="#smtp" data-nav-target="smtp" hidden>SMTP 发信</a>
-          <a class="admin-nav-item" href="#access" data-nav-target="access" hidden>访问密钥</a>
-          <a class="admin-nav-item" href="#members" data-nav-target="members" data-worker-plugin="member-profile" hidden>成员管理</a>
-          <a class="admin-nav-item" href="#history" data-nav-target="history" hidden>运行记录</a>
+          <div class="admin-nav-section" aria-label="WORKSPACE">
+            <span class="admin-nav-section-label">WORKSPACE</span>
+            <a class="admin-nav-item" href="#overview" data-nav-target="overview" aria-current="page" hidden>控制台</a>
+          </div>
+          <div class="admin-nav-section" aria-label="CONFIGURATION">
+            <span class="admin-nav-section-label">CONFIGURATION</span>
+            <a class="admin-nav-item" href="#general" data-nav-target="general" hidden>基础设置</a>
+            <a class="admin-nav-item" href="#tasks" data-nav-target="tasks" hidden>任务计划</a>
+            <a class="admin-nav-item" href="#agent" data-nav-target="agent" hidden>执行策略</a>
+            <a class="admin-nav-item" href="#plugins" data-nav-target="plugins" hidden>Workers 插件</a>
+            <a class="admin-nav-item" href="#smtp" data-nav-target="smtp" hidden>SMTP 发信</a>
+          </div>
+          <div class="admin-nav-section" aria-label="TECHNOLOGY">
+            <span class="admin-nav-section-label">TECHNOLOGY</span>
+            <a class="admin-nav-item" href="#technology" data-nav-target="technology" data-worker-plugin="technology" hidden>科技管理</a>
+            <a class="admin-nav-item" href="#technology-history" data-nav-target="technology-history" data-worker-plugin="technology" hidden>科技投票历史</a>
+          </div>
+          <div class="admin-nav-section" aria-label="ACCESS & MEMBERS">
+            <span class="admin-nav-section-label">ACCESS &amp; MEMBERS</span>
+            <a class="admin-nav-item" href="#identity-applications" data-nav-target="identity-applications" hidden>识别码审批</a>
+            <a class="admin-nav-item" href="#identity-codes" data-nav-target="identity-codes" hidden>身份识别码</a>
+            <a class="admin-nav-item" href="#access" data-nav-target="access" hidden>访问密钥</a>
+            <a class="admin-nav-item" href="#members" data-nav-target="members" data-worker-plugin="member-profile" hidden>成员管理</a>
+          </div>
+          <div class="admin-nav-section" aria-label="OPERATIONS">
+            <span class="admin-nav-section-label">OPERATIONS</span>
+            <a class="admin-nav-item" href="#history" data-nav-target="history" hidden>运行记录</a>
+          </div>
         </nav>
 
         <div class="admin-content">
