@@ -87,21 +87,34 @@
     return document.getElementById(id);
   }
 
+  function translateUi(value) {
+    return typeof value === "string" && window.MrzhI18n?.t
+      ? window.MrzhI18n.t(value)
+      : value;
+  }
+
+  function formatUi(source, values = {}) {
+    return window.MrzhI18n?.format
+      ? window.MrzhI18n.format(source, values)
+      : source;
+  }
+
   function create(tag, className, text) {
     const element = document.createElement(tag);
     if (className) element.className = className;
-    if (text !== undefined) element.textContent = text;
+    if (text !== undefined) element.textContent = translateUi(text);
     return element;
   }
 
   function createRunActionButton(label, className, icon) {
+    const localizedLabel = translateUi(label);
     const button = create(
       "button",
       `button run-action-button ${className}`.trim()
     );
     button.type = "button";
-    button.title = label;
-    button.setAttribute("aria-label", label);
+    button.title = localizedLabel;
+    button.setAttribute("aria-label", localizedLabel);
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("aria-hidden", "true");
@@ -115,7 +128,7 @@
           : "M5 5h14v14H5z M8 9h8 M8 12h8 M8 15h5"
     );
     svg.append(path);
-    button.append(svg, create("span", "run-action-label", label));
+    button.append(svg, create("span", "run-action-label", localizedLabel));
     return button;
   }
 
@@ -148,7 +161,7 @@
     const task = (state.bootstrap?.plugins || [])
       .flatMap((plugin) => plugin.tasks || [])
       .find((item) => item.key === value);
-    return task?.name || TASK_NAMES[value] || value;
+    return translateUi(task?.name || TASK_NAMES[value] || value);
   }
 
   function permissionName(value) {
@@ -224,7 +237,7 @@
   }
 
   function stateName(value) {
-    return {
+    const label = {
       queued: "排队",
       claimed: "已领取",
       running: "执行中",
@@ -236,6 +249,7 @@
       timed_out: "已超时",
       skipped: "已跳过"
     }[value] || value;
+    return translateUi(label);
   }
 
   function formatDate(value) {
@@ -332,13 +346,15 @@
 
   function updateSaveState(fallback = "") {
     if (!state.dirtySections.size) {
-      byId("save-state").textContent = fallback;
+      byId("save-state").textContent = translateUi(fallback);
       return;
     }
     byId("save-state").textContent =
       state.dirtySections.size === 1
-        ? "有 1 个分区未保存"
-        : `有 ${state.dirtySections.size} 个分区未保存`;
+        ? formatUi("有 {count} 个分区未保存", { count: 1 })
+        : formatUi("有 {count} 个分区未保存", {
+            count: state.dirtySections.size
+          });
   }
 
   function renderTaskActions() {
@@ -402,7 +418,7 @@
       const card = create("article", "agent-card");
       const heading = create("div", "agent-card-heading");
       heading.append(
-        create("strong", "", `${plugin.displayName} · ${plugin.version} (Build ${plugin.build})`),
+        create("strong", "", `${translateUi(plugin.displayName)} · ${plugin.version} (Build ${plugin.build})`),
         create("span", plugin.enabled ? "agent-enabled-badge" : "agent-standby-badge", plugin.enabled ? "已启用" : "已停用")
       );
       const actions = create("div", "agent-card-actions");
@@ -415,7 +431,14 @@
         heading,
         create("span", "agent-device-id", plugin.id),
         create("p", "", plugin.description),
-        create("span", "muted", `${(plugin.tasks || []).length} 个任务 · ${(plugin.permissions || []).length} 项权限`),
+        create(
+          "span",
+          "muted",
+          formatUi("{tasks} 个任务 · {permissions} 项权限", {
+            tasks: (plugin.tasks || []).length,
+            permissions: (plugin.permissions || []).length
+          })
+        ),
         actions
       );
       root.append(card);
@@ -518,7 +541,10 @@
           "span",
           "",
           item.active_task_key
-            ? `${taskName(item.active_task_key)} / ${item.status}`
+            ? formatUi("{task} / {state}", {
+                task: taskName(item.active_task_key),
+                state: translateUi(online ? "在线" : "离线")
+              })
             : window.MrzhI18n.format("空闲 / {date}", {
                 date: formatDate(item.updated_at)
               })
@@ -672,7 +698,7 @@
         `.config-form[data-config-section="${section}"]`
       );
       const feedback = form?.querySelector("[data-save-feedback]");
-      if (feedback) feedback.textContent = "当前配置已同步";
+      if (feedback) feedback.textContent = translateUi("当前配置已同步");
     }
   }
 
@@ -818,7 +844,7 @@
     }
     renderScheduleSummaries();
     state.dirtySections.add("tasks");
-    document.querySelector('.config-form[data-config-section="tasks"] [data-save-feedback]')?.replaceChildren(document.createTextNode("有未保存修改"));
+    document.querySelector('.config-form[data-config-section="tasks"] [data-save-feedback]')?.replaceChildren(document.createTextNode(translateUi("有未保存修改")));
     updateSaveState();
     closeScheduleDialog();
   }
@@ -1117,7 +1143,7 @@
     const feedback = document
       .querySelector('[data-config-section="technology"]')
       ?.querySelector("[data-save-feedback]");
-    if (feedback) feedback.textContent = "科技配置尚未保存";
+    if (feedback) feedback.textContent = translateUi("科技配置尚未保存");
   }
 
   function renderTechnologyEditor() {
@@ -1134,7 +1160,8 @@
       "agriculture";
     const effectiveLane = (item) =>
       item.category === campType ? "core" : "general";
-    const coreLabel = `${categoryLabel(campType)}科技`;
+    const coreLabel = technologyCategoryLabel(campType);
+    const otherLabel = translateUi("其他科技");
     const weekdayRoot = byId("technology-weekdays");
     weekdayRoot.replaceChildren();
     const firstDate =
@@ -1155,11 +1182,11 @@
     if (!state.technologyDate) state.technologyDate = firstDate;
     Array.from({ length: 7 }, (_, index) => {
       const date = datePlusDays(firstDate, index);
-      const weekday = new Intl.DateTimeFormat("zh-CN", {
+      const weekday = new Intl.DateTimeFormat(localeTag(), {
         weekday: "short",
         timeZone: "UTC"
       }).format(new Date(`${date}T00:00:00Z`));
-      const name = `${index === 0 ? "次日 · " : ""}${date.slice(5)} ${weekday}`;
+      const name = `${index === 0 ? `${translateUi("次日")} · ` : ""}${date.slice(5)} ${weekday}`;
       const button = create("button", "weekday-tab", name);
       button.type = "button";
       button.dataset.active = String(state.technologyDate === date);
@@ -1187,7 +1214,7 @@
     byId("technology-core-count").textContent =
       `${coreLabel} ${coreCount} / ${config.limits.core}`;
     byId("technology-general-count").textContent =
-      `其他科技 ${generalCount} / ${config.limits.general}`;
+      `${otherLabel} ${generalCount} / ${config.limits.general}`;
 
     const previewRoot = byId("technology-fixed-preview");
     previewRoot.replaceChildren();
@@ -1223,7 +1250,7 @@
         create(
           "strong",
           "",
-          lane === "core" ? `${coreLabel}行` : "其他科技行"
+          technologyRowLabel(lane, campType)
         ),
         create(
           "span",
@@ -1242,7 +1269,12 @@
             : "vote"
           : "empty";
         slot.title = item
-          ? `${item.name} · ${fixed.has(item.key) ? "固定科技" : "投票科技"}`
+          ? formatUi("{name} · {source}", {
+              name: item.name,
+              source: fixed.has(item.key)
+                ? translateUi("固定科技")
+                : translateUi("投票科技")
+            })
           : window.MrzhI18n.t("空位");
         if (item?.iconUrl) {
           const image = document.createElement("img");
@@ -1308,11 +1340,9 @@
         create(
           "small",
           "",
-          `${categoryLabel(item.category)} · ${
-            effectiveLane(item) === "core" ? `${coreLabel}行` : "其他科技行"
-          }`
+          `${categoryLabel(item.category)} · ${technologyRowLabel(effectiveLane(item), campType)}`
         ),
-        create("p", "", item.description || "暂无科技描述")
+        create("p", "", item.description || translateUi("暂无科技描述"))
       );
       const controls = create("div", "technology-admin-controls");
       const fixedLabel = create("label", "technology-toggle");
@@ -1321,7 +1351,7 @@
       fixedInput.checked = fixed.has(item.key);
       fixedInput.disabled = technologyResultLocked;
       if (technologyResultLocked) {
-        fixedInput.title = "投票截止后至每日刷新前不可修改当前固定科技";
+        fixedInput.title = translateUi("投票截止后至每日刷新前不可修改当前固定科技");
       }
       fixedInput.addEventListener("change", () => {
         const keys = new Set(
@@ -1337,7 +1367,10 @@
           const limit = config.limits[itemLane];
           if (laneCount >= limit) {
             fixedInput.checked = false;
-            alert(`${itemLane === "core" ? coreLabel : "其他科技"}最多固定 ${limit} 项`);
+            alert(formatUi("{lane}最多固定 {limit} 项", {
+              lane: itemLane === "core" ? coreLabel : otherLabel,
+              limit
+            }));
             return;
           }
           keys.add(item.key);
@@ -1348,7 +1381,7 @@
         markTechnologyDirty();
         renderTechnologyEditor();
       });
-      fixedLabel.append(fixedInput, document.createTextNode(" 固定"));
+      fixedLabel.append(fixedInput, document.createTextNode(` ${translateUi("固定")}`));
 
       const voteLabel = create("label", "technology-toggle");
       const voteInput = document.createElement("input");
@@ -1356,21 +1389,26 @@
       voteInput.checked = item.enabledForVoting;
       voteInput.disabled = technologyResultLocked;
       if (technologyResultLocked) {
-        voteInput.title = "投票截止后至每日刷新前不可修改当前投票配置";
+        voteInput.title = translateUi("投票截止后至每日刷新前不可修改当前投票配置");
       }
       voteInput.addEventListener("change", () => {
         item.enabledForVoting = voteInput.checked;
         markTechnologyDirty();
       });
-      voteLabel.append(voteInput, document.createTextNode(" 开放投票"));
+      voteLabel.append(voteInput, document.createTextNode(` ${translateUi("开放投票")}`));
 
       const laneSelect = document.createElement("select");
       laneSelect.className = "technology-lane-select";
-      laneSelect.innerHTML =
-        `<option value="core">${coreLabel}行</option><option value="general">其他科技行</option>`;
+      const coreOption = document.createElement("option");
+      coreOption.value = "core";
+      coreOption.textContent = technologyRowLabel("core", campType);
+      const otherOption = document.createElement("option");
+      otherOption.value = "general";
+      otherOption.textContent = technologyRowLabel("general", campType);
+      laneSelect.append(coreOption, otherOption);
       laneSelect.value = effectiveLane(item);
       laneSelect.disabled = true;
-      laneSelect.title = "科技所在行由营地科技类型自动决定";
+      laneSelect.title = translateUi("科技所在行由营地科技类型自动决定");
       controls.append(fixedLabel, voteLabel, laneSelect);
       card.append(image, copy, controls);
       root.append(card);
@@ -1378,11 +1416,41 @@
   }
 
   function categoryLabel(category) {
-    return {
+    const source = {
       agriculture: "农业",
       military: "军事",
       industry: "工业"
-    }[category] || category;
+    }[category];
+    return translateUi(source || category);
+  }
+
+  function technologyCategorySource(category) {
+    return {
+      agriculture: "农业科技",
+      military: "军事科技",
+      industry: "工业科技"
+    }[category] || "其他科技";
+  }
+
+  function technologyCategoryLabel(category) {
+    return translateUi(technologyCategorySource(category));
+  }
+
+  function technologyRowLabel(lane, campType) {
+    const source = lane === "core"
+      ? `${technologyCategorySource(campType)}行`
+      : "其他科技行";
+    return translateUi(source);
+  }
+
+  function localeTag() {
+    return {
+      "zh-cn": "zh-CN",
+      "zh-tw": "zh-TW",
+      en: "en",
+      fr: "fr",
+      ja: "ja"
+    }[window.MrzhI18n.language()] || "zh-CN";
   }
 
   function renderRuns(runs) {

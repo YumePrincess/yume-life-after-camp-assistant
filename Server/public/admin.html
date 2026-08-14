@@ -377,17 +377,14 @@
                 </div>
                 <span id="next-tech-date" class="date-badge"></span>
               </div>
-              <p class="technology-help">
-                目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。农业行和其他科技行上限均为 6；每人投票上限可单独设置。
-              </p>
               <div class="technology-editor-toolbar">
                 <div class="technology-date-picker">
                   <span class="field-label">固定科技适用日期</span>
                   <div id="technology-weekdays" class="weekday-tabs" role="tablist"></div>
                 </div>
                 <div class="technology-limits">
-                  <span id="technology-core-count">农业科技 0 / 6</span>
-                  <span id="technology-general-count">其他科技 0 / 6</span>
+                  <span id="technology-core-count">— / —</span>
+                  <span id="technology-general-count">— / —</span>
                   <label class="field technology-vote-limit-field">
                     <span>每人投票上限（0–12）</span>
                     <input id="technology-vote-limit" type="number" min="0" max="12" step="1" value="6" />
@@ -592,7 +589,15 @@
               </div>
             </div>
             <div class="table-scroll">
-              <table class="run-history-table">
+              <table class="run-history-table run-log-table">
+                <colgroup>
+                  <col class="run-log-col-time" />
+                  <col class="run-log-col-task" />
+                  <col class="run-log-col-status" />
+                  <col class="run-log-col-progress" />
+                  <col class="run-log-col-message" />
+                  <col class="run-log-col-actions" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>时间</th>

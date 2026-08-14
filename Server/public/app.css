@@ -1169,6 +1169,51 @@ td {
   border-spacing: 0;
 }
 
+.run-log-table {
+  table-layout: fixed;
+}
+
+.run-log-col-time {
+  width: 150px;
+}
+
+.run-log-col-task {
+  width: 170px;
+}
+
+.run-log-col-status {
+  width: 86px;
+}
+
+.run-log-col-progress {
+  width: 76px;
+}
+
+.run-log-col-actions {
+  width: 112px;
+}
+
+.run-log-table th:nth-child(1),
+.run-log-table td:nth-child(1),
+.run-log-table th:nth-child(2),
+.run-log-table td:nth-child(2),
+.run-log-table th:nth-child(3),
+.run-log-table td:nth-child(3),
+.run-log-table th:nth-child(4),
+.run-log-table td:nth-child(4),
+.run-log-table th:nth-child(6),
+.run-log-table td:nth-child(6) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-table th:nth-child(5),
+.run-log-table td:nth-child(5) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .identity-admin-table {
   min-width: 980px;
 }
@@ -1752,6 +1797,10 @@ select option {
 }
 
 @media (max-width: 760px) {
+  .run-log-col-actions {
+    width: 96px;
+  }
+
   .run-history-table .run-actions-heading,
   .run-history-table .run-actions {
     width: 96px;
@@ -2050,12 +2099,13 @@ select option {
 .task-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start;
+  align-items: stretch;
   gap: 12px;
 }
 
 .task-card {
   display: flex;
+  height: 100%;
   align-items: flex-start;
   flex-direction: column;
   gap: 10px;
@@ -2074,7 +2124,7 @@ select option {
 }
 
 .task-card .button {
-  margin-top: 2px;
+  margin-top: auto;
 }
 
 .form-grid {

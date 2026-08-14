@@ -22,12 +22,17 @@
   const error = params.get("error");
   const target = document.querySelector("#login-error");
   if (target && error) {
-    target.textContent = messages[error] || "登录失败，请稍后重试。";
+    const message = messages[error] || "登录失败，请稍后重试。";
+    target.textContent = window.MrzhI18n?.t
+      ? window.MrzhI18n.t(message)
+      : message;
   }
 
   document.querySelector("#key-login-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    target.textContent = "正在验证临时 Key…";
+    target.textContent = window.MrzhI18n?.t
+      ? window.MrzhI18n.t("正在验证临时 Key…")
+      : "正在验证临时 Key…";
     const response = await fetch("/auth/key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

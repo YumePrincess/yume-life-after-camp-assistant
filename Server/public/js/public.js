@@ -31,7 +31,11 @@
   function create(tag, className, text) {
     const element = document.createElement(tag);
     if (className) element.className = className;
-    if (text !== undefined) element.textContent = text;
+    if (text !== undefined) {
+      element.textContent = window.MrzhI18n?.t
+        ? window.MrzhI18n.t(text)
+        : text;
+    }
     return element;
   }
 
@@ -65,6 +69,15 @@
 
   function categoryName(value) {
     const source = { military: "军事", agriculture: "农业", industry: "工业" }[value];
+    return source ? window.MrzhI18n.t(source) : value;
+  }
+
+  function technologyCategoryName(value) {
+    const source = {
+      military: "军事科技",
+      agriculture: "农业科技",
+      industry: "工业科技"
+    }[value];
     return source ? window.MrzhI18n.t(source) : value;
   }
 
@@ -509,7 +522,7 @@
     setText("server-name", data.campConfig?.serverName || "中国大陆服务器");
     setText(
       "camp-type",
-      `${categoryName(data.campConfig?.currentCampType)}${window.MrzhI18n.t("科技")}`
+      technologyCategoryName(data.campConfig?.currentCampType)
     );
     setText("announcement", data.publicOverview?.announcement || "");
     setText("timezone-label", data.campConfig?.timezone || "Asia/Shanghai");
