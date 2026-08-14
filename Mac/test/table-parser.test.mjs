@@ -157,6 +157,17 @@ test("member profiles preserve the profile page's own weekly contribution field"
   );
 });
 
+test("member profile titles discard symbol-only OCR fallback output", () => {
+  assert.equal(
+    normalizeProfiles([
+      { name: "玩家甲", campTitle: "☻ 〛 ☻" },
+      { name: "玩家乙", campTitle: "#G春之音" },
+      { name: "玩家丙", campTitle: "启航" }
+    ]).map(({ campTitle }) => campTitle).join("|"),
+    "|春之音|启航"
+  );
+});
+
 test("member profile normalization preserves the reconciled roster count", () => {
   assert.deepEqual(
     normalizeProfiles([

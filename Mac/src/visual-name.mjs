@@ -66,6 +66,34 @@ export function normalizeVisualName(value) {
   return text.replace(/^\s+|\s+$/gu, "");
 }
 
+export function normalizePlayerOcrArtifact(value) {
+  // Keep OCR spelling lossless here. Visual symbol classification and
+  // row-level recovery decide whether a glyph is decorative; this generic
+  // normalizer must never contain roster-specific aliases.
+  return normalizeVisualName(value);
+}
+
+export function normalizeMemberCampTitle(value) {
+  const raw = normalizeVisualName(value)
+    .replace(/^#(?:B|D|G|K|O|P|R|U|W|Y)\s*/u, "")
+    .trim();
+  if (!raw) return "";
+  const text = Array.from(raw)
+    .filter(
+      (character) =>
+        /[\p{L}\p{N}]/u.test(character) || /\s/u.test(character)
+    )
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim();
+  // A one-glyph title is overwhelmingly a clipped neighboring name or a
+  // classifier artifact in this two-line member layout. Real role/title
+  // labels such as 市长、启航、春之音 are at least two text glyphs.
+  return Array.from(text).filter((character) => /[\p{L}\p{N}]/u.test(character)).length >= 2
+    ? text
+    : "";
+}
+
 function isPlayerTextCharacter(character) {
   return /[\p{L}\p{N}]/u.test(character);
 }
@@ -82,7 +110,7 @@ function isSimplePlayerPunctuation(character) {
  * is retained as a last-resort candidate because it has no text fallback.
  */
 export function normalizePlayerName(value, options = {}) {
-  const raw = normalizeVisualName(value);
+  const raw = normalizePlayerOcrArtifact(value);
   if (!raw) return "";
   if (options.preserveSymbols) return raw;
 
@@ -106,7 +134,7 @@ export function normalizePlayerName(value, options = {}) {
 // meaningful decorative symbol to distinguish those two players, but still
 // rejects the punctuation that Vision most often invents around a name.
 export function normalizePlayerNameVariant(value) {
-  const raw = normalizeVisualName(value);
+  const raw = normalizePlayerOcrArtifact(value);
   if (!raw) return "";
   const characters = Array.from(raw);
   if (!characters.some(isPlayerTextCharacter)) return raw;
@@ -125,7 +153,7 @@ export function normalizePlayerNameVariant(value) {
 }
 
 export function playerNameTextKey(value) {
-  const raw = normalizeVisualName(value).toLocaleLowerCase();
+  const raw = normalizePlayerOcrArtifact(value).toLocaleLowerCase();
   const text = Array.from(raw).filter(isPlayerTextCharacter).join("");
   return text || normalizePlayerName(raw).replace(/\s+/gu, " ");
 }
@@ -146,7 +174,7 @@ export function playerNameSymbolSignature(value) {
 export function normalizePlayerNameRows(rows) {
   const groups = new Map();
   for (const row of rows || []) {
-    const rawName = normalizeVisualName(row?.rawName || row?.name);
+    const rawName = normalizePlayerOcrArtifact(row?.rawName || row?.name);
     const key = playerNameTextKey(rawName);
     if (!key) continue;
     const group = groups.get(key) || [];
@@ -215,12 +243,37 @@ export function joinVisualNameObservations(items) {
     .sort((left, right) => left - right);
   const medianHeight = heights[Math.floor(heights.length / 2)] || 20;
   const normalGap = medianHeight * 0.22;
+  const textCharacterCount = (value) =>
+    Array.from(normalizeVisualName(value)).filter(isPlayerTextCharacter).length;
+  const lineTextCount = visible.reduce(
+    (count, item) => count + textCharacterCount(item?.text),
+    0
+  );
   let previousRight = null;
   let result = "";
-  for (const item of visible) {
+  for (const [index, item] of visible.entries()) {
     const left = Number(item?.x) || 0;
     const right = left + (Number(item?.width) || 0);
     const gap = previousRight == null ? 0 : left - previousRight;
+    const itemText = normalizeVisualName(item?.text);
+    const singleLatinBadge =
+      lineTextCount >= 2 &&
+      /^[A-Za-z]$/u.test(itemText) &&
+      index === visible.length - 1 &&
+      gap > medianHeight * 0.55;
+    const detachedSingleTextArtifact =
+      lineTextCount >= 3 &&
+      index === visible.length - 1 &&
+      gap > medianHeight * 0.7 &&
+      Array.from(itemText).length <= 1 &&
+      Array.from(itemText).some(isPlayerTextCharacter);
+    // The game places returning-player/pioneer/mayor glyphs immediately to
+    // the right of the name. Vision can turn one of those isolated glyphs
+    // into a Latin letter. A detached one-letter tail on an otherwise
+    // text-bearing name is a generic badge artifact, not a second line or a
+    // part of the player name. Do not apply this to symbol-only names: their
+    // spacing is the identity data we are trying to preserve.
+    if (singleLatinBadge || detachedSingleTextArtifact) continue;
     if (gap > normalGap && medianHeight > 0) {
     // A gap is measured between OCR boxes, so using glyph width directly
     // overestimates spaces for punctuation such as 「 」. The line height is
@@ -255,10 +308,29 @@ export function normalizeIdentityLines(items) {
   const name = joinVisualNameObservations(
     lines.filter((item) => Math.abs(Number(item?.y || 0) - Number(nameLine?.y || 0)) <= Math.max(8, Number(nameLine?.height || 0) * 0.8))
   );
+  const nameY = Number(nameLine?.y || 0);
+  const nameLeft = Number(nameLine?.x || 0);
+  const nameHeight = Math.max(0, Number(nameLine?.height || 0));
+  const secondLineOffset = Math.max(8, nameHeight * 0.55);
+  const titleLeftTolerance = Math.max(
+    18,
+    nameHeight * 1.5,
+    (Number(nameLine?.width) || 0) * 0.18
+  );
   const campTitle = lines
-    .filter((item) => item !== nameLine && !isNonNameMarker(item.text))
+    // A title is a vertically stacked line under the name. Same-baseline
+    // observations are name-adjacent badges/artifacts and must never become
+    // campTitle. This also prevents fallback symbol observations from being
+    // serialized as a title when they came from the other columns.
+    .filter(
+      (item) =>
+        item !== nameLine &&
+        Number(item?.y || 0) >= nameY + secondLineOffset &&
+        Math.abs((Number(item?.x) || 0) - nameLeft) <= titleLeftTolerance &&
+        !isNonNameMarker(item.text)
+    )
     .map((item) => normalizeVisualName(item.text))
     .filter(Boolean)
     .join(" ");
-  return { name, campTitle };
+  return { name, campTitle: normalizeMemberCampTitle(campTitle) };
 }

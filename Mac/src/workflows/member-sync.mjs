@@ -9,8 +9,11 @@ import {
 import { isPlausibleMemberName } from "../member-name.mjs";
 import {
   normalizePlayerName,
+  normalizePlayerOcrArtifact,
   normalizePlayerNameVariant,
+  normalizeMemberCampTitle,
   normalizeVisualName,
+  playerNameHasText,
   playerNameSymbolSignature,
   playerNameTextKey
 } from "../visual-name.mjs";
@@ -783,11 +786,15 @@ export async function capturePagedTable(
             "materialContribution"
           ].some((field) => !/\d/.test(String(row[field] || "")))
         );
+      const memberIdentityNeedsRecovery =
+        memberDetailsMode &&
+        attemptRows.some((row) => memberRowNeedsIdentityRecovery(row));
       if (
         (!attemptRows.length ||
           (definition.extractionMode === "hybrid" &&
             attemptRows.length < minimumRowsPerPage) ||
-          contributionNeedsRecovery) &&
+          contributionNeedsRecovery ||
+          memberIdentityNeedsRecovery) &&
         typeof vision.extractTableRows === "function"
       ) {
           const recoveredRows = await vision.extractTableRows(
@@ -804,7 +811,9 @@ export async function capturePagedTable(
           );
           return [];
         });
-        attemptRows = mergeContributionRows(attemptRows, recoveredRows);
+        attemptRows = memberDetailsMode
+          ? preferMemberDetailRecoveryRows(attemptRows, recoveredRows)
+          : mergeContributionRows(attemptRows, recoveredRows);
         if (memberDetailsMode) {
           attemptRows = filterMemberDetailRows(attemptRows);
           if (!fullPageRead) {
@@ -908,6 +917,14 @@ export async function capturePagedTable(
       const visibleRows = fullPageRead
         ? Number(pageDefinition.pagination.fullPageRows) || 7
         : Number(definition.pagination.rowsPerPage) || 5;
+      const incompleteMiddlePage =
+        fullPageRead &&
+        currentTailReason === "incomplete" &&
+        expectedPageCount !== null &&
+        page + 1 < expectedPageCount;
+      const safeVisibleRows = incompleteMiddlePage
+        ? memberRowsPerPage
+        : visibleRows;
       const originalNovelty = pageNovelMemberCount(rows, byName);
       const recoveredNovelty = pageNovelMemberCount(
         reconciledRecovery,
@@ -915,11 +932,15 @@ export async function capturePagedTable(
       );
       // The expanded OCR tail crop can return fewer rows than the native pass.
       // Combine both deterministic candidate sets so a valid row is not lost.
-      const recoveryCandidates = fullPageRead
+      const recoveryCandidates = incompleteMiddlePage
+        ? (reconciledRecovery.length >= rows.length
+            ? reconciledRecovery
+            : rows)
+        : fullPageRead
           ? mergeMemberRecoveryCandidates(
             reconciledRecovery,
             rows,
-            Math.max(1, visibleRows),
+            Math.max(1, safeVisibleRows),
             byName
           )
         : reconciledRecovery;
@@ -927,7 +948,10 @@ export async function capturePagedTable(
         recoveryCandidates,
         byName
       );
-      const shouldUseRecovery = fullPageRead
+      const shouldUseRecovery = incompleteMiddlePage
+        ? reconciledRecovery.length >= rows.length &&
+          (recoveredNovelty > originalNovelty || reconciledRecovery.length > rows.length)
+        : fullPageRead
         ? recoveryCandidateNovelty > originalNovelty ||
           (memberPageNovelty < rows.length &&
             recoveryCandidates.length >= rows.length)
@@ -946,7 +970,7 @@ export async function capturePagedTable(
             rawRecoveredNames: reconciledRecovery.map((row) => row.name)
           }
         );
-        rows = recoveryCandidates.slice(0, Math.max(1, visibleRows));
+        rows = recoveryCandidates.slice(0, Math.max(1, safeVisibleRows));
       } else {
         await report(
           "warning",
@@ -1004,14 +1028,10 @@ export async function capturePagedTable(
     let added = 0;
     let rejectedAfterExpectedCount = 0;
     for (const row of rows) {
-      const baseRowKey = memberDetailsMode
-        ? memberProfileRowKey(row)
-        : row.name;
-      const rowKey = baseRowKey;
-      if (!rowKey) continue;
-      const current = byName.get(rowKey) || {};
+      const baseRowKey = memberDetailsMode ? memberProfileRowKey(row) : row.name;
+      if (!baseRowKey) continue;
       if (
-        !byName.has(rowKey) &&
+        !byName.has(baseRowKey) &&
         !memberDetailsMode &&
         !contributionTableMode &&
         expectedCount !== null &&
@@ -1020,31 +1040,54 @@ export async function capturePagedTable(
         rejectedAfterExpectedCount += 1;
         continue;
       }
-      if (!byName.has(rowKey)) added += 1;
-      const storedRow = memberDetailsMode && hasFullPageDefinition
+      const storedRow = memberDetailsMode
         ? {
             ...row,
             __memberPage: page + 1,
-            __memberTail: fullPageRead
+            ...(hasFullPageDefinition
+              ? { __memberTail: fullPageRead }
+              : {})
           }
         : row;
+      if (memberDetailsMode) {
+        const result = addMemberProfileDetailRow(byName, storedRow);
+        if (result.added) added += 1;
+        continue;
+      }
+      const rowKey = baseRowKey;
+      const current = byName.get(rowKey) || {};
+      if (!byName.has(rowKey)) added += 1;
       byName.set(
         rowKey,
-        memberDetailsMode
-          ? mergeMemberProfileRows(current, storedRow)
-          : { ...current, ...row }
+        { ...current, ...row }
       );
     }
     const elapsedMs = Date.now() - pageStartedAt;
+    const pageReadRows = rows.map((row, index) => ({
+      order: index + 1,
+      name: String(row?.name || "").trim(),
+      rawName: normalizeVisualName(row?.rawName || row?.name),
+      profession: String(row?.profession || "").trim(),
+      weeklyContribution: String(row?.weeklyContribution || "").trim(),
+      technologyPointsUsed: String(row?.technologyPointsUsed || "").trim(),
+      materialContribution: String(row?.materialContribution || "").trim(),
+      manorLevel: String(row?.manorLevel || "").trim(),
+      onlineState: String(row?.onlineState || "").trim(),
+      campTitle: String(row?.campTitle || "").trim(),
+      roommateName: String(row?.roommateName || "").trim(),
+      scene: String(row?.scene || "").trim()
+    }));
     await report(
       "info",
       `${label}_page`,
-      `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${byName.size} 名成员（耗时 ${elapsedMs}ms）`,
+      `第 ${page + 1} 页识别 ${rows.length} 行：${pageReadRows.map((row) => row.name).join("、") || "（无可用名称）"}；累计 ${byName.size} 名成员（耗时 ${elapsedMs}ms）`,
       {
         screenshot: frame.path,
         expectedCount,
         rejectedAfterExpectedCount,
-        elapsedMs
+        elapsedMs,
+        readNames: pageReadRows.map((row) => row.name),
+        readRows: pageReadRows
       }
     );
     const scanProgress = progressForRange(
@@ -1071,9 +1114,35 @@ export async function capturePagedTable(
       expectedCount !== null &&
       organizedMemberCount < expectedCount &&
       page + 1 < maxMemberPageCount;
+    const incompleteNonTailPage =
+      memberDetailsMode &&
+      fullPageRead &&
+      currentTailReason === "incomplete" &&
+      expectedPageCount !== null &&
+      page + 1 < expectedPageCount;
+    if (incompleteNonTailPage) {
+      // The expanded crop is a recovery read for a damaged middle page, not
+      // proof that the list ended. In particular, a symbol-only name can be
+      // absent from one OCR pass while the following pages are still valid.
+      // Continue the calibrated pagination so the final header-count check,
+      // rather than this one partial frame, decides whether the scan is
+      // complete.
+      await report(
+        "warning",
+        "member_details_incomplete_middle_page_continue",
+        `第 ${page + 1} 页整页补读后仍只有 ${rows.length}/${memberRowsPerPage} 行，但尚未到预计末页第 ${expectedPageCount} 页，继续翻页并在末尾统一复核`,
+        {
+          page: page + 1,
+          expectedPageCount,
+          recognizedRows: rows.length,
+          expectedRows: memberRowsPerPage
+        }
+      );
+    }
     if (
       memberDetailsMode &&
       fullPageRead &&
+      !incompleteNonTailPage &&
       (currentTailReason === "stagnant" ||
         (currentTailReason === "incomplete" && rows.length < memberRowsPerPage) ||
         (scheduledTailPage && !scheduledLastNeedsContinuation))
@@ -1258,7 +1327,11 @@ export async function capturePagedTable(
   }
   const rows = [...byName.values()];
   if (memberDetailsMode) {
-    const reconciled = reconcileMemberDetailRows(rows, expectedCount);
+    const reconciled = reconcileMemberDetailRows(rows, expectedCount).sort(
+      (left, right) =>
+        (Number(left?.__memberPage) || 0) -
+          (Number(right?.__memberPage) || 0)
+    );
     await report(
       "info",
       "member_details_bottom_reached",
@@ -1549,11 +1622,40 @@ function isMemberAvatarArtifact(value) {
 
 function normalizeScannedNameRows(rows) {
   return (rows || []).map((row) => {
-    const rawName = normalizeVisualName(row?.rawName || row?.name);
+    const rawName = normalizePlayerOcrArtifact(row?.rawName || row?.name);
     const name = row?.__preserveNameSymbols
       ? normalizePlayerName(row?.name, { preserveSymbols: true })
       : normalizePlayerName(rawName);
-    return { ...row, name, rawName };
+    return { ...row, name, rawName, campTitle: normalizeMemberCampTitle(row?.campTitle) };
+  });
+}
+
+function memberRowNeedsIdentityRecovery(row) {
+  const rawName = normalizeVisualName(row?.rawName || row?.name);
+  const name = normalizePlayerName(rawName);
+  if (!name || !playerNameHasText(name)) return true;
+  if (String(row?.campTitle || "").trim()) return true;
+  // Combining marks, discarded OCR punctuation, and one-text-glyph names
+  // are reliable signals that the row needs an in-slot accurate reread. This
+  // is deliberately based on the rendered/OCR shape, never on a roster name.
+  if (/\p{M}/u.test(rawName)) return true;
+  if (rawName !== name) return true;
+  return Array.from(name).filter((character) => /[\p{L}\p{N}]/u.test(character)).length <= 1;
+}
+
+function preferMemberDetailRecoveryRows(primary, recovered) {
+  if (!Array.isArray(recovered) || !recovered.length) return primary;
+  if (!Array.isArray(primary) || !primary.length) return recovered;
+  // The identity reread uses the same calibrated row slots. Only replace a
+  // suspicious row with its same-position recovered row; never append a
+  // recovered row under a different position and accidentally create a
+  // duplicate member.
+  if (recovered.length < primary.length) return primary;
+  return primary.map((row, index) => {
+    const candidate = recovered[index];
+    return candidate?.name && memberRowNeedsIdentityRecovery(row)
+      ? { ...row, ...candidate }
+      : row;
   });
 }
 
@@ -1737,8 +1839,9 @@ function reconcileMemberDetailRows(rows, expectedCount = null) {
         (!hasTailMetadata ||
           existing.__memberTail === true ||
           row.__memberTail === true) &&
-        sameMemberProfileIdentity(existing, row) &&
-        similarMemberProfileName(existing.name, row.name)
+        (sameMemberProfileRawCorrection(existing, row) ||
+          (sameMemberProfileIdentity(existing, row) &&
+            similarMemberProfileName(existing.name, row.name)))
     );
     if (duplicateIndex < 0) {
       reconciled.push(row);
@@ -1805,6 +1908,17 @@ function reconcileMemberDetailRows(rows, expectedCount = null) {
   return reconciled;
 }
 
+function sameMemberProfileRawCorrection(left, right) {
+  const leftRaw = exactPageName(left?.rawName);
+  const rightRaw = exactPageName(right?.rawName);
+  const leftName = exactPageName(left?.name);
+  const rightName = exactPageName(right?.name);
+  return Boolean(
+    (leftRaw && rightName && leftRaw === rightName && leftName !== rightName) ||
+      (rightRaw && leftName && rightRaw === leftName && leftName !== rightName)
+  );
+}
+
 function memberDetailQualityScore(row) {
   const name = String(row?.name || "").trim();
   const fields = [
@@ -1846,12 +1960,44 @@ function pageNovelMemberCount(rows, byName) {
   const names = new Set(byName.keys());
   let added = 0;
   for (const row of rows) {
-    const key = memberProfileRowKey(row);
-    if (!key || names.has(key)) continue;
-    names.add(key);
+    if (!memberProfileWouldAddRow(row, names)) continue;
     added += 1;
   }
   return added;
+}
+
+function memberProfileWouldAddRow(row, keys) {
+  const coreKey = memberProfileNameKey(row?.name || row?.rawName);
+  if (!coreKey) return false;
+  const rowKey = memberProfileRowKey(row);
+  if (keys.has(rowKey)) return false;
+  const existingKeys = [...keys].filter(
+    (key) => key === coreKey || key.startsWith(`${coreKey}\u0000`)
+  );
+  if (!existingKeys.length) {
+    keys.add(rowKey);
+    return true;
+  }
+  if (row?.__preserveNameSymbols) {
+    keys.add(rowKey);
+    return true;
+  }
+  const incomingRawName = memberProfileVisualVariantSource(row, coreKey);
+  const incomingVariant = normalizePlayerNameVariant(incomingRawName);
+  if (
+    existingKeys.length === 1 &&
+    existingKeys[0] === coreKey &&
+    playerNameHasText(incomingRawName) &&
+    incomingVariant
+  ) {
+    // The actual commit promotes the existing text-only key and stores this
+    // visual variant. Reflect that promotion in the novelty probe so page
+    // recovery does not incorrectly discard the candidate as a duplicate.
+    keys.delete(coreKey);
+    keys.add(`${coreKey}\u0000${incomingVariant}`);
+    return true;
+  }
+  return false;
 }
 
 function mergeMemberRecoveryCandidates(
@@ -1911,6 +2057,118 @@ function memberProfileRowKey(row) {
   return variant ? `${key}\u0000${variant}` : key;
 }
 
+function addMemberProfileDetailRow(byName, row) {
+  const coreKey = memberProfileNameKey(row?.name || row?.rawName);
+  if (!coreKey) return { added: false, rowKey: "" };
+
+  const incomingRawName = memberProfileVisualVariantSource(row, coreKey);
+  const incomingVariant = normalizePlayerNameVariant(incomingRawName);
+  const existingEntries = memberProfileEntriesForCore(byName, coreKey);
+
+  if (!existingEntries.length) {
+    const rowKey = memberProfileRowKey(row);
+    byName.set(rowKey, { ...row });
+    return { added: true, rowKey };
+  }
+
+  // A normal scan intentionally removes decorative symbols from a name. If a
+  // later page reveals a second player with the same text but a different
+  // visible symbol, promote the first text-only record to a variant before
+  // storing the new row. This promotion is cross-page safe: it is only
+  // applied when both observations contain real text, so OCR punctuation
+  // cannot manufacture a duplicate and pure-symbol names remain keyed by
+  // their own exact visible string.
+  if (
+    existingEntries.length === 1 &&
+    existingEntries[0][0] === coreKey &&
+    playerNameHasText(incomingRawName) &&
+    playerNameHasText(existingEntries[0][1]?.rawName || existingEntries[0][1]?.name)
+  ) {
+    const [existingKey, existingRow] = existingEntries[0];
+    const existingVariant = normalizePlayerNameVariant(
+      existingRow?.rawName || existingRow?.name
+    );
+    if (
+      existingVariant &&
+      incomingVariant &&
+      existingVariant !== incomingVariant
+    ) {
+      byName.delete(existingKey);
+      const promotedRow = {
+        ...existingRow,
+        name: existingVariant,
+        __preserveNameSymbols: true
+      };
+      const promotedKey = `${coreKey}\u0000${existingVariant}`;
+      byName.set(promotedKey, promotedRow);
+      const incomingKey = `${coreKey}\u0000${incomingVariant}`;
+      byName.set(incomingKey, {
+        ...row,
+        name: incomingVariant,
+        __preserveNameSymbols: true
+      });
+      return { added: true, rowKey: incomingKey, promoted: true };
+    }
+  }
+
+  const rowKey = memberProfileRowKey(row);
+  const current = byName.get(rowKey);
+  if (current) {
+    byName.set(rowKey, mergeMemberProfileRows(current, row));
+    return { added: false, rowKey };
+  }
+
+  // If this row is already a flagged collision, it is a legitimate distinct
+  // variant even when another variant for the same text core was seen first.
+  if (row?.__preserveNameSymbols) {
+    byName.set(rowKey, { ...row });
+    return { added: true, rowKey };
+  }
+
+  if (
+    playerNameHasText(incomingRawName) &&
+    incomingVariant &&
+    !existingEntries.some(
+      ([, existingRow]) =>
+        normalizePlayerNameVariant(
+          existingRow?.rawName || existingRow?.name
+        ) === incomingVariant
+    )
+  ) {
+    const variantKey = `${coreKey}\u0000${incomingVariant}`;
+    byName.set(variantKey, {
+      ...row,
+      name: incomingVariant,
+      __preserveNameSymbols: true
+    });
+    return { added: true, rowKey: variantKey, promoted: true };
+  }
+
+  // Same text and no distinct visible variant: merge observations from the
+  // overlapping/recovery read into the existing authoritative row.
+  const [existingKey, existingRow] = existingEntries[0];
+  byName.set(existingKey, mergeMemberProfileRows(existingRow, row));
+  return { added: false, rowKey: existingKey };
+}
+
+function memberProfileEntriesForCore(byName, coreKey) {
+  const prefix = `${coreKey}\u0000`;
+  return [...byName.entries()].filter(
+    ([key]) => key === coreKey || key.startsWith(prefix)
+  );
+}
+
+function memberProfileVisualVariantSource(row, coreKey) {
+  const rawName = normalizeVisualName(row?.rawName || row?.name);
+  // Page-overlap reconciliation may correct an OCR spelling in `name` while
+  // leaving the original `rawName` for audit. That raw spelling is not a
+  // decoration variant and must not create a second member. Only compare raw
+  // glyphs when they share the same text core as the canonical row name.
+  return playerNameTextKey(rawName) === coreKey
+    ? rawName
+    : normalizeVisualName(row?.name);
+}
+
 function memberProfileDataConflicts(left, right) {
   return [
     "profession",
@@ -1937,12 +2195,30 @@ function mergeMemberProfileRows(current, incoming) {
   if (!Object.keys(current).length) return { ...incoming };
   const currentName = String(current.name || "");
   const incomingName = String(incoming.name || "");
+  const currentHasCanonicalCorrection =
+    playerNameTextKey(current?.rawName) !== playerNameTextKey(currentName);
+  const incomingHasCanonicalCorrection =
+    playerNameTextKey(incoming?.rawName) !== playerNameTextKey(incomingName);
   const preferredName =
-    Array.from(incomingName).length > Array.from(currentName).length
-      ? incomingName
-      : currentName;
+    currentHasCanonicalCorrection && !incomingHasCanonicalCorrection
+      ? currentName
+      : incomingHasCanonicalCorrection && !currentHasCanonicalCorrection
+        ? incomingName
+        : Array.from(incomingName).length > Array.from(currentName).length
+          ? incomingName
+          : currentName;
   const merged = { ...current };
   for (const [key, value] of Object.entries(incoming)) {
+    if (key === "__memberPage") {
+      const currentPage = Number(merged[key]);
+      const incomingPage = Number(value);
+      if (Number.isFinite(incomingPage)) {
+        merged[key] = Number.isFinite(currentPage)
+          ? Math.min(currentPage, incomingPage)
+          : incomingPage;
+      }
+      continue;
+    }
     if (value !== null && value !== undefined && String(value).trim()) {
       merged[key] = value;
     }

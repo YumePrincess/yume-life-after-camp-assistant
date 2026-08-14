@@ -801,6 +801,174 @@ test("member profiles keep names that differ by decorative symbols", async () =>
   assert.equal(rows[0].name, "#愿✨");
 });
 
+test("member profiles promote same-text visual variants even when they are on different pages", async () => {
+  const pages = [
+    [
+      { name: "花", profession: "步枪兵" },
+      { name: "成员一" },
+      { name: "成员二" },
+      { name: "成员三" },
+      { name: "成员四" }
+    ],
+    [
+      { name: "✿花✿", profession: "采集工" },
+      { name: "成员五" },
+      { name: "成员六" },
+      { name: "成员七" },
+      { name: "成员八" }
+    ]
+  ];
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture(label) {
+          return { path: `${label}.png`, observations: [] };
+        },
+        async extractTableRows(_path, _definition, label) {
+          const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
+          return pages[page - 1] || [];
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      pagination: {
+        maxPages: 2,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        stopAfterStagnantPages: 1,
+        from: { x: 1, y: 2 },
+        to: { x: 1, y: 1 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 10 }
+  );
+
+  assert.equal(rows.length, 10);
+  assert.deepEqual(
+    rows.filter((row) => row.name.includes("花")).map((row) => row.name),
+    ["花", "✿花✿"]
+  );
+});
+
+test("member profiles retain three same-text flower variants independently", async () => {
+  const flowerVariants = ["✿慕离✿", "❀慕离❀", "※慕离※"];
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture(label) {
+          return { path: `${label}.png`, observations: [] };
+        },
+        async extractTableRows(_path, _definition, label) {
+          const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
+          const pageRows = page === 1
+            ? [
+                { name: flowerVariants[0] },
+                { name: "成员一" },
+                { name: "成员二" },
+                { name: "成员三" },
+                { name: "成员四" }
+              ]
+            : page === 2
+              ? [
+                  { name: flowerVariants[1] },
+                  { name: "成员五" },
+                  { name: "成员六" },
+                  { name: "成员七" },
+                  { name: "成员八" }
+                ]
+              : [
+                  { name: flowerVariants[2] },
+                  { name: "成员九" },
+                  { name: "成员十" },
+                  { name: "成员十一" },
+                  { name: "成员十二" }
+                ];
+          return pageRows;
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      pagination: {
+        maxPages: 3,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 3,
+        stopAfterStagnantPages: 1,
+        from: { x: 1, y: 2 },
+        to: { x: 1, y: 1 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 15 }
+  );
+
+  const names = rows
+    .map((row) => row.name)
+    .filter((name) => name.includes("慕离"));
+  assert.equal(names.length, 3);
+  assert.deepEqual(names, flowerVariants);
+});
+
+test("member profiles retain pure-symbol names as independent roster keys", async () => {
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture(label) {
+          return { path: `${label}.png`, observations: [] };
+        },
+        async extractTableRows() {
+          return [
+            { name: "- ☻ -" },
+            { name: "♤" },
+            { name: "♠" },
+            { name: "成员一" },
+            { name: "成员二" }
+          ];
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        stopAfterStagnantPages: 1,
+        from: { x: 1, y: 2 },
+        to: { x: 1, y: 1 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 5 }
+  );
+
+  assert.equal(rows.length, 5);
+  assert.deepEqual(
+    rows.slice(0, 3).map((row) => row.name),
+    ["- ☻ -", "♤", "♠"]
+  );
+});
+
 test("member scans discard avatar year text and collapse exact duplicate rows", async () => {
   const recoveryLabels = [];
   const context = {

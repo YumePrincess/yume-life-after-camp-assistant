@@ -2,6 +2,7 @@ import { isPlausibleMemberName } from "./member-name.mjs";
 import {
   normalizePlayerName,
   normalizePlayerNameRows,
+  normalizeMemberCampTitle,
   normalizeVisualName,
   playerNameSymbolSignature,
   playerNameTextKey
@@ -79,7 +80,9 @@ export function parseTable(observations, definition) {
             .sort((a, b) => centerY(a) - centerY(b))
             .map((item) => item.text.trim());
           for (const [index, key] of column.stackedKeys.entries()) {
-            normalized[key] = stackedValues[index] || "";
+            const value = stackedValues[index] || "";
+            normalized[key] =
+              key === "campTitle" ? normalizeMemberCampTitle(value) : value;
             if (key === "name") normalized.rawName = stackedValues[index] || "";
           }
         } else {
@@ -150,7 +153,7 @@ export function normalizeMembers(contributionRows, detailRows, activityRows = []
     profession: clean(row.profession) || null,
     manorLevel: integer(row.manorLevel),
     roommateName: clean(row.roommateName) || null,
-    campTitle: clean(row.campTitle) || null,
+    campTitle: normalizeMemberCampTitle(row.campTitle) || null,
     weeklyContribution: integer(row.weeklyContribution) || 0,
     technologyPointsUsed: integer(row.technologyPointsUsed) || 0,
     materialContribution: integer(row.materialContribution) || 0,
@@ -209,7 +212,7 @@ export function normalizeProfiles(rows) {
         profession: clean(row.profession) || null,
         manorLevel: integer(row.manorLevel),
         roommateName: clean(row.roommateName) || null,
-        campTitle: clean(row.campTitle) || null,
+        campTitle: normalizeMemberCampTitle(row.campTitle) || null,
         weeklyContribution: integer(row.weeklyContribution) || 0
       };
     })

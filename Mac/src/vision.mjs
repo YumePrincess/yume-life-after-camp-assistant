@@ -6,7 +6,10 @@ import { isPlausibleMemberName } from "./member-name.mjs";
 import { parseTable } from "./table-parser.mjs";
 import {
   normalizeIdentityLines,
+  normalizeMemberCampTitle,
   normalizePlayerName,
+  playerNameHasText,
+  normalizePlayerOcrArtifact,
   normalizeVisualName
 } from "./visual-name.mjs";
 
@@ -595,6 +598,10 @@ export class Vision {
       1,
       Number(definition.pagination?.rowsPerPage) || anchors.length
     );
+    const fixedRowHeight = Number(definition.pagination?.rowHeightPx);
+    const fixedRowTop = Number(
+      definition.rowAnchorTop ?? definition.pagination?.rowAnchorTop
+    );
     // Avoid a second full-screen OCR when the regional pass omitted the
     // online-state anchor. That fallback caused intermittent 30s stalls.
     // The table has a stable configured row count, so infer row centers from
@@ -613,6 +620,26 @@ export class Vision {
     }
     if (anchors.length > rowsPerPage) {
       anchors = anchors.slice(-rowsPerPage);
+    }
+    // Online-state OCR is only an alignment aid. A decorative/symbol-only
+    // name can make the regional OCR return fewer state anchors even though
+    // the row is visibly present. Once the table supplies calibrated row
+    // geometry, synthesize all row slots instead of letting missing anchors
+    // remove members from the result.
+    if (
+      anchors.length < rowsPerPage &&
+      Number.isFinite(fixedRowHeight) &&
+      fixedRowHeight > 0 &&
+      Number.isFinite(fixedRowTop)
+    ) {
+      anchors = Array.from(
+        { length: rowsPerPage },
+        // `rowAnchorTop` is the calibrated row-center anchor used by
+        // parseTable, not the top edge of the first row. Adding half a row
+        // here shifts every fallback slot and can move a pure-symbol row into
+        // the previous member's crop.
+        (_, index) => fixedRowTop + index * fixedRowHeight
+      );
     }
     if (!anchors.length) return [];
 
@@ -634,18 +661,119 @@ export class Vision {
         return y >= upper && y < lower;
       });
       return {
+        upper,
+        lower,
         items,
         identity: inferMemberIdentity(
           itemsInColumn(items, columnBounds.get("identity"))
         )
       };
     });
+    const missingIdentityRows = rowData.filter(
+      (row) => !String(row.identity?.name || "").trim()
+    );
+    if (missingIdentityRows.length) {
+      const identityBounds = columnBounds.get("identity");
+      const recoveryRows = await Promise.all(
+        missingIdentityRows.map(async (row, recoveryIndex) => {
+          const identityRegion = {
+            left: identityBounds.left,
+            // Include the antialiased top/bottom pixels of a decorative glyph
+            // when a row is missing its normal online-state anchor. This is
+            // especially important for hollow/solid/double flowers and
+            // symbol-only names, whose visible ink can sit outside the
+            // language OCR line box.
+            top: Math.max(region.top, row.upper - 12),
+            right: identityBounds.right,
+            bottom: Math.min(region.bottom, row.lower + 12)
+          };
+          if (identityRegion.bottom <= identityRegion.top) return null;
+          const recovered = await this.ocrRegion(
+            imagePath,
+            identityRegion,
+            `${label}-identity-row-recovery-${recoveryIndex + 1}`,
+            signal,
+            "accurate",
+            0,
+            8,
+            Math.max(1, Number(this.config.vision?.memberTableTimeoutSeconds) || 2)
+          ).catch(() => []);
+          const inRow = recovered.filter((item) => {
+            const y = centerY(item);
+            return y >= row.upper && y < row.lower;
+          });
+          const identity = inferMemberIdentity(inRow);
+          return identity.name ? { row, identity, recovered: inRow } : null;
+        })
+      );
+      for (const recovered of recoveryRows.filter(Boolean)) {
+        recovered.row.identity = recovered.identity;
+        recovered.row.items = [
+          ...recovered.row.items.filter(
+            (item) =>
+              centerX(item) < identityBounds.left ||
+              centerX(item) >= identityBounds.right
+          ),
+          ...recovered.recovered
+        ];
+      }
+    }
+    const weakIdentityRows = rowData.filter(({ identity }) =>
+      memberIdentityNeedsRecovery(identity)
+    );
+    if (weakIdentityRows.length) {
+      const identityBounds = columnBounds.get("identity");
+      const recoveryRows = await Promise.all(
+        weakIdentityRows.map(async (row, recoveryIndex) => {
+          const identityRegion = {
+            left: Math.max(region.left, identityBounds.left - 12),
+            top: Math.max(region.top, row.upper - 8),
+            right: Math.min(region.right, identityBounds.right + 20),
+            bottom: Math.min(region.bottom, row.lower + 8)
+          };
+          const recovered = await this.ocrRegion(
+            imagePath,
+            identityRegion,
+            `${label}-identity-weak-recovery-${recoveryIndex + 1}`,
+            signal,
+            "accurate",
+            0,
+            8,
+            Math.max(1, Number(this.config.vision?.memberTableTimeoutSeconds) || 2)
+          ).catch(() => []);
+          // A padded crop can include a neighboring row. Never use a token
+          // whose center is outside this calibrated slot; that was the source
+          // of the previous-page name being copied into the pure-symbol row.
+          const inRow = recovered.filter((item) => {
+            const y = centerY(item);
+            return y >= row.upper && y < row.lower;
+          });
+          const identity = inferMemberIdentity(inRow);
+          return identity.name ? { row, identity, recovered: inRow } : null;
+        })
+      );
+      for (const recovered of recoveryRows.filter(Boolean)) {
+        if (!preferRecoveredMemberIdentity(recovered.row.identity, recovered.identity)) {
+          continue;
+        }
+        recovered.row.identity = recovered.identity;
+        const identityBounds = columnBounds.get("identity");
+        recovered.row.items = [
+          ...recovered.row.items.filter(
+            (item) =>
+              centerX(item) < identityBounds.left ||
+              centerX(item) >= identityBounds.right
+          ),
+          ...recovered.recovered
+        ];
+      }
+    }
     return rowData
       .map(({ items, identity }, index) => {
         const nativeIdentity = normalizeIdentityLines(
           itemsInColumn(items, columnBounds.get("identity"))
         );
-        const rawName = normalizeVisualName(nativeIdentity.name);
+        const rawName = normalizePlayerOcrArtifact(nativeIdentity.name);
         const nativeName = isPlausibleMemberName(rawName)
           ? normalizePlayerName(rawName)
           : "";
@@ -653,7 +781,9 @@ export class Vision {
           name: nativeName,
           rawName,
           campTitle:
-            identity.campTitle || nativeIdentity.campTitle,
+            normalizeMemberCampTitle(
+              identity.campTitle || nativeIdentity.campTitle
+            ),
           profession:
             firstColumnText(items, columnBounds.get("profession")),
           weeklyContribution:
@@ -1287,6 +1417,33 @@ function firstColumnText(items, bounds) {
 
 export function inferMemberIdentity(items) {
   return normalizeIdentityLines(items);
+}
+
+function memberIdentityNeedsRecovery(identity) {
+  const name = normalizeVisualName(identity?.name);
+  if (!name) return true;
+  if (!playerNameHasText(name)) return true;
+  const textCharacters = Array.from(name).filter((character) =>
+    /[\p{L}\p{N}]/u.test(character)
+  );
+  // A one-glyph result is often a badge or a decorative glyph that Vision
+  // attached to the row. Re-read it at the row level, but keep it if the
+  // second pass cannot produce a longer in-slot name.
+  return textCharacters.length <= 1;
+}
+
+function preferRecoveredMemberIdentity(current, recovered) {
+  const currentName = normalizeVisualName(current?.name);
+  const recoveredName = normalizeVisualName(recovered?.name);
+  if (!recoveredName) return false;
+  if (!currentName) return true;
+  const currentTextCount = Array.from(currentName).filter((character) =>
+    /[\p{L}\p{N}]/u.test(character)
+  ).length;
+  const recoveredTextCount = Array.from(recoveredName).filter((character) =>
+    /[\p{L}\p{N}]/u.test(character)
+  ).length;
+  return recoveredTextCount > currentTextCount;
 }
 
 function medianNumber(values) {

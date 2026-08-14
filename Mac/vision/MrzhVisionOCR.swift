@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import Foundation
 import ImageIO
 import Vision
@@ -53,6 +54,69 @@ func effectiveRecognitionMode(_ requestedMode: String) -> String {
     return requestedMode == "fast" ? "fast" : "accurate"
 }
 
+func symbolOnlyFallbackRecognize(
+    imageURL: URL,
+    dimensions: (width: Int, height: Int)
+) -> [OCRObservation] {
+    guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    else { return [] }
+    let input = CIImage(cgImage: image)
+    let grayscale = input.applyingFilter(
+        "CIColorControls",
+        parameters: [
+            kCIInputSaturationKey: 0,
+            kCIInputContrastKey: 1.7
+        ]
+    )
+    let prepared = grayscale.applyingFilter("CIColorInvert")
+    let context = CIContext(options: [.useSoftwareRenderer: false])
+    guard let preparedImage = context.createCGImage(prepared, from: prepared.extent)
+    else { return [] }
+
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = false
+    request.minimumTextHeight = 0.003
+    if let languages = try? request.supportedRecognitionLanguages(),
+       languages.contains("en-US") {
+        request.recognitionLanguages = ["en-US"]
+    }
+    let handler = VNImageRequestHandler(cgImage: preparedImage, options: [:])
+    do {
+        try handler.perform([request])
+    } catch {
+        return []
+    }
+    return (request.results ?? []).compactMap { observation -> OCRObservation? in
+        guard let candidate = observation.topCandidates(1).first,
+              isSymbolOnly(candidate.string)
+        else { return nil }
+        let box = observation.boundingBox
+        return OCRObservation(
+            text: candidate.string,
+            confidence: candidate.confidence,
+            x: Int((box.minX * Double(dimensions.width)).rounded()),
+            y: Int(((1 - box.maxY) * Double(dimensions.height)).rounded()),
+            width: Int((box.width * Double(dimensions.width)).rounded()),
+            height: Int((box.height * Double(dimensions.height)).rounded())
+        )
+    }
+}
+
+func isSymbolOnly(_ value: String) -> Bool {
+    let characters = Array(value)
+    guard !characters.isEmpty else { return false }
+    return !characters.contains { character in
+        character.unicodeScalars.contains { scalar in
+            CharacterSet.letters.contains(scalar) ||
+                CharacterSet.decimalDigits.contains(scalar) ||
+                (0x3400...0x9FFF).contains(scalar.value) ||
+                (0x3040...0x30FF).contains(scalar.value)
+        }
+    }
+}
+
 func configureLegacyRequest(_ request: VNRecognizeTextRequest, recognitionMode: String) throws {
     request.recognitionLevel = recognitionMode == "fast" ? .fast : .accurate
     // Always constrain the recognizer to the game's languages. Leaving this
@@ -60,7 +124,14 @@ func configureLegacyRequest(_ request: VNRecognizeTextRequest, recognitionMode: 
     // glyphs for Chinese HUD text and return plausible-looking gibberish.
     let preferredLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP"]
     let supportedLanguages = try request.supportedRecognitionLanguages()
-    request.recognitionLanguages = preferredLanguages.filter(supportedLanguages.contains)
+    let selectedLanguages = preferredLanguages.filter(supportedLanguages.contains)
+    // An OS language pack can report no intersection while Vision itself is
+    // still usable. Assigning an empty array makes the request fail with the
+    // opaque nilError, so leave the recognizer's default language set in that
+    // case and let the downstream visual normalizer handle spelling.
+    if !selectedLanguages.isEmpty {
+        request.recognitionLanguages = selectedLanguages
+    }
     // Game UI consists of short labels and numbers. Language correction is
     // expensive on full-resolution emulator frames and can stall for tens of
     // seconds without improving these tokens.
@@ -84,23 +155,32 @@ func legacyRecognize(
         )
     }
 
-    // Let Vision open the file itself. On macOS 27, going through a manually
-    // decoded CGImage can make Vision fail while creating its internal pixel
-    // buffer even though the PNG is valid and readable by ImageIO.
-    let handler = VNImageRequestHandler(url: imageURL, options: [:])
-    do {
-        try handler.perform([request])
-    } catch {
-        throw OCRFailure.visionStageFailed(
-            "legacy URL recognition",
-            String(describing: error)
-        )
-    }
-
-    let image: CGImage? = CGImageSourceCreateWithURL(imageURL as CFURL, nil).flatMap {
+    let image = CGImageSourceCreateWithURL(imageURL as CFURL, nil).flatMap {
         CGImageSourceCreateImageAtIndex($0, 0, nil)
     }
-    return (request.results ?? []).compactMap { observation in
+    guard let image else {
+        throw OCRFailure.unreadableImage(imageURL.path)
+    }
+
+    // Prefer the URL handler on macOS 27, but retry the exact same decoded
+    // image when the URL-backed Vision bridge returns nilError. Some MuMu
+    // screenshots carry PNG metadata that the bridge rejects while ImageIO
+    // can still decode safely. Keeping this retry inside the OCR binary makes
+    // Agent scans and diagnostic replays use the same deterministic path.
+    do {
+        try VNImageRequestHandler(url: imageURL, options: [:]).perform([request])
+    } catch let urlError {
+        do {
+            try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+        } catch let cgError {
+            throw OCRFailure.visionStageFailed(
+                "legacy URL/CGImage recognition",
+                "url=\(urlError); cgImage=\(cgError)"
+            )
+        }
+    }
+
+    return (request.results ?? []).compactMap { observation -> OCRObservation? in
         guard let candidate = observation.topCandidates(1).first else {
             return nil
         }
@@ -111,16 +191,12 @@ func legacyRecognize(
         let height = Int((box.height * Double(dimensions.height)).rounded())
         let y = Int(((1 - box.maxY) * Double(dimensions.height)).rounded())
 
-        let text = symbolClassifier.flatMap { classifier in
-            return image.map {
-                classifier.refine(
-                    candidate: candidate,
-                    image: $0,
-                    dimensions: dimensions,
-                    lineBox: box
-                )
-            }
-        } ?? candidate.string
+        let text = symbolClassifier?.refine(
+            candidate: candidate,
+            image: image,
+            dimensions: dimensions,
+            lineBox: box
+        ) ?? candidate.string
 
         return OCRObservation(
             text: text,
@@ -195,7 +271,7 @@ struct MrzhVisionOCR {
                 : "accurate"
             let recognitionMode = effectiveRecognitionMode(requestedMode)
             let symbolClassifier = MrzhSymbolClassifier()
-            let observations: [OCRObservation]
+            var observations: [OCRObservation]
             do {
                 // Legacy Vision is the stable low-latency path for both modes
                 // on macOS 26+. It avoids the macOS 27 revision-3 fast crash
@@ -225,6 +301,11 @@ struct MrzhVisionOCR {
                 }
             }
 
+            observations.append(contentsOf: symbolClassifier.recoverUnrecognizedSymbols(
+                from: imageURL,
+                dimensions: dimensions,
+                existing: observations
+            ))
             let classifiedObservations = symbolClassifier.apply(
                 to: observations,
                 imageURL: imageURL
@@ -243,4 +324,24 @@ struct MrzhVisionOCR {
             exit(1)
         }
     }
+}
+
+func observationsOverlap(_ left: OCRObservation, _ right: OCRObservation) -> Bool {
+    let leftRect = CGRect(
+        x: left.x,
+        y: left.y,
+        width: left.width,
+        height: left.height
+    )
+    let rightRect = CGRect(
+        x: right.x,
+        y: right.y,
+        width: right.width,
+        height: right.height
+    )
+    let intersection = leftRect.intersection(rightRect)
+    guard !intersection.isNull else { return false }
+    let smallerArea = min(leftRect.width * leftRect.height, rightRect.width * rightRect.height)
+    return smallerArea > 0 &&
+        (intersection.width * intersection.height) / smallerArea >= 0.2
 }

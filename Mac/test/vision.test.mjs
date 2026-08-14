@@ -9,7 +9,11 @@ import {
 } from "../src/vision.mjs";
 import {
   joinVisualNameObservations,
+  normalizeMemberCampTitle,
+  normalizeIdentityLines,
   normalizePlayerName,
+  normalizePlayerNameVariant,
+  normalizePlayerOcrArtifact,
   normalizeVisualName
 } from "../src/visual-name.mjs";
 import { Vision } from "../src/vision.mjs";
@@ -157,6 +161,43 @@ test("member identity keeps the first OCR line as the player name", () => {
   assert.equal(isPlausibleMemberName("#"), true);
 });
 
+test("campTitle only accepts a real stacked text line", () => {
+  assert.equal(normalizeMemberCampTitle("☻ 〛 ☻"), "");
+  assert.equal(normalizeMemberCampTitle("乁"), "");
+  assert.equal(normalizeMemberCampTitle("#G春之音"), "春之音");
+  assert.equal(normalizeMemberCampTitle("启航"), "启航");
+  const identity = normalizeIdentityLines([
+    { text: "玩家甲", x: 100, y: 100, width: 80, height: 24 },
+    { text: "☻ 〛 ☻", x: 240, y: 100, width: 80, height: 24 },
+    { text: "#G春之音", x: 100, y: 136, width: 100, height: 22 }
+  ]);
+  assert.equal(identity.campTitle, "春之音");
+  assert.equal(
+    normalizeIdentityLines([
+      { text: "达里尔迪克森", x: 100, y: 100, width: 120, height: 24 },
+      { text: "E產", x: 260, y: 136, width: 30, height: 20 }
+    ]).campTitle,
+    ""
+  );
+  assert.equal(
+    joinVisualNameObservations([
+      { text: "寄云到深山", x: 100, y: 20, width: 150, height: 24 },
+      { text: "ど", x: 290, y: 20, width: 20, height: 20 }
+    ]),
+    "寄云到深山"
+  );
+});
+
+test("an isolated same-line Latin badge does not become a player suffix", () => {
+  assert.deepEqual(
+    normalizeIdentityLines([
+      { text: "达里尔迪克森", x: 100, y: 100, width: 120, height: 24 },
+      { text: "E", x: 250, y: 100, width: 14, height: 18 }
+    ]),
+    { name: "达里尔迪克森", campTitle: "" }
+  );
+});
+
 test("visual name normalization preserves meaningful symbols and spaces", () => {
   assert.equal(normalizeVisualName("Аlice\u00a0\u2003"), "Alice");
   assert.equal(normalizeVisualName("♤♠"), "♤♠");
@@ -169,6 +210,8 @@ test("visual name normalization preserves meaningful symbols and spaces", () => 
     ]),
     "「    」"
   );
+  assert.equal(normalizePlayerName("✿❀❁❉❃✲"), "✿❀❁❉❃✲");
+  assert.equal(normalizePlayerNameVariant("დღ✿"), "დღ✿");
 });
 
 test("player-name OCR keeps multilingual text and drops hallucinated symbols", () => {
@@ -176,6 +219,11 @@ test("player-name OCR keeps multilingual text and drops hallucinated symbols", (
   assert.equal(normalizePlayerName("Élodie¥"), "Élodie");
   assert.equal(normalizePlayerName("&/¥ew米“”！"), "ew米");
   assert.equal(normalizePlayerName("「    」"), "「    」");
+});
+
+test("player OCR artifact normalization is roster-independent", () => {
+  assert.equal(normalizePlayerOcrArtifact("星河踏月归卒"), "星河踏月归卒");
+  assert.equal(normalizePlayerOcrArtifact("慕离糕"), "慕离糕");
 });
 
 test("member identity drops returning-player markers without dropping the name", () => {

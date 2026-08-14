@@ -57,7 +57,10 @@ try {
   await mumu.ensureStarted(controller.signal);
   await adb.connect();
   await ui.executeFlow("openCampPanel", {}, controller.signal);
-  await ui.executeFlow("openMemberPanel", {}, controller.signal);
+  // The diagnostic may be rerun while the previous scan left the list at its
+  // bottom. Always return through the calibrated 首页 → 成员 path so a live
+  // verification starts from the same first page.
+  await ui.executeFlow("resetMemberPanelForRescan", {}, controller.signal);
   const expectedProfiles = await vision.readMemberExpectedTotal(
     controller.signal
   );

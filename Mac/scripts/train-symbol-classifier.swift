@@ -15,6 +15,8 @@ let outputDirectory = URL(fileURLWithPath: CommandLine.arguments.dropFirst().fir
 let datasetDirectory = outputDirectory.appendingPathComponent("dataset", isDirectory: true)
 let modelURL = outputDirectory.appendingPathComponent("SymbolClassifier.mlmodel")
 let compiledURL = outputDirectory.appendingPathComponent("SymbolClassifier.mlmodelc", isDirectory: true)
+let supplementalSampleDirectory = ProcessInfo.processInfo.environment["MRZH_SYMBOL_SUPPLEMENTAL_SAMPLES"]
+    .map { URL(fileURLWithPath: $0, isDirectory: true) }
 
 let baseClasses = [
     GlyphClass(label: "OPEN_BRACKET", glyphs: ["「"]),
@@ -26,21 +28,32 @@ let baseClasses = [
     GlyphClass(label: "OTHER_SYMBOL", glyphs: ["♣", "♥", "♦", "★", "☆", "◇", "※", "·", "~", "^", "#", "+", "="])
 ]
 
+// `დღ` is a visible two-scalar decoration. Keep it explicit instead of
+// dropping it with the single-scalar class filter below.
+let compositeGlyphClasses = [
+    GlyphClass(label: "GLYPH_10D3_10E6", glyphs: ["დღ"])
+]
+
 // Common nickname glyphs gathered from the supplied examples and the common
 // Unicode nickname groups: stars/hearts, weather/astrology, music, arrows,
 // geometric marks, brackets, and small decorative faces. Each glyph gets its
 // own label so the classifier can preserve it instead of collapsing it into
 // OTHER_SYMBOL.
 let commonGlyphs = [
-    "☪", "⋆", "✯", "⛈", "•", "ᴗ", "ᴥ", "◔", "ᕱ", "⸝", "·", "ʕ", "˃", "⌓", "°", "꒰", "ꀾ", "꒱", "˒", "̼", "˙", "ϖ", "⚝", "☁", "♡", "・", "☂", "☄", "ᵕ", "₂", "₀", "ᐝ", "☹", "＋", "＝", "♪", "♬", "ℂ", "ℍ", "ℕ", "ℙ", "ℚ", "ℝ", "ℤ", "㋛", "⁼", "³", "₌", "₃", "ʚ", "ɞ", "ღ", "౪", "ง", "ค", "ε", "ï", "з", "✐", "❆", "➳", "☽", "ฅ", "ଲ", "ଇ", "ଉ", "କ", "✡", "☃", "⚚", "☼", "✧", "☆", "❁", "ෆ", "๓", "☾", "✉", "Ⱉ", "⚇", "⌔", "ﻌ", "ᐢ", "₍", "₎", "◡", "ᵔ", "´", "ᆺ", "✦", "⁺", "∞", "ಥ", "ᖗ", "ᖘ", "❛", "‿", "˂", "੧", "੭", "◍", "ㅅ", "つ", "⊂", "Ծ", "‸", "乁", "૮", "ꈔ", "ꈊ", "⍤", "⃝", "⚆", "⍢", "⍨", "∵", "⍥", "⍩", "⃜", "ᗦ", "↞", "◃", "ᙏ", "☻", "❤", "✈", "ᯤ", "╭", "╰", "◜", "◝", "͡", "◟", "◞", "͜", "✰", "✩", "✪", "✫", "✬", "✭", "✮", "♥", "♣", "♧", "♦", "✓", "✔", "→", "←", "↑", "↓", "➜", "☞", "☜", "✿", "❀", "❈", "ꕤ", "୨", "୧", "☀", "☇", "☈", "☉", "☊", "☋", "☌", "☍", "♠", "♤", "「", "」", "『", "』", "【", "】", "《", "》", "〈", "〉", "〔", "〕", "⟦", "⟧", "〚", "〛", "⟨", "⟩"
+    "☪", "⋆", "✯", "✨", "⭐", "🌟", "⛈", "•", "ᴗ", "ᴥ", "◔", "ᕱ", "⸝", "·", "ʕ", "˃", "⌓", "°", "꒰", "ꀾ", "꒱", "˒", "̼", "˙", "ϖ", "⚝", "☁", "♡", "・", "☂", "☄", "ᵕ", "₂", "₀", "ᐝ", "☹", "😊", "☺", "＋", "＝", "♪", "♬", "ℂ", "ℍ", "ℕ", "ℙ", "ℚ", "ℝ", "ℤ", "㋛", "⁼", "³", "₌", "₃", "ʚ", "ɞ", "ღ", "౪", "ง", "ค", "ε", "ï", "з", "✐", "❆", "➳", "☽", "ฅ", "ଲ", "ଇ", "ଉ", "କ", "✡", "☃", "⚚", "☼", "✧", "☆", "❁", "❉", "❃", "✲", "ෆ", "๓", "☾", "✉", "Ⱉ", "⚇", "⌔", "ﻌ", "ᐢ", "₍", "₎", "◡", "ᵔ", "´", "ᆺ", "✦", "⁺", "∞", "ಥ", "ᖗ", "ᖘ", "❛", "‿", "˂", "੧", "੭", "◍", "ㅅ", "つ", "⊂", "Ծ", "‸", "乁", "૮", "ꈔ", "ꈊ", "⍤", "⃝", "⚆", "⍢", "⍨", "∵", "⍥", "⍩", "⃜", "ᗦ", "↞", "◃", "ᙏ", "☻", "❤", "✈", "ᯤ", "╭", "╰", "◜", "◝", "͡", "◟", "◞", "͜", "✰", "✩", "✪", "✫", "✭", "✮", "♥", "♣", "♧", "♦", "✓", "✔", "→", "←", "↑", "↓", "➜", "☞", "☜", "✿", "❀", "❈", "ꕤ", "୨", "୧", "☀", "☇", "☈", "☉", "☊", "☋", "☌", "☍", "♠", "♤", "「", "」", "『", "』", "【", "】", "《", "》", "〈", "〉", "〔", "〕", "⟦", "⟧", "〚", "〛", "⟨", "⟩"
 ]
 let baseLabels = Set(baseClasses.flatMap(\.glyphs))
-let classes = baseClasses + commonGlyphs
+let allClasses = baseClasses + compositeGlyphClasses + commonGlyphs
     .filter { $0.unicodeScalars.count == 1 && !baseLabels.contains($0) }
     .map { glyph in
         let codePoint = String(glyph.unicodeScalars.first!.value, radix: 16, uppercase: true)
         return GlyphClass(label: "GLYPH_\(codePoint)", glyphs: [glyph])
     }
+let requestedLabels = ProcessInfo.processInfo.environment["MRZH_SYMBOL_CLASSIFIER_LABELS"]
+    .map { Set($0.split(separator: ",").map(String.init)) }
+let classes = requestedLabels.map { labels in
+    allClasses.filter { labels.contains($0.label) }
+} ?? allClasses
 
 let fontNames = [
     "PingFangSC-Regular",
@@ -48,7 +61,8 @@ let fontNames = [
     "HiraginoSansGB-W3",
     "STHeitiSC-Light",
     "ArialUnicodeMS",
-    "AppleSymbols"
+    "AppleSymbols",
+    "AppleColorEmoji"
 ]
 let canvasSize = 96
 
@@ -84,6 +98,24 @@ for glyphClass in classes {
     guard written >= (glyphClass.label.hasPrefix("GLYPH_") ? 12 : 20) else {
         throw NSError(domain: "SymbolClassifier", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not enough glyph samples for \(glyphClass.label)"])
     }
+
+    // Optional real-game crops make the bundled classifier robust to the
+    // game's outlined/antialiased glyphs without introducing player-name
+    // aliases. A sample directory mirrors the class labels, for example
+    // `GLYPH_2728/*.png` for `✨` and `GLYPH_1F60A/*.png` for `😊`.
+    if let supplementalSampleDirectory {
+        let sourceDirectory = supplementalSampleDirectory.appendingPathComponent(glyphClass.label, isDirectory: true)
+        if let files = try? FileManager.default.contentsOfDirectory(
+            at: sourceDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for (index, source) in files.filter({ $0.pathExtension.lowercased() == "png" }).enumerated() {
+                let destination = classDirectory.appendingPathComponent("real-\(index)-\(source.lastPathComponent)")
+                try? FileManager.default.copyItem(at: source, to: destination)
+            }
+        }
+    }
     print("generated \(glyphClass.label): \(written)")
 }
 
@@ -103,7 +135,18 @@ print("wrote \(compiledURL.path)")
 func supportsGlyph(_ text: String, font: CTFont) -> Bool {
     var characters = Array(text.utf16)
     var glyphs = Array(repeating: CGGlyph(), count: characters.count)
-    return CTFontGetGlyphsForCharacters(font, &characters, &glyphs, characters.count) && glyphs.allSatisfy { $0 != 0 }
+    if CTFontGetGlyphsForCharacters(font, &characters, &glyphs, characters.count) && glyphs.allSatisfy({ $0 != 0 }) {
+        return true
+    }
+    // Emoji fonts can map one Unicode scalar sequence to a single color
+    // glyph, while CTFontGetGlyphsForCharacters expects one CGGlyph per UTF16
+    // code unit. Let Core Text validate the rendered line in that case.
+    guard (CTFontCopyPostScriptName(font) as String).contains("ColorEmoji") else { return false }
+    let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+        NSAttributedString.Key(kCTFontAttributeName as String): font
+    ]))
+    let bounds = CTLineGetBoundsWithOptions(line, [])
+    return bounds.width > 0 && bounds.height > 0
 }
 
 func writeGlyph(_ text: String, font: CTFont, rotation: CGFloat, offset: CGPoint, to url: URL) throws {

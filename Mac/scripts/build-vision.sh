@@ -29,4 +29,9 @@ xcrun swiftc \
   "${MAC_DIR}/vision/MrzhPixelProbe.swift" \
   -o "${OUTPUT_DIR}/mrzh-pixel-probe"
 
+if [[ -d "${MAC_DIR}/vision/SymbolTemplates" ]]; then
+  mkdir -p "${OUTPUT_DIR}/SymbolTemplates"
+  cp "${MAC_DIR}/vision/SymbolTemplates"/*.png "${OUTPUT_DIR}/SymbolTemplates/"
+fi
+
 echo "Built ${OUTPUT_DIR}/mrzh-vision-ocr and ${OUTPUT_DIR}/mrzh-pixel-probe"
