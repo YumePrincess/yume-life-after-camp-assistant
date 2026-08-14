@@ -365,6 +365,20 @@ export async function waitForGameReady(context, signal) {
     // page indicators, not from the activity page's return arrow.
     dismissPoint: { x: 960, y: 1140 },
     signatureTexts: ["立即前往", "前往查看", "前往活动", "活动时间"],
+    // The current activity artwork uses a decorative CTA font that the full
+    // screen Vision pass can skip. Re-read only the calibrated CTA area at a
+    // higher scale; the resulting action is still decided exclusively by
+    // these configured keywords.
+    promotionKeywordRegion: {
+      left: 360,
+      top: 760,
+      right: 1560,
+      bottom: 1100
+    },
+    promotionKeywordProbeIntervalMs: 1_500,
+    promotionKeywordScale: 2,
+    promotionKeywordMinimumConfidence: 0.08,
+    newspaperTexts: ["明日希望报", "明日希望", "希望报"],
     activityPageTexts: ["推荐", "活动", "臻藏"],
     activityPageRegion: {
       left: 0,
@@ -479,6 +493,7 @@ export async function waitForGameReady(context, signal) {
   let channelAccurateOcrFailureReported = false;
   let lastAccurateOcrAt = Date.now();
   let lastChannelAccurateOcrAt = 0;
+  let lastPromotionKeywordProbeAt = 0;
   let readyStreak = 0;
   let readySince = 0;
   let readyStabilizingReported = false;
@@ -538,6 +553,7 @@ export async function waitForGameReady(context, signal) {
       "点击登录游戏",
       "登录游戏",
       "明日希望报",
+      ...promotions.newspaperTexts,
       ...promotions.signatureTexts,
       "加入队伍语音频道"
     ];
@@ -678,9 +694,96 @@ export async function waitForGameReady(context, signal) {
         }
       }
     }
+    let promotionKeywordProbe = {
+      status: "not_needed",
+      elapsedMs: 0,
+      texts: [],
+      matches: []
+    };
     const readyMatches = promotions.readyTexts
       .map((text) => ({ text, match: vision.find(frame.observations, text) }))
       .filter((item) => item.match);
+    const likelyHudVisible =
+      readyMatches.length >=
+        Math.max(1, Number(promotions.readyMinimumTexts) || 2) ||
+      findReadyTextsInRegion(
+        vision,
+        frame.observations,
+        promotions.channelReadyTexts,
+        promotions.channelReadyRegion
+      ).length >= channelReadyMinimum;
+    if (
+      loginClicked &&
+      !likelyHudVisible &&
+      promotions.promotionKeywordProbeEnabled !== false &&
+      promotions.promotionKeywordRegion &&
+      typeof vision.captureSource === "function" &&
+      typeof vision.ocrRegion === "function" &&
+      Date.now() - lastPromotionKeywordProbeAt >=
+        Math.max(
+          500,
+          Number(promotions.promotionKeywordProbeIntervalMs) || 1_500
+        )
+    ) {
+      lastPromotionKeywordProbeAt = Date.now();
+      const probeStartedAt = Date.now();
+      try {
+        const source = await vision.captureSource(
+          "game-promotion-keyword-source",
+          signal
+        );
+        const keywordObservations = await vision.ocrRegion(
+          source.path,
+          promotions.promotionKeywordRegion,
+          "game-promotion-keyword-accurate",
+          signal,
+          "accurate",
+          Math.max(
+            0.05,
+            Number(promotions.promotionKeywordMinimumConfidence) || 0.08
+          ),
+          Math.max(
+            1,
+            Math.min(4, Number(promotions.promotionKeywordScale) || 2)
+          ),
+          Math.max(
+            1,
+            Number(promotions.promotionKeywordTimeoutSeconds) ||
+              Number(config.vision?.accurateTimeoutSeconds) ||
+              2
+          )
+        );
+        const keywordMatches = [
+          ...promotions.signatureTexts,
+          ...promotions.newspaperTexts
+        ]
+          .map((text) => ({
+            text,
+            match: vision.find(keywordObservations, text)
+          }))
+          .filter((item) => item.match);
+        promotionKeywordProbe = {
+          status: "success",
+          elapsedMs: Date.now() - probeStartedAt,
+          texts: keywordObservations.map((item) => item.text).slice(0, 20),
+          matches: keywordMatches.map((item) => item.text)
+        };
+        if (keywordObservations.length) {
+          frame = {
+            ...frame,
+            observations: [...frame.observations, ...keywordObservations]
+          };
+        }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        promotionKeywordProbe = {
+          status: "failed",
+          elapsedMs: Date.now() - probeStartedAt,
+          texts: [],
+          matches: []
+        };
+      }
+    }
     const channelReadyMatches = findReadyTextsInRegion(
       vision,
       frame.observations,
@@ -721,6 +824,7 @@ export async function waitForGameReady(context, signal) {
       "点击登录游戏",
       "登录游戏",
       "明日希望报",
+      ...promotions.newspaperTexts,
       ...promotions.signatureTexts,
       "加入队伍语音频道"
     ];
@@ -812,6 +916,7 @@ export async function waitForGameReady(context, signal) {
           accurateChannelTexts: channelProbe.texts?.slice(0, 80) || [],
           accurateChannelMatches: channelProbe.matches || [],
           readyTexts: readyMatches.map((item) => item.text),
+          promotionKeywordProbe,
           blockingTexts: blockingMatches,
           loadingProgressVisible,
           readyStreak,
@@ -1102,9 +1207,10 @@ export async function waitForGameReady(context, signal) {
       continue;
     }
 
-    const newspaper = loginClicked
-      ? vision.find(frame.observations, "明日希望报")
+    const newspaperMatch = loginClicked
+      ? findFirstTextMatch(vision, frame.observations, promotions.newspaperTexts)
       : null;
+    const newspaper = newspaperMatch?.match || null;
     const newspaperDismissAttempt = newspaper
       ? reservePromotionDismissAttempt("promotion_newspaper")
       : null;
@@ -1116,7 +1222,7 @@ export async function waitForGameReady(context, signal) {
           ? "promotion_newspaper_dismiss"
           : "promotion_newspaper_dismiss_retry",
         newspaperDismissAttempt === 1
-          ? "识别到《明日希望报》宣传页，正在点击底部安全区域关闭"
+          ? `识别到《明日希望报》宣传页关键词“${newspaperMatch.text}”，正在点击底部安全区域关闭`
           : `《明日希望报》仍在显示，正在第 ${newspaperDismissAttempt} 次点击底部安全区域关闭`,
         {
           attempt: newspaperDismissAttempt,
@@ -1157,13 +1263,13 @@ export async function waitForGameReady(context, signal) {
       continue;
     }
 
-    const promotionSignature =
+    const promotionSignatureMatch =
       loginClicked &&
       !ready &&
-      !channelHudReady &&
-      promotions.signatureTexts.find((text) =>
-        vision.find(frame.observations, text)
-      );
+      !channelHudReady
+        ? findFirstTextMatch(vision, frame.observations, promotions.signatureTexts)
+        : null;
+    const promotionSignature = promotionSignatureMatch?.text || null;
     const signatureDismissAttempt = promotionSignature
       ? reservePromotionDismissAttempt("promotion")
       : null;
@@ -1293,6 +1399,12 @@ function findReadyTextsInRegion(vision, observations, texts = [], region) {
     const candidate = candidates.find(({ tokens }) => tokens.has(expected));
     return candidate ? [{ text, match: candidate.item }] : [];
   });
+}
+
+function findFirstTextMatch(vision, observations, texts = []) {
+  return (Array.isArray(texts) ? texts : [])
+    .map((text) => ({ text, match: vision.find(observations, text) }))
+    .find((item) => item.match) || null;
 }
 
 function channelLabelTokens(value) {

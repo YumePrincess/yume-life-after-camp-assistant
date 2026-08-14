@@ -154,6 +154,50 @@ test("an activity call-to-action closes a post-login promotion at the calibrated
   );
 });
 
+test("a stylized activity CTA is recovered from the calibrated keyword region", async () => {
+  const fixture = createFixture(
+    [["登录游戏"], [], ["背包"]],
+    null,
+    [],
+    "shadow",
+    {
+      readyMinimumTexts: 1,
+      readyStableFrames: 1,
+      readyStableMs: 0,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    },
+    [[]],
+    [[{ text: "立即前往", x: 900, y: 930 }], []]
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [
+    { x: 960, y: 945 },
+    { x: 960, y: 1140 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("高精度 OCR") || message.includes("活动宣传页特征")
+    )
+  );
+});
+
+test("a split newspaper keyword still closes the Hope newspaper page", async () => {
+  const fixture = createFixture([
+    ["登录游戏"],
+    ["希望报"],
+    ["背包"]
+  ]);
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [
+    { x: 960, y: 945 },
+    { x: 960, y: 1140 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("关键词“希望报”"))
+  );
+});
+
 test("an accidental activity page returns through the bottom-left back point", async () => {
   const fixture = createFixture([
     ["登录游戏"],
@@ -537,7 +581,8 @@ function createFixture(
   accurateFrames = [],
   advisorMode = "shadow",
   readyPolicy = {},
-  regionalFrames = []
+  regionalFrames = [],
+  promotionFrames = []
 ) {
   const taps = [];
   const touchTaps = [];
@@ -545,6 +590,7 @@ function createFixture(
   let frameIndex = 0;
   let accurateFrameIndex = 0;
   let regionalFrameIndex = 0;
+  let promotionFrameIndex = 0;
   const vision = {
     advisor: modelAdvice
       ? {
@@ -575,17 +621,24 @@ function createFixture(
         })
       };
     },
-    ...(regionalFrames.length
+    ...(regionalFrames.length || promotionFrames.length
       ? {
-          async captureSource() {
-            return { path: "/tmp/mock-game-ready-channel.png", observations: [] };
+          async captureSource(label) {
+            return {
+              path: label.includes("promotion")
+                ? "/tmp/mock-game-promotion.png"
+                : "/tmp/mock-game-ready-channel.png",
+              observations: []
+            };
           },
-          async ocrRegion() {
-            return (
-              regionalFrames[
-                Math.min(regionalFrameIndex++, regionalFrames.length - 1)
-              ] || []
-            ).map((item) => ({
+          async ocrRegion(_path, _region, label) {
+            const sourceFrames = label.includes("promotion")
+              ? promotionFrames
+              : regionalFrames;
+            const index = label.includes("promotion")
+              ? promotionFrameIndex++
+              : regionalFrameIndex++;
+            return (sourceFrames[Math.min(index, sourceFrames.length - 1)] || []).map((item) => ({
               confidence: 1,
               width: 10,
               height: 10,
