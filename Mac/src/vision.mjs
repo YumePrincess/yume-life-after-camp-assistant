@@ -248,6 +248,8 @@ export class Vision {
     let lastError;
     const memberSamples = [];
     const citizenSamples = [];
+    const memberFractions = [];
+    const citizenFractions = [];
     for (let attempt = 1; attempt <= 6; attempt += 1) {
       // A new frame is essential here. Re-running OCR over the same image only
       // repeats the same bad segmentation and was the reason five consecutive
@@ -289,7 +291,7 @@ export class Vision {
         let memberFraction = parsePopulationFraction(
           memberObservations,
           110,
-          { minimumCapacity: 1 }
+          { minimumCapacity: 1, allowCurrentOverflow: true }
         );
         let citizenFraction = parsePopulationFraction(
           citizenObservations,
@@ -331,7 +333,7 @@ export class Vision {
           memberFraction ??= parsePopulationFraction(
             memberExpanded,
             110,
-            { minimumCapacity: 1 }
+            { minimumCapacity: 1, allowCurrentOverflow: true }
           );
           citizenFraction ??= parsePopulationFraction(
             citizenExpanded,
@@ -364,7 +366,7 @@ export class Vision {
               bottom: 320
             }),
             110,
-            { minimumCapacity: 1 }
+            { minimumCapacity: 1, allowCurrentOverflow: true }
           );
           citizenFraction ??= parsePopulationFraction(
             observationsInHorizontalRegion(fallbackObservations, {
@@ -377,6 +379,13 @@ export class Vision {
             { minimumCapacity: 0 }
           );
         }
+        // Vision can segment the two adjacent fractions differently from one
+        // frame to the next. Keep the valid result from each frame and merge
+        // the two independent observations after the retry loop instead of
+        // discarding a good member fraction just because the citizen fraction
+        // was missed in that same frame.
+        if (memberFraction !== null) memberFractions.push(memberFraction);
+        if (citizenFraction !== null) citizenFractions.push(citizenFraction);
         if (memberFraction !== null && citizenFraction !== null) {
           return {
             formalCurrent: memberFraction.current,
@@ -390,6 +399,17 @@ export class Vision {
         lastError = error;
         if (signal?.aborted) throw error;
       }
+    }
+    const memberFraction = selectStablePopulationFraction(memberFractions);
+    const citizenFraction = selectStablePopulationFraction(citizenFractions);
+    if (memberFraction !== null && citizenFraction !== null) {
+      return {
+        formalCurrent: memberFraction.current,
+        formalTotal: memberFraction.capacity,
+        sailingCurrent: citizenFraction.current,
+        sailingTotal: citizenFraction.capacity,
+        total: memberFraction.capacity + citizenFraction.capacity
+      };
     }
     if (
       lastError &&
@@ -1254,7 +1274,7 @@ export function parsePopulationFraction(
   const minimumCapacity = Number.isFinite(Number(options.minimumCapacity))
     ? Number(options.minimumCapacity)
     : 1;
-  const candidates = parsePopulationCounts(observations).filter(
+  const candidates = parsePopulationCounts(observations, options).filter(
     (item) =>
       item.capacity >= minimumCapacity &&
       item.capacity <= maximumCapacity
@@ -1262,19 +1282,36 @@ export function parsePopulationFraction(
   return candidates[0] ?? null;
 }
 
-function parsePopulationCounts(observations) {
+function parsePopulationCounts(observations, options = {}) {
   const joined = [...(observations || [])]
     .sort((left, right) => left.x - right.x)
     .map((item) => String(item.text || ""))
     .join("")
     .replace(/\s+/g, "")
     .replace(/[OoＯｏ]/g, "0")
-    .replace(/[／]/g, "/");
+    .replace(/[／]/g, "/")
+    // Vision occasionally classifies the thin slash between the two header
+    // numbers as an acute mark, bracket, or CJK closing bracket. These glyphs
+    // are safe to normalize only in the numeric header parser.
+    .replace(/[´`′’'⁄∕╱〛】\]｜|¦]/g, "/");
   return [...joined.matchAll(/(\d{1,3})\/(\d{1,3})/g)]
-    .map((match) => ({
-      current: Number.parseInt(match[1], 10),
-      capacity: Number.parseInt(match[2], 10)
-    }))
+    .flatMap((match) => {
+      const current = Number.parseInt(match[1], 10);
+      const capacity = Number.parseInt(match[2], 10);
+      if (current <= capacity) return [{ current, capacity }];
+      if (!options.allowCurrentOverflow) return [];
+      // A member icon is sometimes merged into the left side of the current
+      // count (for example 4/91 becomes 94/91). Recover only a suffix that is
+      // numerically valid; plain impossible fractions remain rejected by the
+      // default parser and its existing safety tests.
+      for (let offset = 1; offset < match[1].length; offset += 1) {
+        const recoveredCurrent = Number.parseInt(match[1].slice(offset), 10);
+        if (recoveredCurrent <= capacity) {
+          return [{ current: recoveredCurrent, capacity }];
+        }
+      }
+      return [];
+    })
     .filter(
       (item) =>
         Number.isFinite(item.current) &&
@@ -1282,6 +1319,20 @@ function parsePopulationCounts(observations) {
         item.current >= 0 &&
         item.current <= item.capacity
     );
+}
+
+function selectStablePopulationFraction(candidates) {
+  if (!candidates.length) return null;
+  const byCapacity = new Map();
+  for (const candidate of candidates) {
+    const entry = byCapacity.get(candidate.capacity) || { count: 0, candidate };
+    entry.count += 1;
+    entry.candidate = candidate;
+    byCapacity.set(candidate.capacity, entry);
+  }
+  return [...byCapacity.values()]
+    .sort((left, right) => right.count - left.count)
+    .at(0)?.candidate ?? null;
 }
 
 function observationsInHorizontalRegion(observations, region) {

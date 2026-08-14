@@ -224,6 +224,19 @@ test("parses total members from the fraction denominator", () => {
     }),
     { current: 0, capacity: 0 }
   );
+  assert.deepEqual(
+    parsePopulationFraction([{ text: "8´92", x: 350 }], 110, {
+      minimumCapacity: 1
+    }),
+    { current: 8, capacity: 92 }
+  );
+  assert.deepEqual(
+    parsePopulationFraction([{ text: "94/91", x: 350 }], 110, {
+      minimumCapacity: 1,
+      allowCurrentOverflow: true
+    }),
+    { current: 4, capacity: 91 }
+  );
 });
 
 test("member header total accepts 0/0 sailing citizens without fallback contamination", async () => {
@@ -244,6 +257,29 @@ test("member header total accepts 0/0 sailing citizens without fallback contamin
     total: 93
   });
   assert.equal(await vision.readMemberExpectedTotal(), 93);
+});
+
+test("member header merges valid fractions found on different retry frames", async () => {
+  const vision = new Vision({ vision: {} }, {});
+  let frame = 0;
+  vision.capture = async () => ({ path: `/private/tmp/member-header-${++frame}.png` });
+  vision.ocrRegion = async (_path, _region, label) => {
+    if (label.startsWith("member-count-") && !label.includes("expanded")) {
+      return frame === 1 ? [{ text: "8´92", x: 350 }] : [];
+    }
+    if (label.startsWith("citizen-count-") && !label.includes("expanded")) {
+      return frame === 2 ? [{ text: "【0/0", x: 490 }] : [];
+    }
+    return [];
+  };
+
+  assert.deepEqual(await vision.readMemberExpectedBreakdown(), {
+    formalCurrent: 8,
+    formalTotal: 92,
+    sailingCurrent: 0,
+    sailingTotal: 0,
+    total: 92
+  });
 });
 
 test("accepts zero online citizens and split OCR fragments", () => {
