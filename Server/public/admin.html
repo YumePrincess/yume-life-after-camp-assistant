@@ -455,12 +455,14 @@
                 <span class="field-label">最近 7 个科技生效日</span>
                 <div id="technology-history-recent-dates" class="technology-history-date-chips"></div>
               </div>
-              <label class="field technology-history-date-field">
-                <span>查询更早生效日</span>
-                <input id="technology-history-date" type="date" />
-              </label>
-              <button id="refresh-technology-history" class="button button-quiet" type="button">按日期查询</button>
-              <span id="technology-history-status" class="muted" aria-live="polite"></span>
+              <div class="technology-history-query">
+                <label class="field technology-history-date-field">
+                  <span>查询更早生效日</span>
+                  <input id="technology-history-date" type="date" />
+                </label>
+                <button id="refresh-technology-history" class="button button-quiet" type="button">按日期查询</button>
+                <span id="technology-history-status" class="muted" aria-live="polite"></span>
+              </div>
             </div>
             <div id="technology-history-content" hidden>
               <div class="technology-history-meta">
