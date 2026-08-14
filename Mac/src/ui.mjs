@@ -1975,8 +1975,16 @@ export class GameUi {
         chatReadyTexts.filter((text) => this.findInRegion(observations, text))
           .length >= Math.max(2, chatReadyMinimum));
     let failedChatClicks = 0;
+    // Once the chat button has been tapped successfully, the panel is a
+    // stateful toggle. OCR can miss its labels for a frame, but sending the
+    // button again would close the panel and make the next retry worse.
+    let chatPanelLikelyOpen = false;
     const recheckAfterRepeatedFailure = async (reason, nextAttempt) => {
-      if (nextAttempt > attempts || failedChatClicks < 2) return;
+      if (
+        nextAttempt > attempts ||
+        failedChatClicks < 2 ||
+        chatPanelLikelyOpen
+      ) return;
       await this.recheckGameMouseForRetry(signal, reason);
     };
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -1988,7 +1996,23 @@ export class GameUi {
       if (this.isCampPanel(before.observations, action)) {
         return;
       }
-      let chatReady = campChatReady(before.observations);
+      let chatWasReset = false;
+      if (attempt > 1 && chatPanelLikelyOpen) {
+        await this.report(
+          "info",
+          "camp_chat_retry_reset",
+          "上一轮聊天导航未完成；先收起残留聊天层，再按左下角聊天→频道→营地→市政厅完整重试"
+        );
+        await this.tap(
+          action.chatCollapseButton || { x: 1740, y: 1110 },
+          signal
+        );
+        await delay(Number(action.chatCollapseSettleMs) || 500, signal);
+        chatPanelLikelyOpen = false;
+        chatWasReset = true;
+      }
+      let chatReady = chatWasReset ? false : campChatReady(before.observations);
+      if (chatPanelLikelyOpen) chatReady = true;
       if (typeof this.vision.captureAccurateTransient === "function") {
         const accurateBefore = await this.vision.captureAccurateTransient(
           `camp-panel-before-accurate-${attempt}`,
@@ -2024,6 +2048,11 @@ export class GameUi {
             },
             signal
           );
+          // Do not tap the same toggle again just because the immediate OCR
+          // verification missed the panel. Continue with the required
+          // channel → camp → city-hall sequence and let its own verification
+          // decide whether the click really opened the panel.
+          chatPanelLikelyOpen = true;
           await delay(action.chatDelayMs || 500, signal);
           chatReady = chatReadyTexts.length === 0;
         }
@@ -2051,14 +2080,22 @@ export class GameUi {
             `第 ${attempt}/${attempts} 次点击聊天入口后未 OCR 确认聊天营地频道；同一步累计失败 ${failedChatClicks + 1} 次，连续 2 次后才检查 keyevent 70`
           );
           failedChatClicks += 1;
-          if (attempt < attempts) {
+          if (chatPanelLikelyOpen) {
+            chatReady = true;
+            await this.report(
+              "warning",
+              "camp_chat_ocr_fallback",
+              "聊天面板已完成点击但本轮 OCR 未确认；保留当前面板，继续按频道→营地→市政厅顺序操作，不重复点击聊天入口或释放游戏鼠标"
+            );
+          } else if (attempt < attempts) {
             await recheckAfterRepeatedFailure(
               `聊天入口连续失败 ${failedChatClicks} 次，重试 ${attempt + 1}/${attempts}`,
               attempt + 1
             );
+            continue;
           }
-          continue;
         }
+        failedChatClicks = 0;
         await this.report(
           "info",
           "camp_chat_verified",
@@ -2068,32 +2105,54 @@ export class GameUi {
           Boolean(action.chatTabText && action.campChannelText);
         if (stableChatNavigation) {
           await delay(Number(action.chatCardSettleMs) || 3000, signal);
-          await this.clickText(
-            action.chatTabText,
-            {
-              region: action.chatTabRegion,
-              mode: action.chatTabMode || "exact",
-              timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
-              strictTimeout: true
-            },
-            signal
-          );
+          try {
+            await this.clickText(
+              action.chatTabText,
+              {
+                region: action.chatTabRegion,
+                mode: action.chatTabMode || "exact",
+                timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
+                strictTimeout: true
+              },
+              signal
+            );
+          } catch (error) {
+            if (!action.chatTabButton) throw error;
+            await this.report(
+              "warning",
+              "camp_chat_tab_ocr_fallback",
+              `未识别到“${action.chatTabText}”，使用已校准的频道按钮继续导航`,
+              { reason: error?.message || String(error) }
+            );
+            await this.tap(action.chatTabButton, signal);
+          }
           await this.report(
             "info",
             "camp_chat_channel_tab_clicked",
             `已等待 ${Number(action.chatCardSettleMs) || 3000}ms 并点击聊天顶部“${action.chatTabText}”`
           );
           await delay(Number(action.chatTabSettleMs) || 3000, signal);
-          await this.clickText(
-            action.campChannelText,
-            {
-              region: action.campChannelRegion,
-              mode: action.campChannelMode || "includes",
-              timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
-              strictTimeout: true
-            },
-            signal
-          );
+          try {
+            await this.clickText(
+              action.campChannelText,
+              {
+                region: action.campChannelRegion,
+                mode: action.campChannelMode || "includes",
+                timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
+                strictTimeout: true
+              },
+              signal
+            );
+          } catch (error) {
+            if (!action.campChannelButton) throw error;
+            await this.report(
+              "warning",
+              "camp_channel_ocr_fallback",
+              `未识别到“${action.campChannelText}”，使用已校准的营地频道按钮继续导航`,
+              { reason: error?.message || String(error) }
+            );
+            await this.tap(action.campChannelButton, signal);
+          }
           await delay(Number(action.campChannelSettleMs) || 3000, signal);
           let channelFrame = await this.vision.captureTransient(
             `camp-channel-verify-${attempt}`,
@@ -2125,8 +2184,10 @@ export class GameUi {
             );
           }
           if (!channelReady) {
-            throw new Error(
-              "CAMP_CHANNEL_NOT_VERIFIED: 点击频道和营地后未确认顶部营地频道"
+            await this.report(
+              "warning",
+              "camp_channel_ocr_fallback",
+              "已完成频道→营地点击，但顶部营地频道文字暂未被 OCR 确认；继续点击市政厅，由营地首页最终校验结果"
             );
           }
           await this.report(
@@ -2147,6 +2208,7 @@ export class GameUi {
           "已确认营地聊天层，正在点击既有校准的市政厅图标"
         );
         await this.tap(action.campIconButton || { x: 980, y: 65 }, signal);
+        chatPanelLikelyOpen = true;
       } catch (error) {
         await this.report(
           "warning",

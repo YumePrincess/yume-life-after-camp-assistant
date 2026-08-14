@@ -504,7 +504,7 @@ test("incomplete calculated tail keeps both continuation pages in full-page mode
   );
   assert.deepEqual(
     swipes.map(({ durationMs }) => durationMs),
-    [700, 700, 700]
+    [600, 600, 600]
   );
 });
 

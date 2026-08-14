@@ -632,9 +632,10 @@ export async function replaceMemberSnapshot(
     }>;
   }
 ): Promise<void> {
+  assertUniqueMemberNames(input.members);
   const statements: D1PreparedStatement[] = [];
   for (const member of input.members) {
-    const memberId = await stableMemberId(member.name);
+    const memberId = await stableMemberId(member);
     statements.push(
       env.DB.prepare(
         `INSERT INTO members(
@@ -643,7 +644,7 @@ export async function replaceMemberSnapshot(
            last_active_text, inactive_days, activity_captured_at,
            last_seen_at, source_run_id
          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET
+         ON CONFLICT(id) DO UPDATE SET
            profession = excluded.profession,
            manor_level = excluded.manor_level,
            roommate_name = excluded.roommate_name,
@@ -720,31 +721,33 @@ export async function updateContributionSnapshot(
   }
 ): Promise<ContributionReconciliation> {
   const current = await env.DB.prepare(
-    "SELECT name, weekly_contribution FROM members ORDER BY name"
-  ).all<{ name: string; weekly_contribution: number }>();
+    "SELECT id, name, weekly_contribution FROM members ORDER BY name, id"
+  ).all<{ id: string; name: string; weekly_contribution: number }>();
   const reconciliation = reconcileContributionMembers(
     input.members,
     current.results.map((member) => ({
+      id: member.id,
       name: member.name,
       weeklyContribution: member.weekly_contribution
     }))
   );
-  const statements = reconciliation.updates.map((member) =>
-    env.DB.prepare(
+  const statements = reconciliation.updates.map((member) => {
+    const where = member.memberId ? "id = ?" : "name = ?";
+    return env.DB.prepare(
       `UPDATE members
        SET weekly_contribution = ?,
            technology_points_used = ?,
            material_contribution = ?,
            last_seen_at = ?
-       WHERE name = ?`
+       WHERE ${where}`
     ).bind(
       member.weeklyContribution,
       member.technologyPointsUsed,
       member.materialContribution,
       input.capturedAt,
-      member.name
-    )
-  );
+      member.memberId || member.name
+    );
+  });
   if (statements.length) await env.DB.batch(statements);
   return reconciliation;
 }
@@ -754,9 +757,11 @@ type ContributionRow = {
   weeklyContribution: number;
   technologyPointsUsed: number;
   materialContribution: number;
+  memberId?: string;
 };
 
 type ContributionMaster = {
+  id?: string;
   name: string;
   weeklyContribution: number;
 };
@@ -771,7 +776,9 @@ export function reconcileContributionMembers(
   incoming: ContributionRow[],
   masterMembers: ContributionMaster[]
 ): ContributionReconciliation {
-  const available = new Set(masterMembers.map((member) => member.name));
+  // Use object identity rather than display name: two players may have the
+  // same text and differ only by a visual symbol.
+  const available = new Set(masterMembers);
   const rawByName = new Map<string, ContributionMaster[]>();
   const exactByName = new Map<string, ContributionMaster[]>();
   for (const member of masterMembers) {
@@ -786,23 +793,38 @@ export function reconcileContributionMembers(
   let ambiguous = 0;
   for (const row of incoming) {
     const rawCandidates = (rawByName.get(rawMemberName(row.name)) ?? [])
-      .filter((member) => available.has(member.name));
+      .filter((member) => available.has(member));
     const exactCandidates = (
       rawCandidates.length
         ? rawCandidates
         : exactByName.get(comparableMemberName(row.name)) ?? []
-    ).filter((member) => available.has(member.name));
+    ).filter((member) => available.has(member));
     let candidate: ContributionMaster | null = null;
     if (exactCandidates.length === 1) {
       candidate = exactCandidates[0]!;
     } else if (exactCandidates.length > 1) {
-      ambiguous += 1;
-      ignored += 1;
-      continue;
+      const sourceSymbols = symbolSignature(row.name);
+      const symbolMatches = exactCandidates.filter(
+        (member) => symbolSignature(member.name) === sourceSymbols
+      );
+      const contributionMatches = exactCandidates.filter((member) =>
+        Number(row.weeklyContribution) === Number(member.weeklyContribution)
+      );
+      if (symbolMatches.length === 1) {
+        candidate = symbolMatches[0]!;
+      } else if (contributionMatches.length === 1) {
+        // When OCR drops the auxiliary glyph, the weekly contribution is the
+        // deterministic secondary key for the existing roster.
+        candidate = contributionMatches[0]!;
+      } else {
+        ambiguous += 1;
+        ignored += 1;
+        continue;
+      }
     } else {
       const sourceName = comparableMemberName(row.name);
       const fuzzyCandidates = masterMembers.flatMap((member) => {
-        if (!available.has(member.name)) return [];
+        if (!available.has(member)) return [];
         const targetName = comparableMemberName(member.name);
         const minimumLength = Math.min(sourceName.length, targetName.length);
         const distance = levenshteinDistance(sourceName, targetName);
@@ -846,8 +868,12 @@ export function reconcileContributionMembers(
       }
     }
 
-    available.delete(candidate.name);
-    updates.push({ ...row, name: candidate.name });
+    available.delete(candidate);
+    updates.push(
+      candidate.id
+        ? { ...row, name: candidate.name, memberId: candidate.id }
+        : { ...row, name: candidate.name }
+    );
   }
   return { updates, ignored, ambiguous };
 }
@@ -900,7 +926,10 @@ type ActivityRow = {
   name: string;
   lastActiveText: string | null;
   inactiveDays: number | null;
+  memberId?: string;
 };
+
+type ActivityMaster = { id: string; name: string };
 
 export type ActivityReconciliation = {
   updates: ActivityRow[];
@@ -909,14 +938,67 @@ export type ActivityReconciliation = {
 };
 
 export function reconcileActivityMembers(
-  incoming: ActivityRow[]
+  incoming: ActivityRow[],
+  masterMembers: ActivityMaster[] = []
 ): ActivityReconciliation {
+  if (masterMembers.length) {
+    const available = new Set(masterMembers);
+    const rawByName = new Map<string, ActivityMaster[]>();
+    const textByName = new Map<string, ActivityMaster[]>();
+    for (const member of masterMembers) {
+      const rawKey = rawMemberName(member.name);
+      rawByName.set(rawKey, [...(rawByName.get(rawKey) ?? []), member]);
+      const textKey = comparableMemberName(member.name);
+      textByName.set(textKey, [...(textByName.get(textKey) ?? []), member]);
+    }
+    const updates: ActivityRow[] = [];
+    let ignored = 0;
+    let ambiguous = 0;
+    for (const row of incoming) {
+      const rawCandidates = (rawByName.get(rawMemberName(row.name)) ?? [])
+        .filter((member) => available.has(member));
+      const exactCandidates = (
+        rawCandidates.length
+          ? rawCandidates
+          : textByName.get(comparableMemberName(row.name)) ?? []
+      ).filter((member) => available.has(member));
+      let candidate: ActivityMaster | null = null;
+      if (exactCandidates.length === 1) {
+        candidate = exactCandidates[0]!;
+      } else if (exactCandidates.length > 1) {
+        const sourceSymbols = symbolSignature(row.name);
+        const symbolMatches = exactCandidates.filter(
+          (member) => symbolSignature(member.name) === sourceSymbols
+        );
+        if (symbolMatches.length === 1) {
+          candidate = symbolMatches[0]!;
+        } else {
+          ambiguous += 1;
+          ignored += 1;
+          continue;
+        }
+      } else {
+        ignored += 1;
+        continue;
+      }
+      available.delete(candidate);
+      updates.push(
+        candidate.id
+          ? { ...row, name: candidate.name, memberId: candidate.id }
+          : { ...row, name: candidate.name }
+      );
+    }
+    return { updates, ignored, ambiguous };
+  }
+
   const updatesByName = new Map<string, ActivityRow>();
   let ignored = 0;
 
   for (const row of incoming) {
-    const key =
-      symbolInsensitiveMemberName(row.name) || comparableMemberName(row.name);
+    // Activity rows have no contribution/profession columns to corroborate a
+    // collision. Keep the verified visual spelling as the key so two players
+    // with the same text and different symbols are not collapsed.
+    const key = activityMemberNameKey(row.name);
     if (!key) {
       ignored += 1;
       continue;
@@ -942,6 +1024,16 @@ function symbolInsensitiveMemberName(value: string): string {
   return comparableMemberName(value).replace(/[^\p{L}\p{N}]/gu, "");
 }
 
+function activityMemberNameKey(value: string): string {
+  return rawMemberName(value);
+}
+
+function symbolSignature(value: string): string {
+  return Array.from(value.normalize("NFKC"))
+    .filter((character) => !/[\p{L}\p{N}]/u.test(character) && !/\s/u.test(character))
+    .join("");
+}
+
 export async function updateActivitySnapshot(
   env: Env,
   input: {
@@ -950,7 +1042,9 @@ export async function updateActivitySnapshot(
     members: ActivityRow[];
   }
 ): Promise<ActivityReconciliation> {
-  const reconciliation = reconcileActivityMembers(input.members);
+  const master = await env.DB.prepare("SELECT id, name FROM members ORDER BY name, id")
+    .all<ActivityMaster>();
+  const reconciliation = reconcileActivityMembers(input.members, master.results);
   // Preserve the last valid warning snapshot when a non-empty OCR payload
   // cannot produce even one self-contained warning row.
   if (input.members.length > 0 && reconciliation.updates.length === 0) {
@@ -960,9 +1054,7 @@ export async function updateActivitySnapshot(
     env.DB.prepare("DELETE FROM activity_warnings")
   ];
   for (const member of reconciliation.updates) {
-    const nameKey =
-      symbolInsensitiveMemberName(member.name) ||
-      comparableMemberName(member.name);
+    const nameKey = activityMemberNameKey(member.name);
     statements.push(
       env.DB.prepare(
         `INSERT INTO activity_warnings(
@@ -998,16 +1090,14 @@ export async function updateMemberProfiles(
     }>;
   }
 ): Promise<void> {
+  assertUniqueMemberNames(input.members);
   // The Agent has already scanned, reconciled, and de-duplicated the member
-  // table. Do not use the display name as the server-side reconciliation key:
-  // OCR-safe names can contain symbols and visually similar variants, and a
-  // name conflict here would silently reduce the accepted snapshot. The
-  // stable ID is derived from the exact name submitted by the Agent, so this
-  // path accepts the authoritative payload as-is and only updates the row
-  // belonging to that exact submitted identity.
+  // table. The exact visual spelling is part of the identity only after the
+  // text-first OCR layer has verified a symbol collision. Exact duplicate
+  // display names are rejected instead of silently overwriting one player.
   const statements: D1PreparedStatement[] = [];
   for (const member of input.members) {
-    const memberId = await stableMemberId(member.name);
+    const memberId = await stableMemberId(member);
     statements.push(
       env.DB.prepare(
         `INSERT INTO members(
@@ -1144,8 +1234,29 @@ export function reconcileStaffAssignments(
   return { staff, ignored, ambiguous };
 }
 
-async function stableMemberId(name: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(name));
+function assertUniqueMemberNames(members: Array<{ name: string }>): void {
+  const seen = new Set<string>();
+  for (const member of members) {
+    const name = String(member?.name || "").trim();
+    if (!name) throw new Error("MEMBER_NAME_EMPTY");
+    if (seen.has(name)) {
+      throw new Error(`MEMBER_NAME_COLLISION_UNRESOLVED: ${name}`);
+    }
+    seen.add(name);
+  }
+}
+
+async function stableMemberId(member: {
+  name: string;
+  profession?: string | null;
+  roommateName?: string | null;
+  weeklyContribution?: number | null;
+}): Promise<string> {
+  // Names with verified auxiliary glyphs are already distinct. Include only
+  // the exact display name so normal contribution changes do not create a new
+  // member row on every run.
+  const identity = String(member.name || "").normalize("NFKC");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
   return `member_${Array.from(new Uint8Array(digest).slice(0, 12))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("")}`;

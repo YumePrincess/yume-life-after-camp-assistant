@@ -123,4 +123,29 @@ describe("reconcileContributionMembers", () => {
     expect(result.updates).toEqual([]);
     expect(result.ambiguous).toBe(1);
   });
+
+  it("uses weekly contribution when two roster names share the same text", () => {
+    const result = reconcileContributionMembers(
+      [contribution("慕离", 200)],
+      [
+        { id: "solid-flower", name: "✿慕离✿", weeklyContribution: 100 },
+        { id: "hollow-flower", name: "❀慕离❀", weeklyContribution: 200 }
+      ]
+    );
+
+    expect(result.updates).toEqual([
+      { ...contribution("慕离", 200), name: "❀慕离❀", memberId: "hollow-flower" }
+    ]);
+    expect(result.ignored).toBe(0);
+  });
+
+  it("does not accept an OCR-only contribution player", () => {
+    const result = reconcileContributionMembers(
+      [contribution("不存在的玩家", 200)],
+      [{ id: "member-a", name: "慕离✨", weeklyContribution: 200 }]
+    );
+
+    expect(result.updates).toEqual([]);
+    expect(result.ignored).toBe(1);
+  });
 });

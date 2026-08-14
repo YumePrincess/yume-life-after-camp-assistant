@@ -1537,8 +1537,11 @@ async function handleAgentApi(
     };
     const memberRoster = (await listMembers(env))
       .map((member) => ({
+        id: typeof member.id === "string" ? member.id : "",
         name: typeof member.name === "string" ? member.name : "",
-        weeklyContribution: Number(member.weekly_contribution) || 0
+        weeklyContribution: Number(member.weekly_contribution) || 0,
+        profession: typeof member.profession === "string" ? member.profession : null,
+        roommateName: typeof member.roommate_name === "string" ? member.roommate_name : null
       }))
       .filter((member) => member.name);
     return json({

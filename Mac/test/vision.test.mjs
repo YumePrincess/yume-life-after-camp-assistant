@@ -14,7 +14,8 @@ import {
   normalizePlayerName,
   normalizePlayerNameVariant,
   normalizePlayerOcrArtifact,
-  normalizeVisualName
+  normalizeVisualName,
+  stripStackedCampTitleFromName
 } from "../src/visual-name.mjs";
 import { Vision } from "../src/vision.mjs";
 
@@ -158,14 +159,19 @@ test("member identity keeps the first OCR line as the player name", () => {
   assert.equal(isPlausibleMemberName("COSGH"), true);
   assert.equal(isPlausibleMemberName("青在✨"), true);
   assert.equal(isPlausibleMemberName("✨"), true);
-  assert.equal(isPlausibleMemberName("#"), true);
+  assert.equal(isPlausibleMemberName("#"), false);
 });
 
 test("campTitle only accepts a real stacked text line", () => {
   assert.equal(normalizeMemberCampTitle("☻ 〛 ☻"), "");
   assert.equal(normalizeMemberCampTitle("乁"), "");
   assert.equal(normalizeMemberCampTitle("#G春之音"), "春之音");
+  assert.equal(normalizeMemberCampTitle("G春之音"), "春之音");
   assert.equal(normalizeMemberCampTitle("启航"), "启航");
+  assert.equal(
+    stripStackedCampTitleFromName("#U夏之虹星河踏月归", "夏之虹"),
+    "星河踏月归"
+  );
   const identity = normalizeIdentityLines([
     { text: "玩家甲", x: 100, y: 100, width: 80, height: 24 },
     { text: "☻ 〛 ☻", x: 240, y: 100, width: 80, height: 24 },
@@ -212,6 +218,7 @@ test("visual name normalization preserves meaningful symbols and spaces", () => 
   );
   assert.equal(normalizePlayerName("✿❀❁❉❃✲"), "✿❀❁❉❃✲");
   assert.equal(normalizePlayerNameVariant("დღ✿"), "დღ✿");
+  assert.equal(normalizePlayerNameVariant("慕离\u0301"), "慕离\u0301");
 });
 
 test("player-name OCR keeps multilingual text and drops hallucinated symbols", () => {
@@ -219,6 +226,7 @@ test("player-name OCR keeps multilingual text and drops hallucinated symbols", (
   assert.equal(normalizePlayerName("Élodie¥"), "Élodie");
   assert.equal(normalizePlayerName("&/¥ew米“”！"), "ew米");
   assert.equal(normalizePlayerName("「    」"), "「    」");
+  assert.equal(normalizePlayerName("--------"), "");
 });
 
 test("player OCR artifact normalization is roster-independent", () => {

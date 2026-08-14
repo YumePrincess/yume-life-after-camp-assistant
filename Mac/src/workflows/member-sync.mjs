@@ -3,6 +3,7 @@ import {
   normalizeContribution,
   normalizeMembers,
   normalizeProfiles,
+  assertDistinctMemberNames,
   normalizeStaffGrid,
   parseTable
 } from "../table-parser.mjs";
@@ -12,10 +13,14 @@ import {
   normalizePlayerOcrArtifact,
   normalizePlayerNameVariant,
   normalizeMemberCampTitle,
+  normalizeMemberIdentityName,
+  describePlayerName,
   normalizeVisualName,
   playerNameHasText,
   playerNameSymbolSignature,
-  playerNameTextKey
+  playerNameTextKey,
+  isAvatarYearText,
+  isRepeatedDashArtifact
 } from "../visual-name.mjs";
 import { delay } from "../process.mjs";
 import {
@@ -46,6 +51,7 @@ export async function runMemberSync(context, command, _bundle, signal) {
     activity
   );
   if (!members.length) throw new Error("No member rows recognized; snapshot was not uploaded");
+  assertDistinctMemberNames(members);
   await updateWorkflowProgress(context, 0.91, "member_snapshot");
   await context.api.snapshot(
     command.runId,
@@ -186,6 +192,7 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
       `MEMBER_PROFILE_COUNT_MISMATCH: normalized ${profiles.length}, page header reports ${expectedMembers}; profile snapshot was not uploaded`
     );
   }
+  assertDistinctMemberNames(profiles);
   await context.api.snapshot(
     command.runId,
     "profiles",
@@ -1028,7 +1035,11 @@ export async function capturePagedTable(
     let added = 0;
     let rejectedAfterExpectedCount = 0;
     for (const row of rows) {
-      const baseRowKey = memberDetailsMode ? memberProfileRowKey(row) : row.name;
+      const baseRowKey = memberDetailsMode
+        ? memberProfileRowKey(row)
+        : contributionTableMode || label.startsWith("member-activity")
+          ? auxiliaryTableRowKey(row)
+          : row.name;
       if (!baseRowKey) continue;
       if (
         !byName.has(baseRowKey) &&
@@ -1067,6 +1078,7 @@ export async function capturePagedTable(
       order: index + 1,
       name: String(row?.name || "").trim(),
       rawName: normalizeVisualName(row?.rawName || row?.name),
+      visualName: describePlayerName(row?.rawName || row?.name),
       profession: String(row?.profession || "").trim(),
       weeklyContribution: String(row?.weeklyContribution || "").trim(),
       technologyPointsUsed: String(row?.technologyPointsUsed || "").trim(),
@@ -1293,15 +1305,16 @@ export async function capturePagedTable(
       // can jump past one or more 95px rows. Send the same calibrated drag as
       // small MOVE segments and release immediately at the exact 475px
       // (5-row) endpoint so the next page starts on a row boundary. The
-      // calibrated duration is shortened by 30% to increase speed without
-      // changing either endpoint or the segmented path.
+      // calibrated duration is 60% of the configured baseline: this makes
+      // member-page turns 40% faster without changing either endpoint or the
+      // segmented path.
       await memberAlignmentSwipe(
         adb,
         swipeFrom,
         swipeTo,
         Math.max(
           100,
-          Math.round((Number(definition.pagination.durationMs) || 1_000) * 0.7)
+          Math.round((Number(definition.pagination.durationMs) || 1_000) * 0.6)
         ),
         signal
       );
@@ -1610,22 +1623,15 @@ function memberFullPageDefinition(definition) {
 }
 
 function isMemberAvatarArtifact(value) {
-  const text = String(value || "")
-    .trim()
-    .normalize("NFKC")
-    .replace(/\s+/g, "");
-  // The avatar artwork carries a printed 2025/20251-style year marker.  It
-  // is outside the identity column in the calibrated crop, but this guard is
-  // also required for legacy/plugin OCR providers that still return it.
-  return /^2025\d*$/u.test(text);
+  return isAvatarYearText(value) || isRepeatedDashArtifact(value);
 }
 
 function normalizeScannedNameRows(rows) {
   return (rows || []).map((row) => {
     const rawName = normalizePlayerOcrArtifact(row?.rawName || row?.name);
     const name = row?.__preserveNameSymbols
-      ? normalizePlayerName(row?.name, { preserveSymbols: true })
-      : normalizePlayerName(rawName);
+      ? normalizePlayerNameVariant(rawName || row?.name)
+      : normalizeMemberIdentityName(rawName);
     return { ...row, name, rawName, campTitle: normalizeMemberCampTitle(row?.campTitle) };
   });
 }
@@ -1660,8 +1666,8 @@ function preferMemberDetailRecoveryRows(primary, recovered) {
 }
 
 function filterMemberDetailRows(rows) {
-  return (rows || []).filter(
-    (row) => row?.name && !isMemberAvatarArtifact(row.name)
+  return normalizeScannedNameRows(rows).filter(
+    (row) => row?.name && !isMemberAvatarArtifact(row.rawName || row.name)
   );
 }
 
@@ -1740,7 +1746,8 @@ export function alignContributionRowsToRoster(rows, roster) {
     .map((item) => ({
       name: String(item?.name || "").trim(),
       key: contributionNameKey(item?.name),
-      symbols: playerNameSymbolSignature(item?.name)
+      symbols: playerNameSymbolSignature(item?.name),
+      weeklyContribution: item?.weeklyContribution
     }))
     .filter((item) => item.name && item.key);
   const byCanonicalName = new Map();
@@ -1755,7 +1762,16 @@ export function alignContributionRowsToRoster(rows, roster) {
       const symbolMatches = exact.filter(
         (member) => member.symbols === sourceSymbols
       );
-      matched = symbolMatches.length === 1 ? symbolMatches[0] : null;
+      const contributionMatches = exact.filter(
+        (member) =>
+          String(member.weeklyContribution ?? "") ===
+          String(row?.weeklyContribution ?? "").replace(/[,\s]/gu, "")
+      );
+      matched = symbolMatches.length === 1
+        ? symbolMatches[0]
+        : contributionMatches.length === 1
+          ? contributionMatches[0]
+          : null;
     }
     // The mayor card places a small role badge immediately after the name.
     // OCR sometimes returns that badge as one extra Han character (for
@@ -1777,7 +1793,11 @@ export function alignContributionRowsToRoster(rows, roster) {
     // name must never create a new member or reach the server as a candidate.
     if (!matched) continue;
     const canonicalRow = { ...row, name: matched.name };
-    const canonicalKey = contributionNameKey(matched.name);
+    // The cleaned text key is not unique when two players differ only by a
+    // visual symbol. Keep the exact roster spelling as the in-memory key so
+    // contribution rows cannot overwrite one another before the server sees
+    // them.
+    const canonicalKey = normalizeVisualName(matched.name);
     const previous = byCanonicalName.get(canonicalKey);
     byCanonicalName.set(
       canonicalKey,
@@ -1822,6 +1842,15 @@ function applyPageNameAliases(rows, aliases) {
 
 function contributionNameKey(value) {
   return playerNameTextKey(value);
+}
+
+function auxiliaryTableRowKey(row) {
+  const rawName = normalizeVisualName(row?.rawName || row?.name);
+  const textKey = playerNameTextKey(rawName);
+  const auxiliaryName = normalizePlayerNameVariant(rawName);
+  return textKey && auxiliaryName
+    ? `${textKey}\u0000${auxiliaryName}`
+    : textKey;
 }
 
 function reconcileMemberDetailRows(rows, expectedCount = null) {

@@ -439,10 +439,12 @@
       {
         "op": "openCampPanelViaChat",
         "chatButton": { "x": 250, "y": 1060 },
+        "chatCollapseButton": { "x": 1740, "y": 1110 },
         "campChannelButton": { "x": 1740, "y": 355 },
         "campIconButton": { "x": 980, "y": 65 },
         "chatCardSettleMs": 3000,
         "chatTabText": "频道",
+        "chatTabButton": { "x": 1610, "y": 60 },
         "chatTabMode": "exact",
         "chatTabRegion": { "left": 1450, "top": 0, "right": 1900, "bottom": 180 },
         "chatTabSettleMs": 3000,

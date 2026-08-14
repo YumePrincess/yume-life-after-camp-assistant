@@ -171,6 +171,13 @@ final class MrzhSymbolClassifier {
                 // outside the synthetic training set. It is glyph-only and
                 // has no roster/name knowledge.
                 output.append(contentsOf: templated)
+            } else if isTrailingStarMisread {
+                // A low-confidence trailing Han glyph is the common Vision
+                // rendering of a decorative star/flower. Once Core ML and
+                // the visual template both reject it, dropping that weak
+                // artifact is safer than publishing a fabricated character
+                // such as `星河踏月归卒`.
+                continue
             } else {
                 output.append(contentsOf: glyphText)
             }
@@ -364,10 +371,6 @@ final class MrzhSymbolClassifier {
                 let componentWidth = maxX - minX + 1
                 let componentHeight = maxY - minY + 1
                 let density = Double(area) / Double(componentWidth * componentHeight)
-                let isHorizontalDash = componentWidth >= 4 &&
-                    componentWidth <= 50 &&
-                    componentHeight <= 5 &&
-                    density >= 0.2
                 let isRoundFace = componentWidth >= 12 &&
                     componentWidth <= 40 &&
                     componentHeight >= 12 &&
@@ -382,7 +385,7 @@ final class MrzhSymbolClassifier {
                       componentWidth <= 120,
                       componentHeight >= 1,
                       componentHeight <= 100,
-                      (isHorizontalDash || isRoundFace),
+                      isRoundFace,
                       // Member detail OCR is normally invoked on a crop that
                       // begins at the identity column. Keep the fallback in
                       // the identity-side quarter so it cannot add dashes or
@@ -424,15 +427,13 @@ final class MrzhSymbolClassifier {
                 guard !existing.contains(where: { Self.overlaps(observation, $0) }) else {
                     continue
                 }
-                let glyph = isHorizontalDash
-                    ? "-"
-                    : (classify(observation).flatMap { Self.isDecorativeNameGlyph($0) ? $0 : nil }
+                let glyph = (classify(observation).flatMap { Self.isDecorativeNameGlyph($0) ? $0 : nil }
                         ?? Self.templateGlyph(image: image, observation: observation)
                         ?? "☻")
                 recovered.append(
                     OCRObservation(
                         text: glyph,
-                        confidence: isHorizontalDash ? 0.92 : 0.9,
+                        confidence: 0.9,
                         x: observation.x,
                         y: observation.y,
                         width: observation.width,

@@ -376,6 +376,55 @@ test("camp navigation waits and verifies channel then camp before city hall", as
   );
 });
 
+test("camp navigation keeps the four-step order when OCR misses chat labels", async () => {
+  const fixture = createUi({
+    transientCapture(label) {
+      if (label.startsWith("camp-channel-verify")) {
+        return [observation("营地频道", 900, 115)];
+      }
+      if (label.startsWith("camp-panel-verify")) {
+        return [
+          observation("量子时代", 330, 330),
+          observation("营地周活跃", 760, 320)
+        ];
+      }
+      return [];
+    }
+  });
+
+  await fixture.ui.openCampPanelViaChat({
+    attempts: 1,
+    chatDelayMs: 1,
+    chatCardSettleMs: 1,
+    chatTabSettleMs: 1,
+    campChannelSettleMs: 1,
+    chatNavigationTimeoutSeconds: 0.01,
+    chatReadyTexts: ["营地频道"],
+    chatReadyRegion: { left: 1200, top: 100, right: 1900, bottom: 1150 },
+    chatTabText: "频道",
+    chatTabButton: { x: 1610, y: 60 },
+    chatTabRegion: { left: 1450, top: 0, right: 1900, bottom: 180 },
+    campChannelText: "营地",
+    campChannelButton: { x: 1740, y: 355 },
+    campChannelRegion: { left: 1450, top: 120, right: 1900, bottom: 800 },
+    campChannelReadyTexts: ["营地频道"],
+    campChannelReadyRegion: { left: 700, top: 0, right: 1450, bottom: 180 },
+    campIconButton: { x: 980, y: 65 },
+    verifySeconds: 1
+  });
+
+  assert.deepEqual(fixture.taps, [
+    { x: 250, y: 1060 },
+    { x: 1610, y: 60 },
+    { x: 1740, y: 355 },
+    { x: 980, y: 65 }
+  ]);
+  assert.equal(
+    fixture.messages.some((message) => message.includes("频道→营地→市政厅")),
+    true
+  );
+});
+
 test("an already-open camp chat skips the chat toggle and clicks city hall", async () => {
   const fixture = createUi({
     transientCapture(label) {
@@ -437,7 +486,7 @@ test("a direct game-mouse entry click does not toggle keyevent 70 on one command
   assert.equal(clicks, 1);
 });
 
-test("camp navigation rechecks the game mouse once after two failed attempts", async () => {
+test("camp navigation retries the full chat sequence without re-releasing game mouse", async () => {
   const fixture = createUi({
     transientCapture(label) {
       if (label === "camp-panel-verify-3") {
@@ -472,8 +521,10 @@ test("camp navigation rechecks the game mouse once after two failed attempts", a
     verifySeconds: 1
   });
 
-  assert.equal(summons, 1);
-  assert.equal(fixture.taps.length, 12);
+  assert.equal(summons, 0);
+  // First attempt is 3 taps; each retry closes the stale panel and repeats
+  // left-bottom chat → channel → camp → city hall (4 taps).
+  assert.equal(fixture.taps.length, 11);
 });
 
 test("map preparation closes the camp page, collapses chat, then confirms HUD", async () => {

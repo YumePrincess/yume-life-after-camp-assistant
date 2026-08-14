@@ -7,10 +7,14 @@ import { parseTable } from "./table-parser.mjs";
 import {
   normalizeIdentityLines,
   normalizeMemberCampTitle,
+  normalizeMemberIdentityName,
+  stripStackedCampTitleFromName,
   normalizePlayerName,
   playerNameHasText,
   normalizePlayerOcrArtifact,
-  normalizeVisualName
+  normalizeVisualName,
+  isAvatarYearText,
+  isRepeatedDashArtifact
 } from "./visual-name.mjs";
 
 export { isPlausibleMemberName } from "./member-name.mjs";
@@ -664,8 +668,11 @@ export class Vision {
         upper,
         lower,
         items,
-        identity: inferMemberIdentity(
-          itemsInColumn(items, columnBounds.get("identity"))
+      identity: inferMemberIdentity(
+          filterMemberIdentityItems(
+            itemsInColumn(items, columnBounds.get("identity")),
+            columnBounds.get("identity")
+          )
         )
       };
     });
@@ -702,7 +709,9 @@ export class Vision {
             const y = centerY(item);
             return y >= row.upper && y < row.lower;
           });
-          const identity = inferMemberIdentity(inRow);
+          const identity = inferMemberIdentity(
+            filterMemberIdentityItems(inRow, identityBounds)
+          );
           return identity.name ? { row, identity, recovered: inRow } : null;
         })
       );
@@ -748,7 +757,9 @@ export class Vision {
             const y = centerY(item);
             return y >= row.upper && y < row.lower;
           });
-          const identity = inferMemberIdentity(inRow);
+          const identity = inferMemberIdentity(
+            filterMemberIdentityItems(inRow, identityBounds)
+          );
           return identity.name ? { row, identity, recovered: inRow } : null;
         })
       );
@@ -771,19 +782,24 @@ export class Vision {
     return rowData
       .map(({ items, identity }, index) => {
         const nativeIdentity = normalizeIdentityLines(
-          itemsInColumn(items, columnBounds.get("identity"))
+          filterMemberIdentityItems(
+            itemsInColumn(items, columnBounds.get("identity")),
+            columnBounds.get("identity")
+          )
         );
-        const rawName = normalizePlayerOcrArtifact(nativeIdentity.name);
+        const campTitle = normalizeMemberCampTitle(
+          identity.campTitle || nativeIdentity.campTitle
+        );
+        const rawName = normalizePlayerOcrArtifact(
+          stripStackedCampTitleFromName(nativeIdentity.name, campTitle)
+        );
         const nativeName = isPlausibleMemberName(rawName)
-          ? normalizePlayerName(rawName)
+          ? normalizeMemberIdentityName(rawName)
           : "";
         return {
           name: nativeName,
           rawName,
-          campTitle:
-            normalizeMemberCampTitle(
-              identity.campTitle || nativeIdentity.campTitle
-            ),
+          campTitle,
           profession:
             firstColumnText(items, columnBounds.get("profession")),
           weeklyContribution:
@@ -1405,6 +1421,18 @@ function itemsInColumn(items, bounds) {
         centerX(item) >= bounds.left && centerX(item) < bounds.right
     )
     .sort((left, right) => centerY(left) - centerY(right) || left.x - right.x);
+}
+
+export function filterMemberIdentityItems(items, bounds) {
+  return (items || []).filter((item) => {
+    if (!item || !bounds) return false;
+    const text = normalizeVisualName(item.text);
+    if (isRepeatedDashArtifact(text)) return false;
+    if (!isAvatarYearText(text)) return true;
+    const left = Number(bounds.left) || 0;
+    const right = Number(bounds.right) || left;
+    return centerX(item) > left + (right - left) * 0.22;
+  });
 }
 
 function firstColumnText(items, bounds) {

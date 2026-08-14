@@ -1,10 +1,15 @@
 import { isPlausibleMemberName } from "./member-name.mjs";
 import {
   normalizePlayerName,
+  normalizePlayerNameVariant,
   normalizePlayerNameRows,
   normalizeMemberCampTitle,
+  normalizeMemberIdentityName,
+  stripStackedCampTitleFromName,
   normalizeVisualName,
-  playerNameSymbolSignature,
+  isAvatarYearText,
+  isRepeatedDashArtifact,
+  memberRowDataKey,
   playerNameTextKey
 } from "./visual-name.mjs";
 
@@ -66,7 +71,9 @@ export function parseTable(observations, definition) {
           (candidate) =>
             centerX(item) >= candidate.leftPx && centerX(item) < candidate.rightPx
         );
-        if (column) output[column.key].push(item.text.trim());
+        if (column && !isMemberIdentityArtifact(item, column, bounds)) {
+          output[column.key].push(item.text.trim());
+        }
       }
       const normalized = {};
       for (const column of bounds) {
@@ -77,18 +84,30 @@ export function parseTable(observations, definition) {
               (item) =>
                 centerX(item) >= column.leftPx && centerX(item) < column.rightPx
             )
+            .filter((item) => !isMemberIdentityArtifact(item, column, bounds))
             .sort((a, b) => centerY(a) - centerY(b))
             .map((item) => item.text.trim());
           for (const [index, key] of column.stackedKeys.entries()) {
             const value = stackedValues[index] || "";
             normalized[key] =
               key === "campTitle" ? normalizeMemberCampTitle(value) : value;
-            if (key === "name") normalized.rawName = stackedValues[index] || "";
+            if (key === "name") {
+              normalized.rawName = stackedValues[index] || "";
+              normalized.name = normalizeMemberIdentityName(normalized.rawName);
+            }
+          }
+          if (normalized.rawName && normalized.campTitle) {
+            normalized.rawName = stripStackedCampTitleFromName(
+              normalized.rawName,
+              normalized.campTitle
+            );
+            normalized.name = normalizeMemberIdentityName(normalized.rawName);
           }
         } else {
           normalized[column.key] = values.join(" ").trim();
           if (column.key === "name") {
             normalized.rawName = normalized[column.key];
+            normalized.name = normalizeMemberIdentityName(normalized.rawName);
           }
         }
       }
@@ -102,16 +121,18 @@ export function normalizeMembers(contributionRows, detailRows, activityRows = []
   const normalizedDetails = normalizePlayerNameRows(detailRows);
   for (const row of normalizedDetails) {
     const name = row.__preserveNameSymbols
-      ? normalizePlayerName(row.name, { preserveSymbols: true })
-      : normalizePlayerName(row.rawName || row.name);
+      ? normalizePlayerNameVariant(row.rawName || row.name)
+      : normalizeMemberIdentityName(row.rawName || row.name);
     if (
       !isPlausibleMemberName(name) ||
       /成员|姓名|贡献|职业/.test(name)
     ) continue;
     combined.push({ ...row, name });
   }
-  for (const row of contributionRows) {
-    const name = normalizePlayerName(row.rawName || row.name);
+  for (const row of normalizePlayerNameRows(contributionRows)) {
+    const name = row.__preserveNameSymbols
+      ? normalizePlayerNameVariant(row.rawName || row.name)
+      : normalizeMemberIdentityName(row.rawName || row.name);
     if (
       !isPlausibleMemberName(name) ||
       /玩家名|成员|姓名|贡献|职业/.test(name)
@@ -119,16 +140,20 @@ export function normalizeMembers(contributionRows, detailRows, activityRows = []
     const matches = combined.filter(
       (candidate) => exactNameKey(candidate.name) === exactNameKey(name)
     );
-    const sourceSymbols = playerNameSymbolSignature(row.rawName || row.name);
+    const sourceSymbols = symbolSignature(row.rawName || row.name);
     const symbolMatches = matches.filter(
-      (candidate) => playerNameSymbolSignature(candidate.name) === sourceSymbols
+      (candidate) => symbolSignature(candidate.rawName || candidate.name) === sourceSymbols
     );
-    const match =
-      symbolMatches.length === 1
-        ? symbolMatches[0]
-        : matches.length === 1
-          ? matches[0]
-          : null;
+    const evidenceMatches = matches.filter((candidate) =>
+      memberRowsShareEvidence(candidate, row)
+    );
+    const match = symbolMatches.length === 1
+      ? symbolMatches[0]
+      : evidenceMatches.length === 1
+      ? evidenceMatches[0]
+      : matches.length === 1
+        ? matches[0]
+        : null;
     if (match) Object.assign(match, row, { name: match.name });
     else if (!normalizedDetails.length) combined.push({ ...row, name });
   }
@@ -138,7 +163,14 @@ export function normalizeMembers(contributionRows, detailRows, activityRows = []
     const matches = combined.filter(
       (candidate) => exactNameKey(candidate.name) === exactNameKey(name)
     );
-    const match = matches.length === 1 ? matches[0] : null;
+    const evidenceMatches = matches.filter((candidate) =>
+      memberRowsShareEvidence(candidate, row)
+    );
+    const match = evidenceMatches.length === 1
+      ? evidenceMatches[0]
+      : matches.length === 1
+        ? matches[0]
+        : null;
     const normalized = {
       ...row,
       name,
@@ -166,9 +198,11 @@ export function normalizeMembers(contributionRows, detailRows, activityRows = []
 }
 
 export function normalizeActivity(rows) {
-  return rows
+  return normalizePlayerNameRows(rows)
     .map((row) => ({
-      name: normalizePlayerName(row.rawName || row.name),
+      name: row.__preserveNameSymbols
+        ? normalizePlayerNameVariant(row.rawName || row.name)
+        : normalizeMemberIdentityName(row.rawName || row.name),
       lastActiveText: clean(row.onlineState) || null,
       inactiveDays: parseInactiveDays(row.onlineState)
     }))
@@ -180,7 +214,7 @@ export function normalizeActivity(rows) {
 }
 
 export function normalizeContribution(rows) {
-  return normalizeMembers(rows, []).map(
+  return normalizeMembers(normalizePlayerNameRows(rows), []).map(
     ({
       name,
       weeklyContribution,
@@ -204,8 +238,8 @@ export function normalizeProfiles(rows) {
   return normalizePlayerNameRows(rows)
     .map((row) => {
       const name = row.__preserveNameSymbols
-        ? normalizePlayerName(row.name, { preserveSymbols: true })
-        : normalizePlayerName(row.rawName || row.name);
+        ? normalizePlayerNameVariant(row.rawName || row.name)
+        : normalizeMemberIdentityName(row.rawName || row.name);
       if (!name) return null;
       return {
         name,
@@ -217,6 +251,20 @@ export function normalizeProfiles(rows) {
       };
     })
     .filter(Boolean);
+}
+
+export function assertDistinctMemberNames(rows) {
+  const seen = new Set();
+  for (const row of rows || []) {
+    const name = String(row?.name || "").trim();
+    if (!name) continue;
+    if (seen.has(name)) {
+      throw new Error(
+        `MEMBER_NAME_COLLISION_UNRESOLVED: 同文字玩家缺少可确认的视觉符号：${name}`
+      );
+    }
+    seen.add(name);
+  }
 }
 
 export function parseInactiveDays(value) {
@@ -240,6 +288,31 @@ function exactMember(rows, name) {
 
 function exactNameKey(value) {
   return playerNameTextKey(value);
+}
+
+function symbolSignature(value) {
+  return Array.from(normalizeVisualName(value))
+    .filter((character) => !/[\p{L}\p{N}]/u.test(character) && !/\s/u.test(character))
+    .join("");
+}
+
+function memberRowsShareEvidence(left, right) {
+  const leftKey = memberRowDataKey(left);
+  const rightKey = memberRowDataKey(right);
+  if (!leftKey || !rightKey) return false;
+  return leftKey === rightKey;
+}
+
+function isMemberIdentityArtifact(item, column, bounds) {
+  if (!item || column?.key !== "identity") return false;
+  const text = normalizeVisualName(item.text);
+  if (isRepeatedDashArtifact(text)) return true;
+  if (!isAvatarYearText(text)) return false;
+  // A 2025 token at the left edge is the printed avatar year. Keep a numeric
+  // player name when it is located where the normal identity text begins.
+  const leftEdge = Number(column.leftPx) || 0;
+  const rightEdge = Number(column.rightPx) || leftEdge;
+  return centerX(item) <= leftEdge + (rightEdge - leftEdge) * 0.22;
 }
 
 export function normalizeStaff(rows) {
@@ -315,7 +388,9 @@ function cleanStaffMemberName(value) {
   // Vision may merge that ordinal and the decorative closing glyph into one
   // observation; remove only the unambiguous ordinal prefix here so digits
   // that are genuinely part of a player's name remain untouched.
-  return clean(value).replace(/^\d+\.\s*/u, "");
+  return clean(value)
+    .replace(/^\d+[.)]?\s*/u, "")
+    .replace(/[”"）)]+$/u, "");
 }
 
 function splitNumericAcrossColumns(item, columns) {
