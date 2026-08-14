@@ -172,30 +172,6 @@ test("an accidental activity page returns through the bottom-left back point", a
   );
 });
 
-test("guarded AI closes a post-login system announcement with the top-right X", async () => {
-  const fixture = createFixture(
-    [["登录游戏"], [], [], [], ["背包"]],
-    {
-      state: "prelogin_announcement",
-      action: "wait",
-      confidence: 0.97,
-      evidence: "全屏活动主视觉"
-    },
-    [],
-    "guarded"
-  );
-  await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [
-    { x: 960, y: 945 },
-    { x: 1742, y: 155 }
-  ]);
-  assert.ok(
-    fixture.messages.some((message) =>
-      message.includes("本地模型确认系统公告")
-    )
-  );
-});
-
 test("resource update restart is handled before login and promotion dismissal", async () => {
   const fixture = createFixture([
     ["资源更新", "重启游戏"],
@@ -244,42 +220,6 @@ test("a system announcement shown after the login tap still closes by its top-ri
   );
 });
 
-test("a very-low-confidence local-model login candidate never clicks", async () => {
-  const fixture = createFixture(
-    [[], ["背包"]],
-    {
-      state: "login",
-      action: "wait",
-      confidence: 0.2,
-      evidence: "误判"
-    },
-    [],
-    "guarded"
-  );
-  await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, []);
-});
-
-test("a clear local-model login candidate clicks the calibrated login button", async () => {
-  const fixture = createFixture(
-    [[], [], ["背包"]],
-    {
-      state: "login",
-      action: "wait",
-      confidence: 0.45,
-      evidence: "底部登录按钮"
-    },
-    [],
-    "guarded"
-  );
-  await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
-  assert.deepEqual(fixture.touchTaps, [{ x: 960, y: 945 }]);
-  assert.ok(
-    fixture.messages.some((message) => message.includes("固定登录按钮"))
-  );
-});
-
 test("accurate OCR recovers a login button missed by fast OCR", async () => {
   const fixture = createFixture(
     [[], [], ["背包"]],
@@ -296,17 +236,6 @@ test("accurate OCR recovers a login button missed by fast OCR", async () => {
   );
 });
 
-test("a slow local model never blocks the deterministic login loop", async () => {
-  const fixture = createFixture(
-    [[], ["背包"]],
-    () => new Promise(() => {})
-  );
-  const startedAt = Date.now();
-  await waitForGameReady(fixture.context);
-  assert.ok(Date.now() - startedAt < 1_500);
-  assert.deepEqual(fixture.taps, []);
-});
-
 test("an accurate OCR timeout degrades to fast OCR without ending login", async () => {
   const fixture = createFixture(
     [[], [], ["背包"]],
@@ -318,27 +247,6 @@ test("an accurate OCR timeout degrades to fast OCR without ending login", async 
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("已自动退回快速 OCR")
-    )
-  );
-});
-
-test("guarded mode permits a fixed login tap at 0.95 confidence", async () => {
-  const fixture = createFixture(
-    [[], [], [], ["背包"]],
-    {
-      state: "login",
-      action: "wait",
-      confidence: 0.95,
-      evidence: "底部登录按钮清晰可见"
-    },
-    [],
-    "guarded"
-  );
-  await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
-  assert.ok(
-    fixture.messages.some((message) =>
-      message.includes("高置信度")
     )
   );
 });
@@ -410,7 +318,7 @@ test("HUD distance and status numbers outside the loading bar never reset readin
   assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
 });
 
-test("two bottom-left chat channel anchors confirm HUD without local-model classification", async () => {
+test("two bottom-left chat channel anchors confirm HUD using OCR", async () => {
   const channelFrame = [
     { text: "综合", x: 30, y: 1090 },
     { text: "世界", x: 120, y: 1090 },

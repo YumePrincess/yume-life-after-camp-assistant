@@ -20,7 +20,6 @@ export async function withGameSession(
   };
   let started = false;
   let gameReady = false;
-  let advisorStarted = false;
   let preserveSceneAfterError = false;
   let preservedError = null;
   const startupProtectionSeconds = Math.max(
@@ -39,29 +38,10 @@ export async function withGameSession(
     cleanupIssues: []
   };
   try {
-    if (vision?.advisor?.enabled) {
-      await report(
-        "info",
-        "local_model_start",
-        "正在按任务启动本地视觉辅助模型"
-      );
-      await setProgress(0.025, "local_model_start");
-      try {
-        advisorStarted = await vision.startAdvisor(signal);
-      } catch (error) {
-        await report(
-          "warning",
-          "local_model_unavailable",
-          "本地视觉模型未能启动，本次任务继续使用 OCR 与确定性流程",
-          { reason: error.message }
-        );
-      }
-    }
     await report("info", "emulator_start", "正在后台启动 MuMu 模拟器");
     await setProgress(0.03, "emulator_start");
     started = true;
-    // Start the protection window immediately before the container launch;
-    // local-model startup must not consume the container's 300-second budget.
+    // Start the protection window immediately before the container launch.
     startupProtectionDeadline =
       Date.now() + startupProtectionSeconds * 1000;
     let restartCount = 0;
@@ -242,16 +222,6 @@ export async function withGameSession(
             ).catch(() => undefined);
           });
         }
-      }
-      if (advisorStarted) {
-        await report(
-          "info",
-          "local_model_stop",
-          preserveSceneAfterError
-            ? "已保留游戏现场，正在单独释放本地视觉模型内存"
-            : "任务已结束，正在释放本地视觉模型内存"
-        ).catch(() => undefined);
-        await vision.stopAdvisor().catch(() => undefined);
       }
     }
   }
@@ -505,15 +475,6 @@ export async function waitForGameReady(context, signal) {
   let announcementClosures = 0;
   let announcementCloseAttempts = 0;
   let lastAnnouncementCloseAt = 0;
-  let lastAdviceAt = 0;
-  let lastAdviceSignature = "";
-  let repeatedAdvice = 0;
-  let advisorFailureReported = false;
-  let advisorPending = false;
-  let guardedAdvice = null;
-  let unknownAfterLoginCount = 0;
-  let unknownRecoveryRequested = false;
-  let unknownRecoveryAttempted = false;
   let accurateOcrFailureReported = false;
   let channelAccurateOcrFailureReported = false;
   let lastAccurateOcrAt = Date.now();
@@ -1019,7 +980,7 @@ export async function waitForGameReady(context, signal) {
           await report(
             "warning",
             "accurate_ocr_unavailable",
-            "登录按钮区域高精度 OCR 本次未能及时返回，已自动退回快速 OCR 与本地模型，任务继续执行",
+            "登录按钮区域高精度 OCR 本次未能及时返回，已自动退回快速 OCR 重试，任务继续执行",
             { reason: error.message }
           );
         }
@@ -1042,47 +1003,6 @@ export async function waitForGameReady(context, signal) {
       continue;
     }
 
-    // 登录页仅在启动阶段处理，点击位置是经过校准的固定登录按钮。模型明确
-    // 判为 login 时使用单独的较低门槛，不能沿用功能页面的 0.95 高风险门槛，
-    // 否则会出现“已识别 login、却持续不点击”的死循环。
-    const advisorConfig = vision.advisor?.config;
-    const actionableAdvice =
-      advisorConfig?.mode === "guarded" &&
-      guardedAdvice &&
-      Date.now() - guardedAdvice.acceptedAt <=
-        Math.max(
-          2,
-          guardedAdvice.state === "login"
-            ? Math.max(
-                120,
-                Number(advisorConfig.maxLoginAdviceAgeSeconds) || 120
-              )
-            : Number(advisorConfig.maxAdviceAgeSeconds) || 8
-        ) * 1000
-        ? guardedAdvice
-        : null;
-    if (
-      actionableAdvice?.state === "login" &&
-      !loginClicked &&
-      Date.now() - lastLoginClickAt >= 5_000
-    ) {
-      guardedAdvice = null;
-      await report(
-        "info",
-        "local_model_guarded_login",
-        "本地模型以高置信度确认登录页，正在点击已校准的固定登录按钮"
-      );
-      await tapBeforeLogin(config.adb.loginButton);
-      loginClicked = true;
-      loginAttempted = true;
-      loginClickedAt = Date.now();
-      deadline = loginClickedAt + postLoginHudTimeoutSeconds * 1000;
-      lastLoginClickAt = Date.now();
-      dismissedPages = 0;
-      promotionDismissAttempts.clear();
-      newspaperSeen = false;
-      continue;
-    }
     const fixedAnnouncementCloseIntervalMs =
       Math.max(
         0.5,
@@ -1272,204 +1192,6 @@ export async function waitForGameReady(context, signal) {
       await adb.key(111, signal);
       await ui.afterAction(signal);
       continue;
-    }
-
-    if (
-      unknownRecoveryRequested &&
-      !unknownRecoveryAttempted &&
-      !context.positionIndependent &&
-      !context.skipUnknownRecovery
-    ) {
-      unknownRecoveryAttempted = true;
-      unknownRecoveryRequested = false;
-      await report(
-        "warning",
-        "local_model_unknown_recovery",
-        "AI 连续无法确认当前登录后场景，正在传送到中心出入口恢复已知位置；随后继续当前任务的目标传送"
-      );
-      await ui.executeFlow("teleportCentralExit", {}, signal);
-      await report(
-        "info",
-        "local_model_unknown_recovered",
-        "已回到中心出入口，当前任务将继续前往所需场所"
-      );
-      return;
-    }
-    if (actionableAdvice?.state === "hud") {
-      guardedAdvice = null;
-      await report(
-        "info",
-        "local_model_guarded_hud",
-        "本地模型以连续极高置信度确认 HUD；仍等待 OCR 连续稳定后再开始任务点击"
-      );
-    }
-    if (actionableAdvice?.state === "prelogin_announcement") {
-      if (announcementClosures < announcements.maxClosures) {
-        announcementClosures += 1;
-        guardedAdvice = null;
-        await report(
-          "info",
-          "local_model_guarded_announcement",
-          "本地模型确认系统公告，正在点击右上角 X 关闭，不使用宣传页底部关闭区域",
-          {
-            closure: announcementClosures,
-            maxClosures: announcements.maxClosures
-          }
-        );
-        await tapBeforeLogin(announcements.closePoint);
-        await ui.afterAction(signal);
-        continue;
-      }
-      guardedAdvice = null;
-    }
-    if (
-      loginClicked &&
-      ["promotion", "promotion_newspaper"].includes(
-        actionableAdvice?.state
-      )
-    ) {
-      const classifiedState = actionableAdvice.state;
-      const state = classifiedState;
-      const dismissAttempt = reservePromotionDismissAttempt(state);
-      if (dismissAttempt != null) {
-        guardedAdvice = null;
-        newspaperSeen ||= state === "promotion_newspaper";
-        await report(
-          "info",
-          dismissAttempt === 1
-            ? "local_model_guarded_promotion"
-            : "local_model_guarded_promotion_retry",
-          dismissAttempt === 1
-            ? classifiedState === "prelogin_announcement"
-              ? "本地模型在登录后高置信度识别到全屏公告式画面，已按活动宣传页处理并点击校准后的底部关闭区域"
-              : "本地模型以高置信度确认登录后宣传页，正在点击已校准的底部关闭区域"
-            : `本地模型确认宣传页仍未关闭，正在第 ${dismissAttempt} 次点击校准后的底部关闭区域`,
-          {
-            state,
-            classifiedState,
-            dismissedPages,
-            attempt: dismissAttempt,
-            maxAttempts: promotions.maxDismissAttemptsPerPage
-          }
-        );
-        await ui.tap(promotions.dismissPoint, signal);
-        await ui.afterAction(signal);
-        continue;
-      }
-    }
-
-    if (
-      vision.advisor?.enabled &&
-      !advisorPending &&
-      Date.now() - lastAdviceAt >=
-        Math.max(0.05, Number(advisorConfig.intervalSeconds) || 8) * 1000
-    ) {
-      lastAdviceAt = Date.now();
-      advisorPending = true;
-      void vision.adviseCurrent(
-          "game-login-advisor",
-          {
-            loginClicked,
-            expectedState: loginClicked
-              ? "promotion, promotion_newspaper, hud"
-              : "prelogin_announcement, login, resource_update",
-            ocrTexts: frame.observations.map((item) => item.text)
-          },
-          signal
-        )
-        .then(async (advice) => {
-          const signature = advice
-            ? `${advice.state}:${advice.action}`
-            : "";
-          repeatedAdvice = signature && signature === lastAdviceSignature
-            ? repeatedAdvice + 1
-            : 1;
-          lastAdviceSignature = signature;
-          const guardedCandidate =
-            (
-              advisorConfig.mode === "guarded" &&
-              ["login", "promotion", "promotion_newspaper", "prelogin_announcement", "hud"].includes(
-                advice?.state
-              )
-            );
-          const guardedCandidateAccepted =
-            guardedCandidate &&
-            Number(advice?.confidence) >=
-              (advice?.state === "login" && !loginClicked
-                ? Math.max(
-                    0.35,
-                    Number(advisorConfig.minimumLoginActionConfidence) || 0.45
-                  )
-                : Math.max(
-                    0.9,
-                    Number(advisorConfig.minimumActionConfidence) || 0.95
-                  )) &&
-            repeatedAdvice >=
-              (advice?.state === "login" && !loginClicked
-                ? 1
-                : Math.max(
-                    1,
-                    Number(advisorConfig.consecutiveMatches) || 1
-                  ));
-          if (guardedCandidateAccepted) {
-            guardedAdvice = {
-              ...advice,
-              acceptedAt: Date.now()
-            };
-          }
-          if (
-            loginClicked &&
-            Date.now() - lastLoginClickAt >=
-              Math.max(
-                5,
-                Number(advisorConfig.unknownRecoveryDelaySeconds) || 8
-              ) * 1000 &&
-            advice?.state === "unknown"
-          ) {
-            unknownAfterLoginCount += 1;
-            if (
-              unknownAfterLoginCount >=
-                Math.max(
-                  1,
-                  Number(advisorConfig.unknownRecoveryMatches) || 2
-                )
-            ) {
-              unknownRecoveryRequested = true;
-            }
-          } else if (
-            advice?.state &&
-            advice.state !== "loading"
-          ) {
-            unknownAfterLoginCount = 0;
-          }
-          await report(
-            "info",
-            "local_model_classification",
-            advisorConfig.mode === "guarded"
-              ? `本地模型记录受限候选画面 ${advice?.state || "unknown"}`
-              : `本地模型只读记录候选画面 ${advice?.state || "unknown"}，不会点击或推动任务流程`,
-            {
-              ...advice,
-              repeatedAdvice,
-              accepted: guardedCandidateAccepted,
-              executionMode: advisorConfig.mode
-            }
-          );
-        })
-        .catch(async (error) => {
-          if (!advisorFailureReported) {
-            advisorFailureReported = true;
-            await report(
-              "warning",
-              "local_model_request_failed",
-              "本地模型请求失败，本次登录继续使用 OCR 规则",
-              { reason: error.message }
-            );
-          }
-        })
-        .finally(() => {
-          advisorPending = false;
-        });
     }
 
     if (

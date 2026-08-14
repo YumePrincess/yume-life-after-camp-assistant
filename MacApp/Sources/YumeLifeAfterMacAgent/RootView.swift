@@ -129,6 +129,18 @@ struct OverviewView: View {
                         Text(model.health?.adbSerial ?? model.text("ADB not connected"))
                             .font(.callout.monospaced())
                             .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            Label(
+                                model.nodeSummary,
+                                systemImage: model.nodeInfo.isAvailable ? "checkmark.circle" : "exclamationmark.triangle"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(model.nodeInfo.isAvailable ? Color.secondary : Color.orange)
+                            if !model.nodeInfo.isAvailable {
+                                Button("Install Node.js") { model.openNodeInstallGuide() }
+                                    .buttonStyle(.link)
+                            }
+                        }
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                             OverviewActionButton("Start", primary: true) { await model.performAgentAction("start") }
                             OverviewActionButton("Stop") { await model.performAgentAction("stop") }
@@ -327,7 +339,7 @@ struct LogsView: View {
                 }
                 Button("Clear logs") { Task { await model.clearLogs() } }
                     .buttonStyle(GlassButtonStyle())
-                Button("Refresh") { Task { await model.refreshStatusAndLogs() } }.buttonStyle(GlassButtonStyle())
+                Button("Refresh") { Task { await model.refreshStatusAndLogs(loadLogs: true) } }.buttonStyle(GlassButtonStyle())
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -336,22 +348,32 @@ struct LogsView: View {
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                             .id("bottom")
                     } else {
-                        // Keep the complete visible log in one selectable text
-                        // view.  Making each line its own Text limits macOS
-                        // selection/copy to one event, which is especially
-                        // inconvenient when copying a multi-line OCR trace.
-                        Text(verbatim: model.visibleLogText)
-                            .font(.system(size: 12, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
-                            .id("bottom")
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(model.visibleLogLines.enumerated()), id: \.offset) { _, line in
+                                Text(verbatim: line)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            Color.clear.frame(height: 1).id("bottom")
+                        }
                     }
                 }
                 .glassPanel(radius: 20, padding: 16)
-                .onChange(of: model.visibleLogText) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                .onChange(of: model.visibleLogLines) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
             }
+            HStack {
+                Button("Previous") { model.previousLogPage() }
+                    .disabled(model.logPage == 0)
+                Text(model.logPageLabel).monospacedDigit().foregroundStyle(.secondary)
+                Button("Next") { model.nextLogPage() }
+                    .disabled(model.logPage >= model.logPageCount - 1)
+                Spacer()
+            }
+            .buttonStyle(GlassButtonStyle())
         }
         .padding(30)
+        .task { await model.refreshStatusAndLogs(loadLogs: true) }
     }
 }
 
@@ -556,7 +578,9 @@ struct SetupAssistantView: View {
                 }
                 Spacer()
                 if model.setupStep < 2 {
-                    Button("Continue") { model.setupStep += 1 }.buttonStyle(PrimaryButtonStyle())
+                    Button("Continue") { model.setupStep += 1 }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(model.setupStep == 0 && !model.nodeInfo.isAvailable)
                 } else {
                     Button("Save, install and finish") { Task { await model.completeSetup() } }
                         .buttonStyle(PrimaryButtonStyle())
@@ -578,6 +602,20 @@ struct SetupAssistantView: View {
             TextField("Workers URL", text: $model.serverURL).textFieldStyle(.roundedBorder)
             TextField("Agent device name", text: $model.agentName).textFieldStyle(.roundedBorder)
             TextField("MuMu container name", text: $model.mumuInstanceName).textFieldStyle(.roundedBorder)
+            HStack(spacing: 10) {
+                Label(
+                    model.nodeSummary,
+                    systemImage: model.nodeInfo.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(model.nodeInfo.isAvailable ? Color.secondary : Color.orange)
+                if !model.nodeInfo.isAvailable {
+                    Button("Install Node.js") { model.openNodeInstallGuide() }
+                        .buttonStyle(GlassButtonStyle())
+                }
+            }
+            Text("Install Node.js 22 arm64 on this Mac before continuing. The App does not package Node.js.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -599,7 +637,7 @@ struct SetupAssistantView: View {
     private var finishStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Ready to install").font(.title.bold())
-            Text("The assistant will create config.json, register the launch agent and verify the bundled arm64 runtime.")
+            Text("The assistant will create config.json, register the launch agent, verify macOS Node.js and keep arm64 ADB/OCR resources inside the App.")
                 .foregroundStyle(.secondary)
             Label(model.serverURL, systemImage: "network")
             Label(model.agentName, systemImage: "desktopcomputer")

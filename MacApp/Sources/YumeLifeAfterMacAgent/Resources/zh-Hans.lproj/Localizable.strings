@@ -13,6 +13,11 @@
 "Offline" = "离线";
 "Idle" = "空闲";
 "ADB not connected" = "ADB 未连接";
+"Node.js not detected" = "未检测到 Node.js";
+"Install Node.js" = "安装 Node.js";
+"Node.js is required. Install Node.js 22 arm64, then retry." = "需要 Node.js。请安装 Node.js 22 arm64 后重试。";
+"The local Node.js installer is missing." = "本地 Node.js 安装器缺失。";
+"Local Node.js could not be installed." = "本地 Node.js 安装失败。";
 "Start" = "启动";
 "Stop" = "停止";
 "Restart" = "重新启动";

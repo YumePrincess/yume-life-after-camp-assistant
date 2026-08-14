@@ -1,8 +1,13 @@
 import { loadConfig } from "../src/config.mjs";
 import { AdbClient } from "../src/adb.mjs";
+import { MumuLifecycle } from "../src/mumu.mjs";
 import { Vision } from "../src/vision.mjs";
 import { GameUi } from "../src/ui.mjs";
-import { capturePagedTable } from "../src/workflows/member-sync.mjs";
+import {
+  alignStaffNamesToRoster,
+  capturePagedTable
+} from "../src/workflows/member-sync.mjs";
+import { normalizeVisualName } from "../src/visual-name.mjs";
 import {
   normalizeProfiles,
   normalizeStaffGrid
@@ -10,6 +15,7 @@ import {
 
 const config = await loadConfig();
 const adb = new AdbClient(config);
+const mumu = new MumuLifecycle(config, adb);
 const vision = new Vision(config, adb);
 const controller = new AbortController();
 const report = async (level, step, message, detail = {}) => {
@@ -43,14 +49,15 @@ for (const signalName of ["SIGINT", "SIGTERM"]) {
 }
 
 vision.beginTask();
-let advisorStarted = false;
 let profiles = [];
 let staff = [];
 let completed = false;
 const startedAt = Date.now();
 try {
+  await mumu.ensureStarted(controller.signal);
   await adb.connect();
-  advisorStarted = await vision.startAdvisor(controller.signal);
+  await ui.executeFlow("openCampPanel", {}, controller.signal);
+  await ui.executeFlow("openMemberPanel", {}, controller.signal);
   const expectedProfiles = await vision.readMemberExpectedTotal(
     controller.signal
   );
@@ -91,13 +98,7 @@ try {
     staffFrame.observations,
     config.tables.staffGrid
   );
-  const advisedStaff = await vision.extractStaffRows(
-    staffFrame.path,
-    controller.signal
-  );
-  if (advisedStaff.length >= staff.length && advisedStaff.length > 0) {
-    staff = advisedStaff;
-  }
+  staff = alignStaffNamesToRoster(staff, profiles);
   if (staff.length > 11) {
     throw new Error(
       `STAFF_COUNT_INVALID: recognized ${staff.length}, maximum is mayor 1 + staff 10`
@@ -106,9 +107,6 @@ try {
   completed = true;
 } finally {
   const removedScreenshots = await vision.cleanupTask().catch(() => 0);
-  if (advisorStarted) {
-    await vision.stopAdvisor().catch(() => undefined);
-  }
   console.log(
     JSON.stringify({
       event: "member_profile_current_test_result",
@@ -121,9 +119,34 @@ try {
       staff: staff.length,
       firstProfile: profiles[0] || null,
       lastProfile: profiles.at(-1) || null,
+      profileNames: profiles.map((row, index) => auditVisualName(row.name, index + 1)),
+      symbolNames: profiles
+        .map((row, index) => auditVisualName(row.name, index + 1))
+        .filter((row) => row.specialCharacters.length > 0 || row.visualSpaces.length > 0),
       staffRows: staff,
       removedScreenshots,
       gameAndMumuPreserved: true
     })
   );
+}
+
+function auditVisualName(value, index) {
+  const text = String(value || "");
+  const normalized = normalizeVisualName(text);
+  const characters = [...text];
+  return {
+    index,
+    text,
+    normalized,
+    codePoints: characters.map((character) =>
+      `U+${character.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}`
+    ),
+    specialCharacters: characters.filter((character) =>
+      /[\p{P}\p{S}]/u.test(character)
+    ),
+    visualSpaces: characters.filter((character) =>
+      /\s|[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\u200B]/u.test(character)
+    ),
+    changedByNormalization: text !== normalized
+  };
 }

@@ -13,6 +13,11 @@
 "Offline" = "Offline";
 "Idle" = "Idle";
 "ADB not connected" = "ADB not connected";
+"Node.js not detected" = "Node.js not detected";
+"Install Node.js" = "Install Node.js";
+"Node.js is required. Install Node.js 22 arm64, then retry." = "Node.js is required. Install Node.js 22 arm64, then retry.";
+"The local Node.js installer is missing." = "The local Node.js installer is missing.";
+"Local Node.js could not be installed." = "Local Node.js could not be installed.";
 "Start" = "Start";
 "Stop" = "Stop";
 "Restart" = "Restart";

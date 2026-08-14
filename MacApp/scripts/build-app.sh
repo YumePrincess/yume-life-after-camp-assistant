@@ -36,8 +36,9 @@ for helper in mrzh-vision-ocr mrzh-pixel-probe; do
     exit 1
   }
 done
-if [[ ! -x "${PORTABLE_ROOT}/Toolchain/node/bin/node" || ! -x "${PORTABLE_ROOT}/Toolchain/platform-tools/adb" ]]; then
-  echo "Portable toolchain is missing. Run: ./scripts/prepare-portable-runtime.sh" >&2
+
+if [[ ! -x "${PORTABLE_ROOT}/Toolchain/platform-tools/adb" ]]; then
+  echo "Portable ADB toolchain is missing. Run: ./scripts/prepare-portable-runtime.sh" >&2
   exit 1
 fi
 if [[ "$(/usr/bin/lipo -archs "${PORTABLE_ROOT}/Toolchain/platform-tools/adb")" != "arm64" ]]; then
@@ -46,8 +47,7 @@ if [[ "$(/usr/bin/lipo -archs "${PORTABLE_ROOT}/Toolchain/platform-tools/adb")" 
 fi
 
 # A development build may still be running directly from dist. Stop it before
-# replacing the bundle so a stale process cannot write Python bytecode into the
-# newly signed portable runtime.
+# replacing the bundle so a stale process cannot write into the new runtime.
 killall YumeLifeAfterMacAgent 2>/dev/null || true
 
 env CLANG_MODULE_CACHE_PATH=/private/tmp/yla-clang-cache \
@@ -73,24 +73,18 @@ done
 
 rsync -a \
   --prune-empty-dirs \
-  --exclude '.DS_Store' --exclude '.local-model' --exclude 'config.json' \
+  --exclude '.DS_Store' --exclude 'config.json' --exclude '.local-model' \
   --exclude 'logs' --exclude 'snapshots' --exclude 'node_modules' \
   "${MAC_ROOT}/" "${APP_BUNDLE}/Contents/Resources/Runtime/"
-cp -R "${PORTABLE_ROOT}/Toolchain" "${APP_BUNDLE}/Contents/Resources/Runtime/Toolchain"
-if [[ -d "${PORTABLE_ROOT}/models" ]]; then
-  mkdir -p "${APP_BUNDLE}/Contents/Resources/Runtime/.local-model"
-  cp -R "${PORTABLE_ROOT}/models" "${APP_BUNDLE}/Contents/Resources/Runtime/.local-model/models"
+# A Core ML glyph model is optional at source checkout time. When the trained
+# symbol classifier is supplied, keep it beside the OCR helper so the native
+# Vision pipeline can load it without adding a model path to user config.
+SYMBOL_MODEL_SOURCE="${MAC_ROOT}/vision/SymbolClassifier.mlmodelc"
+if [[ -d "${SYMBOL_MODEL_SOURCE}" ]]; then
+  cp -R "${SYMBOL_MODEL_SOURCE}" "${APP_BUNDLE}/Contents/Resources/Runtime/bin/SymbolClassifier.mlmodelc"
 fi
-if [[ "${YLA_REQUIRE_BUNDLED_MODEL:-1}" == "1" ]]; then
-  [[ -f "${APP_BUNDLE}/Contents/Resources/Runtime/.local-model/models/Qwen3-VL-2B-Instruct-4bit/config.json" ]] || {
-    echo "Bundled local model is required. Run: ./scripts/prepare-portable-runtime.sh --with-model" >&2
-    exit 1
-  }
-  [[ -f "${APP_BUNDLE}/Contents/Resources/Runtime/.local-model/models/Qwen3-VL-2B-Instruct-4bit/model.safetensors" ]] || {
-    echo "Bundled local model weights are incomplete." >&2
-    exit 1
-  }
-fi
+mkdir -p "${APP_BUNDLE}/Contents/Resources/Runtime/Toolchain"
+cp -R "${PORTABLE_ROOT}/Toolchain/platform-tools" "${APP_BUNDLE}/Contents/Resources/Runtime/Toolchain/platform-tools"
 
 # Remove Intel slices from universal dependencies so the delivered app is
 # genuinely Apple-Silicon-only and never needs Rosetta on a clean Mac.
@@ -117,7 +111,7 @@ chmod +x "${APP_ROOT}/scripts/verify-app-runtime.sh"
 SIGNING_IDENTITY="${YLA_CODESIGN_IDENTITY:--}"
 codesign --force --deep --options runtime --sign "${SIGNING_IDENTITY}" "${APP_BUNDLE}"
 # APFS volumes hosted on removable media can make the first deep seal observe
-# nested portable-runtime metadata before it is fully flushed. Re-sealing is
+# nested runtime metadata before it is fully flushed. Re-sealing is
 # deterministic and prevents a false "file modified" result during DMG copy.
 sync
 sleep 2
@@ -125,7 +119,7 @@ codesign --force --deep --options runtime --sign "${SIGNING_IDENTITY}" "${APP_BU
 sync
 sleep 2
 # A final seal after the external APFS metadata settles is required for this
-# portable runtime (it contains thousands of nested Python/Node resources).
+# runtime, which contains nested arm64 ADB resources.
 codesign --force --deep --options runtime --sign "${SIGNING_IDENTITY}" "${APP_BUNDLE}"
 sync
 codesign --verify --deep --strict "${APP_BUNDLE}"

@@ -74,6 +74,14 @@ actor RuntimeService {
                 try fileManager.copyItem(at: existing, to: replacement)
             }
         }
+        // Node.js is no longer copied from the App bundle. Preserve a local
+        // Node downloaded by the runtime updater across bundled-code swaps.
+        let existingNode = destination.appending(path: "Toolchain/node", directoryHint: .isDirectory)
+        let stagingNode = staging.appending(path: "Toolchain/node", directoryHint: .isDirectory)
+        if fileManager.fileExists(atPath: existingNode.path) {
+            try fileManager.createDirectory(at: stagingNode.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.copyItem(at: existingNode, to: stagingNode)
+        }
         try ensureRuntimeConfig(at: staging)
         try Data("\(bundleVersion)\n".utf8).write(to: staging.appending(path: ".bundle-version"), options: .atomic)
         try? fileManager.removeItem(at: previous)
@@ -128,6 +136,9 @@ actor RuntimeService {
             var server = object["server"] as? [String: Any] ?? [:]
             var changed = false
             if object.removeValue(forKey: "memberKick") != nil {
+                changed = true
+            }
+            if object.removeValue(forKey: "localVisionModel") != nil {
                 changed = true
             }
             if server["agentId"] as? String == "mumu-main" {
@@ -528,12 +539,17 @@ actor RuntimeService {
     func run(_ arguments: [String], timeout: TimeInterval = 120) async throws -> String {
         let root = runtimeRoot
         let script = root.appending(path: "scripts/manage-local-agent.sh").path
+        guard nodePath() != nil else {
+            throw RuntimeError.failed(String(localized: "Node.js is required. Install Node.js 22 arm64, then retry."))
+        }
         return try await process("/bin/zsh", [script] + arguments, workingDirectory: root, timeout: timeout)
     }
 
     func plugin(_ arguments: [String], timeout: TimeInterval = 120) async throws -> String {
         let root = runtimeRoot
-        let node = bundledNode(root: root)
+        guard let node = nodePath() else {
+            throw RuntimeError.failed(String(localized: "Node.js is required. Install Node.js 22 arm64, then retry."))
+        }
         let manager = root.appending(path: "src/plugin-manager.mjs").path
         return try await process(node, [manager] + arguments, workingDirectory: root, timeout: timeout)
     }
@@ -578,11 +594,12 @@ actor RuntimeService {
         }
     }
 
-    func logs() async -> String {
-        // LaunchAgent and the App can briefly disagree about the active
-        // runtime during an update. Read the managed runtime first, then the
-        // bundle/development fallbacks, so the App never presents an empty
-        // log view merely because one runtime path was replaced.
+    func logs(maxBytesPerFile: Int = 2_000_000, maxLinesPerFile: Int = 8_000) async -> String {
+        // The log screen is polled by the App. Never read an unbounded file or
+        // spawn the management shell command here: both operations used to
+        // copy/parse the entire history on the main actor and made a large
+        // log appear frozen. The explicit Refresh action still uses this same
+        // bounded tail, while the Workers console owns its own event window.
         var roots: [URL] = [runtimeRoot]
         roots.append(applicationSupport.appending(path: "Runtime/current", directoryHint: .isDirectory))
         if let bundled = Bundle.main.resourceURL?.appending(path: "Runtime", directoryHint: .isDirectory) {
@@ -603,8 +620,12 @@ actor RuntimeService {
         var seenFiles = Set<String>()
         var seenLines = Set<String>()
         var index = 0
-        func append(_ text: String) {
-            for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        func append(_ data: Data) {
+            let text = String(decoding: data, as: UTF8.self)
+            let fileLines = text
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .suffix(maxLinesPerFile)
+            for line in fileLines {
                 let value = String(line)
                 guard !value.isEmpty, seenLines.insert(value).inserted else { continue }
                 lines.append((index, value))
@@ -615,16 +636,17 @@ actor RuntimeService {
             for name in ["agent.log", "agent-error.log"] {
                 let file = root.appending(path: "logs/\(name)")
                 guard seenFiles.insert(file.path).inserted,
-                      let data = try? Data(contentsOf: file) else { continue }
-                append(String(decoding: data, as: UTF8.self))
+                      let handle = try? FileHandle(forReadingFrom: file) else { continue }
+                defer { try? handle.close() }
+                let size = (try? handle.seekToEnd()) ?? 0
+                let start = size > UInt64(maxBytesPerFile)
+                    ? size - UInt64(maxBytesPerFile)
+                    : 0
+                try? handle.seek(toOffset: start)
+                if let data = try? handle.readToEnd() {
+                    append(data)
+                }
             }
-        }
-
-        // The control script resolves the same managed Runtime/current path
-        // used by launchd. Include its live tail as a fallback for upgrades or
-        // external-volume mounts where direct file reads can briefly lag.
-        if let commandOutput = try? await run(["logs"], timeout: 10) {
-            append(commandOutput)
         }
 
         // Both streams begin with an ISO-8601 timestamp. Merge them instead
@@ -640,9 +662,6 @@ actor RuntimeService {
             }
             return left.index < right.index
         }
-        // The App's “全部日志” view must not silently discard older task
-        // events. The source files are already bounded by the runtime's log
-        // retention policy, so return the complete merged set here.
         return ordered.map(\.value).joined(separator: "\n")
     }
 
@@ -674,6 +693,7 @@ actor RuntimeService {
         let source = fileManager.fileExists(atPath: path.path) ? path : template
         var object = try JSONSerialization.jsonObject(with: Data(contentsOf: source)) as! [String: Any]
         object.removeValue(forKey: "memberKick")
+        object.removeValue(forKey: "localVisionModel")
         var server = object["server"] as? [String: Any] ?? [:]
         server["baseUrl"] = baseURL
         server["agentId"] = agentID
@@ -750,6 +770,7 @@ actor RuntimeService {
         if fileManager.fileExists(atPath: config.path) {
             var object = try JSONSerialization.jsonObject(with: Data(contentsOf: config)) as! [String: Any]
             object.removeValue(forKey: "memberKick")
+            object.removeValue(forKey: "localVisionModel")
             var server = object["server"] as? [String: Any] ?? [:]
             server["agentToken"] = "CREDENTIALS_FILE"
             object["server"] = server
@@ -828,9 +849,97 @@ actor RuntimeService {
         }
     }
 
-    private func bundledNode(root: URL) -> String {
-        let candidate = root.appending(path: "Toolchain/node/bin/node").path
-        return fileManager.isExecutableFile(atPath: candidate) ? candidate : "/opt/homebrew/bin/node"
+    func nodeStatus() async -> NodeRuntimeInfo {
+        if let local = localNodePath() {
+            return NodeRuntimeInfo(
+                source: .local,
+                path: local,
+                version: nodeVersion(at: local)
+            )
+        }
+        if let system = systemNodePath() {
+            return NodeRuntimeInfo(
+                source: .system,
+                path: system,
+                version: nodeVersion(at: system)
+            )
+        }
+        return .missing
+    }
+
+    /// Downloads the pinned arm64 Node.js runtime outside the App bundle.
+    /// The Overview update action calls this before updating the JS runtime,
+    /// so a Mac without a discoverable shell Node can still be repaired.
+    func ensureLocalNodeForUpdate() async throws -> NodeRuntimeInfo {
+        let root = runtimeRoot
+        let script = root.appending(path: "scripts/ensure-local-node.sh").path
+        guard fileManager.fileExists(atPath: script) else {
+            throw RuntimeError.failed(String(localized: "The local Node.js installer is missing."))
+        }
+        _ = try await process(
+            "/bin/zsh",
+            [script, "--update"],
+            workingDirectory: root,
+            timeout: 1_800
+        )
+        let status = await nodeStatus()
+        guard status.source == .local else {
+            throw RuntimeError.failed(String(localized: "Local Node.js could not be installed."))
+        }
+        return status
+    }
+
+    private func nodePath() -> String? {
+        localNodePath() ?? systemNodePath()
+    }
+
+    private func localNodePath() -> String? {
+        let candidates = [
+            applicationSupport.appending(path: "Runtime/current/Toolchain/node/bin/node"),
+            runtimeRoot.appending(path: "Toolchain/node/bin/node")
+        ]
+        return candidates.map(\.path).first(where: fileManager.isExecutableFile(atPath:))
+    }
+
+    private func systemNodePath() -> String? {
+        var candidates = [
+            "/opt/homebrew/bin/node",
+            "/usr/local/bin/node",
+            "/opt/local/bin/node",
+            "/usr/bin/node"
+        ]
+        let home = fileManager.homeDirectoryForCurrentUser.path
+        candidates.append(contentsOf: [
+            "\(home)/.volta/bin/node",
+            "\(home)/.asdf/shims/node",
+            "\(home)/.local/bin/node"
+        ])
+        if let path = ProcessInfo.processInfo.environment["PATH"] {
+            candidates.append(contentsOf: path.split(separator: ":").map {
+                URL(fileURLWithPath: String($0)).appending(path: "node").path
+            })
+        }
+        return candidates.first(where: fileManager.isExecutableFile(atPath:))
+    }
+
+    private func nodeVersion(at path: String) -> String? {
+        let task = Process()
+        let pipe = Pipe()
+        task.executableURL = URL(fileURLWithPath: path)
+        task.arguments = ["--version"]
+        task.standardOutput = pipe
+        task.standardError = pipe
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            return nil
+        }
+        guard task.terminationStatus == 0 else { return nil }
+        return String(
+            decoding: pipe.fileHandleForReading.readDataToEndOfFile(),
+            as: UTF8.self
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func process(
@@ -845,17 +954,16 @@ actor RuntimeService {
             task.executableURL = URL(fileURLWithPath: executable)
             task.arguments = arguments
             task.currentDirectoryURL = workingDirectory
-            // App launches do not inherit an interactive shell PATH. Always
-            // put the portable toolchain first so management scripts use the
-            // Node/npm/ADB shipped with this exact runtime instead of relying
-            // on Homebrew or a user-installed Node.js.
+            // App launches do not inherit an interactive shell PATH. Add the
+            // external/local Node directory and bundled ADB explicitly so
+            // management scripts behave the same from the GUI and Terminal.
             var environment = ProcessInfo.processInfo.environment
-            let portablePaths = [
-                workingDirectory.appending(path: "Toolchain/node/bin").path,
-                workingDirectory.appending(path: "Toolchain/platform-tools").path
-            ]
+            var runtimePaths = [workingDirectory.appending(path: "Toolchain/platform-tools").path]
+            if let node = nodePath() {
+                runtimePaths.insert(URL(fileURLWithPath: node).deletingLastPathComponent().path, at: 0)
+            }
             let inheritedPath = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-            environment["PATH"] = (portablePaths + [inheritedPath]).joined(separator: ":")
+            environment["PATH"] = (runtimePaths + [inheritedPath]).joined(separator: ":")
             task.environment = environment
             task.standardOutput = pipe
             task.standardError = pipe
@@ -881,6 +989,23 @@ actor RuntimeService {
             }
         }
     }
+}
+
+enum NodeRuntimeSource: String, Sendable {
+    case system
+    case local
+    case missing
+}
+
+struct NodeRuntimeInfo: Sendable {
+    let source: NodeRuntimeSource
+    let path: String?
+    let version: String?
+
+    static let missing = NodeRuntimeInfo(source: .missing, path: nil, version: nil)
+
+    var isAvailable: Bool { source != .missing }
+    var isLocal: Bool { source == .local }
 }
 
 struct StoredCredentials: Codable, Sendable {

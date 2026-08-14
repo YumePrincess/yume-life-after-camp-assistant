@@ -12,10 +12,12 @@ xcrun swiftc \
   -parse-as-library \
   -module-cache-path "${OUTPUT_DIR}/module-cache" \
   -framework Vision \
+  -framework CoreML \
   -framework CoreGraphics \
   -framework CoreVideo \
   -framework ImageIO \
   "${MAC_DIR}/vision/MrzhVisionOCR.swift" \
+  "${MAC_DIR}/vision/MrzhSymbolClassifier.swift" \
   -o "${OUTPUT_DIR}/mrzh-vision-ocr"
 
 xcrun swiftc \

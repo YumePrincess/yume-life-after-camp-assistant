@@ -629,41 +629,6 @@ test("map click fallback uses the calibrated minimap center, never the camera bu
   );
 });
 
-test("a model map prediction never unlocks destination clicks without the top-left marker", async () => {
-  const fixture = createUi({
-    fastFrames: [
-      [observation("背包", 120, 900)],
-      [],
-      [observation("标志查看", 260, 150)]
-    ],
-    generalAdvice: {
-      state: "map",
-      confidence: 0.99,
-      evidence: "模型误判地图"
-    }
-  });
-  await fixture.ui.ensureMapOpen({
-    mapButton: { x: 1780, y: 120 },
-    mapKey: "KEYCODE_M",
-    mapButtonFallbackDelayMs: 30_000,
-    mapReadyTexts: ["标志查看", "查看庄园"],
-    mapPreparationMaxClosures: 2,
-    mapOpenPollMs: 1
-  });
-  assert.deepEqual(fixture.taps, []);
-  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
-  assert.ok(
-    fixture.messages.some((message) =>
-      message.includes("模型地图候选仅供记录")
-    )
-  );
-  assert.ok(
-    fixture.messages.some((message) =>
-      message.includes("已通过地图固定文字确认")
-    )
-  );
-});
-
 test("map opening retries M after the OCR verification window", async () => {
   const fixture = createUi({
     fastFrames: [[observation("背包", 120, 900)], []]
@@ -710,50 +675,6 @@ test("a non-marker map text never confirms map opening", async () => {
     mapOpenPollMs: 1
   });
   assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
-});
-
-test("map preparation permits only a high-confidence AI safe close control", async () => {
-  const fixture = createUi({
-    fastFrames: [[], [observation("背包", 120, 900)]],
-    overlayAdvice: {
-      control: "close_x",
-      confidence: 0.97,
-      evidence: "右上角关闭X"
-    },
-    generalAdvice: {
-      state: "panel",
-      confidence: 0.99,
-      evidence: "功能窗口"
-    }
-  });
-  const result = await fixture.ui.closePagesBeforeMap(
-    { mapPreparationMaxClosures: 2, mapReadyTexts: ["标志查看"] }
-  );
-  assert.equal(result, "hud");
-  assert.deepEqual(fixture.taps, [{ x: 1850, y: 70 }]);
-});
-
-test("overlay AI keeps a 0.95 safety floor when the general model threshold is lower", async () => {
-  const fixture = createUi({
-    fastFrames: [[]],
-    overlayAdvice: {
-      control: "close_x",
-      confidence: 0.9,
-      evidence: "疑似右上角关闭X"
-    },
-    minimumActionConfidence: 0.7
-  });
-  const result = await fixture.ui.closePagesBeforeMap(
-    { mapPreparationMaxClosures: 2, mapReadyTexts: ["标志查看"] }
-  );
-  assert.equal(result, "unverified");
-  assert.deepEqual(fixture.taps, []);
-  assert.deepEqual(fixture.keys, []);
-  assert.ok(
-    fixture.messages.some((message) =>
-      message.includes("未识别到需要关闭的窗口")
-    )
-  );
 });
 
 test("unknown HUD never triggers blind back clicks before opening the map", async () => {
@@ -1227,7 +1148,7 @@ test("a stable post-teleport HUD advances to W-based destination verification", 
   );
 });
 
-test("waitAnyText accepts accurate OCR before asking the model again", async () => {
+test("waitAnyText accepts accurate OCR without any secondary inference", async () => {
   const fixture = createUi({
     fastFrames: [[]],
     accurateFrames: [[observation("在线情况", 1560, 230)]]

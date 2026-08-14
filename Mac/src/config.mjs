@@ -42,18 +42,6 @@ export async function loadConfig(options = {}) {
     MAC_ROOT,
     config.vision.pixelProbeBinary
   );
-  if (config.localVisionModel?.model?.startsWith(".")) {
-    config.localVisionModel.model = resolve(
-      MAC_ROOT,
-      config.localVisionModel.model
-    );
-  }
-  if (config.localVisionModel?.pythonBinary?.startsWith(".")) {
-    config.localVisionModel.pythonBinary = resolve(
-      MAC_ROOT,
-      config.localVisionModel.pythonBinary
-    );
-  }
   config.plugins ||= {};
   config.plugins.userDirectory = resolve(
     expandHome(config.plugins.userDirectory) ||
@@ -163,16 +151,5 @@ function validate(config, { validateCredentials = true } = {}) {
   }
   if (config.debug?.host !== "127.0.0.1") {
     throw new Error("debug.host must remain 127.0.0.1");
-  }
-  if (
-    config.localVisionModel?.enabled &&
-    config.localVisionModel?.transport !== "cli" &&
-    !/^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(
-      config.localVisionModel?.baseUrl || ""
-    )
-  ) {
-    throw new Error(
-      "localVisionModel.baseUrl must remain a 127.0.0.1 loopback endpoint"
-    );
   }
 }

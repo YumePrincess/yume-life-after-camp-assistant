@@ -7,6 +7,10 @@ import {
   parsePopulationFraction,
   safeSipsCropRegion
 } from "../src/vision.mjs";
+import {
+  joinVisualNameObservations,
+  normalizeVisualName
+} from "../src/visual-name.mjs";
 import { Vision } from "../src/vision.mjs";
 
 test("game-mouse icon detection uses two pixel probes and OCR only as a conservative fallback", async () => {
@@ -28,8 +32,7 @@ test("game-mouse icon detection uses two pixel probes and OCR only as a conserva
         }
       }
     },
-    vision: {},
-    localVisionModel: { enabled: false }
+    vision: {}
   }, {});
   vision.captureSource = async () => ({ path: "/private/tmp/icon-test.png" });
   vision.ocrRegion = async () => [{ text: "Space", confidence: 1 }];
@@ -67,8 +70,7 @@ test("C icon state uses warm-color pixels to distinguish lit from dim", async ()
         minimumSaturation: 0.15
       }
     },
-    vision: {},
-    localVisionModel: { enabled: false }
+    vision: {}
   }, {});
   vision.captureSource = async () => ({ path: "/private/tmp/c-icon-test.png" });
   vision.probe = async () => [
@@ -101,8 +103,7 @@ test("C icon background contamination is not treated as yellow", async () => {
         minimumSaturation: 0.20
       }
     },
-    vision: {},
-    localVisionModel: { enabled: false }
+    vision: {}
   }, {});
   vision.captureSource = async () => ({ path: "/private/tmp/c-icon-warm-scene.png" });
   vision.probe = async () => [
@@ -116,8 +117,7 @@ test("C icon background contamination is not treated as yellow", async () => {
 test("member table OCR starts at the identity column and excludes avatar artwork", async () => {
   const vision = new Vision({
     adb: { screenWidth: 1920, screenHeight: 1200 },
-    vision: { mode: "fast", memberTableTimeoutSeconds: 2 },
-    localVisionModel: { enabled: false }
+    vision: { mode: "fast", memberTableTimeoutSeconds: 2 }
   }, {});
   let ocrRegion = null;
   vision.captureSource = async () => ({ path: "/private/tmp/member-table.png" });
@@ -154,6 +154,31 @@ test("member identity keeps the first OCR line as the player name", () => {
   assert.equal(isPlausibleMemberName("青在✨"), true);
   assert.equal(isPlausibleMemberName("✨"), true);
   assert.equal(isPlausibleMemberName("#"), true);
+});
+
+test("visual name normalization preserves meaningful symbols and spaces", () => {
+  assert.equal(normalizeVisualName("Аlice\u00a0\u2003"), "Alice");
+  assert.equal(normalizeVisualName("♤♠"), "♤♠");
+  assert.equal(normalizeVisualName("4纸鸢”)"), "纸鸢");
+  assert.equal(normalizeVisualName("4纸鸢2）"), "纸鸢");
+  assert.equal(
+    joinVisualNameObservations([
+      { text: "「", x: 100, y: 20, width: 18, height: 24 },
+      { text: "」", x: 220, y: 20, width: 18, height: 24 }
+    ]),
+    "「    」"
+  );
+});
+
+test("member identity drops returning-player markers without dropping the name", () => {
+  assert.deepEqual(
+    inferMemberIdentity([
+      { text: "回归玩家", x: 80, y: 100, width: 60, height: 20 },
+      { text: "Аlice♤", x: 180, y: 100, width: 100, height: 20 },
+      { text: "市长", x: 80, y: 126, width: 40, height: 20 }
+    ]),
+    { name: "Alice♤", campTitle: "" }
+  );
 });
 
 test("macOS 27 bottom-edge crops shift inward instead of silently returning the full frame", () => {
@@ -203,8 +228,7 @@ test("parses total members from the fraction denominator", () => {
 
 test("member header total accepts 0/0 sailing citizens without fallback contamination", async () => {
   const vision = new Vision({
-    vision: {},
-    localVisionModel: { enabled: false }
+    vision: {}
   }, {});
   vision.capture = async () => ({ path: "/private/tmp/member-header.png" });
   vision.ocrRegion = async (_path, _region, label) =>

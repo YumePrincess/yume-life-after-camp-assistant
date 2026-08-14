@@ -2,9 +2,9 @@ import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { MAC_ROOT } from "./config.mjs";
 import { runFile } from "./process.mjs";
-import { LocalVisionAdvisor } from "./local-vision-advisor.mjs";
 import { isPlausibleMemberName } from "./member-name.mjs";
 import { parseTable } from "./table-parser.mjs";
+import { normalizeIdentityLines, normalizeVisualName } from "./visual-name.mjs";
 
 export { isPlausibleMemberName } from "./member-name.mjs";
 
@@ -49,7 +49,6 @@ export class Vision {
     this.taskPaths = new Set();
     this.ocrModeHealth = new Map();
     this.ocrPrewarmPromise = null;
-    this.advisor = new LocalVisionAdvisor(config.localVisionModel);
   }
 
   ocrHealth() {
@@ -176,8 +175,8 @@ export class Vision {
         );
       } catch (error) {
         if (signal?.aborted) throw error;
-        // Keep the source frame for the advisor recovery path; the caller's
-        // existing empty-page/retry handling decides whether to reread it.
+        // Keep the source frame; the deterministic OCR retry path decides
+        // whether to reread it.
         observations = [];
       }
       return { path: frame.path, observations };
@@ -185,50 +184,6 @@ export class Vision {
     return this.#capture(label, signal, false, this.config.vision.mode, {
       minimumConfidence
     });
-  }
-
-  async startAdvisor(signal) {
-    return this.advisor.start(signal);
-  }
-
-  async stopAdvisor() {
-    return this.advisor.stop();
-  }
-
-  async adviseCurrent(label, context = {}, signal) {
-    if (!this.advisor.enabled) return null;
-    await mkdir(this.snapshotDir, { recursive: true });
-    const stamp = new Date().toISOString().replaceAll(":", "-");
-    const path = resolve(
-      this.snapshotDir,
-      `${stamp}-${String(++this.sequence).padStart(4, "0")}-${safe(label)}-advisor.png`
-    );
-    await this.adb.screenshot(path);
-    this.taskPaths.add(path);
-    try {
-      return await this.advisor.analyze(path, context, signal);
-    } finally {
-      this.taskPaths.delete(path);
-      await rm(path, { force: true });
-    }
-  }
-
-  async adviseOverlayControlCurrent(label, context = {}, signal) {
-    if (!this.advisor.enabled) return null;
-    await mkdir(this.snapshotDir, { recursive: true });
-    const stamp = new Date().toISOString().replaceAll(":", "-");
-    const path = resolve(
-      this.snapshotDir,
-      `${stamp}-${String(++this.sequence).padStart(4, "0")}-${safe(label)}-overlay-advisor.png`
-    );
-    await this.adb.screenshot(path);
-    this.taskPaths.add(path);
-    try {
-      return await this.advisor.identifyOverlayControl(path, context, signal);
-    } finally {
-      this.taskPaths.delete(path);
-      await rm(path, { force: true });
-    }
   }
 
   async extractTableRows(imagePath, definition, label, signal, options = {}) {
@@ -260,7 +215,6 @@ export class Vision {
         signal
       );
     }
-    if (!this.advisor.enabled) return [];
     const isMemberDetails = [
       "identity",
       "profession",
@@ -278,32 +232,6 @@ export class Vision {
       );
     }
     return [];
-  }
-
-  async extractStaffRows(imagePath, signal) {
-    const advised = await this.advisor.extractStaff(imagePath, signal);
-    const slotKeys = {
-      mayor: "mayor",
-      top1: "staff-1",
-      top2: "staff-2",
-      top3: "staff-3",
-      top4: "staff-4",
-      bottom1: "staff-5",
-      bottom2: "staff-6"
-    };
-    return advised.map((item, index) => ({
-      roleKey:
-        slotKeys[item.slot] ||
-        (item.slot.startsWith("staff")
-          ? `staff-${item.slot.slice(5)}`
-          : `staff-${index + 1}`),
-      roleName:
-        item.slot === "mayor"
-          ? "市长"
-          : item.campTitle || `公职席位 ${index + 1}`,
-      memberName: item.name,
-      campTitle: item.campTitle || null
-    }));
   }
 
   async readMemberExpectedBreakdown(signal) {
@@ -571,50 +499,9 @@ export class Vision {
         return merged;
       });
     }
-    const region = definition.region;
-    const nameColumn = definition.columns.find(
-      (column) => column.key === "name"
-    );
-    const tableWidth = region.right - region.left;
-    const nameRight =
-      region.left + tableWidth * (nameColumn?.right ?? 0.32);
-    const width = Math.max(1, Math.round(nameRight - region.left));
-    const height = Math.max(1, Math.round(region.bottom - region.top));
-    const cropPath = resolve(
-      this.snapshotDir,
-      `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-name-crop.png`
-    );
-    this.taskPaths.add(cropPath);
-    try {
-      await this.#cropImage(
-        imagePath,
-        {
-          left: region.left,
-          top: region.top,
-          right: region.left + width,
-          bottom: region.top + height
-        },
-        cropPath,
-        signal
-      );
-      const advisedNames = await this.advisor.extractNames(cropPath, signal);
-      const namesByRow = new Map(
-        advisedNames.map((item) => [item.row, item.name])
-      );
-      return rows
-        .map((row, index) => ({
-          ...row,
-          name:
-            (isPlausibleMemberName(row.name) && row.name) ||
-            (isPlausibleMemberName(namesByRow.get(index + 1))
-              ? namesByRow.get(index + 1)
-              : "")
-        }))
-        .filter((row) => row.name);
-    } finally {
-      this.taskPaths.delete(cropPath);
-      await rm(cropPath, { force: true });
-    }
+    return rows
+      .map((row) => ({ ...row, name: normalizeVisualName(row.name) }))
+      .filter((row) => isPlausibleMemberName(row.name));
   }
 
   async #extractMemberRows(
@@ -707,80 +594,18 @@ export class Vision {
         )
       };
     });
-    const nativeNameCounts = new Map();
-    for (const row of rowData) {
-      const key = comparableVisionName(
-        isPlausibleMemberName(row.identity.name) ? row.identity.name : ""
-      );
-      if (key) nativeNameCounts.set(key, (nativeNameCounts.get(key) || 0) + 1);
-    }
-    const forceMemberAdvisor = Boolean(options.forceMemberAdvisor);
-    let advisedByRow = new Map();
-    if (
-      forceMemberAdvisor ||
-      rowData.some(
-        (row) =>
-          !isPlausibleMemberName(row.identity.name) ||
-          nativeNameCounts.get(comparableVisionName(row.identity.name)) > 1
-      )
-    ) {
-      const cropPath = resolve(
-        this.snapshotDir,
-        `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-member-crop.png`
-      );
-      this.taskPaths.add(cropPath);
-      try {
-      const cropTop = Math.max(
-        region.top,
-        Math.floor(anchors[0] - rowSpacing / 2)
-      );
-      const cropBottom = Math.min(
-        region.bottom,
-        Math.ceil(anchors.at(-1) + rowSpacing / 2)
-      );
-      await this.#cropImage(
-        imagePath,
-        {
-          left: memberDetailsOcrRegion(definition).left,
-          top: cropTop,
-          right: region.right,
-          bottom: cropBottom
-        },
-        cropPath,
-        signal
-      );
-      const advised = await this.advisor.extractMemberDetails(
-        cropPath,
-        anchors.length,
-        signal
-      );
-        advisedByRow = new Map(advised.map((item) => [item.row, item]));
-      } finally {
-        this.taskPaths.delete(cropPath);
-        await rm(cropPath, { force: true });
-      }
-    }
     return rowData
       .map(({ items, identity }, index) => {
-        const ai = advisedByRow.get(index + 1) || {};
-        const nativeName = isPlausibleMemberName(identity.name)
-          ? identity.name
+        const nativeIdentity = normalizeIdentityLines(
+          itemsInColumn(items, columnBounds.get("identity"))
+        );
+        const nativeName = isPlausibleMemberName(nativeIdentity.name)
+          ? nativeIdentity.name
           : "";
-        const nativeNameDuplicated =
-          nativeNameCounts.get(comparableVisionName(nativeName)) > 1;
-        const advisedName = cleanMemberName(ai.name);
         return {
-          name:
-            (
-              forceMemberAdvisor ||
-              !nativeName ||
-              nativeNameDuplicated
-            ) &&
-            advisedName
-              ? advisedName
-              : nativeName,
+          name: nativeName,
           campTitle:
-            identity.campTitle || cleanModelText(ai.campTitle),
+            identity.campTitle || nativeIdentity.campTitle,
           profession:
             firstColumnText(items, columnBounds.get("profession")),
           weeklyContribution:
@@ -811,7 +636,9 @@ export class Vision {
       "accurate",
       memberOcrMinimum
     );
-    return parseTable(observations, definition).filter(
+    return parseTable(observations, definition)
+      .map((row) => ({ ...row, name: normalizeVisualName(row.name) }))
+      .filter(
       (row) =>
         isPlausibleMemberName(row.name) &&
         row.onlineState &&
@@ -820,7 +647,7 @@ export class Vision {
             row.name.includes(value) ||
             row.onlineState.includes(value)
         )
-    );
+      );
   }
 
   async ocrRegion(
@@ -1031,7 +858,7 @@ export class Vision {
       } catch (error) {
         if (signal?.aborted) throw error;
         this.#recordOcrFailure(error, mode);
-        // Vision framework failures must degrade to the guarded local model;
+        // Vision framework failures must degrade to another deterministic OCR pass;
         // a single OCR subprocess crash must never terminate the game task.
       }
       return { path: transient ? null : path, observations };
@@ -1404,35 +1231,7 @@ function firstColumnText(items, bounds) {
 }
 
 export function inferMemberIdentity(items) {
-  const values = items
-    .flatMap((item) => String(item.text || "").split(/\r?\n/))
-    .map((text) => text.trim())
-    .filter(Boolean);
-  if (!values.length) return { name: "", campTitle: "" };
-  if (values.length === 1) {
-    return /^(?:#|市长|营地助手)/.test(values[0])
-      ? { name: "", campTitle: values[0] }
-      : { name: values[0], campTitle: "" };
-  }
-  return { name: values[0], campTitle: values.slice(1).join(" ") };
-}
-
-function cleanMemberName(value) {
-  const text = cleanModelText(value);
-  return isPlausibleMemberName(text) ? text : "";
-}
-
-function cleanModelText(value) {
-  const text = String(value || "").trim();
-  return /^(?:0|null|none|无)$/i.test(text) ? "" : text;
-}
-
-function comparableVisionName(value) {
-  return String(value || "")
-    .trim()
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/\s+/g, "");
+  return normalizeIdentityLines(items);
 }
 
 function medianNumber(values) {

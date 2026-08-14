@@ -51,19 +51,7 @@ for (const signalName of ["SIGINT", "SIGTERM"]) {
 }
 
 vision.beginTask();
-let advisorStarted = false;
 try {
-  advisorStarted = await vision.startAdvisor(controller.signal).catch(
-    async (error) => {
-      await report(
-        "warning",
-        "local_model_unavailable",
-        "本地模型不可用，继续使用确定性流程",
-        { reason: error.message }
-      );
-      return false;
-    }
-  );
   if (useCurrentHud) {
     await adb.connect();
     await report(
@@ -99,7 +87,4 @@ try {
   );
 } finally {
   await vision.cleanupTask().catch(() => undefined);
-  if (advisorStarted) {
-    await vision.stopAdvisor().catch(() => undefined);
-  }
 }

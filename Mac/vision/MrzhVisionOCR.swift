@@ -71,7 +71,8 @@ func configureLegacyRequest(_ request: VNRecognizeTextRequest, recognitionMode: 
 func legacyRecognize(
     imageURL: URL,
     dimensions: (width: Int, height: Int),
-    recognitionMode: String
+    recognitionMode: String,
+    symbolClassifier: MrzhSymbolClassifier?
 ) throws -> [OCRObservation] {
     let request = VNRecognizeTextRequest()
     do {
@@ -96,6 +97,9 @@ func legacyRecognize(
         )
     }
 
+    let image: CGImage? = CGImageSourceCreateWithURL(imageURL as CFURL, nil).flatMap {
+        CGImageSourceCreateImageAtIndex($0, 0, nil)
+    }
     return (request.results ?? []).compactMap { observation in
         guard let candidate = observation.topCandidates(1).first else {
             return nil
@@ -107,8 +111,19 @@ func legacyRecognize(
         let height = Int((box.height * Double(dimensions.height)).rounded())
         let y = Int(((1 - box.maxY) * Double(dimensions.height)).rounded())
 
+        let text = symbolClassifier.flatMap { classifier in
+            return image.map {
+                classifier.refine(
+                    candidate: candidate,
+                    image: $0,
+                    dimensions: dimensions,
+                    lineBox: box
+                )
+            }
+        } ?? candidate.string
+
         return OCRObservation(
-            text: candidate.string,
+            text: text,
             confidence: candidate.confidence,
             x: x,
             y: y,
@@ -122,7 +137,8 @@ func legacyRecognize(
 func modernRecognize(
     imageURL: URL,
     dimensions: (width: Int, height: Int),
-    recognitionMode: String
+    recognitionMode: String,
+    symbolClassifier: MrzhSymbolClassifier?
 ) async throws -> [OCRObservation] {
     var request = RecognizeTextRequest(.revision3)
     request.recognitionLevel = recognitionMode == "fast" ? .fast : .accurate
@@ -143,7 +159,7 @@ func modernRecognize(
     } catch {
         throw OCRFailure.visionStageFailed("modern URL recognition", String(describing: error))
     }
-    return results.compactMap { observation in
+    return results.compactMap { observation -> OCRObservation? in
         guard let candidate = observation.topCandidates(1).first else {
             return nil
         }
@@ -178,6 +194,7 @@ struct MrzhVisionOCR {
                 ? CommandLine.arguments[2]
                 : "accurate"
             let recognitionMode = effectiveRecognitionMode(requestedMode)
+            let symbolClassifier = MrzhSymbolClassifier()
             let observations: [OCRObservation]
             do {
                 // Legacy Vision is the stable low-latency path for both modes
@@ -186,7 +203,8 @@ struct MrzhVisionOCR {
                 observations = try legacyRecognize(
                     imageURL: imageURL,
                     dimensions: dimensions,
-                    recognitionMode: recognitionMode
+                    recognitionMode: recognitionMode,
+                    symbolClassifier: symbolClassifier
                 )
             } catch let legacyError {
                 guard #available(macOS 15.0, *) else { throw legacyError }
@@ -196,7 +214,8 @@ struct MrzhVisionOCR {
                     observations = try await modernRecognize(
                         imageURL: imageURL,
                         dimensions: dimensions,
-                        recognitionMode: recognitionMode == "fast" ? "accurate" : recognitionMode
+                        recognitionMode: recognitionMode == "fast" ? "accurate" : recognitionMode,
+                        symbolClassifier: symbolClassifier
                     )
                 } catch let modernError {
                     throw OCRFailure.visionStageFailed(
@@ -206,9 +225,17 @@ struct MrzhVisionOCR {
                 }
             }
 
+            let classifiedObservations = symbolClassifier.apply(
+                to: observations,
+                imageURL: imageURL
+            )
+            FileHandle.standardError.write(
+                Data("symbol-classifier=\(symbolClassifier.state)\n".utf8)
+            )
+
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            let data = try encoder.encode(observations)
+            let data = try encoder.encode(classifiedObservations)
             FileHandle.standardOutput.write(data)
             FileHandle.standardOutput.write(Data([0x0A]))
         } catch {

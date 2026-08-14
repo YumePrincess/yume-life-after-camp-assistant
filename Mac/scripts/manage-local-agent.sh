@@ -3,31 +3,23 @@ set -euo pipefail
 
 SCRIPT_DIR=${0:A:h}
 MAC_ROOT=${SCRIPT_DIR:h}
-MODEL_CONTROL="${SCRIPT_DIR}/local-model.sh"
 AGENT_CONTROL="${SCRIPT_DIR}/agent-control.sh"
 INSTALL_AGENT="${SCRIPT_DIR}/install-launch-agent.sh"
 UNINSTALL_AGENT="${SCRIPT_DIR}/uninstall-launch-agent.sh"
 
-# A native .app does not run inside the user's interactive shell and therefore
-# cannot assume Homebrew's npm/node are on PATH. Prefer the portable toolchain
-# bundled by Yume Life After Mac Agent and fall back to system commands only
-# for legacy source-tree installations.
-if [[ -x "${MAC_ROOT}/Toolchain/node/bin/node" ]]; then
-  NODE_BIN="${MAC_ROOT}/Toolchain/node/bin/node"
-  NPM_BIN="${MAC_ROOT}/Toolchain/node/bin/npm"
-  export PATH="${MAC_ROOT}/Toolchain/node/bin:${MAC_ROOT}/Toolchain/platform-tools:${PATH}"
-else
-  NODE_BIN="$(command -v node 2>/dev/null || true)"
-  NPM_BIN="$(command -v npm 2>/dev/null || true)"
-fi
+# Node.js is intentionally not packaged in the App. The native installer
+# selects macOS Node or the external Runtime/current/Toolchain/node copy.
+NODE_BIN="$(command -v node 2>/dev/null || true)"
+NPM_BIN="$(command -v npm 2>/dev/null || true)"
+export PATH="${MAC_ROOT}/Toolchain/platform-tools:${PATH}"
 
 run_node() {
-  [[ -x "${NODE_BIN}" ]] || { echo "Portable Node.js is missing." >&2; return 127; }
+  [[ -x "${NODE_BIN}" ]] || { echo "macOS Node.js is missing. Install Node.js 22 arm64, then retry." >&2; return 127; }
   "${NODE_BIN}" "$@"
 }
 
 run_npm() {
-  [[ -x "${NPM_BIN}" ]] || { echo "Portable npm is missing." >&2; return 127; }
+  [[ -x "${NPM_BIN}" ]] || { echo "macOS npm is missing. Install Node.js 22 arm64, then retry." >&2; return 127; }
   "${NPM_BIN}" "$@"
 }
 
@@ -39,53 +31,47 @@ Yume Life After 本地 Agent 综合管理
   ./scripts/manage-local-agent.sh <命令>
 
 命令：
-  install     安装/更新依赖、视觉模型、登录自启动并启动 Agent
-  uninstall   停止并卸载 Agent 与本地模型（保留源码和 config.json）
-  update      更新依赖、OCR、模型和 LaunchAgent，然后恢复运行
-  start       启动 Agent（本地模型会按任务自动启动）
-  stop        停止 Agent 和本地模型
+  install     安装/更新依赖、登录自启动并启动 Agent
+  uninstall   停止并卸载 Agent（保留源码和 config.json）
+  update      更新依赖、OCR 和 LaunchAgent，然后恢复运行
+  start       启动 Agent
+  stop        停止 Agent
   restart     重启 Agent
-  status      检查 launchd、PID、8091 健康端点和本地模型
+  status      检查 launchd、PID 和 8091 健康端点
   health      只检查 Agent 的 8091 健康端点
   repair      重新生成 LaunchAgent、启动并执行完整状态检查
   doctor      检查配置、ADB、Workers 与本机依赖
-  logs        查看外置盘 Agent 日志和本地模型日志
+  logs        查看外置盘 Agent 日志
   once        前台领取并执行一次任务
   deps        只安装/更新依赖
-  model ...   单独管理模型
   help        显示本帮助
 EOF
 }
 
 install_dependencies() {
-  if [[ -x "${MAC_ROOT}/Toolchain/node/bin/node" && -x "${MAC_ROOT}/Toolchain/platform-tools/adb" ]]; then
-    export PATH="${MAC_ROOT}/Toolchain/node/bin:${MAC_ROOT}/Toolchain/platform-tools:${PATH}"
-    if [[ ! -x "${MAC_ROOT}/bin/mrzh-vision-ocr" ]]; then
-      echo "Portable runtime is missing its prebuilt arm64 OCR helper." >&2
-      exit 1
-    fi
-    if [[ ! -f "${MAC_ROOT}/package-lock.json" ]]; then
-      echo "Portable runtime is incomplete." >&2
-      exit 1
-    fi
-    return
-  fi
-  if ! command -v brew >/dev/null 2>&1; then
-    echo "Portable toolchain is missing and Homebrew is unavailable." >&2
+  [[ -x "${NODE_BIN}" ]] || {
+    echo "macOS Node.js is missing. Install Node.js 22 arm64 from https://nodejs.org/ and retry." >&2
+    exit 1
+  }
+  [[ -x "${MAC_ROOT}/Toolchain/platform-tools/adb" ]] || {
+    echo "Bundled arm64 ADB is missing from the runtime." >&2
+    exit 1
+  }
+  if [[ ! -x "${MAC_ROOT}/bin/mrzh-vision-ocr" ]]; then
+    echo "Runtime is missing its prebuilt arm64 OCR helper." >&2
     exit 1
   fi
-  command -v node >/dev/null 2>&1 || brew install node
-  command -v adb >/dev/null 2>&1 || brew install android-platform-tools
-  [[ -x "/opt/homebrew/opt/python@3.12/bin/python3.12" ]] || brew install python@3.12
+  if [[ ! -f "${MAC_ROOT}/package-lock.json" ]]; then
+    echo "Runtime is incomplete." >&2
+    exit 1
+  fi
   cd "${MAC_ROOT}"
   run_npm install
   "${SCRIPT_DIR}/build-vision.sh"
-  "${MODEL_CONTROL}" deps
 }
 
 install_all() {
   install_dependencies
-  "${MODEL_CONTROL}" install
   cd "${MAC_ROOT}"
   run_npm run doctor
   "${INSTALL_AGENT}"
@@ -99,14 +85,12 @@ start_all() {
 
 stop_all() {
   "${AGENT_CONTROL}" stop
-  "${MODEL_CONTROL}" stop
 }
 
 status_all() {
   local failed=0
   "${AGENT_CONTROL}" status || failed=1
   health_agent || failed=1
-  "${MODEL_CONTROL}" status || true
   return "${failed}"
 }
 
@@ -136,7 +120,6 @@ update_all() {
     "${AGENT_CONTROL}" stop
   fi
   install_dependencies
-  "${MODEL_CONTROL}" update
   if [[ -f "${HOME}/Library/LaunchAgents/zone.yume.lifeafter.macagent.runtime.plist" ]]; then
     "${INSTALL_AGENT}"
     should_restart="yes"
@@ -148,7 +131,6 @@ update_all() {
 
 uninstall_all() {
   "${UNINSTALL_AGENT}"
-  "${MODEL_CONTROL}" uninstall
   echo "Source code and config.json were preserved."
 }
 
@@ -159,8 +141,6 @@ repair_agent() {
 }
 
 run_once() {
-  "${MODEL_CONTROL}" start
-  trap '"${MODEL_CONTROL}" stop' EXIT INT TERM
   cd "${MAC_ROOT}"
   run_npm run once
 }
@@ -200,11 +180,6 @@ case "${1:-status}" in
     ;;
   logs)
     "${AGENT_CONTROL}" logs
-    "${MODEL_CONTROL}" logs
-    ;;
-  model)
-    shift
-    "${MODEL_CONTROL}" "${1:-status}"
     ;;
   health)
     health_agent

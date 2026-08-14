@@ -560,16 +560,6 @@ export async function createPatrolTeam(context, signal) {
         screen.observations,
         controls
       );
-      if (!creatorOpen) {
-        await patrolAiDiagnose(
-          vision,
-          report,
-          "patrol-creator",
-          "队伍创建流程：确认是否已打开标题为“队伍目标”的创建页面，并且右下角可见“创建队伍”按钮。只有这两个要素都清晰可见时返回 target_text_visible。",
-          screen.observations,
-          signal
-        );
-      }
       const anyTeamPanel = (
         controls.focusAcquiredTexts || [
           "创建队伍",
@@ -808,14 +798,6 @@ export async function createPatrolTeam(context, signal) {
     }
   }
   if (!patrolTargetMatch) {
-    await patrolAiDiagnose(
-      vision,
-      report,
-      "patrol-target",
-      "队伍目标创建页：确认左侧已选营地事务，中央是否清晰显示“营地巡逻任务”。仅在文字确实可见时返回 target_text_visible。",
-      screen.observations,
-      signal
-    );
     throw new Error(
       "PATROL_TARGET_NOT_VISIBLE: 点击营地事务分类后未识别到“营地巡逻”"
     );
@@ -948,48 +930,6 @@ async function scrollToCampAffairsCategory(context, signal) {
     "复用列表上滑后仍未识别到“营地事务”；不会盲点分类卡"
   );
   return null;
-}
-
-async function patrolAiDiagnose(
-  vision,
-  report,
-  label,
-  taskHint,
-  observations,
-  signal
-) {
-  if (
-    !vision?.advisor?.enabled ||
-    typeof vision.adviseCurrent !== "function"
-  ) {
-    return false;
-  }
-  const advice = await vision
-    .adviseCurrent(
-      `patrol-${label}-advisor`,
-      {
-        expectedState: "target_text_visible",
-        taskHint,
-        ocrTexts: (observations || []).map((item) => item.text).slice(0, 80)
-      },
-      signal
-    )
-    .catch(() => null);
-  const minimum = Math.max(
-    0.95,
-    Number(vision.advisor?.config?.minimumActionConfidence) || 0.95
-  );
-  const accepted =
-    advice?.state === "target_text_visible" &&
-    Number(advice?.confidence) >= minimum;
-  await report(
-    accepted ? "info" : "warning",
-    "patrol_ai_creation_diagnostic",
-    accepted
-      ? `AI 已以 ${(Number(advice.confidence) * 100).toFixed(0)}% 高置信确认 ${label}；此结果仅作诊断，不会越过局部 OCR 校验`
-      : `AI 未高置信确认 ${label}；此结果仅作诊断，不会触发任何盲点`,
-    advice || undefined
-  );
 }
 
 async function findPatrolTextWithAccurateRegion(
@@ -1605,14 +1545,6 @@ export async function removeFirstPatrolMemberOutsideCamp(
       `patrol-member-remove-menu-slot-${index + 2}`,
       signal
     );
-    await patrolAiDiagnose(
-      vision,
-      report,
-      "member-remove-menu",
-      "队员操作卡片：确认画面为成员操作菜单，且底部可见唯一红色“移出队伍”按钮。仅作画面诊断，绝不替代 OCR 定位或决定点击。",
-      memberMenu.observations,
-      signal
-    );
     const removeMatch = findTextInRegion(
       vision,
       memberMenu.observations,
@@ -1641,14 +1573,6 @@ export async function removeFirstPatrolMemberOutsideCamp(
     const removeConfirmDialog = await capturePatrolScreen(
       vision,
       `patrol-member-remove-confirm-slot-${index + 2}`,
-      signal
-    );
-    await patrolAiDiagnose(
-      vision,
-      report,
-      "member-remove-confirm",
-      "确认是否出现“是否把玩家从队伍移除”的固定确认弹窗，右侧有“确认(F)”按钮。仅作诊断，必须由 OCR 找到“确认”后才可点击。",
-      removeConfirmDialog.observations,
       signal
     );
     const confirmMatch = findTextInRegion(

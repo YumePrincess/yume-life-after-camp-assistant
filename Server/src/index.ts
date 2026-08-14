@@ -1379,10 +1379,12 @@ async function handleAdminApi(
     const url = new URL(request.url);
     const afterId = Number(url.searchParams.get("afterId"));
     const limit = Number(url.searchParams.get("limit"));
+    const latest = url.searchParams.get("latest") === "1";
     return json({
       ...(await listRunEvents(env, runId, {
         ...(Number.isInteger(afterId) && afterId > 0 ? { afterId } : {}),
-        ...(Number.isInteger(limit) && limit > 0 ? { limit } : {})
+        ...(Number.isInteger(limit) && limit > 0 ? { limit } : {}),
+        ...(latest ? { latest: true } : {})
       }))
     });
   }

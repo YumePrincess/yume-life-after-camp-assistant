@@ -1,4 +1,5 @@
 import { isPlausibleMemberName } from "./member-name.mjs";
+import { normalizeVisualName } from "./visual-name.mjs";
 
 export function parseTable(observations, definition) {
   const region = definition.region;
@@ -226,17 +227,27 @@ export function normalizeStaffGrid(observations, definition) {
       const items = observations
         .filter((item) => inside(item, slot.region))
         .sort((a, b) => centerY(a) - centerY(b) || a.x - b.x);
-      const member = items.find(
+      const nameBandBottom = slot.region.top +
+        (slot.region.bottom - slot.region.top) * 0.62;
+      const member = items.filter((item) => centerY(item) <= nameBandBottom).find(
         (item) => !/市长|返回|公职人员|基础信息/.test(clean(item.text))
       );
       if (!member) return null;
       return {
         roleKey: slot.roleKey || `staff-${index + 1}`,
         roleName: slot.roleName || `公职席位 ${index + 1}`,
-        memberName: clean(member.text)
+        memberName: normalizeVisualName(cleanStaffMemberName(member.text))
       };
     })
     .filter(Boolean);
+}
+
+function cleanStaffMemberName(value) {
+  // The staff card renders its ordinal immediately before the member name.
+  // Vision may merge that ordinal and the decorative closing glyph into one
+  // observation; remove only the unambiguous ordinal prefix here so digits
+  // that are genuinely part of a player's name remain untouched.
+  return clean(value).replace(/^\d+\.\s*/u, "");
 }
 
 function splitNumericAcrossColumns(item, columns) {

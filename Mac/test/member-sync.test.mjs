@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   capturePagedTable,
   alignContributionRowsToRoster,
+  alignStaffNamesToRoster,
   dedupeStaffAssignments,
   assertContributionComplete,
   reconcilePageRows,
@@ -507,7 +508,7 @@ test("incomplete calculated tail keeps both continuation pages in full-page mode
   );
 });
 
-test("tail recovery keeps a valid native row when the advisor drops it", async () => {
+test("tail recovery keeps a valid native row when OCR drops it", async () => {
   const recoveryCalls = [];
   const context = {
     vision: {
@@ -872,7 +873,7 @@ test("conflicting data under the same OCR name triggers strengthened name recove
           return { path: `${label}.png`, observations: [] };
         },
         async extractTableRows(_path, _definition, _label, _signal, options) {
-          if (options?.forceMemberAdvisor) {
+          if (options?.forceOcrRecovery) {
             recoveryCalls += 1;
             return [
               { name: "成员一", profession: "步枪兵", weeklyContribution: "100" },
@@ -933,5 +934,40 @@ test("staff assignments keep every role and member name unique", () => {
       { roleKey: "staff-1", roleName: "#W月之歌", memberName: "萤萤空心菜" },
       { roleKey: "staff-2", roleName: "#W圣之雪", memberName: "七晓白" }
     ]
+  );
+});
+
+test("staff names remove rendered ordinals and reconcile OCR decoration to the roster", async () => {
+  const { normalizeStaffGrid } = await import("../src/table-parser.mjs");
+  const rows = normalizeStaffGrid(
+    [
+      { text: "4. 纸鸢”）", x: 600, y: 500, width: 160, height: 32 },
+      { text: "市长", x: 250, y: 800, width: 80, height: 32 }
+    ],
+    {
+      slots: [
+        { roleKey: "staff-4", roleName: "公职席位 4", region: { left: 560, top: 470, right: 850, bottom: 590 } },
+        { roleKey: "mayor", roleName: "市长", region: { left: 230, top: 780, right: 500, bottom: 900 } }
+      ]
+    }
+  );
+  assert.equal(rows[0].memberName, "纸鸢”)");
+  assert.equal(
+    alignStaffNamesToRoster(rows, [{ name: "纸鸢" }])[0].memberName,
+    "纸鸢"
+  );
+  assert.equal(
+    alignStaffNamesToRoster(
+      [{ roleKey: "staff-3", roleName: "公职席位 3", memberName: "蛮蛮空心票" }],
+      [{ name: "蛮蛮空心菜" }]
+    )[0].memberName,
+    "蛮蛮空心菜"
+  );
+  assert.equal(
+    alignStaffNamesToRoster(
+      [{ roleKey: "staff-1", roleName: "公职席位 1", memberName: "9.纸变”" }],
+      [{ name: "纸鸢" }]
+    )[0].memberName,
+    "纸鸢"
   );
 });

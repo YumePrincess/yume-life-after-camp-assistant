@@ -6,14 +6,18 @@ APP_ROOT=${SCRIPT_DIR:h}
 DIST_ROOT="${APP_ROOT}/dist"
 APP_NAME="Yume Life After Mac Agent.app"
 APP_BUNDLE="${DIST_ROOT}/${APP_NAME}"
-VOLUME_NAME="Yume Life After Mac Agent 27.0.0"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${APP_BUNDLE}/Contents/Info.plist")"
+BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${APP_BUNDLE}/Contents/Info.plist")"
+BETA_NUMBER=$((BUILD - 26974))
+RELEASE_LABEL="Yume LA ${VERSION%.*} Beta ${BETA_NUMBER}"
+VOLUME_NAME="${RELEASE_LABEL}"
 STAGING="/private/tmp/yla-dmg-root"
 RW_IMAGE="/private/tmp/Yume-Life-After-Mac-Agent-rw.dmg"
-FINAL_IMAGE="${DIST_ROOT}/Yume Life After Mac Agent 27.0.0.dmg"
-PYTHON_BIN="${APP_ROOT}/.portable/Toolchain/python/bin/python3"
+FINAL_IMAGE="${DIST_ROOT}/${RELEASE_LABEL}.dmg"
+PYTHON_BIN="${YLA_DMG_PYTHON:-$(command -v python3 || true)}"
 
 [[ -d "${APP_BUNDLE}" ]] || { echo "Build the App first: ./scripts/build-app.sh" >&2; exit 1; }
-[[ -x "${PYTHON_BIN}" ]] || { echo "Portable Python is missing." >&2; exit 1; }
+[[ -x "${PYTHON_BIN}" ]] || { echo "A host Python 3 with Pillow is required for the DMG background. Set YLA_DMG_PYTHON." >&2; exit 1; }
 
 rm -rf -- "${STAGING}"
 rm -f -- "${RW_IMAGE}" "${FINAL_IMAGE}"

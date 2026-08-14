@@ -91,26 +91,6 @@
     "memberTableTimeoutSeconds": 3,
     "ocrCircuitCooldownSeconds": 15
   },
-  "localVisionModel": {
-    "enabled": true,
-    "mode": "guarded",
-    "transport": "http",
-    "baseUrl": "http://127.0.0.1:8092",
-    "model": "./.local-model/models/Qwen3-VL-2B-Instruct-4bit",
-    "pythonBinary": "./.local-model/venv/bin/python",
-    "timeoutSeconds": 180,
-    "minimumConfidence": 0.9,
-    "waitTextVerificationEnabled": false,
-    "minimumActionConfidence": 0.95,
-    "minimumLoginActionConfidence": 0.45,
-    "consecutiveMatches": 1,
-    "maxAdviceAgeSeconds": 8,
-    "intervalSeconds": 3,
-    "unknownRecoveryDelaySeconds": 8,
-    "unknownRecoveryMatches": 2,
-    "autoStartForTasks": true,
-    "stopAfterTask": true
-  },
   "timeouts": {
     "gameLaunchSeconds": 180,
     "postLoginHudTimeoutSeconds": 300,

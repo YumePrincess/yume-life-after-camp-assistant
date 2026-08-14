@@ -7,6 +7,7 @@ import {
   parseTable
 } from "../table-parser.mjs";
 import { isPlausibleMemberName } from "../member-name.mjs";
+import { normalizeVisualName } from "../visual-name.mjs";
 import { delay } from "../process.mjs";
 import {
   progressForRange,
@@ -499,25 +500,7 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
     staffFrame.observations,
     context.config.tables.staffGrid
   );
-  if (
-    typeof context.vision.extractStaffRows === "function" &&
-    staffFrame.path
-  ) {
-    const advisedStaff = await context.vision
-      .extractStaffRows(staffFrame.path, signal)
-      .catch(async (error) => {
-        await context.report(
-          "warning",
-          "staff_ai_ocr_failed",
-          "公职页面模型识别失败，保留 Apple OCR 结果",
-          { reason: error.message }
-        );
-        return [];
-      });
-    if (advisedStaff.length >= staff.length && advisedStaff.length > 0) {
-      staff = advisedStaff;
-    }
-  }
+  staff = alignStaffNamesToRoster(staff, details);
   staff = dedupeStaffAssignments(staff);
   if (!staff.length) throw new Error("No staff rows recognized; snapshot was not uploaded");
   if (staff.length > 11) {
@@ -526,6 +509,59 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
     );
   }
   return { details, staff, expectedMembers };
+}
+
+export function alignStaffNamesToRoster(staff, profiles) {
+  const roster = (profiles || [])
+    .map((profile) => normalizeVisualName(profile?.name))
+    .filter(Boolean);
+  return (staff || []).map((row) => {
+    // Staff cards render a numeric ordinal before the name. Vision may merge
+    // it with the name in a recovery pass, so remove the ordinal here too;
+    // this keeps the roster matcher deterministic even when the grid parser
+    // is bypassed by a diagnostic or a future OCR path.
+    const candidate = normalizeVisualName(row?.memberName).replace(
+      /^\d{1,2}\s*(?:[.．、:：-]\s*|\s+)/u,
+      ""
+    );
+    if (!candidate) return row;
+    const exact = roster.find((name) => name === candidate);
+    if (exact) return { ...row, memberName: exact };
+    // Staff rows can contain the returning-player/pioneer badge in the same
+    // Vision box as the name. If exactly one roster name is visible inside
+    // that box, keep the roster spelling and discard only the badge pixels.
+    const contained = roster.filter(
+      (name) => name.length >= 2 && candidate.includes(name)
+    );
+    if (contained.length === 1) {
+      return { ...row, memberName: contained[0] };
+    }
+    const candidateCore = candidate.replace(/[\p{P}\p{S}]+$/gu, "");
+    const fuzzy = roster.filter((name) => {
+      if (candidateCore.startsWith(name) && candidateCore.length > name.length) {
+        return /^[\p{P}\p{S}]+$/u.test(candidateCore.slice(name.length));
+      }
+      if (name.includes(candidateCore) && candidateCore.length >= 3) return true;
+      return candidateCore.length >= 2 && editDistance(candidateCore, name) <= 1;
+    });
+    return fuzzy.length === 1 ? { ...row, memberName: fuzzy[0] } : { ...row, memberName: candidate };
+  });
+}
+
+function editDistance(left, right) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current[column] = Math.min(
+        current[column - 1] + 1,
+        previous[column] + 1,
+        previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1)
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[right.length];
 }
 
 export function dedupeStaffAssignments(rows) {
@@ -736,8 +772,8 @@ export async function capturePagedTable(
         ).catch(async (error) => {
           await report(
             "warning",
-            `${label}_ai_ocr_failed`,
-            `第 ${page + 1} 页 AI 表格识别失败，保留当前界面并继续重试`,
+            `${label}_ocr_recovery_failed`,
+            `第 ${page + 1} 页 OCR 强化重读失败，保留当前界面并继续重试`,
             { reason: error.message }
           );
           return [];
@@ -782,7 +818,8 @@ export async function capturePagedTable(
       );
       // Exact OCR duplicates are not separate members.  Collapse them before
       // counting/adding the page, while retaining the collision signal above
-      // so the row-by-row advisor recovery can still correct a bad read.
+      // so the deterministic OCR recovery path can still reread the same
+      // pixels without changing the visible page position.
       rows = collapseExactMemberDetailRows(rawRows);
       if (fullPageRead || !hasFullPageDefinition) {
         const sourceRows = rows;
@@ -822,12 +859,12 @@ export async function capturePagedTable(
         pageDefinition,
         `${label}-${page + 1}-page-recovery`,
         signal,
-        { forceMemberAdvisor: true }
+        { forceOcrRecovery: true }
       ).catch(async (error) => {
         await report(
           "warning",
           "member_details_page_recovery_failed",
-          `第 ${page + 1} 页存在漏行/重复行风险，但模型强化重读失败`,
+          `第 ${page + 1} 页存在漏行/重复行风险，但 OCR 强化重读失败`,
           { reason: error.message }
         );
         return [];
@@ -849,13 +886,8 @@ export async function capturePagedTable(
         reconciledRecovery,
         byName
       );
-      // The forced member advisor can correct a duplicated OCR name while
-      // omitting another valid row (the live failure was a tail page where
-      // it returned four rows and dropped Orange). For the calculated tail,
-      // combine the stronger recovery candidates with the original native
-      // candidates instead of rejecting the recovery solely because it has
-      // fewer raw rows. The expanded tail crop already excludes the sticky
-      // current-player row at the bottom of the page.
+      // The expanded OCR tail crop can return fewer rows than the native pass.
+      // Combine both deterministic candidate sets so a valid row is not lost.
       const recoveryCandidates = fullPageRead
           ? mergeMemberRecoveryCandidates(
             reconciledRecovery,
@@ -1769,7 +1801,7 @@ function mergeMemberRecoveryCandidates(
     merged.push(row);
   };
   // The tail can contain a sticky copy of the current player.  If the
-  // advisor returns the missing row but lists already-known rows first,
+  // OCR recovery returns the missing row but lists already-known rows first,
   // adding recovered rows in source order can fill the limit before the
   // native-only candidates are considered.  Prefer candidates that are new
   // to the roster, then retain the strongest recovered/native row for any

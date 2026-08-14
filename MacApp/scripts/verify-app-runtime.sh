@@ -3,11 +3,12 @@ set -euo pipefail
 
 APP_BUNDLE=${1:?Usage: verify-app-runtime.sh <Yume Life After Mac Agent.app>}
 RUNTIME="${APP_BUNDLE}/Contents/Resources/Runtime"
-NODE="${RUNTIME}/Toolchain/node/bin/node"
-NPM="${RUNTIME}/Toolchain/node/bin/npm"
-PYTHON="${RUNTIME}/Toolchain/python/bin/python3"
 ADB="${RUNTIME}/Toolchain/platform-tools/adb"
-MODEL="${RUNTIME}/.local-model/models/Qwen3-VL-2B-Instruct-4bit"
+
+if [[ -e "${RUNTIME}/Toolchain/node" ]]; then
+  echo "The App bundle must not contain Node.js; use macOS Node or the external local runtime." >&2
+  exit 1
+fi
 
 require_arm64() {
   local binary=$1
@@ -20,22 +21,12 @@ require_arm64() {
   }
 }
 
-require_arm64 "${NODE}"
-require_arm64 "${PYTHON}"
 require_arm64 "${ADB}"
 require_arm64 "${RUNTIME}/bin/mrzh-vision-ocr"
 require_arm64 "${RUNTIME}/bin/mrzh-pixel-probe"
 
-export PATH="${RUNTIME}/Toolchain/node/bin:${RUNTIME}/Toolchain/platform-tools:/usr/bin:/bin:/usr/sbin:/sbin"
-[[ "$("${NODE}" --version)" == "v22.16.0" ]] || { echo "Unexpected bundled Node version" >&2; exit 1; }
-[[ "$("${NPM}" --version)" == "10.9.2" ]] || { echo "Unexpected bundled npm version" >&2; exit 1; }
+export PATH="${RUNTIME}/Toolchain/platform-tools:/usr/bin:/bin:/usr/sbin:/sbin"
 "${ADB}" version >/dev/null
-PYTHONDONTWRITEBYTECODE=1 "${PYTHON}" -B -c 'import huggingface_hub, mlx_vlm' >/dev/null
-
-[[ -f "${MODEL}/config.json" ]] || { echo "Bundled local model config is missing" >&2; exit 1; }
-[[ -f "${MODEL}/model.safetensors" ]] || { echo "Bundled local model weights are missing" >&2; exit 1; }
-model_bytes=$(/usr/bin/stat -f '%z' "${MODEL}/model.safetensors")
-(( model_bytes > 1000000000 )) || { echo "Bundled local model weights are incomplete" >&2; exit 1; }
 
 plugin_count=$(find "${RUNTIME}/plugins" -mindepth 2 -maxdepth 2 -name plugin.json | wc -l | tr -d ' ')
 [[ "${plugin_count}" == "5" ]] || { echo "Expected 5 built-in plugins, found ${plugin_count}" >&2; exit 1; }
@@ -46,4 +37,4 @@ for localization in en fr ja zh-Hans zh-Hant; do
   }
 done
 
-echo "Verified bundled Node/npm, Python/MLX, ADB, OCR, model, plugins and localizations."
+echo "Verified external-Node runtime, bundled ADB, OCR, plugins and localizations."

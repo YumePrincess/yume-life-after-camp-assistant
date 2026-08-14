@@ -9,10 +9,10 @@ SERVICE_TARGET="gui/${UID}/${LABEL}"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 LAUNCHER_PATH="${SCRIPT_DIR}/agent-launcher.sh"
 CREDENTIALS_PATH="${HOME}/Library/Application Support/Yume Life After Mac Agent/credentials.json"
-if [[ -x "${MAC_ROOT}/Toolchain/node/bin/node" ]]; then
-  NODE_PATH="${MAC_ROOT}/Toolchain/node/bin/node"
-else
-  NODE_PATH=$(command -v node)
+NODE_PATH=$(command -v node 2>/dev/null || true)
+if [[ -z "${NODE_PATH}" || ! -x "${NODE_PATH}" ]]; then
+  echo "macOS Node.js is missing. Install Node.js 22 arm64 before registering the Agent." >&2
+  exit 1
 fi
 
 mkdir -p "${HOME}/Library/LaunchAgents" "${MAC_ROOT}/logs"
@@ -34,7 +34,7 @@ trap 'rm -f -- "${PLIST_STAGING}"' EXIT
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:YUME_AGENT_FILE_LOG string 1" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:YLA_CREDENTIALS_FILE string ${CREDENTIALS_PATH}" "${PLIST_STAGING}"
-/usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PATH string ${MAC_ROOT}/Toolchain/node/bin:${MAC_ROOT}/Toolchain/platform-tools:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "${PLIST_STAGING}"
+/usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PATH string ${MAC_ROOT}/Toolchain/platform-tools:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :RunAtLoad bool true" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :KeepAlive bool true" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :ThrottleInterval integer 10" "${PLIST_STAGING}"

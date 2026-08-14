@@ -9,6 +9,7 @@ final class AppModel: ObservableObject {
     @Published var plugins: [AgentPlugin] = []
     @Published var logText = ""
     @Published var logRunIdFilter: String?
+    @Published private(set) var logPage = 0
     @Published private(set) var latestRunId: String?
     @Published var isBusy = false
     @Published var statusMessage = ""
@@ -28,10 +29,12 @@ final class AppModel: ObservableObject {
     @Published var setupStep = 0
     @Published var setupProgressMessage = ""
     @Published private(set) var isAppleSilicon = false
+    @Published private(set) var nodeInfo = NodeRuntimeInfo.missing
 
     let browser = AdminBrowser()
     private let runtime = RuntimeService.shared
     private var pollingTask: Task<Void, Never>?
+    private let logPageSize = 250
 
     init() {
         let defaults = UserDefaults.standard
@@ -68,11 +71,18 @@ final class AppModel: ObservableObject {
 
     var locale: Locale { Locale(identifier: language) }
     func text(_ key: String) -> String { L10n.string(key, language: language) }
+    var nodeSummary: String {
+        if nodeInfo.isAvailable {
+            return "Node.js \(nodeInfo.version ?? "available")"
+        }
+        return text("Node.js not detected")
+    }
 
     func bootstrap() async {
         guard isAppleSilicon else { return }
         do {
             let runtimeWasUpdated = try await runtime.installBundledRuntimeIfNeeded()
+            nodeInfo = await runtime.nodeStatus()
             if runtimeWasUpdated {
                 // The previous launchd process may still have the old modules
                 // in memory after Runtime/current is replaced. Repairing here
@@ -105,29 +115,58 @@ final class AppModel: ObservableObject {
     func refreshAll() async {
         await refreshStatusAndLogs()
         await refreshPlugins()
+        nodeInfo = await runtime.nodeStatus()
     }
 
-    func refreshStatusAndLogs() async {
+    func refreshStatusAndLogs(loadLogs: Bool = false) async {
         if !debugToken.isEmpty {
             health = try? await runtime.health(debugToken: debugToken)
         } else {
             health = nil
         }
-        let refreshedLogs = await runtime.logs()
-        logText = refreshedLogs
-        latestRunId = Self.latestRunId(in: refreshedLogs) ?? latestRunId
+        if loadLogs || selection == .logs || logText.isEmpty {
+            let refreshedLogs = await runtime.logs()
+            if refreshedLogs != logText {
+                logText = refreshedLogs
+                logPage = 0
+                latestRunId = Self.latestRunId(in: refreshedLogs) ?? latestRunId
+            }
+        }
     }
 
-    var visibleLogText: String {
-        guard let runId = logRunIdFilter, !runId.isEmpty else { return logText }
-        return logText
+    private var filteredLogLines: [String] {
+        let allLines = logText
             .split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { $0.contains(runId) }
-            .joined(separator: "\n")
+            .map(String.init)
+        guard let runId = logRunIdFilter, !runId.isEmpty else { return allLines }
+        return allLines.filter { $0.contains(runId) }
     }
 
     var visibleLogLines: [String] {
-        visibleLogText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let lines = filteredLogLines
+        let pageCount = max(1, Int(ceil(Double(lines.count) / Double(logPageSize))))
+        let currentPage = min(max(0, logPage), pageCount - 1)
+        let end = max(0, lines.count - currentPage * logPageSize)
+        let start = max(0, end - logPageSize)
+        return Array(lines[start..<end])
+    }
+
+    var visibleLogText: String { visibleLogLines.joined(separator: "\n") }
+
+    var logPageCount: Int {
+        max(1, Int(ceil(Double(filteredLogLines.count) / Double(logPageSize))))
+    }
+
+    var logPageLabel: String {
+        "\(min(logPage + 1, logPageCount)) / \(logPageCount)"
+    }
+
+    func previousLogPage() {
+        logPage = max(0, logPage - 1)
+    }
+
+    func nextLogPage() {
+        logPage = min(logPageCount - 1, logPage + 1)
     }
 
     func openCurrentTaskLogs() {
@@ -137,6 +176,7 @@ final class AppModel: ObservableObject {
 
     func showAllLogs() {
         logRunIdFilter = nil
+        logPage = 0
     }
 
     func clearLogs() async {
@@ -144,6 +184,7 @@ final class AppModel: ObservableObject {
             try await runtime.clearLogs()
             logText = ""
             logRunIdFilter = nil
+            logPage = 0
             statusMessage = text("Logs cleared")
         } catch {
             alertMessage = error.localizedDescription
@@ -156,6 +197,9 @@ final class AppModel: ObservableObject {
         statusMessage = text("Working…")
         defer { isBusy = false }
         do {
+            if action == "update" {
+                nodeInfo = try await runtime.ensureLocalNodeForUpdate()
+            }
             let timeout: TimeInterval = switch action {
             case "install": 1800
             case "repair", "update", "uninstall": 300
@@ -266,6 +310,12 @@ final class AppModel: ObservableObject {
         setupStep = 0
         setupProgressMessage = ""
         setupCompleted = false
+        Task { nodeInfo = await runtime.nodeStatus() }
+    }
+
+    func openNodeInstallGuide() {
+        guard let url = URL(string: "https://nodejs.org/en/download") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     func completeSetup() async {
@@ -280,6 +330,12 @@ final class AppModel: ObservableObject {
         guard !agentToken.isEmpty, !debugToken.isEmpty else {
             alertMessage = text("Enter both Agent tokens to continue.")
             setupStep = 1
+            return
+        }
+        nodeInfo = await runtime.nodeStatus()
+        guard nodeInfo.isAvailable else {
+            setupStep = 0
+            alertMessage = text("Node.js is required. Install Node.js 22 arm64, then retry.")
             return
         }
         isBusy = true

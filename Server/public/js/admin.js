@@ -48,6 +48,7 @@
     technologyCategory: "all",
     technologyHistory: { dates: [], history: null },
     technologyHistoryLoading: false,
+    technologyHistoryLoaded: false,
     activeView: "overview",
     accessAllowed: false,
     activeEventRunId: null,
@@ -56,6 +57,7 @@
     eventSignature: "",
     eventEntries: [],
     eventLastId: null,
+    eventLoaded: false,
     runActionMenu: null,
     identityApplications: { page: 1, total: 0, items: [] },
     identityCodes: { page: 1, total: 0, items: [] },
@@ -1032,6 +1034,7 @@
       if (date) params.set("date", date);
       const payload = await request(`/api/admin/technology-history?${params}`);
       renderTechnologyHistory(payload);
+      state.technologyHistoryLoaded = true;
       byId("technology-history-status").textContent = payload.history
         ? window.MrzhI18n.t("已载入最终归档")
         : window.MrzhI18n.t("暂无可查询记录");
@@ -1039,6 +1042,7 @@
       byId("technology-history-status").textContent = error.message;
     } finally {
       state.technologyHistoryLoading = false;
+      state.technologyHistoryLoaded = true;
       renderTechnologyHistory(state.technologyHistory);
     }
   }
@@ -1057,8 +1061,8 @@
       deletingAll
         ? "delete-technology-history-all"
         : "delete-technology-history-date"
-    );
-    button.disabled = true;
+      );
+      button.disabled = true;
     try {
       const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
       const result = await request(`/api/admin/technology-history${suffix}`, {
@@ -1068,6 +1072,7 @@
         "已删除 {count} 条历史结果。",
         { count: result.deleted || 0 }
       );
+      state.technologyHistoryLoaded = false;
       await loadTechnologyHistory();
     } catch (error) {
       byId("technology-history-status").textContent = error.message;
@@ -1552,7 +1557,11 @@
       loadSmtpConfig();
     }
     if (resolved === "access" && canView(resolved)) loadTemporaryKeys();
-    if (resolved === "technology-history" && canView(resolved)) {
+    if (
+      resolved === "technology-history" &&
+      canView(resolved) &&
+      !state.technologyHistoryLoaded
+    ) {
       loadTechnologyHistory();
     }
   }
@@ -1858,6 +1867,7 @@
     state.eventSignature = "";
     state.eventEntries = [];
     state.eventLastId = null;
+    state.eventLoaded = false;
     const root = byId("run-events");
     root.replaceChildren(create("p", "empty-state", "正在加载…"));
     byId("run-dialog").showModal();
@@ -1880,46 +1890,42 @@
     state.eventRefreshInFlight = true;
     const root = byId("run-events");
     try {
-      let afterId = state.eventLastId;
-      let fetched = [];
-      let nextAfterId = null;
-      do {
-        const params = new URLSearchParams({ limit: "1000" });
-        if (afterId != null) params.set("afterId", String(afterId));
-        const payload = await request(
-          `/api/admin/runs/${encodeURIComponent(runId)}/events?${params}`
-        );
-        fetched = [...fetched, ...(payload.events || [])];
-        nextAfterId = payload.nextAfterId ?? null;
-        afterId = nextAfterId;
-      } while (nextAfterId != null && fetched.length < 100_000);
-      if (state.activeEventRunId !== runId) return;
-      if (state.eventLastId == null) {
-        state.eventEntries = fetched;
-      } else if (fetched.length) {
-        state.eventEntries = [...state.eventEntries, ...fetched];
+      const initialLoad = !state.eventLoaded;
+      const params = new URLSearchParams({ limit: "400" });
+      if (initialLoad) params.set("latest", "1");
+      else if (state.eventLastId != null) {
+        params.set("afterId", String(state.eventLastId));
       }
+      const payload = await request(
+        `/api/admin/runs/${encodeURIComponent(runId)}/events?${params}`
+      );
+      const fetched = payload.events || [];
+      if (state.activeEventRunId !== runId) return;
+      if (initialLoad) {
+        state.eventEntries = fetched.slice(-4_000);
+      } else if (fetched.length) {
+        state.eventEntries = [...state.eventEntries, ...fetched].slice(-4_000);
+      }
+      state.eventLoaded = true;
       state.eventLastId =
         state.eventEntries.length
           ? Number(state.eventEntries[state.eventEntries.length - 1].id)
           : null;
       const events = state.eventEntries;
-      const signature = JSON.stringify(
-        events.map((event) => [
-          event.id,
-          event.level,
-          event.step,
-          event.message,
-          event.created_at
-        ])
-      );
+      const tail = events.at(-1);
+      const signature = `${events.length}:${tail?.id || ""}:${tail?.created_at || ""}:${tail?.message || ""}`;
       if (signature === state.eventSignature) return;
       state.eventSignature = signature;
-      root.replaceChildren();
-      if (!events.length) {
+      if (initialLoad) root.replaceChildren();
+      if (!events.length && initialLoad) {
         root.append(create("p", "empty-state", "暂无步骤事件。"));
       }
-      for (const event of events) {
+      const rows = initialLoad ? events : fetched;
+      if (!initialLoad && rows.length) {
+        root.querySelector(".empty-state")?.remove();
+        while (root.children.length >= 4_000) root.firstElementChild?.remove();
+      }
+      for (const event of rows) {
         const row = create("article", "event-item");
         row.append(
           create("span", `status-${event.level}`, event.level),
