@@ -117,6 +117,7 @@
 "Update completed successfully." = "更新成功完成。";
 "Update failed. Review the error and retry." = "更新失败，请检查错误后重试。";
 "Preparing update…" = "正在准备更新…";
+"Update progress" = "更新进度";
 "Install Android platform-tools too. The App detects the system adb and does not package it." = "还需要安装 Android platform-tools。App 会检测系统 adb，不再打包 ADB。";
 "Uninstall Agent" = "卸载 Agent";
 "Migration" = "迁移";

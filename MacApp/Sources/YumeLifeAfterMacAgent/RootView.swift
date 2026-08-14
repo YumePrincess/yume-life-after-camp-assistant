@@ -240,12 +240,24 @@ struct UpdateWizardView: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Update runtime").font(.title2.bold())
-                    Text("The App runtime, dependencies and OCR helper are updated together.")
+                    Text(model.text("Update runtime")).font(.title2.bold())
+                    Text(model.text("The App runtime, dependencies and OCR helper are updated together."))
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if model.isBusy { ProgressView().controlSize(.small) }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(model.text("Update progress"))
+                        .font(.caption.weight(.semibold))
+                    Spacer()
+                    Text("\(Int((model.updateProgress * 100).rounded()))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                ProgressView(value: model.updateProgress, total: 1)
+                    .tint(model.updateResult?.contains("失败") == true || model.updateResult?.localizedCaseInsensitiveContains("failed") == true ? .orange : YumePalette.gold)
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
@@ -254,7 +266,7 @@ struct UpdateWizardView: View {
                             .foregroundStyle(.secondary)
                     }
                     if model.updateSteps.isEmpty {
-                        Text("Preparing update…").foregroundStyle(.secondary)
+                        Text(model.text("Preparing update…")).foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -270,14 +282,16 @@ struct UpdateWizardView: View {
             }
             HStack {
                 Spacer()
-                Button("Close") { dismiss() }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(model.isBusy)
+                if model.updateResult != nil {
+                    Button(model.text("Close")) { dismiss() }
+                        .buttonStyle(PrimaryButtonStyle())
+                }
             }
         }
         .padding(24)
         .frame(width: 560, height: 420)
         .background(AppBackdrop())
+        .interactiveDismissDisabled(model.updateResult == nil)
     }
 }
 

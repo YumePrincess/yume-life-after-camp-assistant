@@ -117,6 +117,7 @@
 "Update completed successfully." = "Update completed successfully.";
 "Update failed. Review the error and retry." = "Update failed. Review the error and retry.";
 "Preparing update…" = "Preparing update…";
+"Update progress" = "Update progress";
 "Install Android platform-tools too. The App detects the system adb and does not package it." = "Install Android platform-tools too. The App detects the system adb and does not package it.";
 "Uninstall Agent" = "Uninstall Agent";
 "Migration" = "Migration";

@@ -30,6 +30,7 @@ final class AppModel: ObservableObject {
     @Published var setupProgressMessage = ""
     @Published var updateSteps: [String] = []
     @Published var updateResult: String?
+    @Published var updateProgress = 0.0
     @Published var showUpdateWizard = false
     @Published private(set) var isAppleSilicon = false
     @Published private(set) var nodeInfo = NodeRuntimeInfo.missing
@@ -98,17 +99,23 @@ final class AppModel: ObservableObject {
             if runtimeWasUpdated {
                 updateSteps = [text("Synchronizing bundled runtime…")]
                 updateResult = nil
+                updateProgress = 0.15
                 showUpdateWizard = true
                 updateSteps.append(text("Bundled runtime replaced."))
+                updateProgress = 0.3
                 // The previous launchd process may still have the old modules
                 // in memory after Runtime/current is replaced. Repairing here
                 // unloads that process and starts the newly installed bundle.
                 if nodeInfo.isAvailable && adbInfo.isAvailable {
                     updateSteps.append(text("Updating npm dependencies and rebuilding OCR…"))
+                    updateProgress = 0.55
                     _ = try await runtime.run(["repair"], timeout: 300)
                     updateSteps.append(text("Dependencies and OCR runtime updated."))
+                    updateProgress = 1
                     updateResult = text("Update completed successfully.")
                 } else {
+                    updateSteps.append(text("Update failed. Review the error and retry."))
+                    updateProgress = 0.75
                     updateResult = text("Install Android platform-tools too. The App detects the system adb and does not package it.")
                 }
             } else if setupCompleted {
@@ -126,6 +133,7 @@ final class AppModel: ObservableObject {
         catch {
             if showUpdateWizard {
                 updateSteps.append(error.localizedDescription)
+                updateProgress = min(updateProgress, 0.99)
                 updateResult = text("Update failed. Review the error and retry.")
             }
             alertMessage = error.localizedDescription
@@ -231,23 +239,28 @@ final class AppModel: ObservableObject {
         if action == "update" {
             updateSteps = []
             updateResult = nil
+            updateProgress = 0
             showUpdateWizard = true
         }
         defer { isBusy = false }
         do {
             if action == "update" {
                 updateSteps.append(text("Synchronizing bundled runtime…"))
+                updateProgress = 0.15
                 let runtimeChanged = try await runtime.installBundledRuntimeIfNeeded()
                 updateSteps.append(runtimeChanged
                     ? text("Bundled runtime replaced.")
                     : text("Bundled runtime already current."))
+                updateProgress = 0.3
                 updateSteps.append(text("Checking macOS Node.js…"))
                 nodeInfo = try await runtime.ensureLocalNodeForUpdate()
+                updateProgress = 0.45
                 adbInfo = await runtime.adbStatus()
                 guard adbInfo.isAvailable else {
                     throw RuntimeError.failed(text("ADB is required. Install Android platform-tools, then retry."))
                 }
                 updateSteps.append(text("Updating npm dependencies and rebuilding OCR…"))
+                updateProgress = 0.55
             }
             let timeout: TimeInterval = switch action {
             case "install": 1800
@@ -258,6 +271,7 @@ final class AppModel: ObservableObject {
             statusMessage = output.trimmingCharacters(in: .whitespacesAndNewlines)
             if action == "update" {
                 updateSteps.append(text("Dependencies and OCR runtime updated."))
+                updateProgress = 1
                 updateResult = text("Update completed successfully.")
             }
             await refreshAll()
@@ -266,6 +280,7 @@ final class AppModel: ObservableObject {
             statusMessage = text("Action failed")
             if action == "update" {
                 updateSteps.append(error.localizedDescription)
+                updateProgress = min(updateProgress, 0.99)
                 updateResult = text("Update failed. Review the error and retry.")
             }
         }
