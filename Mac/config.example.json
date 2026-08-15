@@ -4,6 +4,7 @@
     "agentToken": "REPLACE_WITH_AGENT_SHARED_TOKEN",
     "agentId": "mac-life-after-agent",
     "agentName": "Mac Agent",
+    "locale": "zh-cn",
     "pollSeconds": 5
   },
   "debug": {

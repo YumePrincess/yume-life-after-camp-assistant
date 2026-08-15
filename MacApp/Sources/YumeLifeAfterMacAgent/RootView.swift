@@ -18,12 +18,24 @@ struct RootView: View {
                             GlobalOperationStatusBar()
                         }
                 }
+                .navigationSplitViewStyle(.balanced)
+                .toolbar(removing: .sidebarToggle)
                 .background(.clear)
             } else {
                 UnsupportedPlatformView()
             }
         }
         .environment(\.locale, model.locale)
+        .onAppear {
+            MenuLocalization.apply(language: model.language)
+            model.syncLanguageToBrowser()
+        }
+        .onChange(of: model.language) { _, language in
+            UserDefaults.standard.set(language, forKey: "language")
+            DispatchQueue.main.async { MenuLocalization.apply(language: language) }
+            model.syncLanguageToBrowser()
+            Task { await model.syncLanguageToRuntime() }
+        }
         .alert(
             model.text("Yume Life After Mac Agent"),
             isPresented: Binding(
@@ -43,8 +55,7 @@ struct RootView: View {
     }
 
     @ViewBuilder private var detail: some View {
-        switch model.selection ?? .overview {
-        case .overview: OverviewView()
+        switch model.selection ?? .admin {
         case .logs: LogsView()
         case .plugins: PluginsView()
         case .admin: AdminView()
@@ -79,18 +90,57 @@ struct SidebarView: View {
             }
             .scrollContentBackground(.hidden)
             Spacer()
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(model.health?.ok == true ? .green : .orange)
-                    .frame(width: 8, height: 8)
-                Text(model.text(model.health?.ok == true ? "Agent online" : "Agent offline"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(model.health?.ok == true ? .green : .orange)
+                        .frame(width: 8, height: 8)
+                    Text(model.text(model.health?.ok == true ? "Agent online" : "Agent offline"))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                HStack(spacing: 8) {
+                    SidebarAgentButton(symbol: "play.fill", title: "Start", tint: .green) {
+                        await model.performAgentAction("start")
+                    }
+                    SidebarAgentButton(symbol: "arrow.clockwise", title: "Restart", tint: YumePalette.gold) {
+                        await model.performAgentAction("restart")
+                    }
+                    SidebarAgentButton(symbol: "stop.fill", title: "Stop", tint: .orange) {
+                        await model.performAgentAction("stop")
+                    }
+                }
             }
-            .padding(14)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
         }
         .padding(.top, 12)
         .background(.thinMaterial)
+    }
+}
+
+private struct SidebarAgentButton: View {
+    @EnvironmentObject private var model: AppModel
+    let symbol: String
+    let title: String
+    let tint: Color
+    let action: () async -> Void
+
+    var body: some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Image(systemName: symbol)
+                .font(.caption.weight(.bold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+                .foregroundStyle(tint)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(model.text(title))
+        .disabled(model.isBusy)
     }
 }
 
@@ -109,130 +159,6 @@ struct PageHeader: View {
             Text(summary)
                 .foregroundStyle(.secondary)
         }
-    }
-}
-
-struct OverviewView: View {
-    @EnvironmentObject private var model: AppModel
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                PageHeader(eyebrow: "LOCAL AGENT", title: "Control center", summary: "Run, inspect and maintain the Mac automation runtime.")
-                Grid(horizontalSpacing: 14, verticalSpacing: 14) {
-                    GridRow {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Label(model.text(model.health?.ok == true ? "Online" : "Offline"), systemImage: model.health?.ok == true ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                                .font(.title3.weight(.semibold))
-                            Spacer()
-                            Text(model.health?.activeTaskKey ?? model.text("Idle"))
-                                .font(.caption.monospaced())
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(.thinMaterial, in: Capsule())
-                        }
-                        Text(
-                            model.health?.adbSerial.flatMap { $0 == "auto" ? nil : $0 }
-                                ?? model.adbSummary
-                        )
-                            .font(.callout.monospaced())
-                            .foregroundStyle(.secondary)
-                        if model.health?.adbSerial == nil || model.health?.adbSerial == "auto" {
-                            HStack(spacing: 8) {
-                                Label(
-                                    model.adbSummary,
-                                    systemImage: model.adbInfo.isAvailable ? "checkmark.circle" : "exclamationmark.triangle"
-                                )
-                                .font(.caption)
-                                .foregroundStyle(model.adbInfo.isAvailable ? Color.secondary : Color.orange)
-                                if !model.adbInfo.isAvailable {
-                                    Button("Install Android platform-tools") { model.openAdbInstallGuide() }
-                                        .buttonStyle(.link)
-                                }
-                            }
-                        }
-                        HStack(spacing: 8) {
-                            Label(
-                                model.nodeSummary,
-                                systemImage: model.nodeInfo.isAvailable ? "checkmark.circle" : "exclamationmark.triangle"
-                            )
-                            .font(.caption)
-                            .foregroundStyle(model.nodeInfo.isAvailable ? Color.secondary : Color.orange)
-                            if !model.nodeInfo.isAvailable {
-                                Button("Install Node.js") { model.openNodeInstallGuide() }
-                                    .buttonStyle(.link)
-                            }
-                        }
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                            OverviewActionButton("Start", primary: true) { await model.performAgentAction("start") }
-                            OverviewActionButton("Stop") { await model.performAgentAction("stop") }
-                            OverviewActionButton("Restart") { await model.performAgentAction("restart") }
-                            OverviewActionButton(
-                                "Repair Agent",
-                                help: model.text("Repair Agent help")
-                            ) { await model.performAgentAction("repair") }
-                            OverviewActionButton("Update runtime") { await model.performAgentAction("update") }
-                            OverviewActionButton("Uninstall Agent") { await model.performAgentAction("uninstall") }
-                        }
-                        .disabled(model.isBusy)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .glassPanel(radius: 18, padding: 16)
-                    VStack(spacing: 10) {
-                        MetricCard(title: "Installed plugins", value: "\(model.plugins.count)", symbol: "puzzlepiece.extension")
-                        MetricCard(title: "Enabled plugins", value: "\(model.plugins.filter { $0.enabled != false && $0.invalid != true }.count)", symbol: "checkmark.circle")
-                        Button {
-                            model.openCurrentTaskLogs()
-                        } label: {
-                            MetricCard(title: "Current task", value: model.health?.activeTaskKey == nil ? model.text("None") : "1", symbol: "play.circle")
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(model.health?.activeRunId == nil)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .glassPanel(radius: 18, padding: 16)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                ManualTasksSection()
-            }
-            .padding(24)
-        }
-    }
-}
-
-private struct OverviewActionButton: View {
-    let title: LocalizedStringKey
-    let primary: Bool
-    let help: String?
-    let action: () async -> Void
-
-    init(
-        _ title: LocalizedStringKey,
-        primary: Bool = false,
-        help: String? = nil,
-        action: @escaping () async -> Void
-    ) {
-        self.title = title
-        self.primary = primary
-        self.help = help
-        self.action = action
-    }
-
-    @ViewBuilder var body: some View {
-        if primary {
-            button.buttonStyle(PrimaryButtonStyle())
-        } else {
-            button.buttonStyle(GlassButtonStyle())
-        }
-    }
-
-    private var button: some View {
-        Button { Task { await action() } } label: {
-            Text(title)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity, minHeight: 40)
-        }
-        .help(help ?? "")
     }
 }
 
@@ -425,65 +351,50 @@ private struct GlobalOperationStatusBar: View {
     }
 }
 
-private struct ManualTasksSection: View {
-    @EnvironmentObject private var model: AppModel
-    private let columns = [GridItem(.adaptive(minimum: 240), spacing: 14)]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Manual tasks")
-                .font(.title2.weight(.bold))
-            Text("Submit a task using the authenticated Camp admin session.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            if model.browser.webView.url?.host != URL(string: model.serverURL)?.host {
-                Label("Open Camp admin and sign in before submitting a task.", systemImage: "person.crop.circle.badge.exclamationmark")
-                    .glassPanel(radius: 16, padding: 12)
-            }
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
-                ForEach(ManualTask.supported) { task in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Image(systemName: task.symbol)
-                            .font(.title2)
-                            .foregroundStyle(YumePalette.gold)
-                        Text(model.text(task.titleKey)).font(.headline)
-                        Text(model.text(task.summaryKey))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Button("Run now") { Task { await model.submit(task) } }
-                            .buttonStyle(PrimaryButtonStyle())
-                            .disabled(model.isBusy)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .glassPanel(radius: 18, padding: 16)
-                }
-            }
-        }
-    }
-}
-
 struct LogsView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                PageHeader(eyebrow: "OBSERVABILITY", title: "Runtime logs", summary: "The latest Agent output refreshes automatically.")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(model.text("Observability"))
+                        .font(.caption.weight(.bold))
+                        .tracking(2)
+                        .foregroundStyle(YumePalette.gold)
+                    Text(model.text("Runtime logs"))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                    Text(model.text("The latest Agent output refreshes automatically."))
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
+                Picker(
+                    model.text("Log display"),
+                    selection: Binding(
+                        get: { model.logDisplayMode },
+                        set: { model.setLogDisplayMode($0) }
+                    )
+                ) {
+                    ForEach(LogDisplayMode.allCases) { mode in
+                        Text(model.text(mode.titleKey)).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 180)
                 if model.logRunIdFilter != nil {
-                    Button("Current task only") { }
+                    Button(model.text("Current task only")) { }
                         .buttonStyle(GlassButtonStyle())
                 } else if model.latestRunId != nil {
-                    Button("Current task") { model.openCurrentTaskLogs() }
+                    Button(model.text("Current task")) { model.openCurrentTaskLogs() }
                         .buttonStyle(GlassButtonStyle())
                 }
                 if model.logRunIdFilter != nil {
-                    Button("All logs") { model.showAllLogs() }
+                    Button(model.text("All logs")) { model.showAllLogs() }
                         .buttonStyle(GlassButtonStyle())
                 }
-                Button("Clear logs") { Task { await model.clearLogs() } }
+                Button(model.text("Clear logs")) { Task { await model.clearLogs() } }
                     .buttonStyle(GlassButtonStyle())
-                Button("Refresh") { Task { await model.refreshStatusAndLogs(loadLogs: true) } }.buttonStyle(GlassButtonStyle())
+                Button(model.text("Refresh")) { Task { await model.refreshStatusAndLogs(loadLogs: true) } }
+                    .buttonStyle(GlassButtonStyle())
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -491,16 +402,18 @@ struct LogsView: View {
                         Text(model.text("No log entries yet."))
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                             .id("bottom")
+                    } else if model.logDisplayMode == .raw {
+                        Text(verbatim: model.visibleLogText)
+                            .font(.system(size: 12, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id("raw")
+                        Color.clear.frame(height: 1).id("bottom")
                     } else {
-                        VStack(alignment: .leading, spacing: 0) {
-                            // Keep the whole page in one Text view so macOS
-                            // can extend a selection across line boundaries.
-                            // One Text per log line limits selection to that
-                            // individual line.
-                            Text(verbatim: model.visibleLogText)
-                                .font(.system(size: 12, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(model.visibleLogEntries) { entry in
+                                SimpleLogRow(entry: entry)
+                            }
                             Color.clear.frame(height: 1).id("bottom")
                         }
                     }
@@ -509,10 +422,10 @@ struct LogsView: View {
                 .onChange(of: model.visibleLogLines) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
             }
             HStack {
-                Button("Previous") { model.previousLogPage() }
+                Button(model.text("Previous")) { model.previousLogPage() }
                     .disabled(model.logPage == 0)
                 Text(model.logPageLabel).monospacedDigit().foregroundStyle(.secondary)
-                Button("Next") { model.nextLogPage() }
+                Button(model.text("Next")) { model.nextLogPage() }
                     .disabled(model.logPage >= model.logPageCount - 1)
                 Spacer()
             }
@@ -523,16 +436,92 @@ struct LogsView: View {
     }
 }
 
+private struct SimpleLogRow: View {
+    let entry: SimplifiedLogEntry
+
+    private var levelColor: Color {
+        switch entry.level {
+        case "error", "fatal": .red
+        case "warn", "warning": .orange
+        default: .secondary
+        }
+    }
+
+    private var symbol: String {
+        switch entry.level {
+        case "error", "fatal": "xmark.octagon.fill"
+        case "warn", "warning": "exclamationmark.triangle.fill"
+        default: "info.circle.fill"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(levelColor)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text(entry.level.uppercased())
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(levelColor)
+                    if !entry.step.isEmpty {
+                        Text(entry.step)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    if !entry.timestamp.isEmpty {
+                        Text(entry.timestamp)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                Text(entry.message)
+                    .font(.callout)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 struct PluginsView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .bottom) {
-                    PageHeader(eyebrow: "EXTENSIONS", title: "Plugins", summary: "Five plugins are bundled with the App. Add extra folder plugins from Application Support.")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(model.text("Extensions"))
+                            .font(.caption.weight(.bold))
+                            .tracking(2)
+                            .foregroundStyle(YumePalette.gold)
+                        Text(model.text("Plugins"))
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                        Text(model.text("Five plugins are bundled with the App. Add extra folder plugins from Application Support."))
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
-                    Button("Open plugin folder") { model.openPluginDirectory() }.buttonStyle(PrimaryButtonStyle())
-                    Button("Refresh") { Task { await model.refreshPlugins() } }.buttonStyle(GlassButtonStyle())
+                    Button(model.text("Open plugin folder")) { model.openPluginDirectory() }
+                        .buttonStyle(PrimaryButtonStyle())
+                    Button(model.text("Refresh")) { Task { await model.refreshPlugins() } }
+                        .buttonStyle(GlassButtonStyle())
+                }
+                HStack(spacing: 12) {
+                    MetricCard(
+                        title: "Installed plugins",
+                        value: "\(model.plugins.count)",
+                        symbol: "puzzlepiece.extension"
+                    )
+                    MetricCard(
+                        title: "Enabled plugins",
+                        value: "\(model.plugins.filter { $0.enabled != false && $0.invalid != true }.count)",
+                        symbol: "checkmark.circle"
+                    )
                 }
                 ForEach(model.plugins) { plugin in
                     HStack(spacing: 16) {
@@ -545,19 +534,22 @@ struct PluginsView: View {
                             Text(plugin.localizedSummary(model.language)).font(.callout).foregroundStyle(.secondary)
                             HStack {
                                 Text(plugin.versionDescription)
-                                Text(plugin.builtin == true ? "Built-in" : "Installed")
+                                Text(model.text(plugin.builtin == true ? "Built-in" : "Installed"))
                                 if plugin.builtin != true {
-                                    Label(plugin.signatureVerified == true ? "Verified" : "Unverified", systemImage: plugin.signatureVerified == true ? "checkmark.seal.fill" : "exclamationmark.shield")
+                                    Label(
+                                        model.text(plugin.signatureVerified == true ? "Verified" : "Unverified"),
+                                        systemImage: plugin.signatureVerified == true ? "checkmark.seal.fill" : "exclamationmark.shield"
+                                    )
                                 }
                             }.font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button(plugin.enabled == false ? "Enable" : "Disable") {
+                        Button(model.text(plugin.enabled == false ? "Enable" : "Disable")) {
                             Task { await model.setPlugin(plugin, enabled: plugin.enabled == false) }
                         }
                         .buttonStyle(GlassButtonStyle())
                         if plugin.builtin != true {
-                            Button("Remove") { Task { await model.removePlugin(plugin) } }
+                            Button(model.text("Remove")) { Task { await model.removePlugin(plugin) } }
                                 .buttonStyle(GlassButtonStyle())
                         }
                     }
@@ -571,20 +563,24 @@ struct PluginsView: View {
 struct AdminView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Label(model.browser.pageTitle.isEmpty ? model.text("Camp admin") : model.browser.pageTitle, systemImage: "lock.shield")
-                Spacer()
-                if model.browser.isLoading { ProgressView().controlSize(.small) }
-                Button("Reload") { model.browser.reload() }.buttonStyle(GlassButtonStyle())
-            }
-            .padding(14)
-            Divider().opacity(0.35)
+        ZStack(alignment: .topTrailing) {
             AdminWebView(browser: model.browser)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            HStack(spacing: 10) {
+                Label(
+                    model.browser.pageTitle.isEmpty ? model.text("Camp admin") : model.browser.pageTitle,
+                    systemImage: "lock.shield"
+                )
+                if model.browser.isLoading { ProgressView().controlSize(.small) }
+                Button(model.text("Reload")) { model.browser.reload() }
+                    .buttonStyle(GlassButtonStyle())
+            }
+            .padding(10)
+            .background(.regularMaterial, in: Capsule())
+            .padding(12)
         }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.white.opacity(0.15)))
-        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.18))
     }
 }
 
@@ -592,52 +588,100 @@ struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
         ScrollView {
-            Form {
-                Section("Connection") {
-                    TextField("Workers URL", text: $model.serverURL)
-                    TextField("Agent device name", text: $model.agentName)
-                    LabeledContent("Device ID") {
-                        Text(model.agentID).font(.caption.monospaced()).textSelection(.enabled)
-                    }
-                    TextField("MuMu container name", text: $model.mumuInstanceName)
-                    SecureField("Agent token", text: $model.agentToken)
-                    SecureField("Local debug token", text: $model.debugToken)
-                    SecureField("Admin access Key (optional)", text: $model.adminKey)
-                    Button("Import legacy Keychain credentials…") {
-                        Task { await model.loadStoredCredentials() }
-                    }
-                    .buttonStyle(GlassButtonStyle())
-                    Text("The Agent matches this MuMu container name and discovers its current loopback ADB port automatically.")
-                        .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(model.text("System section"))
+                        .font(.caption.weight(.bold))
+                        .tracking(2)
+                        .foregroundStyle(YumePalette.gold)
+                    Text(model.text("Settings"))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                    Text(model.text("Configure the Agent runtime, language and local data."))
+                        .foregroundStyle(.secondary)
                 }
-                Section("Appearance") {
-                    Picker("Language", selection: $model.language) {
+
+                SettingsCard(title: model.text("Appearance"), symbol: "paintbrush.fill") {
+                    Picker(model.text("Language"), selection: $model.language) {
                         Text("简体中文").tag("zh-Hans")
                         Text("繁體中文").tag("zh-Hant")
                         Text("English").tag("en")
                         Text("日本語").tag("ja")
                         Text("Français").tag("fr")
                     }
-                    Picker("Theme", selection: $model.theme) {
-                        ForEach(AppTheme.allCases) { theme in Text(model.text(theme.titleKey)).tag(theme) }
+                    Picker(model.text("Theme"), selection: $model.theme) {
+                        ForEach(AppTheme.allCases) { theme in
+                            Text(model.text(theme.titleKey)).tag(theme)
+                        }
+                    }
+                    Picker(
+                        model.text("Log display"),
+                        selection: Binding(
+                            get: { model.logDisplayMode },
+                            set: { model.setLogDisplayMode($0) }
+                        )
+                    ) {
+                        ForEach(LogDisplayMode.allCases) { mode in
+                            Text(model.text(mode.titleKey)).tag(mode)
+                        }
                     }
                 }
-                Section("Plugin security") {
-                    Toggle("Allow unsigned local plugins (developer mode)", isOn: $model.allowUnsignedPlugins)
-                    Text("Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Migration") {
-                    Text("Choose whether to include the external Qwen model and saved credentials when exporting. Credentials are sensitive.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Button("Export migration archive…") { Task { await model.exportMigration() } }
-                            .buttonStyle(GlassButtonStyle())
-                        Button("Import migration archive…") { Task { await model.importMigration() } }
-                            .buttonStyle(GlassButtonStyle())
+
+                SettingsCard(title: model.text("Runtime tools"), symbol: "wrench.and.screwdriver.fill") {
+                    HStack(spacing: 12) {
+                        SettingsStatusRow(
+                            title: "Node.js",
+                            value: model.nodeSummary,
+                            available: model.nodeInfo.isAvailable
+                        )
+                        SettingsStatusRow(
+                            title: "ADB",
+                            value: model.adbSummary,
+                            available: model.adbInfo.isAvailable
+                        )
+                    }
+                    HStack(spacing: 10) {
+                        Button(model.text("Update runtime")) {
+                            Task { await model.performAgentAction("update") }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        Button(model.text("Repair Agent")) {
+                            Task { await model.performAgentAction("repair") }
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                        .help(model.text("Repair Agent help"))
+                        Button(model.text("Uninstall Agent")) {
+                            Task { await model.performAgentAction("uninstall") }
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                    }
+                    HStack(spacing: 10) {
+                        if !model.nodeInfo.isAvailable {
+                            Button(model.text("Install Node.js")) { model.openNodeInstallGuide() }
+                                .buttonStyle(.link)
+                        }
+                        if !model.adbInfo.isAvailable {
+                            Button(model.text("Install Android platform-tools")) { model.openAdbInstallGuide() }
+                                .buttonStyle(.link)
+                        }
                     }
                 }
-                Section("External Qwen model") {
+
+                SettingsCard(title: model.text("Connection"), symbol: "network") {
+                    TextField(model.text("Workers URL"), text: $model.serverURL)
+                    TextField(model.text("Agent device name"), text: $model.agentName)
+                    TextField(model.text("MuMu container name"), text: $model.mumuInstanceName)
+                    LabeledContent(model.text("Device ID")) {
+                        Text(model.agentID).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                    SecureField(model.text("Agent token"), text: $model.agentToken)
+                    SecureField(model.text("Local debug token"), text: $model.debugToken)
+                    SecureField(model.text("Admin access Key (optional)"), text: $model.adminKey)
+                    Text(model.text("The Agent matches this MuMu container name and discovers its current loopback ADB port automatically."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                SettingsCard(title: model.text("External Qwen model"), symbol: "eye.circle.fill") {
                     Text(model.modelInfo.path.isEmpty
                         ? model.text("The external Qwen model has not been checked yet.")
                         : model.modelInfo.path)
@@ -646,7 +690,9 @@ struct SettingsView: View {
                     HStack {
                         Label(
                             model.modelInfo.isInstalled
-                                ? (model.modelInfo.isReady ? model.text("Qwen model runtime is ready.") : model.text("Qwen model runtime needs preparation."))
+                                ? (model.modelInfo.isReady
+                                    ? model.text("Qwen model runtime is ready.")
+                                    : model.text("Qwen model runtime needs preparation."))
                                 : model.text("External Qwen model is not installed."),
                             systemImage: model.modelInfo.isReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
                         )
@@ -670,9 +716,7 @@ struct SettingsView: View {
                         model.text("Enable Qwen visual assistance for tasks"),
                         isOn: Binding(
                             get: { model.qwenEnabled },
-                            set: { enabled in
-                                Task { await model.setQwenEnabled(enabled) }
-                            }
+                            set: { enabled in Task { await model.setQwenEnabled(enabled) } }
                         )
                     )
                     .disabled(model.isBusy)
@@ -682,15 +726,73 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Button("Save settings") { Task { await model.saveSettings() } }
-                    .buttonStyle(PrimaryButtonStyle())
-                Button("Run setup assistant again") { model.openSetupAssistant() }
-                    .buttonStyle(GlassButtonStyle())
+
+                SettingsCard(title: model.text("Plugin security"), symbol: "puzzlepiece.extension.fill") {
+                    Toggle(model.text("Allow unsigned local plugins (developer mode)"), isOn: $model.allowUnsignedPlugins)
+                    Text(model.text("Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                SettingsCard(title: model.text("Migration"), symbol: "arrow.triangle.2.circlepath") {
+                    Text(model.text("Choose whether to include the external Qwen model and saved credentials when exporting. Credentials are sensitive."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        Button(model.text("Export migration archive…")) { Task { await model.exportMigration() } }
+                            .buttonStyle(GlassButtonStyle())
+                        Button(model.text("Import migration archive…")) { Task { await model.importMigration() } }
+                            .buttonStyle(GlassButtonStyle())
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Button(model.text("Save settings")) { Task { await model.saveSettings() } }
+                        .buttonStyle(PrimaryButtonStyle())
+                    Button(model.text("Run setup assistant again")) { model.openSetupAssistant() }
+                        .buttonStyle(GlassButtonStyle())
+                }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .frame(maxWidth: 900, alignment: .leading)
+            .padding(30)
         }
-        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
+
+private struct SettingsCard<Content: View>: View {
+    let title: String
+    let symbol: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(title, systemImage: symbol)
+                .font(.headline)
+                .foregroundStyle(YumePalette.gold)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassPanel(radius: 20, padding: 18)
+    }
+}
+
+private struct SettingsStatusRow: View {
+    let title: String
+    let value: String
+    let available: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Label(value, systemImage: available ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(available ? Color.secondary : Color.orange)
+                .font(.callout.monospaced())
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 
@@ -832,10 +934,6 @@ struct SetupAssistantView: View {
             SecureField("Agent token", text: $model.agentToken).textFieldStyle(.roundedBorder)
             SecureField("Local debug token", text: $model.debugToken).textFieldStyle(.roundedBorder)
             SecureField("Admin access Key (optional)", text: $model.adminKey).textFieldStyle(.roundedBorder)
-                    Button("Import legacy Keychain credentials…") {
-                        Task { await model.loadStoredCredentials() }
-            }
-            .buttonStyle(GlassButtonStyle())
         }
     }
 

@@ -1,6 +1,12 @@
 const LOCALES = new Set(["zh-cn", "zh-tw", "en", "fr", "ja"]);
 
 const FIXED_TRANSLATIONS = {
+  "任务已由管理员中断": {
+    "zh-tw": "任務已由管理員中斷",
+    en: "The task was interrupted by an administrator",
+    fr: "La tâche a été interrompue par un administrateur",
+    ja: "管理者によってタスクが中断されました"
+  },
   "正在按任务启动本地视觉辅助模型": {
     "zh-tw": "正在依任務啟動本機視覺輔助模型",
     en: "Starting the local vision assistant for this task",
@@ -191,6 +197,15 @@ const FIXED_TRANSLATIONS = {
 
 const PATTERN_TRANSLATIONS = [
   {
+    test: /^核心数据已更新，但收尾未完全完成：(.+)$/,
+    values: {
+      "zh-tw": "核心資料已更新，但收尾未完全完成：$1",
+      en: "Core data was updated, but cleanup was incomplete: $1",
+      fr: "Les données principales ont été mises à jour, mais le nettoyage est incomplet : $1",
+      ja: "主要データは更新されましたが、終了処理が完了していません：$1"
+    }
+  },
+  {
     test: /^顶部人数识别：正式市民 (\d+)\/(\d+)，启航市民 (\d+)\/(\d+)，合计 (\d+) 名（当前在线人数不计入总数）$/,
     values: {
       "zh-tw": "頂部人數識別：正式市民 $1/$2，啟航市民 $3/$4，合計 $5 人（目前在線人數不計入總數）",
@@ -365,4 +380,13 @@ export function localizeTaskEvent(step, message, locale) {
   // OCR, device diagnostics, and other text without a safe fixed template
   // stay byte-for-byte unchanged so recognized game text is never translated.
   return source;
+}
+
+export function localizedTaskEventMessages(step, message) {
+  return Object.fromEntries(
+    ["zh-cn", "zh-tw", "en", "fr", "ja"].map((locale) => [
+      locale,
+      localizeTaskEvent(step, message, locale)
+    ])
+  );
 }

@@ -1,11 +1,10 @@
 import Foundation
 
 enum SidebarSection: String, CaseIterable, Identifiable {
-    case overview, logs, plugins, admin, settings
+    case admin, logs, plugins, settings
     var id: String { rawValue }
     var titleKey: String {
         switch self {
-        case .overview: "Overview"
         case .logs: "Logs"
         case .plugins: "Plugins"
         case .admin: "Camp admin"
@@ -14,13 +13,33 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
-        case .overview: "square.grid.2x2"
         case .logs: "text.alignleft"
         case .plugins: "puzzlepiece.extension"
         case .admin: "building.columns"
         case .settings: "gearshape"
         }
     }
+}
+
+enum LogDisplayMode: String, CaseIterable, Identifiable {
+    case simplified
+    case raw
+
+    var id: String { rawValue }
+    var titleKey: String {
+        switch self {
+        case .simplified: "Simplified"
+        case .raw: "Raw"
+        }
+    }
+}
+
+struct SimplifiedLogEntry: Identifiable {
+    let id: String
+    let timestamp: String
+    let level: String
+    let step: String
+    let message: String
 }
 
 enum L10n {
@@ -107,19 +126,4 @@ struct AgentPlugin: Decodable, Identifiable {
 struct PluginTask: Decodable {
     let key: String
     let positionIndependent: Bool?
-}
-
-struct ManualTask: Identifiable {
-    let id: String
-    let symbol: String
-    let titleKey: String
-    let summaryKey: String
-
-    static let supported: [ManualTask] = [
-        .init(id: "tech_switch", symbol: "cpu", titleKey: "Update technology", summaryKey: "Apply fixed technology and vote results."),
-        .init(id: "member_profile_sync", symbol: "person.3", titleKey: "Update member profiles", summaryKey: "Refresh members, officers and profile details."),
-        .init(id: "contribution_sync", symbol: "chart.bar", titleKey: "Update contributions", summaryKey: "Read the latest contribution table."),
-        .init(id: "inactivity_sync", symbol: "exclamationmark.triangle", titleKey: "Update inactivity alerts", summaryKey: "Refresh the latest offline warning list."),
-        .init(id: "patrol", symbol: "figure.walk", titleKey: "Camp patrol", summaryKey: "Create and operate the configured patrol team.")
-    ]
 }

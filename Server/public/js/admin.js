@@ -59,6 +59,7 @@
     eventEntries: [],
     eventLastId: null,
     eventLoaded: false,
+    eventLocaleRevision: 0,
     runActionMenu: null,
     identityApplications: { page: 1, total: 0, items: [] },
     identityCodes: { page: 1, total: 0, items: [] },
@@ -2096,6 +2097,7 @@
     state.eventEntries = [];
     state.eventLastId = null;
     state.eventLoaded = false;
+    state.eventLocaleRevision += 1;
     const root = byId("run-events");
     root.replaceChildren(create("p", "empty-state", "正在加载…"));
     byId("run-dialog").showModal();
@@ -2117,9 +2119,14 @@
     }
     state.eventRefreshInFlight = true;
     const root = byId("run-events");
+    const requestedLocale = window.MrzhI18n.language();
+    const localeRevision = state.eventLocaleRevision;
     try {
       const initialLoad = !state.eventLoaded;
-      const params = new URLSearchParams({ limit: "400" });
+      const params = new URLSearchParams({
+        limit: "400",
+        locale: requestedLocale
+      });
       if (initialLoad) params.set("latest", "1");
       else if (state.eventLastId != null) {
         params.set("afterId", String(state.eventLastId));
@@ -2129,6 +2136,16 @@
       );
       const fetched = payload.events || [];
       if (state.activeEventRunId !== runId) return;
+      if (
+        localeRevision !== state.eventLocaleRevision ||
+        requestedLocale !== window.MrzhI18n.language()
+      ) {
+        // A language switch happened while the previous request was in
+        // flight. Discard that response and issue a fresh full-timeline load
+        // after the in-flight guard is released.
+        window.setTimeout(() => refreshRunEvents(runId), 0);
+        return;
+      }
       if (initialLoad) {
         state.eventEntries = fetched.slice(-4_000);
       } else if (fetched.length) {
@@ -3225,6 +3242,16 @@
   });
   document.addEventListener("mrzh:languagechange", () => {
     if (state.bootstrap) render(state.bootstrap, []);
+    if (state.activeEventRunId && byId("run-dialog").open) {
+      // The event endpoint is locale-aware. Reload the current timeline from
+      // the beginning so already-loaded rows change language immediately.
+      state.eventSignature = "";
+      state.eventEntries = [];
+      state.eventLastId = null;
+      state.eventLoaded = false;
+      state.eventLocaleRevision += 1;
+      void refreshRunEvents(state.activeEventRunId);
+    }
     refresh(false);
   });
   setDefaultKeyExpiry();

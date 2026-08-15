@@ -765,7 +765,8 @@ actor RuntimeService {
         debugToken: String,
         adminKey: String,
         mumuInstanceName: String,
-        allowUnsignedLocalPlugins: Bool
+        allowUnsignedLocalPlugins: Bool,
+        locale: String
     ) throws {
         try saveCredentials(agentToken: agentToken, debugToken: debugToken, adminKey: adminKey)
         let root = runtimeRoot
@@ -779,6 +780,7 @@ actor RuntimeService {
         server["baseUrl"] = baseURL
         server["agentId"] = agentID
         server["agentName"] = agentName
+        server["locale"] = locale
         server["agentToken"] = "CREDENTIALS_FILE"
         object["server"] = server
         var mumu = object["mumu"] as? [String: Any] ?? [:]
@@ -801,6 +803,18 @@ actor RuntimeService {
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: path, options: [.atomic])
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+    }
+
+    func setRuntimeLocale(_ locale: String, debugToken: String) async {
+        guard !debugToken.isEmpty,
+              let url = URL(string: "http://127.0.0.1:8091/locale") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 3
+        request.setValue("Bearer \(debugToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["locale": locale])
+        _ = try? await URLSession.shared.data(for: request)
     }
 
     func loadCredentials() throws -> StoredCredentials {

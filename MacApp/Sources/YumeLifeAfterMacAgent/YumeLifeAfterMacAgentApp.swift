@@ -96,6 +96,42 @@ struct YumeLifeAfterMacAgentApp: App {
     }
 }
 
+@MainActor
+enum MenuLocalization {
+    private static let keys = ["File", "Edit", "View", "Window", "Help"]
+    private static let aliases: [String: String] = [
+        "file": "File", "ファイル": "File", "文件": "File", "檔案": "File", "fichier": "File",
+        "edit": "Edit", "編集": "Edit", "编辑": "Edit", "編輯": "Edit", "édition": "Edit",
+        "view": "View", "表示": "View", "显示": "View", "檢視": "View", "présentation": "View",
+        "window": "Window", "ウインドウ": "Window", "窗口": "Window", "視窗": "Window", "fenêtre": "Window",
+        "help": "Help", "ヘルプ": "Help", "帮助": "Help", "說明": "Help", "aide": "Help"
+    ]
+
+    static func apply(language: String) {
+        guard let menu = NSApp.mainMenu else { return }
+        for item in menu.items {
+            let normalized = item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard let key = aliases[normalized], keys.contains(key) else { continue }
+            item.title = title(for: key, language: language)
+        }
+    }
+
+    private static func title(for key: String, language: String) -> String {
+        switch language {
+        case "zh-Hans":
+            return ["File": "文件", "Edit": "编辑", "View": "显示", "Window": "窗口", "Help": "帮助"][key] ?? key
+        case "zh-Hant":
+            return ["File": "檔案", "Edit": "編輯", "View": "檢視", "Window": "視窗", "Help": "說明"][key] ?? key
+        case "ja":
+            return ["File": "ファイル", "Edit": "編集", "View": "表示", "Window": "ウインドウ", "Help": "ヘルプ"][key] ?? key
+        case "fr":
+            return ["File": "Fichier", "Edit": "Édition", "View": "Présentation", "Window": "Fenêtre", "Help": "Aide"][key] ?? key
+        default:
+            return key
+        }
+    }
+}
+
 enum AppTheme: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: String { rawValue }

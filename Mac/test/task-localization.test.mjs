@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   localizeTaskEvent,
+  localizedTaskEventMessages,
   normalizeTaskLocale
 } from "../src/task-localization.mjs";
 
@@ -40,6 +41,21 @@ test("fixed task messages follow the selected locale", () => {
       "ja"
     ),
     "Qwen ローカル視覚アシスタントを起動しました"
+  );
+});
+
+test("every Agent task event carries all five supported locales", () => {
+  assert.deepEqual(
+    Object.keys(localizedTaskEventMessages("game_start", "正在启动明日之后")).sort(),
+    ["en", "fr", "ja", "zh-cn", "zh-tw"]
+  );
+  assert.equal(
+    localizedTaskEventMessages("game_start", "正在启动明日之后").en,
+    "Starting LifeAfter"
+  );
+  assert.equal(
+    localizedTaskEventMessages("ocr", "OCR 原文：玩家名称").fr,
+    "OCR 原文：玩家名称"
   );
 });
 

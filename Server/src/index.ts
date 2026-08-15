@@ -120,6 +120,7 @@ import {
   updateSmtpConfig
 } from "./mailer";
 import { normalizeLocale } from "./locale";
+import { localizeWorkerEvent, localizeWorkerRun } from "./task-localization";
 import {
   clearRateLimitAttempts,
   clearValueRateLimitAttempts,
@@ -1450,7 +1451,13 @@ async function handleAdminApi(
         ...(Number.isInteger(afterId) && afterId > 0 ? { afterId } : {}),
         ...(Number.isInteger(limit) && limit > 0 ? { limit } : {})
       });
-    return json(isDemoSession(session) ? demoRunEvents(result) : result);
+    const localized = {
+      ...result,
+      events: result.events.map((event) =>
+        localizeWorkerEvent(event, normalizeLocale(url.searchParams.get("locale")))
+      )
+    };
+    return json(isDemoSession(session) ? demoRunEvents(localized) : localized);
   }
   return problem("Not found", 404, "not_found");
 }
@@ -1494,7 +1501,12 @@ async function handleAgentApi(
       activeTaskKey,
       status: boundedText(body.status, "status", 40),
       capabilities: body.capabilities ?? {},
-      detail: body.detail ?? {}
+      detail: {
+        ...(body.detail && typeof body.detail === "object" && !Array.isArray(body.detail)
+          ? body.detail
+          : {}),
+        locale: normalizeLocale(body.locale)
+      }
     });
     const activeRun = activeRunId ? await getRun(env, activeRunId) : null;
     const bundle = await getConfigBundle(env);
@@ -1521,8 +1533,16 @@ async function handleAgentApi(
           busy: body.busy === true
         })
       : null;
+    let commandPayload: Record<string, unknown> | null = null;
     if (command?.type === "run_task") {
       const payload = safeParseJson(command.payload_json, {}) as Record<string, unknown>;
+      const payloadDetail = payload.detail && typeof payload.detail === "object" && !Array.isArray(payload.detail)
+        ? payload.detail as Record<string, unknown>
+        : {};
+      commandPayload = {
+        ...payload,
+        locale: normalizeLocale(body.locale ?? payload.locale ?? payloadDetail.locale)
+      };
       const pluginTasks = taskKeysFromCommandPayload(payload).filter((taskKey) =>
         builtPluginForTask(taskKey)
       );
@@ -1558,7 +1578,7 @@ async function handleAgentApi(
             id: command.id,
             runId: command.run_id,
             type: command.type,
-            payload: safeParseJson(command.payload_json, {}),
+            payload: commandPayload ?? safeParseJson(command.payload_json, {}),
             leaseToken: command.lease_token,
             attemptCount: command.attempt_count
           }
@@ -1900,7 +1920,9 @@ async function buildAdminBootstrap(
       : { pollDate: voteSummary.pollDate, ballotCount: 0, options: [], projectedPlan: { core: [], general: [] } },
     voteBallots,
     heartbeats: safeHeartbeats,
-    recentRuns: recentRuns.filter(isCurrentFeatureRun),
+    recentRuns: recentRuns
+      .filter(isCurrentFeatureRun)
+      .map((run) => localizeWorkerRun(run, locale)),
     staffAssignments: canMembers ? staff : [],
     members: canMembers ? members : [],
     // Agent heartbeats are independent from the (potentially five-minute)

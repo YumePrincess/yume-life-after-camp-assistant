@@ -12,6 +12,7 @@ import { delay } from "./process.mjs";
 import { loadTaskPlugins } from "./plugin-loader.mjs";
 import {
   localizeTaskEvent,
+  localizedTaskEventMessages,
   normalizeTaskLocale
 } from "./task-localization.mjs";
 
@@ -33,6 +34,9 @@ if (staleSnapshotsRemoved) {
 const once = process.argv.includes("--once");
 let active = null;
 let stopping = false;
+const runtimeLocale = {
+  value: normalizeTaskLocale(config.server.locale)
+};
 let nextPollSeconds = config.server.pollSeconds;
 const shutdownController = new AbortController();
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -90,7 +94,7 @@ do {
   try {
     await sendHeartbeat(shutdownController.signal);
 
-    const pollResponse = await api.nextCommand(Boolean(active));
+    const pollResponse = await api.nextCommand(Boolean(active), runtimeLocale.value);
     const { command } = pollResponse;
     if (Number.isFinite(pollResponse.pollAfterSeconds)) {
       nextPollSeconds = Math.max(1, Math.min(3600, pollResponse.pollAfterSeconds));
@@ -139,6 +143,7 @@ await closeDebugServer(debugServer);
 
 function heartbeatPayload(status = active ? "running" : "idle") {
   return {
+    locale: runtimeLocale.value,
     activeRunId: active?.command.runId || null,
     activeTaskKey: active?.command.payload?.taskKey || null,
     status,
@@ -236,7 +241,7 @@ function startCommand(command) {
 async function executeCommand(command, signal) {
   const taskKey = command.payload?.taskKey;
   const taskLocale = normalizeTaskLocale(
-    command?.payload?.locale || command?.payload?.detail?.locale
+    command?.payload?.locale || command?.payload?.detail?.locale || runtimeLocale.value
   );
   const plugin = pluginRegistry.workflows[taskKey];
   const workflow = plugin?.workflow;
@@ -266,23 +271,30 @@ async function executeCommand(command, signal) {
     }
   };
   const report = async (level, step, message, detail = {}) => {
-    const localizedMessage = localizeTaskEvent(step, message, taskLocale);
+    const localizedMessages = localizedTaskEventMessages(step, message);
+    const localizedMessage = localizedMessages[taskLocale];
+    const localizedDetail = {
+      ...detail,
+      locale: taskLocale,
+      localizedMessages
+    };
     console.info(JSON.stringify({
       event: "task_event",
       runId: command.runId,
       level,
       step,
       message: localizedMessage,
-      detail
+      detail: localizedDetail
     }));
     await updateRunSafely({
       currentStep: step,
       message: localizedMessage,
+      detail: localizedDetail,
       event: {
         level,
         step,
         message: localizedMessage,
-        detail: { ...detail, locale: taskLocale }
+        detail: localizedDetail
       }
     }, `event:${step}`);
   };
@@ -339,15 +351,27 @@ async function executeCommand(command, signal) {
       ),
       currentStep: "starting",
       progress: 0.02,
+      detail: {
+        locale: taskLocale,
+        localizedMessages: localizedTaskEventMessages(
+          "starting",
+          "本地 Agent 已领取任务"
+        )
+      },
       event: {
         level: "info",
         step: "starting",
-        message: localizeTaskEvent(
+        message: localizedTaskEventMessages(
           "starting",
-          "本地 Agent 已领取任务",
-          taskLocale
-        ),
-        detail: { locale: taskLocale }
+          "本地 Agent 已领取任务"
+        )[taskLocale],
+        detail: {
+          locale: taskLocale,
+          localizedMessages: localizedTaskEventMessages(
+            "starting",
+            "本地 Agent 已领取任务"
+          )
+        }
       }
     }, "starting");
     const sessionResult = await withGameSession(
@@ -359,31 +383,50 @@ async function executeCommand(command, signal) {
     );
     if (sessionResult?.cleanupCompleted === false) {
       terminalState = "partially_succeeded";
-      terminalMessage = `核心数据已更新，但收尾未完全完成：${sessionResult.cleanupIssues.join("；")}`;
+      const terminalSourceMessage =
+        `核心数据已更新，但收尾未完全完成：${sessionResult.cleanupIssues.join("；")}`;
+      const localizedMessages = localizedTaskEventMessages(
+        "finished",
+        terminalSourceMessage
+      );
+      terminalMessage = localizedMessages[taskLocale];
       await updateRunSafely({
         state: terminalState,
         message: terminalMessage,
         currentStep: null,
         progress: 1,
+        detail: {
+          cleanupIssues: sessionResult.cleanupIssues,
+          locale: taskLocale,
+          localizedMessages
+        },
         event: {
           level: "warning",
           step: "finished",
           message: terminalMessage,
-          detail: { cleanupIssues: sessionResult.cleanupIssues }
+          detail: {
+            cleanupIssues: sessionResult.cleanupIssues,
+            locale: taskLocale,
+            localizedMessages
+          }
         }
       }, "finished:partially_succeeded", true);
     } else {
       terminalState = "succeeded";
-      terminalMessage = localizeTaskEvent(
+      const localizedMessages = localizedTaskEventMessages(
         "finished",
-        "任务已成功完成，游戏与模拟器已停止",
-        taskLocale
+        "任务已成功完成，游戏与模拟器已停止"
       );
+      terminalMessage = localizedMessages[taskLocale];
       await updateRunSafely({
         state: "succeeded",
         message: terminalMessage,
         currentStep: null,
         progress: 1,
+        detail: {
+          locale: taskLocale,
+          localizedMessages
+        },
         event: {
           level: "info",
           step: "finished",
@@ -392,14 +435,22 @@ async function executeCommand(command, signal) {
             "任务成功；已完成资源清理",
             taskLocale
           ),
-          detail: { locale: taskLocale }
+          detail: {
+            locale: taskLocale,
+            localizedMessages: localizedTaskEventMessages(
+              "finished",
+              "任务成功；已完成资源清理"
+            )
+          }
         }
       }, "finished:succeeded", true);
     }
   } catch (error) {
     const interrupted = signal.aborted;
     terminalState = interrupted ? "interrupted" : "failed";
-    terminalMessage = interrupted ? "任务已由管理员中断" : error.message;
+    const terminalSourceMessage = interrupted ? "任务已由管理员中断" : error.message;
+    const terminalMessages = localizedTaskEventMessages("finished", terminalSourceMessage);
+    terminalMessage = terminalMessages[taskLocale];
     const terminalDetail = context.suppressScheduledRetry
       ? {
           suppressScheduledRetry: true,
@@ -411,11 +462,20 @@ async function executeCommand(command, signal) {
       state: terminalState,
       message: terminalMessage,
       currentStep: null,
-      detail: terminalDetail,
+      detail: {
+        ...(terminalDetail || {}),
+        locale: taskLocale,
+        localizedMessages: terminalMessages
+      },
       event: {
         level: interrupted ? "warning" : "error",
         step: "finished",
-        message: terminalMessage
+        message: terminalMessage,
+        detail: {
+          ...(terminalDetail || {}),
+          locale: taskLocale,
+          localizedMessages: terminalMessages
+        }
       }
     }, `finished:${terminalState}`, true);
   } finally {
@@ -467,6 +527,7 @@ function createDebugServer() {
       response.end(
         JSON.stringify({
           ok: true,
+          locale: runtimeLocale.value,
           activeRunId: active?.command.runId || null,
           activeTaskKey: active?.command.payload?.taskKey || null,
           adbSerial: config.adb.serial,
@@ -482,6 +543,13 @@ function createDebugServer() {
       );
       return;
     }
+    if (request.method === "POST" && request.url === "/locale") {
+      const body = await readJsonRequest(request);
+      runtimeLocale.value = normalizeTaskLocale(body.locale);
+      config.server.locale = runtimeLocale.value;
+      response.end(JSON.stringify({ ok: true, locale: runtimeLocale.value }));
+      return;
+    }
     if (request.method === "POST" && request.url === "/abort") {
       if (active) active.controller.abort(new Error("本机调试端点请求中断"));
       response.end(JSON.stringify({ ok: true, interrupted: Boolean(active) }));
@@ -495,4 +563,18 @@ function createDebugServer() {
 function authorizedDebugRequest(request) {
   const authorization = request.headers.authorization || "";
   return authorization === `Bearer ${config.debug.token}`;
+}
+
+async function readJsonRequest(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  if (!chunks.length) return {};
+  try {
+    const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
 }

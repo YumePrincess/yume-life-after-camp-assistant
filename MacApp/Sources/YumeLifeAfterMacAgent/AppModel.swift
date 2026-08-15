@@ -4,11 +4,12 @@ import AppKit
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var selection: SidebarSection? = .overview
+    @Published var selection: SidebarSection? = .admin
     @Published var health: AgentHealth?
     @Published var plugins: [AgentPlugin] = []
     @Published var logText = ""
     @Published var logRunIdFilter: String?
+    @Published var logDisplayMode: LogDisplayMode
     @Published private(set) var logPage = 0
     @Published private(set) var latestRunId: String?
     @Published var isBusy = false
@@ -61,9 +62,6 @@ final class AppModel: ObservableObject {
         agentName = defaults.string(forKey: "agentName")
             ?? Host.current().localizedName
             ?? "Mac Agent"
-        // Do not request access to existing Keychain items while the App is
-        // launching. A newly signed build may need one explicit macOS approval;
-        // that approval belongs to a user-initiated credential action.
         agentToken = ""
         debugToken = ""
         adminKey = ""
@@ -71,6 +69,9 @@ final class AppModel: ObservableObject {
         allowUnsignedPlugins = defaults.bool(forKey: "allowUnsignedPlugins")
         language = defaults.string(forKey: "language") ?? Self.preferredLanguage()
         theme = AppTheme(rawValue: defaults.string(forKey: "theme") ?? "system") ?? .system
+        logDisplayMode = LogDisplayMode(
+            rawValue: defaults.string(forKey: "logDisplayMode") ?? LogDisplayMode.raw.rawValue
+        ) ?? .raw
         setupCompleted = defaults.bool(forKey: "setupCompleted")
         logRunIdFilter = nil
         latestRunId = nil
@@ -203,7 +204,17 @@ final class AppModel: ObservableObject {
         return Array(lines[start..<end])
     }
 
-    var visibleLogText: String { visibleLogLines.joined(separator: "\n") }
+    var visibleLogText: String {
+        visibleLogLines
+            .map { Self.localizedRawLine($0, language: language) }
+            .joined(separator: "\n")
+    }
+
+    var visibleLogEntries: [SimplifiedLogEntry] {
+        visibleLogLines.enumerated().map { index, line in
+            Self.simplifiedLogEntry(line, index: index, language: language)
+        }
+    }
 
     var logPageCount: Int {
         max(1, Int(ceil(Double(filteredLogLines.count) / Double(logPageSize))))
@@ -229,6 +240,11 @@ final class AppModel: ObservableObject {
     func showAllLogs() {
         logRunIdFilter = nil
         logPage = 0
+    }
+
+    func setLogDisplayMode(_ mode: LogDisplayMode) {
+        logDisplayMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "logDisplayMode")
     }
 
     func clearLogs() async {
@@ -302,19 +318,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func submit(_ task: ManualTask) async {
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            try await browser.submit(taskKey: task.id)
-            statusMessage = text("Task submitted")
-            alertMessage = text("Task submitted successfully.")
-        } catch {
-            alertMessage = error.localizedDescription
-        }
-    }
-
     func refreshPlugins() async {
         do {
             let output = try await runtime.plugin(["list"])
@@ -369,29 +372,6 @@ final class AppModel: ObservableObject {
             browser.load(baseURL: serverURL, adminKey: adminKey)
             statusMessage = text("Settings saved")
         } catch { alertMessage = error.localizedDescription }
-    }
-
-    func loadStoredCredentials() async {
-        if let credentials = try? await runtime.loadCredentials() {
-            agentToken = credentials.agentToken
-            debugToken = credentials.debugToken
-            adminKey = credentials.adminKey ?? ""
-            statusMessage = text("Saved credentials loaded")
-            return
-        }
-        // One-time migration for Beta 53 and earlier. This user-initiated read
-        // may show one native App Keychain prompt; saving immediately migrates
-        // the values to the owner-only runtime file and removes the old items.
-        let storedAgentToken = KeychainStore.get(account: "agent-token")
-        let storedDebugToken = KeychainStore.get(account: "debug-token")
-        guard let storedAgentToken, let storedDebugToken else {
-            alertMessage = text("No saved credentials were found.")
-            return
-        }
-        agentToken = storedAgentToken
-        debugToken = storedDebugToken
-        adminKey = ""
-        statusMessage = text("Saved credentials loaded")
     }
 
     func openSetupAssistant() {
@@ -501,8 +481,10 @@ final class AppModel: ObservableObject {
             debugToken: debugToken,
             adminKey: adminKey,
             mumuInstanceName: mumuInstanceName,
-            allowUnsignedLocalPlugins: allowUnsignedPlugins
+            allowUnsignedLocalPlugins: allowUnsignedPlugins,
+            locale: language
         )
+        await runtime.setRuntimeLocale(language, debugToken: debugToken)
         try await runtime.registerAgent(
             baseURL: serverURL,
             agentID: agentID,
@@ -517,6 +499,15 @@ final class AppModel: ObservableObject {
         defaults.set(allowUnsignedPlugins, forKey: "allowUnsignedPlugins")
         defaults.set(language, forKey: "language")
         defaults.set(theme.rawValue, forKey: "theme")
+        defaults.set(logDisplayMode.rawValue, forKey: "logDisplayMode")
+    }
+
+    func syncLanguageToRuntime() async {
+        await runtime.setRuntimeLocale(language, debugToken: debugToken)
+    }
+
+    func syncLanguageToBrowser() {
+        browser.setLanguage(language)
     }
 
     func exportMigration() async {
@@ -602,6 +593,83 @@ final class AppModel: ObservableObject {
               let data = String(line).data(using: .utf8)
         else { throw RuntimeError.failed(text("The plugin response was invalid.")) }
         return try JSONDecoder().decode(PluginEnvelope.self, from: data)
+    }
+
+    private static func simplifiedLogEntry(
+        _ line: String,
+        index: Int,
+        language: String
+    ) -> SimplifiedLogEntry {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        let jsonStart = trimmed.firstIndex(of: "{")
+        let prefix = jsonStart.map { String(trimmed[..<$0]).trimmingCharacters(in: .whitespaces) } ?? ""
+        let jsonText = jsonStart.map { String(trimmed[$0...]) } ?? ""
+        let object = jsonText.data(using: .utf8)
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let timestamp = (object?["timestamp"] as? String)
+            ?? (object?["time"] as? String)
+            ?? prefix
+        let level = ((object?["level"] as? String) ?? "info").lowercased()
+        let step = (object?["step"] as? String)
+            ?? (object?["event"] as? String)
+            ?? ""
+        let fallbackMessage = (object?["message"] as? String)
+            ?? (object?["error"] as? String)
+            ?? (jsonStart == nil ? trimmed : jsonText)
+        let message = localizedMessage(
+            in: object,
+            fallback: fallbackMessage,
+            language: language
+        )
+        return SimplifiedLogEntry(
+            id: "\(index)-\(trimmed.hashValue)",
+            timestamp: timestamp,
+            level: level,
+            step: step,
+            message: message
+        )
+    }
+
+    private static func localizedRawLine(_ line: String, language: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let jsonStart = trimmed.firstIndex(of: "{"),
+              let data = String(trimmed[jsonStart...]).data(using: .utf8),
+              var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let message = object["message"] as? String else {
+            return line
+        }
+        let localized = localizedMessage(in: object, fallback: message, language: language)
+        guard localized != message else { return line }
+        object["message"] = localized
+        guard let localizedData = try? JSONSerialization.data(
+            withJSONObject: object,
+            options: [.sortedKeys]
+        ), let localizedJSON = String(data: localizedData, encoding: .utf8) else {
+            return line
+        }
+        return String(trimmed[..<jsonStart]) + localizedJSON
+    }
+
+    private static func localizedMessage(
+        in object: [String: Any]?,
+        fallback: String,
+        language: String
+    ) -> String {
+        let locale = taskLocale(for: language)
+        let detail = object?["detail"] as? [String: Any]
+        let messages = detail?["localizedMessages"] as? [String: Any]
+        return messages?[locale] as? String ?? fallback
+    }
+
+    private static func taskLocale(for language: String) -> String {
+        switch language {
+        case "zh-Hant": return "zh-tw"
+        case "zh-Hans": return "zh-cn"
+        case "en": return "en"
+        case "fr": return "fr"
+        case "ja": return "ja"
+        default: return "zh-cn"
+        }
     }
 
     private static func preferredLanguage() -> String {

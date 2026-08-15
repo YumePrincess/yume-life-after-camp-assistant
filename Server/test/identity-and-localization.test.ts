@@ -11,6 +11,7 @@ import {
   localizeTechnology,
   TECHNOLOGY_LOCALIZATIONS
 } from "../src/technology-localizations";
+import { localizeWorkerEvent } from "../src/task-localization";
 import { validatePublicOverview } from "../src/validate";
 
 describe("identity code rules", () => {
@@ -92,6 +93,28 @@ describe("five-language public content", () => {
         }
       }
     }
+  });
+
+  it("localizes Worker task events from the Agent's five-language payload", () => {
+    const event = localizeWorkerEvent(
+      {
+        message: "正在启动明日之后",
+        detail_json: JSON.stringify({
+          localizedMessages: {
+            "zh-cn": "正在启动明日之后",
+            "zh-tw": "正在啟動明日之後",
+            en: "Starting LifeAfter",
+            fr: "Démarrage de LifeAfter",
+            ja: "LifeAfter を起動しています"
+          }
+        })
+      },
+      "fr"
+    );
+    expect(event.message).toBe("Démarrage de LifeAfter");
+    expect(localizeWorkerEvent(event, "ja").message).toBe(
+      "LifeAfter を起動しています"
+    );
   });
 
   it("copies legacy announcements to all languages by default", () => {
