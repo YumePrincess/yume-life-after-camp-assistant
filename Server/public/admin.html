@@ -85,7 +85,7 @@
                 <div>
                   <p class="eyebrow">GENERAL</p>
                   <h1>营地与公共展示</h1>
-                  <p class="section-intro">维护营地身份、投票开放时间和公共页面内容。</p>
+                  <p class="section-intro">维护营地身份、每日刷新和公共页面内容。</p>
                 </div>
               </div>
               <div class="form-grid">
@@ -94,22 +94,7 @@
                 <label class="field"><span>站点名称</span><input name="publicSiteName" required /></label>
                 <label class="field"><span>时区</span><input name="timezone" required /></label>
                 <label class="field"><span>每日刷新</span><input name="gameResetTime" type="time" required /></label>
-                <label class="field">
-                  <span>科技投票开放时间</span>
-                  <input name="voteWindowStart" inputmode="numeric" pattern="(?:[01]\d|2[0-3]):[0-5]\d" placeholder="06:30" required />
-                </label>
-                <label class="field">
-                  <span>科技投票截止时间</span>
-                  <input name="voteWindowEnd" inputmode="numeric" pattern="(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)" placeholder="24:00" required />
-                </label>
-                <label class="field">
-                  <span>营地科技类型</span>
-                  <select name="currentCampType">
-                    <option value="military">军事</option>
-                    <option value="agriculture">农业</option>
-                    <option value="industry">工业</option>
-                  </select>
-                </label>
+                <label class="field"><span>特殊每日刷新</span><input name="specialDailyRefreshTime" type="time" required /></label>
                 <label class="field field-checkbox">
                   <input name="publicMembersEnabled" type="checkbox" />
                   <span>公开展示成员信息</span>
@@ -360,6 +345,11 @@
                 <span>分时轮询窗口 JSON（支持跨午夜，weekdays 为周一 1 至周日 7）</span>
                 <textarea id="polling-windows-json" class="code-editor" rows="10" spellcheck="false"></textarea>
               </label>
+              <div class="policy-advice">
+                <strong>减少 Worker 请求的建议</strong>
+                <p>空闲轮询可设为 300–600 秒；实际任务窗口内建议 15–30 秒，仅保留确实会执行任务的窗口。任务执行中轮询可保持 10–15 秒，以兼顾响应速度。</p>
+                <p>下方 JSON 只控制本地 Agent 何时向 Worker 请求任务及请求间隔，不是任务执行时间；窗口外会使用默认空闲轮询。</p>
+              </div>
               <div class="section-savebar">
                 <span class="feedback" data-save-feedback>当前配置已同步</span>
                 <button class="button button-primary" type="submit">保存执行策略</button>
@@ -373,9 +363,27 @@
                 <div>
                   <p class="eyebrow">TECHNOLOGY</p>
                   <h1>科技目录、投票与固定科技</h1>
-                  <p class="section-intro">先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。</p>
+                  <p class="section-intro">设置投票时间与营地科技类型，再选择日期配置当日固定科技；筛选只影响当前显示，不会改变已保存配置。</p>
                 </div>
                 <span id="next-tech-date" class="date-badge"></span>
+              </div>
+              <div class="technology-schedule-settings">
+                <label class="field">
+                  <span>科技投票开放时间</span>
+                  <input name="voteWindowStart" inputmode="numeric" pattern="(?:[01]\d|2[0-3]):[0-5]\d" placeholder="06:30" required />
+                </label>
+                <label class="field">
+                  <span>科技投票截止时间</span>
+                  <input name="voteWindowEnd" inputmode="numeric" pattern="(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)" placeholder="24:00" required />
+                </label>
+                <label class="field">
+                  <span>营地科技类型</span>
+                  <select name="currentCampType">
+                    <option value="military">军事</option>
+                    <option value="agriculture">农业</option>
+                    <option value="industry">工业</option>
+                  </select>
+                </label>
               </div>
               <div class="technology-editor-toolbar">
                 <div class="technology-date-picker">
@@ -383,11 +391,33 @@
                   <div id="technology-weekdays" class="weekday-tabs" role="tablist"></div>
                 </div>
                 <div class="technology-limits">
-                  <span id="technology-core-count">— / —</span>
-                  <span id="technology-general-count">— / —</span>
                   <label class="field technology-vote-limit-field">
                     <span>每人投票上限（0–12）</span>
                     <input id="technology-vote-limit" type="number" min="0" max="12" step="1" value="6" />
+                  </label>
+                  <label class="field technology-row-limit-field">
+                    <span>第一行科技最大开放数量</span>
+                    <select id="technology-core-limit">
+                      <option value="0">0</option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                      <option value="5">5</option>
+                      <option value="6" selected>6</option>
+                    </select>
+                  </label>
+                  <label class="field technology-row-limit-field">
+                    <span>第二行科技最大开放数量</span>
+                    <select id="technology-general-limit">
+                      <option value="0">0</option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                      <option value="5">5</option>
+                      <option value="6" selected>6</option>
+                    </select>
                   </label>
                 </div>
               </div>

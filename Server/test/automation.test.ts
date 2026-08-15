@@ -1,7 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { validateAutomationConfig } from "../src/validate";
+import type { AutomationConfig } from "../src/domain";
+import {
+  preserveAutomationScheduleTimes,
+  validateAutomationConfig,
+  validateCampConfig
+} from "../src/validate";
 
 describe("five-task automation configuration", () => {
+  it("defaults the reserved special daily refresh to midnight", () => {
+    const base = {
+      timezone: "Asia/Shanghai",
+      gameResetTime: "03:00",
+      voteWindowStart: "06:30",
+      voteWindowEnd: "24:00",
+      currentCampType: "agriculture",
+      agentId: "",
+      publicSiteName: "Site",
+      campName: "Camp",
+      serverName: "Server",
+      publicMembersEnabled: true,
+      inactivityWarningDays: 1
+    };
+
+    expect(validateCampConfig(base).specialDailyRefreshTime).toBe("00:00");
+    expect(
+      validateCampConfig({ ...base, specialDailyRefreshTime: "01:15" })
+        .specialDailyRefreshTime
+    ).toBe("01:15");
+  });
+
   it("defaults the four daytime tasks and removes legacy routines", () => {
     const config = validateAutomationConfig({
       timezone: "Asia/Shanghai",
@@ -175,5 +202,77 @@ describe("five-task automation configuration", () => {
         }
       }
     })).toThrow("patrol.times supports only one time");
+  });
+
+  it("preserves later slots when a legacy client omits times", () => {
+    const current = {
+      tech_switch: { enabled: true, time: "02:00", times: ["02:00"] },
+      contribution_sync: {
+        enabled: true,
+        time: "02:30",
+        times: ["02:30", "12:30", "18:30"]
+      },
+      inactivity_sync: {
+        enabled: true,
+        time: "02:45",
+        times: ["02:45", "13:45"]
+      },
+      member_profile_sync: {
+        enabled: true,
+        time: "02:15",
+        times: ["02:15", "14:15"]
+      },
+      patrol: {
+        enabled: true,
+        time: "19:20",
+        times: ["19:20"],
+        teamReadyTime: "19:30",
+        shareIntervalMinutes: 10,
+        chatPollSeconds: 5,
+        deadline: "21:25"
+      }
+    } satisfies AutomationConfig["tasks"];
+    const submitted = {
+      ...current,
+      contribution_sync: { ...current.contribution_sync, time: "03:00", times: ["03:00"] },
+      inactivity_sync: { ...current.inactivity_sync, time: "04:00", times: ["04:00"] },
+      member_profile_sync: { ...current.member_profile_sync, time: "05:00", times: ["05:00"] }
+    } satisfies AutomationConfig["tasks"];
+
+    const merged = preserveAutomationScheduleTimes(
+      current,
+      submitted,
+      {
+        automationConfig: {
+          tasks: {
+            contribution_sync: { enabled: true, time: "03:00" },
+            inactivity_sync: { enabled: true, time: "04:00" },
+            member_profile_sync: { enabled: true, time: "05:00" }
+          }
+        }
+      }
+    );
+
+    expect(merged.contribution_sync.times).toEqual(["03:00", "12:30", "18:30"]);
+    expect(merged.inactivity_sync.times).toEqual(["04:00", "13:45"]);
+    expect(merged.member_profile_sync.times).toEqual(["05:00", "14:15"]);
+
+    const explicitlyReduced = preserveAutomationScheduleTimes(
+      current,
+      submitted,
+      {
+        automationConfig: {
+          tasks: {
+            contribution_sync: {
+              enabled: true,
+              time: "03:00",
+              times: ["03:00"],
+              replaceTimes: true
+            }
+          }
+        }
+      }
+    );
+    expect(explicitlyReduced.contribution_sync.times).toEqual(["03:00"]);
   });
 });

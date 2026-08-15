@@ -7,6 +7,7 @@ import {
   prerequisiteNameForTechnology,
   technologyCatalogWithPrerequisites
 } from "../src/tech";
+import { validateTechnologyConfig } from "../src/validate";
 
 function technology(
   key: string,
@@ -79,6 +80,14 @@ const technologyConfig: TechnologyConfig = {
 };
 
 describe("buildTechnologyPlan", () => {
+  it("defaults both row capacities to six for legacy configurations", () => {
+    const legacy = { ...technologyConfig, limits: undefined };
+    expect(validateTechnologyConfig(legacy).limits).toEqual({
+      core: 6,
+      general: 6
+    });
+  });
+
   it("accepts an empty ballot as a withdrawal", () => {
     expect(
       normalizeBallotSelections({
@@ -113,6 +122,76 @@ describe("buildTechnologyPlan", () => {
     });
     expect(plan.core.map((item) => item.key)).toEqual(["fixed-core", "vote-core"]);
     expect(plan.general.map((item) => item.key)).toEqual(["wrong-core"]);
+  });
+
+  it("does not apply fixed or voted technologies beyond a zero row capacity", () => {
+    const config: TechnologyConfig = {
+      ...technologyConfig,
+      fixedByDate: { "2026-07-27": ["fixed-core"] },
+      limits: { core: 0, general: 0 }
+    };
+    const plan = buildTechnologyPlan({
+      targetDate: "2026-07-27",
+      currentCampType: "military",
+      technologyConfig: config,
+      voteOptions: config.catalog.map((item) => ({ ...item, votes: 10 }))
+    });
+
+    expect(plan.core).toEqual([]);
+    expect(plan.general).toEqual([]);
+    expect(plan.rejectedFixed).toEqual([
+      {
+        key: "fixed-core",
+        reason: "固定科技及其前置科技超过该行开启上限"
+      }
+    ]);
+  });
+
+  it("keeps the plan within four configured slots while the physical row remains six slots", () => {
+    const core = Array.from({ length: 6 }, (_, index) =>
+      technology(`limited-core-${index + 1}`, "core", "agriculture", index)
+    );
+    const general = Array.from({ length: 6 }, (_, index) =>
+      technology(`limited-general-${index + 1}`, "general", "military", index + 10)
+    );
+    const plan = buildTechnologyPlan({
+      targetDate: "2026-07-29",
+      currentCampType: "agriculture",
+      technologyConfig: {
+        catalog: [...core, ...general],
+        fixedByWeekday: {
+          "1": [],
+          "2": [],
+          "3": [],
+          "4": [],
+          "5": [],
+          "6": [],
+          "7": []
+        },
+        fixedByDate: {},
+        voteLimit: 6,
+        limits: { core: 4, general: 4 }
+      },
+      voteOptions: [...core, ...general].map((item, index) => ({
+        ...item,
+        votes: 100 - index
+      }))
+    });
+
+    expect(plan.core).toHaveLength(4);
+    expect(plan.general).toHaveLength(4);
+    expect(plan.core.map((item) => item.key)).toEqual([
+      "limited-core-1",
+      "limited-core-2",
+      "limited-core-3",
+      "limited-core-4"
+    ]);
+    expect(plan.general.map((item) => item.key)).toEqual([
+      "limited-general-1",
+      "limited-general-2",
+      "limited-general-3",
+      "limited-general-4"
+    ]);
   });
 
   it("fills six agricultural first-row technologies and six other technologies", () => {

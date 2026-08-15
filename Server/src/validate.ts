@@ -108,12 +108,82 @@ function taskSchedule(
   };
 }
 
+type AutomationTasks = AutomationConfig["tasks"];
+
+/**
+ * Older admin clients only submit `time`. Keep any later execution slots that
+ * are already persisted when one of those clients saves the task section.
+ * Current clients always submit `times`, so an intentional removal to one
+ * execution remains possible.
+ */
+export function preserveAutomationScheduleTimes(
+  current: AutomationTasks,
+  submitted: AutomationTasks,
+  rawConfig: unknown
+): AutomationTasks {
+  const root =
+    rawConfig && typeof rawConfig === "object" && !Array.isArray(rawConfig)
+      ? rawConfig as Record<string, unknown>
+      : {};
+  const rawAutomation =
+    root.automationConfig &&
+    typeof root.automationConfig === "object" &&
+    !Array.isArray(root.automationConfig)
+      ? root.automationConfig as Record<string, unknown>
+      : {};
+  const rawTasks =
+    rawAutomation.tasks &&
+    typeof rawAutomation.tasks === "object" &&
+    !Array.isArray(rawAutomation.tasks)
+      ? rawAutomation.tasks as Record<string, unknown>
+      : {};
+  const result = { ...submitted } as AutomationTasks;
+
+  for (const taskKey of Object.keys(result) as Array<keyof AutomationTasks>) {
+    const rawSchedule = rawTasks[taskKey];
+    const includesTimes =
+      rawSchedule &&
+      typeof rawSchedule === "object" &&
+      !Array.isArray(rawSchedule) &&
+      Object.prototype.hasOwnProperty.call(rawSchedule, "times");
+    const explicitlyReplacesTimes =
+      rawSchedule &&
+      typeof rawSchedule === "object" &&
+      !Array.isArray(rawSchedule) &&
+      (rawSchedule as Record<string, unknown>).replaceTimes === true;
+    const currentSchedule = current[taskKey];
+    const submittedSchedule = result[taskKey];
+    const submittedTimes = submittedSchedule?.times || [];
+    if (
+      explicitlyReplacesTimes ||
+      !currentSchedule ||
+      !submittedSchedule ||
+      currentSchedule.times.length < 2 ||
+      (includesTimes && submittedTimes.length >= currentSchedule.times.length)
+    ) {
+      continue;
+    }
+    const firstTime = submittedSchedule.time || currentSchedule.times[0];
+    result[taskKey] = {
+      ...submittedSchedule,
+      time: firstTime,
+      times: [firstTime, ...currentSchedule.times.slice(1)]
+    } as AutomationTasks[typeof taskKey];
+  }
+  return result;
+}
+
 export function validateCampConfig(value: unknown): CampConfig {
   const source = object(value, "campConfig");
   const timezone = text(source.timezone, "campConfig.timezone", { max: 80 });
   assertTimezone(timezone);
   const gameResetTime = text(source.gameResetTime, "campConfig.gameResetTime", { max: 5 });
   assertClock(gameResetTime, "campConfig.gameResetTime");
+  const specialDailyRefreshTime =
+    source.specialDailyRefreshTime === undefined
+      ? "00:00"
+      : text(source.specialDailyRefreshTime, "campConfig.specialDailyRefreshTime", { max: 5 });
+  assertClock(specialDailyRefreshTime, "campConfig.specialDailyRefreshTime");
   const voteWindowStart =
     source.voteWindowStart === undefined
       ? "06:30"
@@ -130,6 +200,7 @@ export function validateCampConfig(value: unknown): CampConfig {
   return {
     timezone,
     gameResetTime,
+    specialDailyRefreshTime,
     voteWindowStart,
     voteWindowEnd,
     currentCampType: category(source.currentCampType, "campConfig.currentCampType"),
@@ -300,7 +371,10 @@ export function validateTechnologyConfig(value: unknown): TechnologyConfig {
     fixedByDate[date] = values;
   }
 
-  const limits = object(source.limits, "technologyConfig.limits");
+  const limits: Record<string, unknown> =
+    source.limits === undefined
+      ? {}
+      : object(source.limits, "technologyConfig.limits");
   return {
     catalog,
     fixedByWeekday,
@@ -312,8 +386,18 @@ export function validateTechnologyConfig(value: unknown): TechnologyConfig {
       12
     ),
     limits: {
-      core: integer(limits.core, "technologyConfig.limits.core", 0, 6),
-      general: integer(limits.general, "technologyConfig.limits.general", 0, 6)
+      core: integer(
+        limits.core === undefined ? 6 : limits.core,
+        "technologyConfig.limits.core",
+        0,
+        6
+      ),
+      general: integer(
+        limits.general === undefined ? 6 : limits.general,
+        "technologyConfig.limits.general",
+        0,
+        6
+      )
     }
   };
 }

@@ -12,6 +12,7 @@
     ],
     ["patrol", "营地巡逻", "组队、困难路线与定时古籍分享"]
   ];
+  const TECHNOLOGY_ROW_SLOT_COUNT = 6;
   const CONFIG_SECTIONS = ["general", "tasks", "agent", "technology"];
   const VIEW_PERMISSIONS = {
     overview: "admin:overview",
@@ -78,6 +79,7 @@
     smtpDraftRevision: 0,
     smtpDirty: false,
     scheduleDrafts: {},
+    scheduleReplacements: {},
     scheduleDialogTaskKey: null,
     maintenanceAction: null,
     loadedPluginClientModules: new Set()
@@ -618,9 +620,7 @@
         publicSiteName: camp.publicSiteName,
         timezone: automation.timezone,
         gameResetTime: camp.gameResetTime,
-        voteWindowStart: camp.voteWindowStart || "06:30",
-        voteWindowEnd: camp.voteWindowEnd || "24:00",
-        currentCampType: camp.currentCampType,
+        specialDailyRefreshTime: camp.specialDailyRefreshTime || "00:00",
         publicMembersEnabled: camp.publicMembersEnabled,
         inactivityWarningDays: camp.inactivityWarningDays,
         temporaryKeyLoginEnabled: bundle.authConfig.temporaryKeyLoginEnabled,
@@ -634,6 +634,7 @@
     }
     if (sections.includes("tasks")) {
       state.scheduleDrafts = {};
+      state.scheduleReplacements = {};
       for (const [name, value] of Object.entries({
         scheduledRetryCount: automation.scheduledRetryCount ?? 2,
         techEnabled: tasks.tech_switch.enabled,
@@ -680,8 +681,26 @@
       );
     }
     if (sections.includes("technology")) {
+      for (const [name, value] of Object.entries({
+        voteWindowStart: camp.voteWindowStart || "06:30",
+        voteWindowEnd: camp.voteWindowEnd || "24:00",
+        currentCampType: camp.currentCampType
+      })) {
+        setField(name, value);
+      }
       state.technologyDraft = JSON.parse(JSON.stringify(bundle.technologyConfig));
       state.technologyDraft.fixedByDate ||= {};
+      const limits = state.technologyDraft.limits || {};
+      state.technologyDraft.limits = {
+        core:
+          Number.isInteger(limits.core) && limits.core >= 0 && limits.core <= 6
+            ? limits.core
+            : 6,
+        general:
+          Number.isInteger(limits.general) && limits.general >= 0 && limits.general <= 6
+            ? limits.general
+            : 6
+      };
       const voteLimitInput = byId("technology-vote-limit");
       if (voteLimitInput) voteLimitInput.value = String(
         Number.isInteger(state.technologyDraft.voteLimit) ?
@@ -719,6 +738,9 @@
       if (primary) result[0] = String(primary.value || "").trim();
       return result;
     }
+    const persisted =
+      state.bootstrap?.configBundle?.automationConfig?.tasks?.[taskKey]?.times;
+    if (Array.isArray(persisted) && persisted.length) return persisted.slice();
     return [String(getField(field?.time) || "").trim()];
   }
 
@@ -834,6 +856,7 @@
     }
     const normalized = taskKey === "tech_switch" || taskKey === "patrol" ? [times[0]] : times;
     state.scheduleDrafts[taskKey] = normalized;
+    state.scheduleReplacements[taskKey] = true;
     setField(field.time, normalized[0]);
     setField(field.enabled, byId("schedule-dialog-enabled").checked);
     if (taskKey === "patrol") {
@@ -1149,11 +1172,27 @@
   function renderTechnologyEditor() {
     const config = state.technologyDraft;
     if (!config) return;
+    config.limits ||= { core: 6, general: 6 };
+    config.limits.core = Number.isInteger(config.limits.core)
+      ? Math.max(0, Math.min(6, config.limits.core))
+      : 6;
+    config.limits.general = Number.isInteger(config.limits.general)
+      ? Math.max(0, Math.min(6, config.limits.general))
+      : 6;
     const voteLimitInput = byId("technology-vote-limit");
     if (voteLimitInput && document.activeElement !== voteLimitInput) {
       voteLimitInput.value = String(
         Number.isInteger(config.voteLimit) ? config.voteLimit : 6
       );
+    }
+    for (const [id, lane] of [
+      ["technology-core-limit", "core"],
+      ["technology-general-limit", "general"]
+    ]) {
+      const limitInput = byId(id);
+      if (limitInput && document.activeElement !== limitInput) {
+        limitInput.value = String(config.limits[lane]);
+      }
     }
     const campType =
       state.bootstrap?.configBundle?.campConfig?.currentCampType ||
@@ -1205,17 +1244,6 @@
       currentVoteSummary?.isOpen === false &&
       state.technologyDate === currentVoteSummary.pollDate
     );
-    const coreCount = config.catalog.filter(
-      (item) => fixed.has(item.key) && effectiveLane(item) === "core"
-    ).length;
-    const generalCount = config.catalog.filter(
-      (item) => fixed.has(item.key) && effectiveLane(item) === "general"
-    ).length;
-    byId("technology-core-count").textContent =
-      `${coreLabel} ${coreCount} / ${config.limits.core}`;
-    byId("technology-general-count").textContent =
-      `${otherLabel} ${generalCount} / ${config.limits.general}`;
-
     const previewRoot = byId("technology-fixed-preview");
     previewRoot.replaceChildren();
     const showsCurrentProjection =
@@ -1241,9 +1269,14 @@
         )
         .sort((a, b) =>
           showsCurrentProjection
-            ? projectedOrder.indexOf(a.key) - projectedOrder.indexOf(b.key)
-            : a.sortOrder - b.sortOrder
+          ? projectedOrder.indexOf(a.key) - projectedOrder.indexOf(b.key)
+          : a.sortOrder - b.sortOrder
         );
+      // The game always exposes six physical slots. The configured limit only
+      // controls how many entries may be selected for this row; the remaining
+      // slots must stay visible so the Agent can inspect them as empty.
+      const limit = config.limits[lane];
+      const visibleSelected = selected.slice(0, limit);
       const laneRoot = create("section", "technology-fixed-lane");
       const laneHeader = create("div", "technology-fixed-lane-header");
       laneHeader.append(
@@ -1255,12 +1288,12 @@
         create(
           "span",
           "",
-          `${selected.length} / ${config.limits[lane]}`
+          `${visibleSelected.length} / ${limit}`
         )
       );
       const slots = create("div", "technology-fixed-slots");
-      for (let index = 0; index < config.limits[lane]; index += 1) {
-        const item = selected[index];
+      for (let index = 0; index < TECHNOLOGY_ROW_SLOT_COUNT; index += 1) {
+        const item = visibleSelected[index];
         const slot = create("div", "technology-fixed-slot");
         slot.dataset.filled = String(Boolean(item));
         slot.dataset.source = item
@@ -2040,9 +2073,7 @@
         publicSiteName: String(getField("publicSiteName")).trim(),
         timezone,
         gameResetTime: getField("gameResetTime"),
-        voteWindowStart: String(getField("voteWindowStart")).trim(),
-        voteWindowEnd: String(getField("voteWindowEnd")).trim(),
-        currentCampType: getField("currentCampType"),
+        specialDailyRefreshTime: getField("specialDailyRefreshTime"),
         publicMembersEnabled: getField("publicMembersEnabled"),
         inactivityWarningDays: Number(getField("inactivityWarningDays"))
       };
@@ -2070,27 +2101,32 @@
         tech_switch: {
           enabled: getField("techEnabled"),
           time: techTimes[0],
-          times: techTimes
+          times: techTimes,
+          replaceTimes: Boolean(state.scheduleReplacements.tech_switch)
         },
         contribution_sync: {
           enabled: getField("contributionEnabled"),
           time: contributionTimes[0],
-          times: contributionTimes
+          times: contributionTimes,
+          replaceTimes: Boolean(state.scheduleReplacements.contribution_sync)
         },
         inactivity_sync: {
           enabled: getField("inactivityEnabled"),
           time: inactivityTimes[0],
-          times: inactivityTimes
+          times: inactivityTimes,
+          replaceTimes: Boolean(state.scheduleReplacements.inactivity_sync)
         },
         member_profile_sync: {
           enabled: getField("profileEnabled"),
           time: profileTimes[0],
-          times: profileTimes
+          times: profileTimes,
+          replaceTimes: Boolean(state.scheduleReplacements.member_profile_sync)
         },
         patrol: {
           enabled: getField("patrolEnabled"),
           time: patrolTime,
           times: [patrolTime],
+          replaceTimes: Boolean(state.scheduleReplacements.patrol),
           teamReadyTime: getField("patrolReadyTime"),
           shareIntervalMinutes: Number(getField("shareInterval")),
           chatPollSeconds: Number(getField("chatPollSeconds")),
@@ -2123,9 +2159,23 @@
       const rawVoteLimit = byId("technology-vote-limit")?.value;
       const voteLimit = rawVoteLimit === "" ? 6 : Number(rawVoteLimit);
       state.technologyDraft.voteLimit = voteLimit;
+      const readRowLimit = (id) => {
+        const value = Number(byId(id)?.value);
+        return Number.isInteger(value) && value >= 0 && value <= 6 ? value : 6;
+      };
+      state.technologyDraft.limits = {
+        core: readRowLimit("technology-core-limit"),
+        general: readRowLimit("technology-general-limit")
+      };
       next.technologyConfig = JSON.parse(
         JSON.stringify(state.technologyDraft)
       );
+      next.campConfig = {
+        ...next.campConfig,
+        voteWindowStart: String(getField("voteWindowStart")).trim(),
+        voteWindowEnd: String(getField("voteWindowEnd")).trim(),
+        currentCampType: getField("currentCampType")
+      };
     } else {
       throw new Error("未知配置分区");
     }
@@ -2839,6 +2889,17 @@
     state.technologyCategory = event.target.value || "all";
     renderTechnologyEditor();
   });
+  for (const [id, lane] of [
+    ["technology-core-limit", "core"],
+    ["technology-general-limit", "general"]
+  ]) {
+    byId(id).addEventListener("change", (event) => {
+      if (!state.technologyDraft) return;
+      state.technologyDraft.limits[lane] = Number(event.target.value);
+      markTechnologyDirty();
+      renderTechnologyEditor();
+    });
+  }
   byId("refresh-technology-history").addEventListener("click", () =>
     loadTechnologyHistory(byId("technology-history-date").value)
   );

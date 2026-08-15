@@ -28,6 +28,7 @@ export type TechnologyLane = "core" | "general";
 export interface CampConfig {
   timezone: string;
   gameResetTime: string;
+  specialDailyRefreshTime: string;
   voteWindowStart: string;
   voteWindowEnd: string;
   currentCampType: TechnologyCategory;

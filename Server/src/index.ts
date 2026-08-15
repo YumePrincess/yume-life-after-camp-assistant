@@ -86,7 +86,10 @@ import {
   zonedDateKey,
   zonedParts
 } from "./time";
-import { validateConfigBundle } from "./validate";
+import {
+  preserveAutomationScheduleTimes,
+  validateConfigBundle
+} from "./validate";
 import { localizeTechnology } from "./technology-localizations";
 import {
   approveIdentityApplication,
@@ -1235,7 +1238,8 @@ async function handleAdminApi(
       return problem("科技插件当前未启用", 409, "plugin_disabled");
     }
     const current = await getConfigBundle(env);
-    const submitted = validateConfigBundle(await readJsonObject(request, 300_000));
+    const submittedBody = await readJsonObject(request, 300_000);
+    const submitted = validateConfigBundle(submittedBody);
     if (section === "technology") {
       const voteSummary = await buildVoteSummary(env, current);
       if (!voteSummary.isOpen) {
@@ -1270,7 +1274,16 @@ async function handleAdminApi(
       ...current,
       ...(section === "general"
         ? {
-            campConfig: submitted.campConfig,
+            campConfig: {
+              ...submitted.campConfig,
+              specialDailyRefreshTime:
+                Object.prototype.hasOwnProperty.call(
+                  submittedBody.campConfig ?? {},
+                  "specialDailyRefreshTime"
+                )
+                  ? submitted.campConfig.specialDailyRefreshTime
+                  : current.campConfig.specialDailyRefreshTime
+            },
             authConfig: submitted.authConfig,
             publicOverview: submitted.publicOverview,
             automationConfig: {
@@ -1283,7 +1296,11 @@ async function handleAdminApi(
         ? {
             automationConfig: {
               ...current.automationConfig,
-              tasks: submitted.automationConfig.tasks
+              tasks: preserveAutomationScheduleTimes(
+                current.automationConfig.tasks,
+                submitted.automationConfig.tasks,
+                submittedBody
+              )
             }
           }
         : {}),
@@ -1298,7 +1315,15 @@ async function handleAdminApi(
           }
         : {}),
       ...(section === "technology"
-        ? { technologyConfig: submitted.technologyConfig }
+        ? {
+            campConfig: {
+              ...current.campConfig,
+              voteWindowStart: submitted.campConfig.voteWindowStart,
+              voteWindowEnd: submitted.campConfig.voteWindowEnd,
+              currentCampType: submitted.campConfig.currentCampType
+            },
+            technologyConfig: submitted.technologyConfig
+          }
         : {})
     });
     await saveConfigBundle(env, next);
@@ -1744,6 +1769,7 @@ async function buildPublicBootstrap(
       currentCampType: bundle.campConfig.currentCampType,
       timezone: bundle.campConfig.timezone,
       gameResetTime: bundle.campConfig.gameResetTime,
+      specialDailyRefreshTime: bundle.campConfig.specialDailyRefreshTime,
       voteWindowStart: bundle.campConfig.voteWindowStart,
       voteWindowEnd: bundle.campConfig.voteWindowEnd,
       inactivityWarningDays: bundle.campConfig.inactivityWarningDays

@@ -2311,6 +2311,40 @@ select option {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.technology-schedule-settings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 15px;
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.technology-schedule-settings .field {
+  margin: 0;
+}
+
+.policy-advice {
+  margin-top: 14px;
+  padding: 13px 15px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 14px 14px 0;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.policy-advice strong {
+  color: var(--text);
+}
+
+.policy-advice p {
+  margin: 5px 0 0;
+}
+
 .field-label {
   display: block;
   margin-bottom: 8px;
@@ -2337,8 +2371,7 @@ select option {
   align-items: stretch;
 }
 
-.weekday-tab,
-.technology-limits span {
+.weekday-tab {
   display: inline-flex;
   min-height: 40px;
   align-items: center;
@@ -2348,12 +2381,6 @@ select option {
   border-radius: 999px;
   color: var(--muted);
   background: rgba(255, 255, 255, 0.035);
-}
-
-.technology-limits span {
-  min-width: 0;
-  text-align: center;
-  white-space: nowrap;
 }
 
 .technology-vote-limit-field {
@@ -2379,6 +2406,27 @@ select option {
 .technology-vote-limit-field input {
   min-height: 40px;
   padding-inline: 12px;
+}
+
+.technology-row-limit-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+}
+
+.technology-row-limit-field > span {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.technology-row-limit-field select {
+  min-height: 40px;
+  padding-inline: 12px 30px;
 }
 
 .weekday-tab {
@@ -3143,6 +3191,10 @@ dialog::backdrop {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .technology-schedule-settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .agent-status {
     grid-template-columns: 1fr;
   }
@@ -3288,6 +3340,10 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
+  .technology-schedule-settings {
+    grid-template-columns: 1fr;
+  }
+
   .vote-option {
     grid-template-columns: 48px minmax(0, 1fr) auto;
     gap: 12px;
@@ -3301,6 +3357,10 @@ dialog::backdrop {
 
   .technology-editor-toolbar {
     align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .technology-limits {
     grid-template-columns: 1fr;
   }
 
