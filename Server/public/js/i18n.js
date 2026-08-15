@@ -2206,6 +2206,8 @@
   }
   const adminKeyTranslations = {
     en: {
+      "确认操作": "Confirm action",
+      "确认": "Confirm",
       "权限（Demo 为后台全部模块只读预览）": "Permissions (Demo is a read-only preview of every admin module)",
       "Demo · 全后台只读": "Demo · Entire admin read-only",
       "控制台 · 查看与执行任务": "Console · View and run tasks",
@@ -2236,6 +2238,8 @@
       "请输入至少一项权限；仅预览请勾选 Demo 权限": "Select at least one permission; choose Demo for preview-only access"
     },
     fr: {
+      "确认操作": "Confirmer l’action",
+      "确认": "Confirmer",
       "权限（Demo 为后台全部模块只读预览）": "Autorisations (Demo affiche tous les modules en lecture seule)",
       "Demo · 全后台只读": "Démo · Administration en lecture seule",
       "控制台 · 查看与执行任务": "Console · Voir et exécuter les tâches",
@@ -2266,6 +2270,8 @@
       "请输入至少一项权限；仅预览请勾选 Demo 权限": "Sélectionnez au moins une autorisation ; choisissez Demo pour un aperçu en lecture seule"
     },
     ja: {
+      "确认操作": "操作を確認",
+      "确认": "確認",
       "权限（Demo 为后台全部模块只读预览）": "権限（Demo は管理画面全体の読み取り専用プレビューです）",
       "Demo · 全后台只读": "Demo・管理画面全体を読み取り専用",
       "控制台 · 查看与执行任务": "コンソール・タスクの表示と実行",
@@ -2296,6 +2302,8 @@
       "请输入至少一项权限；仅预览请勾选 Demo 权限": "権限を1つ以上選択してください。閲覧のみの場合は Demo を選択してください"
     },
     "zh-tw": {
+      "确认操作": "確認操作",
+      "确认": "確認",
       "权限（Demo 为后台全部模块只读预览）": "權限（Demo 為後台全部模組唯讀預覽）",
       "Demo · 全后台只读": "Demo · 全後台唯讀",
       "控制台 · 查看与执行任务": "控制台 · 查看與執行任務",

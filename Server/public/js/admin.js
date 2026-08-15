@@ -108,6 +108,118 @@
     return element;
   }
 
+  const appModalState = {
+    resolve: null,
+    mode: "confirm",
+    restoreFocus: null
+  };
+
+  function closeAppModal(value) {
+    const root = byId("app-modal");
+    const resolve = appModalState.resolve;
+    const restoreFocus = appModalState.restoreFocus;
+    appModalState.resolve = null;
+    appModalState.restoreFocus = null;
+    if (root) {
+      root.classList.remove("is-open");
+      root.setAttribute("aria-hidden", "true");
+      window.setTimeout(() => {
+        if (!appModalState.resolve) root.hidden = true;
+      }, 180);
+    }
+    if (resolve) resolve(value);
+    if (restoreFocus && typeof restoreFocus.focus === "function") {
+      window.setTimeout(() => restoreFocus.focus(), 180);
+    }
+  }
+
+  function openAppModal(options = {}) {
+    const root = byId("app-modal");
+    if (!root) return Promise.resolve(options.mode === "prompt" ? null : false);
+    if (appModalState.resolve) {
+      closeAppModal(options.mode === "prompt" ? null : false);
+    }
+    const mode = options.mode || "confirm";
+    const inputField = byId("app-modal-input-field");
+    const input = byId("app-modal-input");
+    const confirm = byId("app-modal-confirm");
+    const cancel = byId("app-modal-cancel");
+    byId("app-modal-eyebrow").textContent = translateUi(options.eyebrow || "操作");
+    byId("app-modal-title").textContent = translateUi(options.title || "确认操作");
+    byId("app-modal-message").textContent = options.message || "";
+    inputField.hidden = mode !== "prompt";
+    if (mode === "prompt") {
+      byId("app-modal-input-label").textContent = translateUi(options.inputLabel || "有效期");
+      input.value = options.inputValue || "";
+      input.placeholder = options.inputPlaceholder || "";
+      input.type = options.inputType || "text";
+    } else {
+      input.value = "";
+      input.placeholder = "";
+    }
+    cancel.hidden = options.showCancel === false;
+    confirm.textContent = translateUi(options.confirmLabel || "确认");
+    cancel.textContent = translateUi(options.cancelLabel || "取消");
+    confirm.classList.toggle("button-danger", options.danger === true);
+    confirm.classList.toggle("button-primary", options.danger !== true);
+    root.hidden = false;
+    root.setAttribute("aria-hidden", "false");
+    appModalState.mode = mode;
+    appModalState.restoreFocus = document.activeElement;
+    return new Promise((resolve) => {
+      appModalState.resolve = resolve;
+      window.requestAnimationFrame(() => {
+        root.classList.add("is-open");
+        if (mode === "prompt") input.focus();
+        else confirm.focus();
+      });
+    });
+  }
+
+  function showAppAlert(message, options = {}) {
+    return openAppModal({
+      ...options,
+      mode: "alert",
+      message,
+      showCancel: false,
+      confirmLabel: options.confirmLabel || "关闭"
+    });
+  }
+
+  function showAppConfirm(message, options = {}) {
+    return openAppModal({ ...options, mode: "confirm", message });
+  }
+
+  function showAppPrompt(message, options = {}) {
+    return openAppModal({ ...options, mode: "prompt", message });
+  }
+
+  function installAppModal() {
+    const root = byId("app-modal");
+    if (!root) return;
+    root.addEventListener("click", (event) => {
+      if (event.target.closest("[data-app-modal-dismiss]")) {
+        closeAppModal(appModalState.mode === "prompt" ? null : false);
+      }
+      if (event.target.closest("#app-modal-confirm")) {
+        closeAppModal(
+          appModalState.mode === "prompt"
+            ? byId("app-modal-input").value.trim()
+            : true
+        );
+      }
+    });
+    root.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeAppModal(appModalState.mode === "prompt" ? null : false);
+      } else if (event.key === "Enter" && appModalState.mode === "prompt") {
+        event.preventDefault();
+        closeAppModal(byId("app-modal-input").value.trim());
+      }
+    });
+  }
+
   function createRunActionButton(label, className, icon) {
     const localizedLabel = translateUi(label);
     const button = create(
@@ -346,6 +458,16 @@
     return field?.type === "checkbox" ? field.checked : field?.value;
   }
 
+  function setTechnologyVoteEnd(value) {
+    const field = input("voteWindowEnd");
+    const preset = byId("technology-vote-end-midnight");
+    if (!field) return;
+    const isMidnight = value === "24:00";
+    field.value = isMidnight ? "23:59" : value || "";
+    field.dataset.midnight = String(isMidnight);
+    if (preset) preset.setAttribute("aria-pressed", String(isMidnight));
+  }
+
   function updateSaveState(fallback = "") {
     if (!state.dirtySections.size) {
       byId("save-state").textContent = translateUi(fallback);
@@ -578,10 +700,10 @@
 
   async function deleteAgent(item, button) {
     const name = item.display_name || item.agent_id;
-    if (!confirm(window.MrzhI18n.format(
+    if (!(await showAppConfirm(window.MrzhI18n.format(
       "确认删除设备 {name}？设备再次上线后会自动重新出现。",
       { name }
-    ))) return;
+    ), { title: "删除设备", danger: true }))) return;
     button.disabled = true;
     try {
       await request(`/api/admin/agents/${encodeURIComponent(item.agent_id)}`, {
@@ -683,11 +805,11 @@
     if (sections.includes("technology")) {
       for (const [name, value] of Object.entries({
         voteWindowStart: camp.voteWindowStart || "06:30",
-        voteWindowEnd: camp.voteWindowEnd || "24:00",
         currentCampType: camp.currentCampType
       })) {
         setField(name, value);
       }
+      setTechnologyVoteEnd(camp.voteWindowEnd || "24:00");
       state.technologyDraft = JSON.parse(JSON.stringify(bundle.technologyConfig));
       state.technologyDraft.fixedByDate ||= {};
       const limits = state.technologyDraft.limits || {};
@@ -1101,11 +1223,10 @@
     const label = deletingAll
       ? window.MrzhI18n.t("全部历史投票结果")
       : window.MrzhI18n.format("{date} 的历史投票结果", { date });
-    if (
-      !window.confirm(
-        window.MrzhI18n.format("确认删除{label}吗？删除后无法从后台恢复。", { label })
-      )
-    ) return;
+    if (!(await showAppConfirm(
+      window.MrzhI18n.format("确认删除{label}吗？删除后无法从后台恢复。", { label }),
+      { title: deletingAll ? "删除全部历史" : "删除所选日", danger: true }
+    ))) return;
     const button = byId(
       deletingAll
         ? "delete-technology-history-all"
@@ -1400,10 +1521,10 @@
           const limit = config.limits[itemLane];
           if (laneCount >= limit) {
             fixedInput.checked = false;
-            alert(formatUi("{lane}最多固定 {limit} 项", {
+            void showAppAlert(formatUi("{lane}最多固定 {limit} 项", {
               lane: itemLane === "core" ? coreLabel : otherLabel,
               limit
-            }));
+            }), { title: "操作" });
             return;
           }
           keys.add(item.key);
@@ -2181,7 +2302,10 @@
       next.campConfig = {
         ...next.campConfig,
         voteWindowStart: String(getField("voteWindowStart")).trim(),
-        voteWindowEnd: String(getField("voteWindowEnd")).trim(),
+        voteWindowEnd:
+          input("voteWindowEnd")?.dataset.midnight === "true"
+            ? "24:00"
+            : String(getField("voteWindowEnd")).trim(),
         currentCampType: getField("currentCampType")
       };
     } else {
@@ -2300,9 +2424,10 @@
 
   async function deleteRevokedTemporaryKey(id, button) {
     const label = window.MrzhI18n.t("临时 Key");
-    if (!window.confirm(
-      window.MrzhI18n.format("确认删除{label}吗？删除后无法从后台恢复。", { label })
-    )) return;
+    if (!(await showAppConfirm(
+      window.MrzhI18n.format("确认删除{label}吗？删除后无法从后台恢复。", { label }),
+      { title: "删除", danger: true }
+    ))) return;
     button.disabled = true;
     try {
       await request(`/api/admin/temp-keys/${encodeURIComponent(id)}`, {
@@ -2703,20 +2828,23 @@
   }
 
   async function reissueIdentity(item) {
-    const value = window.prompt(
+    const value = await showAppPrompt(
       window.MrzhI18n.t(
         "更换会立即作废旧识别码。请输入更换后识别码的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效："
       ),
-      item.expires_at ? identityExpiryDate(item.expires_at) : ""
+      {
+        title: "更换识别码",
+        inputLabel: "有效期",
+        inputValue: item.expires_at ? identityExpiryDate(item.expires_at) : ""
+      }
     );
     if (!value) return;
-    if (
-      !window.confirm(
-        window.MrzhI18n.t(
-          "确认作废旧识别码、生成更换后的识别码并发送识别码信息邮件？"
-        )
-      )
-    ) {
+    if (!(await showAppConfirm(
+      window.MrzhI18n.t(
+        "确认作废旧识别码、生成更换后的识别码并发送识别码信息邮件？"
+      ),
+      { title: "更换识别码", danger: true }
+    ))) {
       return;
     }
     try {
@@ -2871,6 +2999,7 @@
     }
   }
 
+  installAppModal();
   renderTaskActions();
   for (const form of document.querySelectorAll(".config-form")) {
     form.addEventListener("input", (event) => {
@@ -2897,11 +3026,6 @@
   window.addEventListener("hashchange", () => {
     activateView(location.hash.slice(1) || "overview");
   });
-  window.addEventListener("beforeunload", (event) => {
-    if (!state.dirtySections.size) return;
-    event.preventDefault();
-    event.returnValue = "";
-  });
   byId("admin-member-search").addEventListener("input", (event) => {
     state.memberQuery = event.target.value || "";
     renderAdminMembers(state.bootstrap?.members || []);
@@ -2925,6 +3049,16 @@
       renderTechnologyEditor();
     });
   }
+  byId("voteWindowEnd").addEventListener("input", () => {
+    const field = input("voteWindowEnd");
+    if (!field) return;
+    field.dataset.midnight = "false";
+    byId("technology-vote-end-midnight")?.setAttribute("aria-pressed", "false");
+  });
+  byId("technology-vote-end-midnight").addEventListener("click", () => {
+    setTechnologyVoteEnd("24:00");
+    markTechnologyDirty();
+  });
   byId("refresh-technology-history").addEventListener("click", () =>
     loadTechnologyHistory(byId("technology-history-date").value)
   );

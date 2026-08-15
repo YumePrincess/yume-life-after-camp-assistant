@@ -370,11 +370,14 @@
               <div class="technology-schedule-settings">
                 <label class="field">
                   <span>科技投票开放时间</span>
-                  <input name="voteWindowStart" inputmode="numeric" pattern="(?:[01]\d|2[0-3]):[0-5]\d" placeholder="06:30" required />
+                  <input name="voteWindowStart" type="time" step="60" required />
                 </label>
                 <label class="field">
                   <span>科技投票截止时间</span>
-                  <input name="voteWindowEnd" inputmode="numeric" pattern="(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)" placeholder="24:00" required />
+                  <div class="technology-time-control">
+                    <input name="voteWindowEnd" type="time" step="60" required />
+                    <button id="technology-vote-end-midnight" class="time-preset-button" type="button" aria-pressed="false">24:00</button>
+                  </div>
                 </label>
                 <label class="field">
                   <span>营地科技类型</span>
@@ -390,27 +393,11 @@
                 </label>
                 <label class="field technology-row-limit-field">
                   <span>第一行科技最大开放数量</span>
-                  <select id="technology-core-limit">
-                    <option value="0">0</option>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                    <option value="6" selected>6</option>
-                  </select>
+                  <input id="technology-core-limit" type="number" min="0" max="6" step="1" value="6" />
                 </label>
                 <label class="field technology-row-limit-field">
                   <span>第二行科技最大开放数量</span>
-                  <select id="technology-general-limit">
-                    <option value="0">0</option>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                    <option value="6" selected>6</option>
-                  </select>
+                  <input id="technology-general-limit" type="number" min="0" max="6" step="1" value="6" />
                 </label>
               </div>
               <div class="technology-editor-toolbar">
@@ -650,6 +637,40 @@
       </div>
       <div class="lrc" hidden></div>
     </footer>
+
+    <div id="app-modal" class="app-modal" hidden aria-hidden="true">
+      <div class="app-modal-scrim" data-app-modal-dismiss></div>
+      <section
+        class="app-modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="app-modal-title"
+        aria-describedby="app-modal-message"
+      >
+        <div class="app-modal-heading">
+          <div>
+            <p id="app-modal-eyebrow" class="eyebrow">操作</p>
+            <h2 id="app-modal-title">确认操作</h2>
+          </div>
+          <button id="app-modal-close" class="button button-quiet" type="button" data-app-modal-dismiss>
+            关闭
+          </button>
+        </div>
+        <p id="app-modal-message" class="app-modal-message"></p>
+        <label id="app-modal-input-field" class="field app-modal-input-field" hidden>
+          <span id="app-modal-input-label">有效期</span>
+          <input id="app-modal-input" autocomplete="off" />
+        </label>
+        <div class="app-modal-actions">
+          <button id="app-modal-cancel" class="button button-quiet" type="button" data-app-modal-dismiss>
+            取消
+          </button>
+          <button id="app-modal-confirm" class="button button-primary" type="button">
+            确认
+          </button>
+        </div>
+      </section>
+    </div>
 
     <dialog id="run-dialog">
       <form method="dialog" class="dialog-card">

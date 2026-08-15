@@ -288,24 +288,47 @@ textarea {
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .permission-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
   width: 100%;
 }
 
 .permission-options label {
   display: flex;
   min-width: 0;
+  min-height: 46px;
   align-items: center;
   gap: 10px;
-  padding: 11px 13px;
+  padding: 9px 12px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--panel) 72%, transparent);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.permission-options label:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.permission-options label:active {
+  transform: scale(0.985);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .permission-options label:hover {
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+    background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  }
 }
 
 .permission-options label span {
@@ -943,7 +966,19 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 44px;
+  min-height: 46px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.field-checkbox:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .field-checkbox input {
@@ -2326,6 +2361,40 @@ select option {
   margin: 0;
 }
 
+.technology-time-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.time-preset-button {
+  min-width: 62px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+  cursor: pointer;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.time-preset-button[aria-pressed="true"] {
+  border-color: rgba(235, 184, 97, 0.72);
+  color: var(--text);
+  background: rgba(221, 161, 70, 0.14);
+}
+
+.time-preset-button:active {
+  transform: scale(0.98);
+}
+
 .policy-advice {
   margin-top: 14px;
   padding: 13px 15px;
@@ -3042,6 +3111,91 @@ dialog::backdrop {
   backdrop-filter: blur(5px);
 }
 
+.app-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-ui) var(--ease-out);
+}
+
+.app-modal.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-modal-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 7, 12, 0.68);
+  backdrop-filter: blur(7px) saturate(1.08);
+  -webkit-backdrop-filter: blur(7px) saturate(1.08);
+}
+
+.app-modal-card {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: min(78vh, 620px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  color: var(--text);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow), 0 24px 60px rgba(0, 0, 0, 0.32);
+  transform: translateY(5px) scale(0.97);
+  transition: transform var(--duration-ui) var(--ease-out);
+}
+
+.app-modal.is-open .app-modal-card {
+  transform: translateY(0) scale(1);
+}
+
+.app-modal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.app-modal-heading h2 {
+  margin: 0;
+  font-size: clamp(20px, 4vw, 26px);
+  line-height: 1.15;
+}
+
+.app-modal-heading .button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding-inline: 12px;
+}
+
+.app-modal-message {
+  margin: 18px 0 0;
+  color: var(--muted);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.app-modal-input-field {
+  margin: 18px 0 0;
+}
+
+.app-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.app-modal-actions .button {
+  min-width: 88px;
+}
+
 .dialog-card {
   padding: 24px;
 }
@@ -3310,6 +3464,23 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
+  .app-modal {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .app-modal-card {
+    width: 100%;
+    max-height: 84vh;
+    border-radius: 20px;
+    padding: 18px;
+  }
+
+  .app-modal-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .vote-option {
     grid-template-columns: 48px minmax(0, 1fr) auto;
     gap: 12px;
@@ -3462,8 +3633,13 @@ dialog::backdrop {
   }
 
   .preference-dropdown,
+  .app-modal,
   dialog,
   .preference-menu[open] .preference-trigger {
+    transform: none !important;
+  }
+
+  .app-modal-card {
     transform: none !important;
   }
 }
