@@ -3049,13 +3049,13 @@
       renderTechnologyEditor();
     });
   }
-  byId("voteWindowEnd").addEventListener("input", () => {
+  input("voteWindowEnd")?.addEventListener("input", () => {
     const field = input("voteWindowEnd");
     if (!field) return;
     field.dataset.midnight = "false";
     byId("technology-vote-end-midnight")?.setAttribute("aria-pressed", "false");
   });
-  byId("technology-vote-end-midnight").addEventListener("click", () => {
+  byId("technology-vote-end-midnight")?.addEventListener("click", () => {
     setTechnologyVoteEnd("24:00");
     markTechnologyDirty();
   });
