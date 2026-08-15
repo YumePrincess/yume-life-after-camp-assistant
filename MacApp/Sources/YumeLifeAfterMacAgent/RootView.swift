@@ -9,7 +9,7 @@ struct RootView: View {
             if model.isAppleSilicon && !model.setupCompleted {
                 SetupAssistantView()
             } else if model.isAppleSilicon {
-                NavigationSplitView {
+                NavigationSplitView(columnVisibility: .constant(.all)) {
                     SidebarView()
                         .navigationSplitViewColumnWidth(min: 210, ideal: 236, max: 270)
                 } detail: {
@@ -20,6 +20,7 @@ struct RootView: View {
                 }
                 .navigationSplitViewStyle(.balanced)
                 .toolbar(removing: .sidebarToggle)
+                .toolbar(.hidden, for: .windowToolbar)
                 .background(.clear)
             } else {
                 UnsupportedPlatformView()
@@ -581,6 +582,7 @@ struct AdminView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.opacity(0.18))
+        .ignoresSafeArea(.container, edges: .top)
     }
 }
 
@@ -667,18 +669,42 @@ struct SettingsView: View {
                 }
 
                 SettingsCard(title: model.text("Connection"), symbol: "network") {
-                    TextField(model.text("Workers URL"), text: $model.serverURL)
-                    TextField(model.text("Agent device name"), text: $model.agentName)
-                    TextField(model.text("MuMu container name"), text: $model.mumuInstanceName)
-                    LabeledContent(model.text("Device ID")) {
-                        Text(model.agentID).font(.caption.monospaced()).textSelection(.enabled)
+                    SettingsField(label: model.text("Workers URL")) {
+                        TextField("", text: $model.serverURL)
+                            .textFieldStyle(.roundedBorder)
                     }
-                    SecureField(model.text("Agent token"), text: $model.agentToken)
-                    SecureField(model.text("Local debug token"), text: $model.debugToken)
-                    SecureField(model.text("Admin access Key (optional)"), text: $model.adminKey)
-                    Text(model.text("The Agent matches this MuMu container name and discovers its current loopback ADB port automatically."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    SettingsField(label: model.text("Agent device name")) {
+                        TextField("", text: $model.agentName)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    SettingsField(label: model.text("MuMu container name")) {
+                        TextField("", text: $model.mumuInstanceName)
+                            .textFieldStyle(.roundedBorder)
+                        Text(model.text("The Agent matches this MuMu container name and discovers its current loopback ADB port automatically."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    SettingsField(label: model.text("Device ID")) {
+                        Text(model.agentID)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 7)
+                            .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    SettingsField(label: model.text("Agent token")) {
+                        SecureField("", text: $model.agentToken)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    SettingsField(label: model.text("Local debug token")) {
+                        SecureField("", text: $model.debugToken)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    SettingsField(label: model.text("Admin access Key (optional)")) {
+                        SecureField("", text: $model.adminKey)
+                            .textFieldStyle(.roundedBorder)
+                    }
                 }
 
                 SettingsCard(title: model.text("External Qwen model"), symbol: "eye.circle.fill") {
@@ -774,6 +800,20 @@ private struct SettingsCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassPanel(radius: 20, padding: 18)
+    }
+}
+
+private struct SettingsField<Content: View>: View {
+    let label: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            content()
+        }
     }
 }
 

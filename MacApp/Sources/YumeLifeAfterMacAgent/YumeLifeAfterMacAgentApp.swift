@@ -4,47 +4,14 @@ import AppKit
 @MainActor
 final class YumeLifeAfterMacAgentAppDelegate: NSObject, NSApplicationDelegate {
     private var terminationInProgress = false
-    private var statusItem: NSStatusItem?
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = item.button {
-            button.image = NSImage(
-                systemSymbolName: "gamecontroller.fill",
-                accessibilityDescription: "Yume Life After Mac Agent"
-            )
-            button.imagePosition = .imageOnly
-            button.toolTip = "Yume Life After Mac Agent"
-            button.target = self
-            button.action = #selector(statusItemAction(_:))
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        }
-        statusItem = item
-    }
 
     func applicationShouldTerminateAfterLastWindowClosed(
         _ sender: NSApplication
     ) -> Bool {
-        // Closing the window hides the control surface but deliberately keeps
-        // the Agent and its LaunchAgent alive. Use the status-item right click
-        // to perform the explicit application quit below.
+        // Closing the window keeps the local Agent and its LaunchAgent alive.
+        // The App can be reopened from the Dock; no menu-bar resident icon is
+        // installed.
         false
-    }
-
-    @objc private func statusItemAction(_ sender: Any?) {
-        let event = NSApp.currentEvent
-        if event?.type == .rightMouseUp || event?.buttonNumber == 2 {
-            NSApp.terminate(nil)
-            return
-        }
-        showMainWindow()
-    }
-
-    private func showMainWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        let windows = NSApp.windows.filter { $0.canBecomeKey && !$0.isSheet }
-        let window = windows.first(where: { $0.level == .normal }) ?? windows.first
-        window?.makeKeyAndOrderFront(nil)
     }
 
     func applicationShouldTerminate(
