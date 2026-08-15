@@ -456,6 +456,10 @@ a {
   margin-left: auto;
 }
 
+.admin-header-context .preference-controls {
+  flex: 0 0 auto;
+}
+
 .public-nav {
   display: flex;
   min-width: 0;

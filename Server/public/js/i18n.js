@@ -3035,7 +3035,14 @@
           ]
         })
       );
-      header.append(controls);
+      const adminContext = header.querySelector(".admin-header-context");
+      const target = adminContext || header;
+      const logout = target.querySelector("#logout");
+      if (logout) {
+        target.insertBefore(controls, logout);
+      } else {
+        target.append(controls);
+      }
     }
     syncControls();
   }

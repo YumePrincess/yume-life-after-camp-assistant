@@ -68,7 +68,7 @@ struct RootView: View {
 struct SidebarView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable().scaledToFit()
@@ -114,9 +114,9 @@ struct SidebarView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.bottom, 14)
+            .padding(.bottom, 20)
         }
-        .padding(.top, 12)
+        .padding(.top, 6)
         .background(.thinMaterial)
     }
 }
