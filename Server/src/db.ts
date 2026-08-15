@@ -1583,19 +1583,41 @@ export async function claimNextCommand(
        attempt_count = attempt_count + 1
      WHERE id = (
        SELECT id FROM command_queue
-       WHERE agent_id = ?
-         AND available_at <= ?
-         AND (
-           state = 'queued'
-           OR (state = 'claimed' AND lease_expires_at < ?)
-         )
-         ${allowedClause}
-       ORDER BY priority DESC, created_at ASC
-       LIMIT 1
-     )
-     RETURNING *`
+         WHERE agent_id = ?
+           AND available_at <= ?
+           AND (
+             state = 'queued'
+             OR (state = 'claimed' AND lease_expires_at < ?)
+           )
+           ${allowedClause}
+           AND (
+             ? = 1
+             OR NOT EXISTS (
+               SELECT 1
+               FROM command_queue AS active_command
+               JOIN task_runs AS active_run
+                 ON active_run.id = active_command.run_id
+               WHERE active_command.agent_id = ?
+                 AND active_command.type = 'run_task'
+                 AND active_command.state = 'claimed'
+                 AND active_run.state IN ('queued', 'claimed', 'running', 'cancelling')
+             )
+           )
+         ORDER BY priority DESC, created_at ASC
+         LIMIT 1
+       )
+       RETURNING *`
   )
-    .bind(leaseToken, leaseExpiresAt, now, input.agentId, now, now)
+    .bind(
+      leaseToken,
+      leaseExpiresAt,
+      now,
+      input.agentId,
+      now,
+      now,
+      input.busy ? 1 : 0,
+      input.agentId
+    )
     .first<CommandRow>();
 }
 

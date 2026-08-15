@@ -465,7 +465,8 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
     }
   );
   const scanProgressRange = progressRangeSlice(options.progressRange, 0.1);
-  const scanMemberDetails = () =>
+  let scanState = {};
+  const scanMemberDetails = (state) =>
     capturePagedTable(
       context,
       "member-details",
@@ -473,20 +474,30 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
       signal,
       {
         expectedCount: expectedMembers,
-        progressRange: scanProgressRange
+        progressRange: scanProgressRange,
+        scanState: state
       }
     );
-  let details = await scanMemberDetails();
-  if (details.length < expectedMembers) {
+  let details = await scanMemberDetails(scanState);
+  if (details.length < expectedMembers && !scanState.stoppedOnIncompletePage) {
     await context.report(
       "warning",
       "member_details_count_retry",
       `成员资料首次扫描识别 ${details.length}/${expectedMembers} 名，先通过顶部“首页”返回列表起点，再进入“成员”页完整重扫一次，避免末页 OCR 漏行`
     );
     await context.ui.executeFlow("resetMemberPanelForRescan", {}, signal);
-    details = await scanMemberDetails();
+    scanState = {};
+    details = await scanMemberDetails(scanState);
   }
   if (details.length !== expectedMembers) {
+    if (scanState.stoppedOnIncompletePage) {
+      // A hand-started member scan must terminate at the first stable partial
+      // page.  Retrying the whole table only returns to the same clamped
+      // MuMu position and can leave the Agent looking like it restarted the
+      // task.  Mark this validation failure as non-retryable on the server.
+      context.suppressScheduledRetry = true;
+      context.suppressScheduledRetryReason = "member_profile_incomplete_page";
+    }
     throw new Error(
       `MEMBER_PROFILE_COUNT_MISMATCH: recognized ${details.length}, page header reports ${expectedMembers}`
     );
@@ -623,6 +634,7 @@ export async function capturePagedTable(
           0,
           Number(definition.pagination.maxExtraPagesAfterExpected) || 2
         );
+  const scanState = options.scanState;
   for (let page = 0; page < definition.pagination.maxPages; ) {
     memberPageHadExactCollision = false;
     scannedPages = page + 1;
@@ -924,9 +936,16 @@ export async function capturePagedTable(
         memberPageRetries.delete(page);
         continue;
       }
-      throw new Error(
-        `MEMBER_DETAILS_PAGE_INCOMPLETE: page ${page + 1} recognized ${rows.length}/${memberRowsPerPage} rows`
+      if (scanState && typeof scanState === "object") {
+        scanState.stoppedOnIncompletePage = true;
+        scanState.incompletePage = page + 1;
+      }
+      await report(
+        "warning",
+        "member_details_incomplete_stop",
+        `第 ${page + 1} 页连续重读仍未达到 ${memberRowsPerPage} 行，已立即停止翻页；当前结果为 ${rows.length} 行`
       );
+      break;
     }
     memberPageRetries.delete(page);
     options.observedParsedRows =
@@ -1025,8 +1044,23 @@ export async function capturePagedTable(
     if (
       memberDetailsMode &&
       fullPageRead &&
+      currentTailReason === "incomplete"
+    ) {
+      if (scanState && typeof scanState === "object") {
+        scanState.stoppedOnIncompletePage = true;
+        scanState.incompletePage = page + 1;
+      }
+      await report(
+        "warning",
+        "member_details_incomplete_stop",
+        `第 ${page + 1} 页连续重读仍未达到 ${memberRowsPerPage} 行，已立即停止翻页；当前整页重读结果为 ${rows.length} 行`
+      );
+      break;
+    }
+    if (
+      memberDetailsMode &&
+      fullPageRead &&
       (currentTailReason === "stagnant" ||
-        (currentTailReason === "incomplete" && rows.length < memberRowsPerPage) ||
         (scheduledTailPage && !scheduledLastNeedsContinuation))
     ) {
       await report(
@@ -1177,7 +1211,7 @@ export async function capturePagedTable(
       // (5-row) endpoint so the next page starts on a row boundary. The
       // calibrated duration is shortened by 30% to increase speed without
       // changing either endpoint or the segmented path.
-      await memberAlignmentSwipe(
+      const usedTouchFallback = await memberAlignmentSwipe(
         adb,
         swipeFrom,
         swipeTo,
@@ -1187,6 +1221,13 @@ export async function capturePagedTable(
         ),
         signal
       );
+      if (usedTouchFallback) {
+        await report(
+          "warning",
+          "member_details_swipe_touch_fallback",
+          "成员详情滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动"
+        );
+      }
     } else {
       await adb.mouseSwipe(
         swipeFrom,
@@ -1286,7 +1327,7 @@ async function alignMemberDetailsPage(
         bands: bands.slice(0, 8)
       }
     );
-    await memberAlignmentSwipe(
+    const usedTouchFallback = await memberAlignmentSwipe(
       adb,
       { x: adjustment.x, y: adjustment.anchorY },
       {
@@ -1302,6 +1343,13 @@ async function alignMemberDetailsPage(
       ),
       signal
     );
+    if (usedTouchFallback) {
+      await report(
+        "warning",
+        "member_details_swipe_touch_fallback",
+        "成员详情滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动"
+      );
+    }
     await (context.sleep || delay)(
       Math.max(500, Number(pagination.rowAlignmentSettleMs) || 1_000),
       signal
@@ -1319,7 +1367,7 @@ async function alignMemberDetailsPage(
 async function memberAlignmentSwipe(adb, from, to, durationMs, signal) {
   if (typeof adb.shell !== "function") {
     await adb.mouseSwipe(from, to, durationMs, signal);
-    return;
+    return false;
   }
   const distance = Math.abs(Number(to.y) - Number(from.y));
   const steps = Math.max(2, Math.ceil(distance / 10));
@@ -1330,14 +1378,31 @@ async function memberAlignmentSwipe(adb, from, to, durationMs, signal) {
       { signal, timeoutMs: 5_000 }
     );
   };
-  await shellMotion("DOWN", from.y);
-  for (let step = 1; step <= steps; step += 1) {
+  try {
+    await shellMotion("DOWN", from.y);
+    for (let step = 1; step <= steps; step += 1) {
+      await (delay)(intervalMs, signal);
+      const progress = step / steps;
+      await shellMotion("MOVE", from.y + (to.y - from.y) * progress);
+    }
     await (delay)(intervalMs, signal);
-    const progress = step / steps;
-    await shellMotion("MOVE", from.y + (to.y - from.y) * progress);
+    await shellMotion("UP", to.y);
+    return false;
+  } catch (error) {
+    // Some MuMu/Android images allow input swipe but reject shell-level
+    // mouse motionevent injection with INJECT_EVENTS.  A failed segmented
+    // mouse gesture must not turn a readable member page into a task crash.
+    if (
+      typeof adb.touchSwipe !== "function" ||
+      !/INJECT_EVENTS|Injecting to another application|SecurityException/i.test(
+        String(error?.message || error)
+      )
+    ) {
+      throw error;
+    }
+    await adb.touchSwipe(from, to, durationMs, signal);
+    return true;
   }
-  await (delay)(intervalMs, signal);
-  await shellMotion("UP", to.y);
 }
 
 async function readMemberColorBands(

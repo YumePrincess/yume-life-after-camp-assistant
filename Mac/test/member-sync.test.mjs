@@ -564,7 +564,7 @@ test("member profile scan stops immediately when a page remains incomplete", asy
 
   assert.equal(rows.length, 4);
   assert.equal(swipes, 0);
-  assert.ok(reports.includes("member_details_tail_complete"));
+  assert.ok(reports.includes("member_details_incomplete_stop"));
   assert.ok(reports.includes("member_details_bottom_reached"));
 });
 

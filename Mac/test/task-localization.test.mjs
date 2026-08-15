@@ -73,4 +73,12 @@ test("safe count templates translate without translating OCR fields", () => {
     ),
     "メンバープロフィール一覧の最下部まで 24 ページ走査；重複除去後 97/97 人"
   );
+  assert.equal(
+    localizeTaskEvent(
+      "member_details_incomplete_stop",
+      "第 18 页连续重读仍未达到 5 行，已立即停止翻页；当前整页重读结果为 6 行",
+      "en"
+    ),
+    "Page 18 stayed below 5 rows after repeated reads; scrolling stopped immediately with 6 rows"
+  );
 });

@@ -26,6 +26,7 @@ import {
   createCommand,
   deleteAgentHeartbeat,
   expireUnclaimedRuns,
+  findActiveRunForAgent,
   getConfigBundle,
   getHeartbeat,
   getRun,
@@ -1316,6 +1317,14 @@ async function handleAdminApi(
       return problem("当前 Key 没有执行此插件任务的权限", 403, "permission_denied");
     }
     const bundle = await getConfigBundle(env);
+    const activeRun = await findActiveRunForAgent(env, bundle.campConfig.agentId);
+    if (activeRun) {
+      return problem(
+        "当前 Agent 已有任务正在运行或排队；手工任务不会重复入队",
+        409,
+        "agent_busy"
+      );
+    }
     const result = await enqueueTask(env, {
       bundle,
       taskKey: taskKeyValue,

@@ -152,11 +152,17 @@ export async function withGameSession(
           checkFailed: true,
           error: healthError.message
         }));
+        const startupFailureStillRecoverable =
+          !gameReady &&
+          (deviceState !== "device" ||
+            health.anr === true ||
+            health.running === false);
         const canRestart =
           !context.suppressScheduledRetry &&
           watchdog.enabled &&
           restartCount < watchdog.maxRestarts &&
-          isRecoverableGameFailure(error, health, deviceState);
+          (isRecoverableGameFailure(error, health, deviceState) ||
+            startupFailureStillRecoverable);
         if (!canRestart && context.suppressScheduledRetry && !signal.aborted) {
           await report(
             "warning",
@@ -243,7 +249,21 @@ export async function withGameSession(
           !context.skipReturnToCenter &&
           config.mumu.returnToCenterAfterTask !== false
         ) {
-          const returnResult = await returnToCenterExit(context);
+          let returnResult;
+          try {
+            returnResult = await returnToCenterExit(context);
+          } catch (error) {
+            returnResult = {
+              completed: false,
+              reason: `返回中心失败：${error.message}`
+            };
+            await report(
+              "warning",
+              "return_center_failed",
+              "任务收尾返回中心失败；保留原始任务错误，不重新启动 MuMu",
+              { reason: conciseError(error, 500) }
+            ).catch(() => undefined);
+          }
           if (!returnResult.completed) {
             cleanupResult.cleanupCompleted = false;
             cleanupResult.cleanupIssues.push(returnResult.reason);
@@ -1678,11 +1698,21 @@ async function monitorGame(context, watchdog, signal) {
 }
 
 export function isRecoverableGameFailure(error, health, deviceState = "device") {
+  const message = String(error?.message || error || "");
+  // Only the watchdog's explicit health failures may restart MuMu.  A
+  // workflow-level OCR, validation, or ADB input error must finish the
+  // current task and enter its terminal state even if the concurrent health
+  // probe happens to report a transiently unhealthy game.
+  const watchdogFailure =
+    /MUMU_DEVICE_|GAME_PROCESS_EXITED|GAME_ANR_DETECTED|GAME_SCREEN_FROZEN/i.test(
+      message
+    );
+  if (!watchdogFailure) return false;
   if (deviceState !== "device") return true;
   if (health?.anr === true || health?.running === false) return true;
-  // UI/OCR timeouts and transient input failures must not restart a healthy game.
-  // The watchdog performs the authoritative process/ANR check above.
-  return false;
+  return /MUMU_DEVICE_|GAME_PROCESS_EXITED|GAME_ANR_DETECTED|GAME_SCREEN_FROZEN/i.test(
+    message
+  );
 }
 
 export function shouldHoldInitialStartup(

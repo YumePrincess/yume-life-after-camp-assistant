@@ -33,24 +33,43 @@ test("a healthy game is never restarted for a UI or input timeout", () => {
 
 test("an exited game, ANR, or offline device remains restartable", () => {
   assert.equal(
-    isRecoverableGameFailure(new Error("failure"), { running: false }, "device"),
-    true
-  );
-  assert.equal(
     isRecoverableGameFailure(
-      new Error("failure"),
-      { running: true, anr: true },
+      new Error("GAME_PROCESS_EXITED"),
+      { running: false },
       "device"
     ),
     true
   );
   assert.equal(
     isRecoverableGameFailure(
-      new Error("failure"),
-      { running: true, anr: false },
-      "offline"
+      new Error("GAME_ANR_DETECTED"),
+      { running: true, anr: true },
+      "device"
     ),
     true
+  );
+  assert.equal(
+    isRecoverableGameFailure(new Error("MUMU_DEVICE_OFFLINE"), {}, "offline"),
+    true
+  );
+});
+
+test("a workflow failure is never upgraded to a MuMu restart", () => {
+  assert.equal(
+    isRecoverableGameFailure(
+      new Error("MEMBER_PROFILE_COUNT_MISMATCH: recognized 91, expected 92"),
+      { running: false, anr: true },
+      "offline"
+    ),
+    false
+  );
+  assert.equal(
+    isRecoverableGameFailure(
+      new Error("SecurityException: INJECT_EVENTS"),
+      { running: false, anr: true },
+      "device"
+    ),
+    false
   );
 });
 

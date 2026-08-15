@@ -121,6 +121,12 @@ const FIXED_TRANSLATIONS = {
     fr: "Tâche terminée avec succès ; le jeu et l’émulateur ont été arrêtés",
     ja: "タスクが正常に完了し、ゲームとエミュレーターを停止しました"
   },
+  "任务收尾返回中心失败；保留原始任务错误，不重新启动 MuMu": {
+    "zh-tw": "任務收尾返回中心失敗；保留原始任務錯誤，不重新啟動 MuMu",
+    en: "Returning to Center during cleanup failed; preserving the original task error without restarting MuMu",
+    fr: "Le retour au centre pendant le nettoyage a échoué ; l’erreur d’origine est conservée sans redémarrer MuMu",
+    ja: "終了処理中の中心への復帰に失敗しました。元のタスクエラーを保持し、MuMu は再起動しません"
+  },
   "本地 Agent 已领取任务": {
     "zh-tw": "本機 Agent 已領取任務",
     en: "The local Agent claimed the task",
@@ -218,6 +224,24 @@ const PATTERN_TRANSLATIONS = [
       en: "Member profile list reached the bottom after $1 pages; deduplicated roster: $2/$3 members",
       fr: "La liste des profils a atteint le bas après $1 pages ; liste dédupliquée : $2/$3 membres",
       ja: "メンバープロフィール一覧の最下部まで $1 ページ走査；重複除去後 $2/$3 人"
+    }
+  },
+  {
+    test: /^第 (\d+) 页连续重读仍未达到 (\d+) 行，已立即停止翻页；当前(?:整页重读)?结果为 (\d+) 行$/,
+    values: {
+      "zh-tw": "第 $1 頁連續重讀仍未達到 $2 行，已立即停止翻頁；目前結果為 $3 行",
+      en: "Page $1 stayed below $2 rows after repeated reads; scrolling stopped immediately with $3 rows",
+      fr: "La page $1 est restée sous $2 lignes après plusieurs lectures ; défilement arrêté immédiatement avec $3 lignes",
+      ja: "$1 ページ目は再読しても $2 行に達しなかったため、$3 行の状態でスクロールを直ちに停止しました"
+    }
+  },
+  {
+    test: /^成员详情滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动$/,
+    values: {
+      "zh-tw": "成員詳情滾動的 MuMu 滑鼠注入遭系統拒絕，已切換 Android 觸控滑動",
+      en: "MuMu mouse injection was rejected by Android; switched member-detail scrolling to touch swipe",
+      fr: "L’injection de souris MuMu a été refusée par Android ; défilement des détails basculé vers le geste tactile",
+      ja: "MuMu のマウス入力が Android に拒否されたため、メンバー詳細のスクロールをタッチ操作に切り替えました"
     }
   },
   {

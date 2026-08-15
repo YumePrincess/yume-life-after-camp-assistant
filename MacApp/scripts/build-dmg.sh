@@ -31,7 +31,7 @@ ATTACH_OUTPUT=$(hdiutil attach -readwrite -noverify -noautoopen "${RW_IMAGE}")
 DEVICE=$(echo "${ATTACH_OUTPUT}" | awk '/Apple_HFS/ {print $1; exit}')
 MOUNT_POINT="/Volumes/${VOLUME_NAME}"
 
-osascript <<APPLESCRIPT
+if ! osascript <<APPLESCRIPT
 tell application "Finder"
   tell disk "${VOLUME_NAME}"
     open
@@ -56,6 +56,12 @@ tell application "Finder"
   end tell
 end tell
 APPLESCRIPT
+then
+  # Finder can return -1728 when the temporary volume is already closing or
+  # another Finder window owns the eject transition. The icon layout is
+  # optional; the image must still be detached, compressed, and signed.
+  echo "Finder could not finish the optional DMG layout; continuing with the default layout." >&2
+fi
 
 sync
 hdiutil detach -quiet "${DEVICE}"
