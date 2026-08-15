@@ -517,12 +517,15 @@ test("incomplete calculated tail keeps both continuation pages in full-page mode
 test("member profile scan stops immediately when a page remains incomplete", async () => {
   let swipes = 0;
   const reports = [];
+  const reportMessages = [];
+  const aiOptions = [];
   const context = {
     vision: {
       async capture(label) {
         return { path: `${label}.png`, observations: [] };
       },
-      async extractTableRows() {
+      async extractTableRows(_path, _definition, _label, _signal, options) {
+        aiOptions.push(options || {});
         return Array.from({ length: 4 }, (_, index) => ({
           name: `成员${index + 1}`
         }));
@@ -534,8 +537,9 @@ test("member profile scan stops immediately when a page remains incomplete", asy
       }
     },
     ui: { async afterAction() {} },
-    async report(_level, step) {
+    async report(_level, step, message, detail) {
       reports.push(step);
+      reportMessages.push({ step, message, detail });
     }
   };
   const rows = await capturePagedTable(
@@ -549,7 +553,7 @@ test("member profile scan stops immediately when a page remains incomplete", asy
         maxPages: 30,
         rowsPerPage: 5,
         minimumRowsPerPage: 5,
-        maxIncompletePageRetries: 3,
+        maxIncompletePageRetries: 6,
         fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
         fullPageRows: 7,
         stopAfterStagnantPages: 3,
@@ -564,8 +568,20 @@ test("member profile scan stops immediately when a page remains incomplete", asy
 
   assert.equal(rows.length, 4);
   assert.equal(swipes, 0);
+  assert.ok(aiOptions.length >= 6);
+  assert.ok(aiOptions.every((options) => options.forceMemberAdvisor === true));
+  assert.ok(
+    reportMessages
+      .filter(({ step }) => step === "member_details_page_incomplete_retry")
+      .every(({ message }) => message.includes("成员1、成员2、成员3、成员4"))
+  );
+  assert.equal(
+    reports.filter((step) => step === "member_details_page_incomplete_retry").length,
+    6
+  );
   assert.ok(reports.includes("member_details_incomplete_stop"));
-  assert.ok(reports.includes("member_details_bottom_reached"));
+  assert.ok(reports.includes("member_details_scan_stopped_incomplete"));
+  assert.ok(!reports.includes("member_details_bottom_reached"));
 });
 
 test("tail recovery keeps a valid native row when the advisor drops it", async () => {

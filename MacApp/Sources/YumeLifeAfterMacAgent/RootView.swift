@@ -45,7 +45,6 @@ struct RootView: View {
     @ViewBuilder private var detail: some View {
         switch model.selection ?? .overview {
         case .overview: OverviewView()
-        case .tasks: TasksView()
         case .logs: LogsView()
         case .plugins: PluginsView()
         case .admin: AdminView()
@@ -117,9 +116,10 @@ struct OverviewView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 18) {
                 PageHeader(eyebrow: "LOCAL AGENT", title: "Control center", summary: "Run, inspect and maintain the Mac automation runtime.")
-                HStack(alignment: .top, spacing: 16) {
+                Grid(horizontalSpacing: 14, verticalSpacing: 14) {
+                    GridRow {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Label(model.text(model.health?.ok == true ? "Online" : "Offline"), systemImage: model.health?.ok == true ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
@@ -175,9 +175,8 @@ struct OverviewView: View {
                         }
                         .disabled(model.isBusy)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 300, alignment: .topLeading)
-                    .glassPanel()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .glassPanel(radius: 18, padding: 16)
                     VStack(spacing: 10) {
                         MetricCard(title: "Installed plugins", value: "\(model.plugins.count)", symbol: "puzzlepiece.extension")
                         MetricCard(title: "Enabled plugins", value: "\(model.plugins.filter { $0.enabled != false && $0.invalid != true }.count)", symbol: "checkmark.circle")
@@ -189,12 +188,14 @@ struct OverviewView: View {
                         .buttonStyle(.plain)
                         .disabled(model.health?.activeRunId == nil)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 300, alignment: .center)
-                    .glassPanel()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .glassPanel(radius: 18, padding: 16)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                ManualTasksSection()
             }
-            .padding(30)
+            .padding(24)
         }
     }
 }
@@ -424,37 +425,40 @@ private struct GlobalOperationStatusBar: View {
     }
 }
 
-struct TasksView: View {
+private struct ManualTasksSection: View {
     @EnvironmentObject private var model: AppModel
-    let columns = [GridItem(.adaptive(minimum: 260), spacing: 16)]
+    private let columns = [GridItem(.adaptive(minimum: 240), spacing: 14)]
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                PageHeader(eyebrow: "WORKERS QUEUE", title: "Manual tasks", summary: "Submit a task using the authenticated Camp admin session.")
-                if model.browser.webView.url?.host != URL(string: model.serverURL)?.host {
-                    Label("Open Camp admin and sign in before submitting a task.", systemImage: "person.crop.circle.badge.exclamationmark")
-                        .glassPanel(radius: 18, padding: 14)
-                }
-                LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(ManualTask.supported) { task in
-                        VStack(alignment: .leading, spacing: 12) {
-                            Image(systemName: task.symbol)
-                                .font(.title2)
-                                .foregroundStyle(YumePalette.gold)
-                            Text(model.text(task.titleKey)).font(.headline)
-                            Text(model.text(task.summaryKey))
-                                .font(.callout).foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Button("Run now") { Task { await model.submit(task) } }
-                                .buttonStyle(PrimaryButtonStyle())
-                                .disabled(model.isBusy)
-                        }
-                        .frame(minHeight: 150, alignment: .topLeading)
-                        .glassPanel()
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Manual tasks")
+                .font(.title2.weight(.bold))
+            Text("Submit a task using the authenticated Camp admin session.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            if model.browser.webView.url?.host != URL(string: model.serverURL)?.host {
+                Label("Open Camp admin and sign in before submitting a task.", systemImage: "person.crop.circle.badge.exclamationmark")
+                    .glassPanel(radius: 16, padding: 12)
+            }
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                ForEach(ManualTask.supported) { task in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Image(systemName: task.symbol)
+                            .font(.title2)
+                            .foregroundStyle(YumePalette.gold)
+                        Text(model.text(task.titleKey)).font(.headline)
+                        Text(model.text(task.summaryKey))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button("Run now") { Task { await model.submit(task) } }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .disabled(model.isBusy)
                     }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .glassPanel(radius: 18, padding: 16)
                 }
             }
-            .padding(30)
         }
     }
 }
@@ -488,13 +492,15 @@ struct LogsView: View {
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                             .id("bottom")
                     } else {
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(model.visibleLogLines.enumerated()), id: \.offset) { _, line in
-                                Text(verbatim: line)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
+                        VStack(alignment: .leading, spacing: 0) {
+                            // Keep the whole page in one Text view so macOS
+                            // can extend a selection across line boundaries.
+                            // One Text per log line limits selection to that
+                            // individual line.
+                            Text(verbatim: model.visibleLogText)
+                                .font(.system(size: 12, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             Color.clear.frame(height: 1).id("bottom")
                         }
                     }

@@ -490,14 +490,6 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
     details = await scanMemberDetails(scanState);
   }
   if (details.length !== expectedMembers) {
-    if (scanState.stoppedOnIncompletePage) {
-      // A hand-started member scan must terminate at the first stable partial
-      // page.  Retrying the whole table only returns to the same clamped
-      // MuMu position and can leave the Agent looking like it restarted the
-      // task.  Mark this validation failure as non-retryable on the server.
-      context.suppressScheduledRetry = true;
-      context.suppressScheduledRetryReason = "member_profile_incomplete_page";
-    }
     throw new Error(
       `MEMBER_PROFILE_COUNT_MISMATCH: recognized ${details.length}, page header reports ${expectedMembers}`
     );
@@ -607,6 +599,9 @@ export async function capturePagedTable(
   let tailFullPagePending = false;
   let tailFullPageReason = null;
   const memberPageRetries = new Map();
+  let stoppedOnIncompletePage = false;
+  let incompletePage = null;
+  let incompletePageNames = [];
   let memberPageHadExactCollision = false;
   const hasFullPageDefinition =
     memberDetailsMode && Boolean(definition.pagination?.fullPageRegion);
@@ -619,10 +614,11 @@ export async function capturePagedTable(
       Number(definition.pagination.minimumRowsPerPage) ||
       1
   );
-  const maxMemberPageRetries = Math.max(
-    1,
-    Number(definition.pagination.maxIncompletePageRetries) || 3
-  );
+  // Member pages are allowed at most six in-place reads.  Keep this cap in
+  // code as well as in config.example.json so an older external Runtime
+  // config containing the former value 3 cannot silently reintroduce the
+  // premature page-18 stop.
+  const maxMemberPageRetries = 6;
   const expectedPageCount =
     memberDetailsMode && expectedCount !== null
       ? Math.max(1, Math.ceil(expectedCount / memberRowsPerPage))
@@ -670,6 +666,7 @@ export async function capturePagedTable(
     let frame;
     let rows = [];
     let preparedFrame = null;
+    let stopAfterIncompletePage = false;
     if (memberDetailsMode && page > 0 && !fullPageRead) {
       preparedFrame = await alignMemberDetailsPage(
         context,
@@ -735,6 +732,8 @@ export async function capturePagedTable(
             "materialContribution"
           ].some((field) => !/\d/.test(String(row[field] || "")))
         );
+      const shouldRequestMemberAdvisor =
+        memberDetailsMode && attemptRows.length < minimumRowsPerPage;
       if (
         (!attemptRows.length ||
           (definition.extractionMode === "hybrid" &&
@@ -742,11 +741,32 @@ export async function capturePagedTable(
           contributionNeedsRecovery) &&
         typeof vision.extractTableRows === "function"
       ) {
-          const recoveredRows = await vision.extractTableRows(
-            attemptFrame.path,
-            pageDefinition,
-            attemptLabel,
-            signal
+        if (shouldRequestMemberAdvisor) {
+          const advisorConfigured =
+            context.config?.localVisionModel?.enabled === true &&
+            context.config?.localVisionModel?.transport === "http";
+          await report(
+            advisorConfigured ? "info" : "warning",
+            "member_details_ai_recovery_attempt",
+            advisorConfigured
+              ? `第 ${page + 1} 页识别不足，正在调用 Qwen 本地视觉辅助模型重读当前页；当前已读到：${attemptRows.map((row) => row.name).filter(Boolean).join("、") || "无"}`
+              : `第 ${page + 1} 页识别不足，Qwen 本地视觉辅助模型当前不可用，继续使用 OCR 重读；当前已读到：${attemptRows.map((row) => row.name).filter(Boolean).join("、") || "无"}`,
+            {
+              page: page + 1,
+              forceMemberAdvisor: true,
+              advisorConfigured,
+              recognizedNames: attemptRows.map((row) => row.name).filter(Boolean)
+            }
+          );
+        }
+        const recoveredRows = await vision.extractTableRows(
+          attemptFrame.path,
+          pageDefinition,
+          attemptLabel,
+          signal,
+          shouldRequestMemberAdvisor
+            ? { forceMemberAdvisor: true }
+            : undefined
         ).catch(async (error) => {
           await report(
             "warning",
@@ -756,7 +776,16 @@ export async function capturePagedTable(
           );
           return [];
         });
-        attemptRows = mergeContributionRows(attemptRows, recoveredRows);
+        attemptRows = memberDetailsMode
+          ? mergeMemberRecoveryCandidates(
+              filterMemberDetailRows(recoveredRows),
+              filterMemberDetailRows(attemptRows),
+              fullPageRead
+                ? Number(pageDefinition.pagination.fullPageRows) || 7
+                : Number(definition.pagination.rowsPerPage) || 5,
+              byName
+            )
+          : mergeContributionRows(attemptRows, recoveredRows);
         if (memberDetailsMode) {
           attemptRows = filterMemberDetailRows(attemptRows);
           if (!fullPageRead) {
@@ -765,7 +794,11 @@ export async function capturePagedTable(
           }
         }
       }
-      if (!frame || attemptRows.length > rows.length) {
+      if (
+        !frame ||
+        attemptRows.length > rows.length ||
+        (memberDetailsMode && shouldRequestMemberAdvisor && attemptRows.length >= rows.length)
+      ) {
         frame = attemptFrame;
         rows = attemptRows;
       }
@@ -773,7 +806,12 @@ export async function capturePagedTable(
       await report(
         "warning",
         `${label}_empty_page_retry`,
-        `第 ${page + 1} 页仅识别 ${rows.length}/${minimumRowsPerPage} 行，保持当前位置原地重读`
+        `第 ${page + 1} 页仅识别 ${rows.length}/${minimumRowsPerPage} 行，保持当前位置原地重读；当前已读到：${rows.map((row) => row.name).filter(Boolean).join("、") || "无"}`,
+        {
+          page: page + 1,
+          recognizedRows: rows.length,
+          recognizedNames: rows.map((row) => row.name).filter(Boolean)
+        }
       );
       await ui.afterAction(signal);
     }
@@ -919,23 +957,37 @@ export async function capturePagedTable(
       const retryCount = (memberPageRetries.get(page) || 0) + 1;
       if (retryCount <= maxMemberPageRetries) {
         memberPageRetries.set(page, retryCount);
+        const recognizedNames = rows
+          .map((row) => String(row?.name || "").trim())
+          .filter(Boolean);
         await report(
           "warning",
           "member_details_page_incomplete_retry",
-          `第 ${page + 1} 页只确认 ${rows.length}/${memberRowsPerPage} 行，保持当前位置重读，不推进到下一页（第 ${retryCount}/${maxMemberPageRetries} 次）`,
-          { page: page + 1, recognizedRows: rows.length, expectedRows: memberRowsPerPage }
+          `第 ${page + 1} 页只确认 ${rows.length}/${memberRowsPerPage} 行，保持当前位置重读，不推进到下一页（第 ${retryCount}/${maxMemberPageRetries} 次）；当前已读到：${recognizedNames.join("、") || "无"}`,
+          {
+            page: page + 1,
+            recognizedRows: rows.length,
+            expectedRows: memberRowsPerPage,
+            recognizedNames
+          }
         );
         continue;
       }
-      if (hasFullPageDefinition) {
+      if (scheduledLastPage && hasFullPageDefinition) {
         // A normal five-row crop may hide the final partial row. Re-read the
-        // same position with the expanded tail crop before deciding that this
-        // is the last page; do not swipe away from an incomplete page.
+        // calculated final page with the expanded tail crop before deciding
+        // that this is the last page; an incomplete intermediate page must
+        // never be promoted to the tail just because its crop is short.
         tailFullPagePending = true;
         tailFullPageReason = "incomplete";
         memberPageRetries.delete(page);
         continue;
       }
+      stoppedOnIncompletePage = true;
+      incompletePage = page + 1;
+      incompletePageNames = rows
+        .map((row) => String(row?.name || "").trim())
+        .filter(Boolean);
       if (scanState && typeof scanState === "object") {
         scanState.stoppedOnIncompletePage = true;
         scanState.incompletePage = page + 1;
@@ -943,9 +995,18 @@ export async function capturePagedTable(
       await report(
         "warning",
         "member_details_incomplete_stop",
-        `第 ${page + 1} 页连续重读仍未达到 ${memberRowsPerPage} 行，已立即停止翻页；当前结果为 ${rows.length} 行`
+        `第 ${page + 1} 页连续重读仍未达到 ${memberRowsPerPage} 行，已立即停止翻页；当前结果为 ${rows.length} 行；当前已读到：${incompletePageNames.join("、") || "无"}`,
+        {
+          page: page + 1,
+          recognizedRows: rows.length,
+          recognizedNames: incompletePageNames,
+          maxRetries: maxMemberPageRetries
+        }
       );
-      break;
+      // Keep the rows that were actually recognized on this page. They are
+      // included in the mismatch count so the scheduled retry has an
+      // accurate failure reason, while the page is not allowed to advance.
+      stopAfterIncompletePage = true;
     }
     memberPageRetries.delete(page);
     options.observedParsedRows =
@@ -1028,6 +1089,7 @@ export async function capturePagedTable(
       scanProgress,
       options.progressRange?.step || `${label}_page`
     );
+    if (stopAfterIncompletePage) break;
     const organizedMemberCount =
       memberDetailsMode && expectedCount !== null
         ? reconcileMemberDetailRows([...byName.values()], expectedCount).length
@@ -1046,6 +1108,11 @@ export async function capturePagedTable(
       fullPageRead &&
       currentTailReason === "incomplete"
     ) {
+      stoppedOnIncompletePage = true;
+      incompletePage = page + 1;
+      incompletePageNames = rows
+        .map((row) => String(row?.name || "").trim())
+        .filter(Boolean);
       if (scanState && typeof scanState === "object") {
         scanState.stoppedOnIncompletePage = true;
         scanState.incompletePage = page + 1;
@@ -1053,7 +1120,13 @@ export async function capturePagedTable(
       await report(
         "warning",
         "member_details_incomplete_stop",
-        `第 ${page + 1} 页连续重读仍未达到 ${memberRowsPerPage} 行，已立即停止翻页；当前整页重读结果为 ${rows.length} 行`
+        `第 ${page + 1} 页连续重读仍未达到 ${memberRowsPerPage} 行，已立即停止翻页；当前整页重读结果为 ${rows.length} 行；当前已读到：${incompletePageNames.join("、") || "无"}`,
+        {
+          page: page + 1,
+          recognizedRows: rows.length,
+          recognizedNames: incompletePageNames,
+          maxRetries: maxMemberPageRetries
+        }
       );
       break;
     }
@@ -1251,18 +1324,35 @@ export async function capturePagedTable(
   const rows = [...byName.values()];
   if (memberDetailsMode) {
     const reconciled = reconcileMemberDetailRows(rows, expectedCount);
-    await report(
-      "info",
-      "member_details_bottom_reached",
-      expectedCount !== null
+    const scanStoppedOnIncompletePage =
+      stoppedOnIncompletePage || scanState?.stoppedOnIncompletePage === true;
+    const finalStep = scanStoppedOnIncompletePage
+      ? "member_details_scan_stopped_incomplete"
+      : "member_details_bottom_reached";
+    const finalMessage = scanStoppedOnIncompletePage
+      ? expectedCount !== null
+        ? `成员资料第 ${incompletePage || scanState?.incompletePage || scannedPages} 页连续重读达到最多 ${maxMemberPageRetries} 次仍不完整，停止当前扫描；整理为 ${reconciled.length}/${expectedCount} 名成员；当前已读到：${incompletePageNames.join("、") || "无"}`
+        : `成员资料第 ${incompletePage || scanState?.incompletePage || scannedPages} 页连续重读达到最多 ${maxMemberPageRetries} 次仍不完整，停止当前扫描；整理为 ${reconciled.length} 名成员；当前已读到：${incompletePageNames.join("、") || "无"}`
+      : expectedCount !== null
         ? `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；全表去重合并后整理为 ${reconciled.length}/${expectedCount} 名成员`
-        : `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；整理结果为 ${reconciled.length} 名成员`,
+        : `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；整理结果为 ${reconciled.length} 名成员`;
+    await report(
+      scanStoppedOnIncompletePage ? "warning" : "info",
+      finalStep,
+      finalMessage,
       {
         pages: scannedPages,
         scannedRows: rows.length,
         reconciledRows: reconciled.length,
         expectedCount,
-        stoppedAtExpectedCount: false
+        stoppedAtExpectedCount: false,
+        ...(scanStoppedOnIncompletePage
+          ? {
+              incompletePage: incompletePage || scanState?.incompletePage || scannedPages,
+              maxRetries: maxMemberPageRetries,
+              recognizedNames: incompletePageNames
+            }
+          : {})
       }
     );
     return reconciled;

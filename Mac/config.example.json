@@ -376,7 +376,7 @@
         "settleAfterSwipeMs": 2000,
         "rowsPerPage": 5,
         "minimumRowsPerPage": 5,
-        "maxIncompletePageRetries": 3,
+        "maxIncompletePageRetries": 6,
         "maxExtraPagesAfterExpected": 2,
         "fullPageRegion": { "left": 115, "top": 285, "right": 1800, "bottom": 810 },
         "fullPageRows": 7,

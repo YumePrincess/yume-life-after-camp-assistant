@@ -81,4 +81,28 @@ test("safe count templates translate without translating OCR fields", () => {
     ),
     "Page 18 stayed below 5 rows after repeated reads; scrolling stopped immediately with 6 rows"
   );
+  assert.equal(
+    localizeTaskEvent(
+      "member_details_scan_stopped_incomplete",
+      "成员资料第 18 页连续重读达到最多 6 次仍不完整，停止当前扫描；整理为 91/92 名成员",
+      "en"
+    ),
+    "Member profiles stopped on page 18 after 6 incomplete reads; roster total: 91/92 members"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "member_details_incomplete_stop",
+      "第 18 页连续重读仍未达到 5 行，已立即停止翻页；当前结果为 4 行；当前已读到：成员1、成员2、成员3、成员4",
+      "en"
+    ),
+    "Page 18 stayed below 5 rows after repeated reads; scrolling stopped immediately with 4 rows; names currently recognized: 成员1、成员2、成员3、成员4"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "member_details_ai_recovery_attempt",
+      "第 18 页识别不足，正在调用 Qwen 本地视觉辅助模型重读当前页；当前已读到：成员1、成员2",
+      "en"
+    ),
+    "Page 18 is incomplete; asking the Qwen local vision assistant to reread it; names currently recognized: 成员1、成员2"
+  );
 });

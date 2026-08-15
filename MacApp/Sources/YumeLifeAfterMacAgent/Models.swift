@@ -1,12 +1,11 @@
 import Foundation
 
 enum SidebarSection: String, CaseIterable, Identifiable {
-    case overview, tasks, logs, plugins, admin, settings
+    case overview, logs, plugins, admin, settings
     var id: String { rawValue }
     var titleKey: String {
         switch self {
         case .overview: "Overview"
-        case .tasks: "Tasks"
         case .logs: "Logs"
         case .plugins: "Plugins"
         case .admin: "Camp admin"
@@ -16,7 +15,6 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .overview: "square.grid.2x2"
-        case .tasks: "play.square.stack"
         case .logs: "text.alignleft"
         case .plugins: "puzzlepiece.extension"
         case .admin: "building.columns"

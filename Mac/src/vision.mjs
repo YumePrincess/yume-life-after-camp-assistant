@@ -818,10 +818,18 @@ export class Vision {
         region.top,
         Math.floor(anchors[0] - rowSpacing / 2)
       );
-      const cropBottom = Math.min(
-        region.bottom,
-        Math.ceil(anchors.at(-1) + rowSpacing / 2)
-      );
+      const advisorRowCount = forceMemberAdvisor
+        ? Math.max(
+            anchors.length,
+            Number(definition.pagination?.fullPageRows) || rowsPerPage
+          )
+        : anchors.length;
+      const cropBottom = forceMemberAdvisor
+        ? region.bottom
+        : Math.min(
+            region.bottom,
+            Math.ceil(anchors.at(-1) + rowSpacing / 2)
+          );
       await this.#cropImage(
         imagePath,
         {
@@ -835,7 +843,7 @@ export class Vision {
       );
       const advised = await this.advisor.extractMemberDetails(
         cropPath,
-        anchors.length,
+        advisorRowCount,
         signal
       );
         advisedByRow = new Map(advised.map((item) => [item.row, item]));

@@ -236,6 +236,60 @@ const PATTERN_TRANSLATIONS = [
     }
   },
   {
+    test: /^第 (\d+) 页连续重读仍未达到 (\d+) 行，已立即停止翻页；当前(?:整页重读)?结果为 (\d+) 行；当前已读到：(.+)$/,
+    values: {
+      "zh-tw": "第 $1 頁連續重讀仍未達到 $2 行，已立即停止翻頁；目前結果為 $3 行；目前已讀到：$4",
+      en: "Page $1 stayed below $2 rows after repeated reads; scrolling stopped immediately with $3 rows; names currently recognized: $4",
+      fr: "La page $1 est restée sous $2 lignes après plusieurs lectures ; défilement arrêté avec $3 lignes ; noms reconnus : $4",
+      ja: "$1 ページ目は再読しても $2 行に達せず、$3 行の状態でスクロールを直ちに停止；現在認識した名前：$4"
+    }
+  },
+  {
+    test: /^第 (\d+) 页识别不足，正在调用 Qwen 本地视觉辅助模型重读当前页；当前已读到：(.+)$/,
+    values: {
+      "zh-tw": "第 $1 頁識別不足，正在呼叫 Qwen 本機視覺輔助模型重讀目前頁面；目前已讀到：$2",
+      en: "Page $1 is incomplete; asking the Qwen local vision assistant to reread it; names currently recognized: $2",
+      fr: "La page $1 est incomplète ; nouvelle lecture par l’assistant visuel local Qwen ; noms reconnus : $2",
+      ja: "$1 ページ目の認識が不完全なため、Qwen ローカル視覚アシスタントで再読；現在認識した名前：$2"
+    }
+  },
+  {
+    test: /^第 (\d+) 页识别不足，Qwen 本地视觉辅助模型当前不可用，继续使用 OCR 重读；当前已读到：(.+)$/,
+    values: {
+      "zh-tw": "第 $1 頁識別不足，Qwen 本機視覺輔助模型目前不可用，繼續使用 OCR 重讀；目前已讀到：$2",
+      en: "Page $1 is incomplete; the Qwen local vision assistant is unavailable, continuing with OCR rereads; names currently recognized: $2",
+      fr: "La page $1 est incomplète ; l’assistant visuel local Qwen est indisponible, poursuite avec de nouvelles lectures OCR ; noms reconnus : $2",
+      ja: "$1 ページ目の認識が不完全ですが、Qwen ローカル視覚アシスタントが利用できないため OCR で再読；現在認識した名前：$2"
+    }
+  },
+  {
+    test: /^成员资料第 (\d+) 页连续重读达到最多 (\d+) 次仍不完整，停止当前扫描；整理为 (\d+)\/(\d+) 名成员$/,
+    values: {
+      "zh-tw": "成員資料第 $1 頁連續重讀達到最多 $2 次仍不完整，停止目前掃描；整理為 $3/$4 名成員",
+      en: "Member profiles stopped on page $1 after $2 incomplete reads; roster total: $3/$4 members",
+      fr: "Les profils membres se sont arrêtés à la page $1 après $2 lectures incomplètes ; total : $3/$4 membres",
+      ja: "メンバープロフィールは不完全な再読を $2 回行っても改善せず、$1 ページ目で停止；名簿は $3/$4 人"
+    }
+  },
+  {
+    test: /^成员资料第 (\d+) 页连续重读达到最多 (\d+) 次仍不完整，停止当前扫描；整理为 (\d+)\/(\d+) 名成员；当前已读到：(.+)$/,
+    values: {
+      "zh-tw": "成員資料第 $1 頁連續重讀達到最多 $2 次仍不完整，停止目前掃描；整理為 $3/$4 名成員；目前已讀到：$5",
+      en: "Member profiles stopped on page $1 after $2 incomplete reads; roster total: $3/$4 members; names currently recognized: $5",
+      fr: "Les profils membres se sont arrêtés à la page $1 après $2 lectures incomplètes ; total : $3/$4 membres ; noms reconnus : $5",
+      ja: "メンバープロフィールは不完全な再読を $2 回行っても改善せず、$1 ページ目で停止；名簿は $3/$4 人；現在認識した名前：$5"
+    }
+  },
+  {
+    test: /^成员资料第 (\d+) 页连续重读达到最多 (\d+) 次仍不完整，停止当前扫描；整理为 (\d+) 名成员$/,
+    values: {
+      "zh-tw": "成員資料第 $1 頁連續重讀達到最多 $2 次仍不完整，停止目前掃描；整理為 $3 名成員",
+      en: "Member profiles stopped on page $1 after $2 incomplete reads; roster total: $3 members",
+      fr: "Les profils membres se sont arrêtés à la page $1 après $2 lectures incomplètes ; total : $3 membres",
+      ja: "メンバープロフィールは不完全な再読を $2 回行っても改善せず、$1 ページ目で停止；名簿は $3 人"
+    }
+  },
+  {
     test: /^成员详情滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动$/,
     values: {
       "zh-tw": "成員詳情滾動的 MuMu 滑鼠注入遭系統拒絕，已切換 Android 觸控滑動",
