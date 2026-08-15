@@ -164,11 +164,17 @@ export function preserveAutomationScheduleTimes(
       continue;
     }
     const firstTime = submittedSchedule.time || currentSchedule.times[0];
-    result[taskKey] = {
-      ...submittedSchedule,
-      time: firstTime,
-      times: [firstTime, ...currentSchedule.times.slice(1)]
-    } as AutomationTasks[typeof taskKey];
+    // `patrol` has extra fields, so assigning through a dynamic key makes
+    // TypeScript require the intersection of every task shape. Merge through
+    // the object instead; the runtime key has already been validated above,
+    // and this preserves the specialised patrol schedule fields.
+    Object.assign(result, {
+      [taskKey]: {
+        ...submittedSchedule,
+        time: firstTime,
+        times: [firstTime, ...currentSchedule.times.slice(1)]
+      }
+    });
   }
   return result;
 }

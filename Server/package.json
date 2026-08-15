@@ -5,7 +5,7 @@
   "description": "LifeAfter camp assistant API and web UI on Cloudflare Workers, Assets, and D1",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "plugins:build": "node scripts/generate-plugin-registry.mjs",
@@ -25,10 +25,10 @@
     "check": "npm run types:check && npm run typecheck && npm test && npm run deploy:dry"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260801.1",
+    "@cloudflare/workers-types": "^5.20260815.1",
     "typescript": "^7.0.2",
-    "vitest": "^3.2.4",
-    "wrangler": "4.114.0"
+    "vitest": "^4.1.10",
+    "wrangler": "4.123.0"
   },
   "dependencies": {
     "worker-mailer": "^1.2.1"
