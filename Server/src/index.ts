@@ -1,5 +1,6 @@
 import {
   canViewAdminModule,
+  deleteRevokedTemporaryKey,
   getAuthenticatedSession,
   handleOidcSilentStart,
   handleTemporaryKeyLogin,
@@ -8,6 +9,7 @@ import {
   handleOidcStart,
   hasPermission,
   issueTemporaryKey,
+  isDemoSession,
   listTemporaryKeys,
   maybeValidateOidcSession,
   requireAdmin,
@@ -111,6 +113,7 @@ import {
   verifyIdentityCode
 } from "./identity";
 import {
+  demoSmtpConfig,
   getSmtpConfig,
   publicSmtpConfig,
   sendMail,
@@ -888,7 +891,9 @@ async function handleAdminApi(
   }
   if (path === "/api/admin/technology-history" && method === "GET") {
     const bundle = await getConfigBundle(env);
-    const dates = await ensureTechnologyVoteHistory(env, bundle);
+    const dates = isDemoSession(session)
+      ? await listTechnologyVoteHistory(env)
+      : await ensureTechnologyVoteHistory(env, bundle);
     const requestedDate = new URL(request.url).searchParams.get("date")?.trim();
     if (requestedDate && !isDateKey(requestedDate)) {
       return problem("日期格式必须为 YYYY-MM-DD", 400, "invalid_history_date");
@@ -898,6 +903,9 @@ async function handleAdminApi(
     const voteBallots = history
       ? await listVoteBallotDetails(env, history.pollDate)
       : [];
+    const safeVoteBallots = isDemoSession(session)
+      ? demoVoteBallots(voteBallots)
+      : voteBallots;
     return json({
       dates,
       history: history
@@ -906,7 +914,7 @@ async function handleAdminApi(
             new URL(request.url).searchParams.get("locale")
           )
         : null,
-      voteBallots
+      voteBallots: safeVoteBallots
     });
   }
   if (path === "/api/admin/technology-history" && method === "DELETE") {
@@ -928,7 +936,11 @@ async function handleAdminApi(
     });
   }
   if (path === "/api/admin/smtp-config" && method === "GET") {
-    return json(publicSmtpConfig(await getSmtpConfig(env)));
+    return json(
+      isDemoSession(session)
+        ? demoSmtpConfig()
+        : publicSmtpConfig(await getSmtpConfig(env))
+    );
   }
   if (path === "/api/admin/smtp-config" && method === "PUT") {
     try {
@@ -954,13 +966,12 @@ async function handleAdminApi(
   }
   if (path === "/api/admin/identity-applications" && method === "GET") {
     const url = new URL(request.url);
-    return json(
-      await listIdentityApplications(env, {
+    const result = await listIdentityApplications(env, {
         page: Number(url.searchParams.get("page") ?? 1),
         search: url.searchParams.get("search")?.trim() ?? "",
         status: url.searchParams.get("status")?.trim() ?? ""
-      })
-    );
+      });
+    return json(isDemoSession(session) ? demoIdentityApplications(result) : result);
   }
   const approvalMatch =
     /^\/api\/admin\/identity-applications\/([^/]+)\/(approve|reject)$/.exec(path);
@@ -993,13 +1004,18 @@ async function handleAdminApi(
   }
   if (path === "/api/admin/identity-codes" && method === "GET") {
     const url = new URL(request.url);
+    const demo = isDemoSession(session);
+    const canManageIdentity = hasPermission(session, "identity:manage");
     const result = await listIdentityCodes(env, {
         page: Number(url.searchParams.get("page") ?? 1),
         search: url.searchParams.get("search")?.trim() ?? "",
-        status: url.searchParams.get("status")?.trim() ?? ""
+        status: url.searchParams.get("status")?.trim() ?? "",
+        includeCode: canManageIdentity
       });
     return json(
-      hasPermission(session, "identity:manage")
+      demo
+        ? demoIdentityCodes(result)
+        : canManageIdentity
         ? result
         : {
             ...result,
@@ -1113,13 +1129,12 @@ async function handleAdminApi(
   }
   if (path === "/api/admin/temp-keys" && method === "GET") {
     const url = new URL(request.url);
-    return json(
-      await listTemporaryKeys(env, {
+    const result = await listTemporaryKeys(env, {
         page: Number(url.searchParams.get("page") ?? 1),
         search: url.searchParams.get("search")?.trim() ?? "",
         status: url.searchParams.get("status")?.trim() ?? ""
-      })
-    );
+      });
+    return json(isDemoSession(session) ? demoTemporaryKeys(result) : result);
   }
   if (path === "/api/admin/temp-keys" && method === "POST") {
     const body = await readJsonObject(request, 32_000);
@@ -1188,6 +1203,24 @@ async function handleAdminApi(
     const body = await readJsonObject(request, 16_000);
     const id = boundedText(body.id, "id", 80);
     return json({ revoked: await revokeTemporaryKey(env, id) });
+  }
+  const temporaryKeyDeleteMatch = /^\/api\/admin\/temp-keys\/([^/]+)$/.exec(path);
+  if (temporaryKeyDeleteMatch && method === "DELETE") {
+    let id: string;
+    try {
+      id = boundedText(
+        decodeURIComponent(temporaryKeyDeleteMatch[1] ?? ""),
+        "id",
+        80
+      );
+    } catch (error) {
+      return problem(errorMessage(error), 400, "invalid_temporary_key_id");
+    }
+    const deleted = await deleteRevokedTemporaryKey(env, id);
+    if (!deleted) {
+      return problem("只能删除已撤销的临时 Key", 404, "temporary_key_not_found");
+    }
+    return json({ ok: true, deleted: true });
   }
   const temporaryKeyPermissionsMatch =
     /^\/api\/admin\/temp-keys\/([^/]+)\/permissions$/.exec(path);
@@ -1413,12 +1446,11 @@ async function handleAdminApi(
     const url = new URL(request.url);
     const afterId = Number(url.searchParams.get("afterId"));
     const limit = Number(url.searchParams.get("limit"));
-    return json({
-      ...(await listRunEvents(env, runId, {
+    const result = await listRunEvents(env, runId, {
         ...(Number.isInteger(afterId) && afterId > 0 ? { afterId } : {}),
         ...(Number.isInteger(limit) && limit > 0 ? { limit } : {})
-      }))
-    });
+      });
+    return json(isDemoSession(session) ? demoRunEvents(result) : result);
   }
   return problem("Not found", 404, "not_found");
 }
@@ -1800,9 +1832,10 @@ async function buildAdminBootstrap(
   const bundle = await getConfigBundle(env);
   const plugins = await effectiveWorkerPlugins(env);
   const pluginEnabled = new Map(plugins.map((plugin) => [plugin.id, plugin.enabled]));
+  const demo = isDemoSession(session);
   // Deployment/backfill special case: the first admin bootstrap organizes every
   // history entry whose technology effective day has already crossed daily reset.
-  if (pluginEnabled.get("technology")) {
+  if (pluginEnabled.get("technology") && !demo) {
     await ensureTechnologyVoteHistory(env, bundle);
   }
   const canOverview = canViewAdminModule(session, "admin:overview");
@@ -1821,25 +1854,40 @@ async function buildAdminBootstrap(
     canMembers ? listMembers(env) : Promise.resolve([])
   ]);
   const voteBallots = canTechnology
-    ? (await listVoteBallotDetails(env, voteSummary.pollDate)).map((ballot) =>
-        hasPermission(session, "admin:technology")
-          ? ballot
-          : { ...ballot, identityCode: "••••••••" }
-      )
+    ? demo
+      ? demoVoteBallots(await listVoteBallotDetails(env, voteSummary.pollDate))
+      : (await listVoteBallotDetails(env, voteSummary.pollDate)).map((ballot) =>
+          hasPermission(session, "admin:technology")
+            ? ballot
+            : { ...ballot, identityCode: "••••••••" }
+        )
     : [];
+  const safeHeartbeats = demo
+    ? heartbeats.map((heartbeat, index) => ({
+        ...heartbeat,
+        agent_id: `demo-agent-${index + 1}`,
+        display_name: "Demo Agent",
+        active_run_id: null,
+        capabilities_json: null,
+        detail_json: null
+      }))
+    : heartbeats;
   return {
     plugins,
     permissionCatalog: await enabledPermissionCatalog(env),
     session: {
-      email: session.email,
-      displayName: session.display_name,
-      csrfToken: session.csrf_token,
+      email: demo ? "test@demo.com" : session.email,
+      displayName: demo ? "Demo · 全后台只读" : session.display_name,
+      csrfToken: demo ? "demo-readonly" : session.csrf_token,
       authMethod: session.auth_method,
       permissions: sessionPermissions(session),
       expiresAt: session.expires_at
     },
     configBundle: {
       ...bundle,
+      campConfig: demo
+        ? { ...bundle.campConfig, agentId: "demo-agent" }
+        : bundle.campConfig,
       technologyConfig: {
         ...bundle.technologyConfig,
         catalog: bundle.technologyConfig.catalog.map((item) =>
@@ -1851,7 +1899,7 @@ async function buildAdminBootstrap(
       ? localizeVoteSummary(voteSummary, locale)
       : { pollDate: voteSummary.pollDate, ballotCount: 0, options: [], projectedPlan: { core: [], general: [] } },
     voteBallots,
-    heartbeats,
+    heartbeats: safeHeartbeats,
     recentRuns: recentRuns.filter(isCurrentFeatureRun),
     staffAssignments: canMembers ? staff : [],
     members: canMembers ? members : [],
@@ -1947,6 +1995,85 @@ function isCurrentFeatureRun(run: { task_key: string }): boolean {
   );
 }
 
+type IdentityApplicationsResult = Awaited<
+  ReturnType<typeof listIdentityApplications>
+>;
+type IdentityCodesResult = Awaited<ReturnType<typeof listIdentityCodes>>;
+type TemporaryKeysResult = Awaited<ReturnType<typeof listTemporaryKeys>>;
+type VoteBallotsResult = Awaited<ReturnType<typeof listVoteBallotDetails>>;
+type RunEventsResult = Awaited<ReturnType<typeof listRunEvents>>;
+
+function demoVoteBallots(items: VoteBallotsResult): VoteBallotsResult {
+  return items.map((item) => ({
+    ...item,
+    voterId: "demo-voter",
+    identityCode: "00000000",
+    playerName: "Demo 用户"
+  }));
+}
+
+function demoRunEvents(result: RunEventsResult): RunEventsResult {
+  return {
+    ...result,
+    events: result.events.map((event) => ({
+      ...event,
+      message: "Demo operation event",
+      detail_json: null
+    }))
+  };
+}
+
+function demoIdentityApplications(
+  result: IdentityApplicationsResult
+): IdentityApplicationsResult {
+  return {
+    ...result,
+    items: result.items.map((item, index) => ({
+      ...item,
+      id: `demo-application-${index + 1}`,
+      application_number: "00000000",
+      email: "test@demo.com",
+      player_name: "Demo 用户",
+      identity_code_id: null,
+      reviewed_by: null,
+      rejection_reason: null,
+      last_email_error: null
+    }))
+  };
+}
+
+function demoIdentityCodes(result: IdentityCodesResult): IdentityCodesResult {
+  return {
+    ...result,
+    items: result.items.map((item, index) => ({
+      ...item,
+      id: `demo-code-${index + 1}`,
+      code: "00000000",
+      code_hash: "demo",
+      code_encrypted: "",
+      application_id: null,
+      application_number: "00000000",
+      player_name: "Demo 用户",
+      email: "test@demo.com",
+      created_by: "demo",
+      last_email_error: null
+    }))
+  };
+}
+
+function demoTemporaryKeys(result: TemporaryKeysResult): TemporaryKeysResult {
+  return {
+    ...result,
+    items: result.items.map((item, index) => ({
+      ...item,
+      id: `demo-key-${index + 1}`,
+      name: "Demo Access Key",
+      permissions_json: JSON.stringify(["demo:preview"]),
+      created_by: "test@demo.com"
+    }))
+  };
+}
+
 function pollingIntervalSeconds(
   automation: ConfigBundle["automationConfig"],
   busy: boolean,
@@ -1992,6 +2119,9 @@ function permissionForAdminRequest(
     return method === "GET" ? "admin:access" : "keys:manage";
   }
   if (path === "/api/admin/temp-keys/revoke") {
+    return "keys:manage";
+  }
+  if (/^\/api\/admin\/temp-keys\/[^/]+$/.test(path)) {
     return "keys:manage";
   }
   if (/^\/api\/admin\/temp-keys\/[^/]+\/permissions$/.test(path)) {

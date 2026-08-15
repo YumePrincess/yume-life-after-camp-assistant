@@ -1830,12 +1830,20 @@
         edit.addEventListener("click", () =>
           openTemporaryKeyPermissions(item, permissions)
         );
-        const revoke = create("button", "button button-danger", "撤销");
-        revoke.type = "button";
-        revoke.hidden = !hasPermission("keys:manage");
-        revoke.disabled = Boolean(item.revoked_at);
-        revoke.addEventListener("click", () => revokeTemporaryKey(item.id, revoke));
-        actions.append(edit, revoke);
+        const revoked = Boolean(item.revoked_at);
+        const keyAction = create(
+          "button",
+          "button button-danger",
+          window.MrzhI18n.t(revoked ? "删除" : "撤销")
+        );
+        keyAction.type = "button";
+        keyAction.hidden = !hasPermission("keys:manage");
+        keyAction.addEventListener("click", () =>
+          revoked
+            ? deleteRevokedTemporaryKey(item.id, keyAction)
+            : revokeTemporaryKey(item.id, keyAction)
+        );
+        actions.append(edit, keyAction);
         row.append(identity, create("div", "key-item-meta", suffix), actions);
         root.append(row);
       }
@@ -2282,6 +2290,23 @@
       await request("/api/admin/temp-keys/revoke", {
         method: "POST",
         body: JSON.stringify({ id })
+      });
+      await loadTemporaryKeys();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+      button.disabled = false;
+    }
+  }
+
+  async function deleteRevokedTemporaryKey(id, button) {
+    const label = window.MrzhI18n.t("临时 Key");
+    if (!window.confirm(
+      window.MrzhI18n.format("确认删除{label}吗？删除后无法从后台恢复。", { label })
+    )) return;
+    button.disabled = true;
+    try {
+      await request(`/api/admin/temp-keys/${encodeURIComponent(id)}`, {
+        method: "DELETE"
       });
       await loadTemporaryKeys();
     } catch (error) {

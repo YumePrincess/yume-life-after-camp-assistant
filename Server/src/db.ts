@@ -366,6 +366,18 @@ export async function revokeTemporaryKey(env: Env, id: string): Promise<boolean>
   return (results[0]?.meta.changes ?? 0) > 0;
 }
 
+export async function deleteRevokedTemporaryKey(
+  env: Env,
+  id: string
+): Promise<boolean> {
+  const result = await env.DB.prepare(
+    "DELETE FROM temporary_keys WHERE id = ? AND revoked_at IS NOT NULL"
+  )
+    .bind(id)
+    .run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
 export async function updateTemporaryKeyPermissions(
   env: Env,
   input: { id: string; permissions: string[] }

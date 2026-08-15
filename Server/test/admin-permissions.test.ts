@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  canMutateAdminModule,
   canViewAdminModule,
   hasPermission,
+  isDemoSession,
   sessionPermissions
 } from "../src/auth";
 import type { SessionRow } from "../src/db";
@@ -40,6 +42,9 @@ describe("admin permissions", () => {
 
     expect(canViewAdminModule(demo, "admin:members")).toBe(true);
     expect(canViewAdminModule(demo, "admin:smtp")).toBe(true);
+    expect(isDemoSession(demo)).toBe(true);
+    expect(canMutateAdminModule(demo, "admin:agent")).toBe(false);
+    expect(canMutateAdminModule(demo, "admin:history")).toBe(false);
     expect(hasPermission(demo, "admin:members")).toBe(false);
     expect(hasPermission(demo, "smtp:manage")).toBe(false);
   });

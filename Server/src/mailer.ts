@@ -52,6 +52,22 @@ export function publicSmtpConfig(config: SmtpConfig): PublicSmtpConfig {
   return { ...safe, passwordConfigured: Boolean(passwordEncrypted) };
 }
 
+export function demoSmtpConfig(): PublicSmtpConfig {
+  return {
+    enabled: false,
+    host: "smtp.test.demo.com",
+    port: 587,
+    secure: false,
+    startTls: true,
+    authType: "login",
+    username: "demo",
+    fromEmail: "test@demo.com",
+    fromName: "Demo SMTP",
+    replyTo: "test@demo.com",
+    passwordConfigured: false
+  };
+}
+
 function text(value: unknown, maximum: number): string {
   return typeof value === "string" ? value.trim().slice(0, maximum) : "";
 }

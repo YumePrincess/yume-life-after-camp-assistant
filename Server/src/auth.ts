@@ -1,5 +1,6 @@
 import {
   createTemporaryKey,
+  deleteRevokedTemporaryKey,
   deleteExpiredSessions,
   deleteSession,
   getTemporaryKey,
@@ -209,6 +210,22 @@ export function canViewAdminModule(
   );
 }
 
+export function isDemoSession(session: SessionRow): boolean {
+  const permissions = sessionPermissions(session);
+  return (
+    permissions.includes("demo:preview") &&
+    !permissions.includes("*") &&
+    !permissions.includes(SYSTEM_ADMIN_PERMISSION)
+  );
+}
+
+export function canMutateAdminModule(
+  session: SessionRow,
+  permission: AdminPermission
+): boolean {
+  return hasPermission(session, permission);
+}
+
 export async function getAuthenticatedSession(
   request: Request,
   env: Env
@@ -236,6 +253,12 @@ export async function requireAdmin(
     };
   }
 
+  if (options.mutation && isDemoSession(session)) {
+    return {
+      response: problem("Demo 权限仅允许查看后台，不能执行修改操作", 403, "demo_read_only")
+    };
+  }
+
   if (options.mutation) {
     const requestOrigin = request.headers.get("Origin");
     const expectedOrigin = new URL(request.url).origin;
@@ -250,9 +273,11 @@ export async function requireAdmin(
 
   if (
     options.permission &&
-    !(options.permission.startsWith("admin:")
-      ? canViewAdminModule(session, options.permission)
-      : hasPermission(session, options.permission))
+    (options.mutation
+      ? !canMutateAdminModule(session, options.permission)
+      : !(options.permission.startsWith("admin:")
+        ? canViewAdminModule(session, options.permission)
+        : hasPermission(session, options.permission)))
   ) {
     return {
       response: problem("当前登录凭据没有执行此操作的权限", 403, "permission_denied")
@@ -567,7 +592,12 @@ export async function issueTemporaryKey(
   return { id, key: `mrzh_${id}.${secret}` };
 }
 
-export { listTemporaryKeys, revokeTemporaryKey, updateTemporaryKeyPermissions };
+export {
+  deleteRevokedTemporaryKey,
+  listTemporaryKeys,
+  revokeTemporaryKey,
+  updateTemporaryKeyPermissions
+};
 
 function oidcFailure(state: OidcState, location: string, clearState: string): Response {
   return state.mode === "silent"

@@ -1118,7 +1118,7 @@ async function recordMailResult(
 
 export async function listIdentityCodes(
   env: Env,
-  input: { page: number; search: string; status: string }
+  input: { page: number; search: string; status: string; includeCode?: boolean }
 ): Promise<{
   items: Array<
     IdentityCodeRow & { code: string; application_number: string | null }
@@ -1202,7 +1202,9 @@ export async function listIdentityCodes(
     items: await Promise.all(
       rows.results.map(async (row) => ({
         ...row,
-        code: await decryptSecret(env, "identity-code-value", row.code_encrypted)
+        code: input.includeCode === false
+          ? "00000000"
+          : await decryptSecret(env, "identity-code-value", row.code_encrypted)
       }))
     ),
     page,
