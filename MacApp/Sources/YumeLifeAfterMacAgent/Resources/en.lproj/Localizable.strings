@@ -183,6 +183,12 @@
 "Qwen model is ready." = "Qwen model is ready.";
 "Qwen model was copied, but its runtime is not ready." = "Qwen model was copied, but its runtime is not ready.";
 "Qwen model download is incomplete." = "Qwen model download is incomplete.";
+"Enable Qwen visual assistance for tasks" = "Enable Qwen visual assistance for tasks";
+"Qwen visual assistance is enabled for task runs." = "Qwen visual assistance is enabled for task runs.";
+"Qwen visual assistance is disabled; tasks use OCR and deterministic steps." = "Qwen visual assistance is disabled; tasks use OCR and deterministic steps.";
+"Qwen visual assistance enabled." = "Qwen visual assistance enabled.";
+"Qwen visual assistance disabled." = "Qwen visual assistance disabled.";
+"Runtime configuration is missing. Run the setup assistant first." = "Runtime configuration is missing. Run the setup assistant first.";
 "The local Qwen model is not installed." = "The local Qwen model is not installed.";
 "The local model installer is missing." = "The local model installer is missing.";
 "Export migration archive" = "Export migration archive";

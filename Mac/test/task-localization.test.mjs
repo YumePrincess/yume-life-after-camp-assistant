@@ -25,6 +25,22 @@ test("fixed task messages follow the selected locale", () => {
     localizeTaskEvent("game_start", "正在启动明日之后", "zh-cn"),
     "正在启动明日之后"
   );
+  assert.equal(
+    localizeTaskEvent(
+      "local_model_disabled",
+      "本次任务未启用 Qwen 本地视觉辅助模型，使用 OCR 与确定性流程",
+      "en"
+    ),
+    "Qwen local vision is disabled for this task; using OCR and deterministic steps"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "local_model_started",
+      "Qwen 本地视觉辅助模型已启动",
+      "ja"
+    ),
+    "Qwen ローカル視覚アシスタントを起動しました"
+  );
 });
 
 test("OCR and device text without a safe fixed template is preserved", () => {

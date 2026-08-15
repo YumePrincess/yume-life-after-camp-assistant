@@ -660,6 +660,21 @@ struct SettingsView: View {
                             .buttonStyle(GlassButtonStyle())
                         }
                     }
+                    Toggle(
+                        model.text("Enable Qwen visual assistance for tasks"),
+                        isOn: Binding(
+                            get: { model.qwenEnabled },
+                            set: { enabled in
+                                Task { await model.setQwenEnabled(enabled) }
+                            }
+                        )
+                    )
+                    .disabled(model.isBusy)
+                    Text(model.qwenEnabled
+                        ? model.text("Qwen visual assistance is enabled for task runs.")
+                        : model.text("Qwen visual assistance is disabled; tasks use OCR and deterministic steps."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Button("Save settings") { Task { await model.saveSettings() } }
                     .buttonStyle(PrimaryButtonStyle())

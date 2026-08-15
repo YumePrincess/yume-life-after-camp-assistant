@@ -577,8 +577,31 @@ actor RuntimeService {
     }
 
     private func migrateExternalModelSettings(_ object: inout [String: Any]) -> Bool {
-        guard var model = object["localVisionModel"] as? [String: Any] else { return false }
-        var changed = false
+        var model = object["localVisionModel"] as? [String: Any] ?? [:]
+        var changed = object["localVisionModel"] != nil &&
+            (object["localVisionModel"] as? [String: Any]) == nil
+        let defaults: [String: Any] = [
+            "enabled": true,
+            "mode": "guarded",
+            "transport": "http",
+            "baseUrl": "http://127.0.0.1:8092",
+            "timeoutSeconds": 180,
+            "minimumConfidence": 0.9,
+            "waitTextVerificationEnabled": false,
+            "minimumActionConfidence": 0.95,
+            "minimumLoginActionConfidence": 0.45,
+            "consecutiveMatches": 1,
+            "maxAdviceAgeSeconds": 8,
+            "intervalSeconds": 3,
+            "unknownRecoveryDelaySeconds": 8,
+            "unknownRecoveryMatches": 2,
+            "autoStartForTasks": true,
+            "stopAfterTask": true
+        ]
+        for (key, value) in defaults where model[key] == nil {
+            model[key] = value
+            changed = true
+        }
         if model["model"] as? String != modelDirectory.path {
             model["model"] = modelDirectory.path
             changed = true
@@ -976,6 +999,33 @@ actor RuntimeService {
             isInstalled: installed,
             isRuntimeAvailable: pythonAvailable
         )
+    }
+
+    func localVisionEnabled() -> Bool {
+        let config = runtimeRoot.appending(path: "config.json")
+        guard let data = try? Data(contentsOf: config),
+              let decoded = try? JSONSerialization.jsonObject(with: data),
+              let object = decoded as? [String: Any],
+              let model = object["localVisionModel"] as? [String: Any]
+        else {
+            return true
+        }
+        return model["enabled"] as? Bool ?? true
+    }
+
+    func setLocalVisionEnabled(_ enabled: Bool) throws {
+        let config = runtimeRoot.appending(path: "config.json")
+        guard fileManager.fileExists(atPath: config.path) else {
+            throw RuntimeError.failed(String(localized: "Runtime configuration is missing. Run the setup assistant first."))
+        }
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: config)) as! [String: Any]
+        _ = migrateExternalModelSettings(&object)
+        var model = object["localVisionModel"] as? [String: Any] ?? [:]
+        model["enabled"] = enabled
+        object["localVisionModel"] = model
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: config, options: .atomic)
+        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path)
     }
 
     func prepareModelRuntime() async throws -> ModelRuntimeInfo {

@@ -4,6 +4,7 @@ import {
   normalizeMembers,
   normalizeProfiles,
   normalizeStaffGrid,
+  isStaffSeatPlaceholder,
   parseTable
 } from "../table-parser.mjs";
 import { isPlausibleMemberName } from "../member-name.mjs";
@@ -540,6 +541,7 @@ export function dedupeStaffAssignments(rows) {
     if (
       !roleKey ||
       !roleName ||
+      isStaffSeatPlaceholder(roleName) ||
       !memberName ||
       roleKeys.has(roleKey) ||
       roleNames.has(roleName) ||

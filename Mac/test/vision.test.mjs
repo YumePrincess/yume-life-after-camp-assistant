@@ -113,6 +113,36 @@ test("C icon background contamination is not treated as yellow", async () => {
   assert.equal(await vision.gameMouseCIconLit(), false);
 });
 
+test("staff advisor keeps the bottom role and never emits seat placeholders", async () => {
+  const vision = new Vision(
+    {
+      vision: {},
+      localVisionModel: { enabled: false }
+    },
+    {}
+  );
+  vision.advisor.extractStaff = async () => [
+    { slot: "staff1", name: "萤萤空心菜", campTitle: "" },
+    { slot: "staff2", name: "七晓白", campTitle: "#W圣之雪" },
+    { slot: "mayor", name: "雨梦", campTitle: "" }
+  ];
+
+  assert.deepEqual(await vision.extractStaffRows("/private/tmp/staff.png"), [
+    {
+      roleKey: "staff-2",
+      roleName: "#W圣之雪",
+      memberName: "七晓白",
+      campTitle: "#W圣之雪"
+    },
+    {
+      roleKey: "mayor",
+      roleName: "市长",
+      memberName: "雨梦",
+      campTitle: null
+    }
+  ]);
+});
+
 test("member table OCR starts at the identity column and excludes avatar artwork", async () => {
   const vision = new Vision({
     adb: { screenWidth: 1920, screenHeight: 1200 },
@@ -194,6 +224,7 @@ test("member table OCR restores missing row slots from calibrated geometry", asy
     "成员四",
     "成员五"
   ]);
+  assert.deepEqual(rows.map((row) => row.campTitle), [null, null, null, null, null]);
 });
 
 test("member identity keeps the first OCR line as the player name", () => {
@@ -203,6 +234,13 @@ test("member identity keeps the first OCR line as the player name", () => {
       { text: "称号", x: 100, y: 335 }
     ]),
     { name: "青在", campTitle: "营地助手 称号" }
+  );
+  assert.deepEqual(
+    inferMemberIdentity(
+      [{ text: "#W月之歌", x: 100, y: 340, width: 100, height: 20 }],
+      { includeCampTitle: false, nameBaselineY: 315, maxNameOffset: 20 }
+    ),
+    { name: "", campTitle: "" }
   );
   assert.equal(isPlausibleMemberName("COSGH"), false);
   assert.equal(isPlausibleMemberName("青在✨"), true);

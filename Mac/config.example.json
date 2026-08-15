@@ -355,7 +355,7 @@
       "columns": [
         {
           "key": "identity",
-          "stackedKeys": ["name", "campTitle"],
+          "stackedKeys": ["name"],
           "left": 0.08,
           "right": 0.318
         },

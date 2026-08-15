@@ -230,10 +230,10 @@ export class LocalVisionAdvisor {
     const prompt = [
       "读取《明日之后》营地“成员-基础信息”表当前完整可见的成员行。",
       `右侧“在线/离线”列明确标出了 ${count} 条完整成员行；profiles 必须恰好返回 ${count} 项，row 从1连续到${count}，绝不能漏行或把后一行前移。`,
-      "每行最左侧头像右边有上下两行文字：上面较大的第一行才是玩家姓名name，下面较小的第二行是营地职位campTitle。绝不能把第二行职位当成玩家姓名。",
+      "成员清单只读取每行最上面的第一行玩家姓名name。下面较小的职位/Title行完全忽略，campTitle必须返回空字符串；绝不能把第二行职位当成玩家姓名。",
       "另外读取同一行的职业profession和最右侧同居人roommateName；没有文字或看不清时填空字符串，不能猜测。",
       "保留姓名中的字母、数字和可辨认装饰符号。忽略表头、头像、周贡献、庄园等级、在线状态与所在场景。",
-      "只返回一次单行JSON对象且不要Markdown。顶层唯一字段profiles；每项只有row整数、name、campTitle、profession、roommateName字符串。"
+      "只返回一次单行JSON对象且不要Markdown。顶层唯一字段profiles；每项只有row整数、name、campTitle、profession、roommateName字符串，campTitle固定为空字符串。"
     ].join("\n");
     const parsed = await requestHttp(
       this.config,
@@ -254,7 +254,7 @@ export class LocalVisionAdvisor {
       .map((item) => ({
         row: Number.parseInt(item?.row, 10),
         name: String(item?.name || "").trim(),
-        campTitle: String(item?.campTitle || "").trim(),
+        campTitle: "",
         profession: String(item?.profession || "").trim(),
         roommateName: String(item?.roommateName || "").trim()
       }))

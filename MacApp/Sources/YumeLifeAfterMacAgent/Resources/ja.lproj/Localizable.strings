@@ -170,6 +170,12 @@
 "Qwen model is ready." = "Qwen モデルを使用できます。";
 "Qwen model was copied, but its runtime is not ready." = "Qwen モデルはコピー済みですが、ランタイムが未準備です。";
 "Qwen model download is incomplete." = "Qwen モデルのダウンロードが不完全です。";
+"Enable Qwen visual assistance for tasks" = "タスクで Qwen 視覚アシスタントを有効にする";
+"Qwen visual assistance is enabled for task runs." = "タスク実行時の Qwen 視覚アシスタントは有効です。";
+"Qwen visual assistance is disabled; tasks use OCR and deterministic steps." = "Qwen 視覚アシスタントは無効です。タスクは OCR と決定的な手順を使用します。";
+"Qwen visual assistance enabled." = "Qwen 視覚アシスタントを有効にしました。";
+"Qwen visual assistance disabled." = "Qwen 視覚アシスタントを無効にしました。";
+"Runtime configuration is missing. Run the setup assistant first." = "ランタイム設定がありません。先に設定アシスタントを実行してください。";
 "The local Qwen model is not installed." = "ローカル Qwen モデルがインストールされていません。";
 "The local model installer is missing." = "ローカルモデルのインストーラがありません。";
 "Export migration archive" = "移行アーカイブを書き出す";

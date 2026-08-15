@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "contribution",
   "version": "27.0.0",
-  "build": 27074,
+  "build": 27075,
   "displayName": "更新贡献",
   "description": "从市政厅沙盘更新成员贡献数据。",
   "builtin": true,

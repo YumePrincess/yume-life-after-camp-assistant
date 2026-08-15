@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   normalizeMembers,
   normalizeProfiles,
+  normalizeStaffGrid,
   parseTable
 } from "../src/table-parser.mjs";
 
@@ -82,6 +83,52 @@ test("member identity column excludes text rendered inside the avatar", () => {
     parseTable(observations, definition).map(({ name }) => name),
     ["雨梦", "青在"]
   );
+});
+
+test("staff grid reads the player name and bottom role instead of seat placeholders", () => {
+  const definition = {
+    slots: [
+      {
+        roleKey: "staff-1",
+        roleName: "公职席位 1",
+        region: { left: 560, top: 470, right: 850, bottom: 590 }
+      },
+      {
+        roleKey: "mayor",
+        roleName: "市长",
+        region: { left: 230, top: 780, right: 500, bottom: 900 }
+      },
+      {
+        roleKey: "staff-2",
+        roleName: "公职席位 2",
+        region: { left: 850, top: 470, right: 1150, bottom: 590 }
+      }
+    ]
+  };
+  const rows = normalizeStaffGrid(
+    [
+      { text: "萤萤空心菜", x: 600, y: 480, width: 120, height: 24 },
+      { text: "#W月之歌", x: 600, y: 535, width: 120, height: 22 },
+      { text: "雨梦", x: 260, y: 790, width: 100, height: 24 },
+      { text: "市长", x: 260, y: 845, width: 80, height: 22 },
+      { text: "七晓白", x: 900, y: 480, width: 100, height: 24 },
+      { text: "公职席位 2", x: 900, y: 535, width: 120, height: 22 }
+    ],
+    definition
+  );
+
+  assert.deepEqual(rows, [
+    {
+      roleKey: "staff-1",
+      roleName: "#W月之歌",
+      memberName: "萤萤空心菜"
+    },
+    {
+      roleKey: "mayor",
+      roleName: "市长",
+      memberName: "雨梦"
+    }
+  ]);
 });
 
 test("similar member names are never fuzzy-merged", () => {

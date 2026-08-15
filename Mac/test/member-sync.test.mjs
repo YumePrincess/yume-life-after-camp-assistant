@@ -987,7 +987,8 @@ test("staff assignments keep every role and member name unique", () => {
       { roleKey: "mayor-copy", roleName: "市长", memberName: "雨梦" },
       { roleKey: "staff-1", roleName: "#W月之歌", memberName: "萤萤空心菜" },
       { roleKey: "staff-2", roleName: "#W圣之雪", memberName: "七晓白" },
-      { roleKey: "staff-3", roleName: "#P营地助手", memberName: "七晓白✨" }
+      { roleKey: "staff-3", roleName: "#P营地助手", memberName: "七晓白✨" },
+      { roleKey: "staff-4", roleName: "公职席位 4", memberName: "错误占位" }
     ]),
     [
       { roleKey: "mayor", roleName: "市长", memberName: "雨梦" },

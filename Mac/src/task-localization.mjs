@@ -7,6 +7,36 @@ const FIXED_TRANSLATIONS = {
     fr: "Démarrage de l’assistant visuel local pour cette tâche",
     ja: "タスク用のローカル視覚アシスタントを起動しています"
   },
+  "正在按任务启动 Qwen 本地视觉辅助模型": {
+    "zh-tw": "正在依任務啟動 Qwen 本機視覺輔助模型",
+    en: "Starting the Qwen local vision assistant for this task",
+    fr: "Démarrage de l’assistant visuel local Qwen pour cette tâche",
+    ja: "タスク用の Qwen ローカル視覚アシスタントを起動しています"
+  },
+  "Qwen 本地视觉辅助模型已启动": {
+    "zh-tw": "Qwen 本機視覺輔助模型已啟動",
+    en: "Qwen local vision assistant started",
+    fr: "Assistant visuel local Qwen démarré",
+    ja: "Qwen ローカル視覚アシスタントを起動しました"
+  },
+  "本次任务未启用 Qwen 本地视觉辅助模型，使用 OCR 与确定性流程": {
+    "zh-tw": "本次任務未啟用 Qwen 本機視覺輔助模型，使用 OCR 與確定性流程",
+    en: "Qwen local vision is disabled for this task; using OCR and deterministic steps",
+    fr: "La vision locale Qwen est désactivée pour cette tâche ; utilisation de l’OCR et des étapes déterministes",
+    ja: "このタスクでは Qwen ローカル視覚を無効化し、OCR と決定的な手順を使用します"
+  },
+  "Qwen 本地视觉辅助模型因任务配置未自动启动，使用 OCR 与确定性流程": {
+    "zh-tw": "Qwen 本機視覺輔助模型因任務設定未自動啟動，使用 OCR 與確定性流程",
+    en: "Qwen local vision was not auto-started by task configuration; using OCR and deterministic steps",
+    fr: "La vision locale Qwen n’a pas été démarrée automatiquement par la configuration ; utilisation de l’OCR et des étapes déterministes",
+    ja: "タスク設定で Qwen ローカル視覚の自動起動が無効なため、OCR と決定的な手順を使用します"
+  },
+  "Qwen 本地视觉模型启动失败，本次任务继续使用 OCR 与确定性流程": {
+    "zh-tw": "Qwen 本機視覺模型啟動失敗，本次任務繼續使用 OCR 與確定性流程",
+    en: "Qwen local vision failed to start; continuing with OCR and deterministic steps",
+    fr: "Échec du démarrage de la vision locale Qwen ; poursuite avec l’OCR et les étapes déterministes",
+    ja: "Qwen ローカル視覚を起動できないため、OCR と決定的な手順で続行します"
+  },
   "本地视觉模型未能启动，本次任务继续使用 OCR 与确定性流程": {
     "zh-tw": "本機視覺模型未能啟動，本次任務繼續使用 OCR 與確定性流程",
     en: "The local vision model did not start; continuing with OCR and deterministic steps",
@@ -54,6 +84,30 @@ const FIXED_TRANSLATIONS = {
     en: "The task is complete; releasing local vision-model memory",
     fr: "Tâche terminée ; libération de la mémoire du modèle visuel local",
     ja: "タスクが終了したため、ローカル視覚モデルのメモリを解放しています"
+  },
+  "已保留游戏现场，正在单独释放 Qwen 本地视觉模型内存": {
+    "zh-tw": "已保留遊戲現場，正在單獨釋放 Qwen 本機視覺模型記憶體",
+    en: "The game scene is preserved; releasing Qwen local vision memory separately",
+    fr: "La scène du jeu est conservée ; libération séparée de la mémoire de vision locale Qwen",
+    ja: "ゲーム画面を保持し、Qwen ローカル視覚モデルのメモリを個別に解放しています"
+  },
+  "任务已结束，正在释放 Qwen 本地视觉模型内存": {
+    "zh-tw": "任務已結束，正在釋放 Qwen 本機視覺模型記憶體",
+    en: "The task is complete; releasing Qwen local vision memory",
+    fr: "Tâche terminée ; libération de la mémoire de vision locale Qwen",
+    ja: "タスクが終了したため、Qwen ローカル視覚モデルのメモリを解放しています"
+  },
+  "Qwen 本地视觉辅助模型已停止并释放内存": {
+    "zh-tw": "Qwen 本機視覺輔助模型已停止並釋放記憶體",
+    en: "Qwen local vision assistant stopped and memory released",
+    fr: "Assistant visuel local Qwen arrêté et mémoire libérée",
+    ja: "Qwen ローカル視覚アシスタントを停止し、メモリを解放しました"
+  },
+  "Qwen 本地视觉辅助模型停止失败": {
+    "zh-tw": "Qwen 本機視覺輔助模型停止失敗",
+    en: "Qwen local vision assistant failed to stop",
+    fr: "Échec de l’arrêt de l’assistant visuel local Qwen",
+    ja: "Qwen ローカル視覚アシスタントの停止に失敗しました"
   },
   "任务成功；已完成资源清理": {
     "zh-tw": "任務成功；已完成資源清理",

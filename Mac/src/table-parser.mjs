@@ -226,17 +226,38 @@ export function normalizeStaffGrid(observations, definition) {
       const items = observations
         .filter((item) => inside(item, slot.region))
         .sort((a, b) => centerY(a) - centerY(b) || a.x - b.x);
-      const member = items.find(
-        (item) => !/市长|返回|公职人员|基础信息/.test(clean(item.text))
-      );
-      if (!member) return null;
+      const lines = items
+        .flatMap((item) => String(item.text || "").split(/\r?\n/))
+        .map((value) => clean(value))
+        .filter((value) => value && !isStaffChromeText(value));
+      const memberName = lines[0] || "";
+      const roleName =
+        lines.length > 1
+          ? lines.at(-1)
+          : slot.roleKey === "mayor"
+            ? clean(slot.roleName) || "市长"
+            : "";
+      if (!memberName || !roleName || isStaffSeatPlaceholder(roleName)) {
+        return null;
+      }
       return {
         roleKey: slot.roleKey || `staff-${index + 1}`,
-        roleName: slot.roleName || `公职席位 ${index + 1}`,
-        memberName: clean(member.text)
+        roleName,
+        memberName
       };
     })
     .filter(Boolean);
+}
+
+export function isStaffSeatPlaceholder(value) {
+  return /^(?:公职席位\s*\d+|staff\s*[-_ ]?\d+)$/i.test(clean(value));
+}
+
+function isStaffChromeText(value) {
+  return (
+    /市长|返回|公职人员|基础信息/.test(value) ||
+    /^\d{1,2}[.．、:：-]?$/.test(value)
+  );
 }
 
 function splitNumericAcrossColumns(item, columns) {

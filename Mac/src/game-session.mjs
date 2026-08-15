@@ -43,19 +43,54 @@ export async function withGameSession(
       await report(
         "info",
         "local_model_start",
-        "正在按任务启动本地视觉辅助模型"
+        "正在按任务启动 Qwen 本地视觉辅助模型",
+        {
+          transport: vision.advisor.config?.transport || "unknown",
+          model: vision.advisor.config?.model || null,
+          autoStartForTasks: vision.advisor.config?.autoStartForTasks !== false
+        }
       );
       await setProgress(0.025, "local_model_start");
       try {
         advisorStarted = await vision.startAdvisor(signal);
+        if (advisorStarted) {
+          await report(
+            "info",
+            "local_model_started",
+            "Qwen 本地视觉辅助模型已启动",
+            {
+              transport: vision.advisor.config?.transport || "unknown",
+              model: vision.advisor.config?.model || null,
+              baseUrl: vision.advisor.config?.baseUrl || null
+            }
+          );
+        } else {
+          await report(
+            "info",
+            "local_model_skipped",
+            "Qwen 本地视觉辅助模型因任务配置未自动启动，使用 OCR 与确定性流程",
+            { autoStartForTasks: false }
+          );
+        }
       } catch (error) {
         await report(
           "warning",
           "local_model_unavailable",
-          "本地视觉模型未能启动，本次任务继续使用 OCR 与确定性流程",
+          "Qwen 本地视觉模型启动失败，本次任务继续使用 OCR 与确定性流程",
           { reason: error.message }
         );
       }
+    } else {
+      await report(
+        "info",
+        "local_model_disabled",
+        "本次任务未启用 Qwen 本地视觉辅助模型，使用 OCR 与确定性流程",
+        {
+          enabled: false,
+          transport: config.localVisionModel?.transport || null,
+          model: config.localVisionModel?.model || null
+        }
+      );
     }
     await report("info", "emulator_start", "正在后台启动 MuMu 模拟器");
     await setProgress(0.03, "emulator_start");
@@ -248,10 +283,24 @@ export async function withGameSession(
           "info",
           "local_model_stop",
           preserveSceneAfterError
-            ? "已保留游戏现场，正在单独释放本地视觉模型内存"
-            : "任务已结束，正在释放本地视觉模型内存"
+            ? "已保留游戏现场，正在单独释放 Qwen 本地视觉模型内存"
+            : "任务已结束，正在释放 Qwen 本地视觉模型内存"
         ).catch(() => undefined);
-        await vision.stopAdvisor().catch(() => undefined);
+        try {
+          await vision.stopAdvisor();
+          await report(
+            "info",
+            "local_model_stopped",
+            "Qwen 本地视觉辅助模型已停止并释放内存"
+          ).catch(() => undefined);
+        } catch (error) {
+          await report(
+            "warning",
+            "local_model_stop_failed",
+            "Qwen 本地视觉辅助模型停止失败",
+            { reason: error.message }
+          ).catch(() => undefined);
+        }
       }
     }
   }

@@ -170,6 +170,12 @@
 "Qwen model is ready." = "Le modèle Qwen est prêt.";
 "Qwen model was copied, but its runtime is not ready." = "Le modèle Qwen a été copié, mais son environnement n’est pas prêt.";
 "Qwen model download is incomplete." = "Le téléchargement du modèle Qwen est incomplet.";
+"Enable Qwen visual assistance for tasks" = "Activer l’assistance visuelle Qwen pour les tâches";
+"Qwen visual assistance is enabled for task runs." = "L’assistance visuelle Qwen est activée pour les tâches.";
+"Qwen visual assistance is disabled; tasks use OCR and deterministic steps." = "L’assistance visuelle Qwen est désactivée ; les tâches utilisent l’OCR et les étapes déterministes.";
+"Qwen visual assistance enabled." = "Assistance visuelle Qwen activée.";
+"Qwen visual assistance disabled." = "Assistance visuelle Qwen désactivée.";
+"Runtime configuration is missing. Run the setup assistant first." = "La configuration du runtime est absente. Exécutez d’abord l’assistant de configuration.";
 "The local Qwen model is not installed." = "Le modèle Qwen local n’est pas installé.";
 "The local model installer is missing." = "L’installateur du modèle local est manquant.";
 "Export migration archive" = "Exporter l’archive de migration";

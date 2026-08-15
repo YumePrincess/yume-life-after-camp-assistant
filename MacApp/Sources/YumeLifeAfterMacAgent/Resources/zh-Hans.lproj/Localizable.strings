@@ -183,6 +183,12 @@
 "Qwen model is ready." = "Qwen 模型已就绪。";
 "Qwen model was copied, but its runtime is not ready." = "Qwen 模型已复制，但运行环境尚未就绪。";
 "Qwen model download is incomplete." = "Qwen 模型下载不完整。";
+"Enable Qwen visual assistance for tasks" = "启用任务中的 Qwen 视觉辅助";
+"Qwen visual assistance is enabled for task runs." = "任务运行时已启用 Qwen 视觉辅助。";
+"Qwen visual assistance is disabled; tasks use OCR and deterministic steps." = "Qwen 视觉辅助已停用；任务将使用 OCR 和确定性流程。";
+"Qwen visual assistance enabled." = "Qwen 视觉辅助已启用。";
+"Qwen visual assistance disabled." = "Qwen 视觉辅助已停用。";
+"Runtime configuration is missing. Run the setup assistant first." = "运行时配置缺失，请先运行配置向导。";
 "The local Qwen model is not installed." = "尚未安装本地 Qwen 模型。";
 "The local model installer is missing." = "本地模型安装器缺失。";
 "Export migration archive" = "导出迁移包";

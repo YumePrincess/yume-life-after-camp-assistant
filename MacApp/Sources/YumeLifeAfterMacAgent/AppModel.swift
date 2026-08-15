@@ -39,6 +39,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var nodeInfo = NodeRuntimeInfo.missing
     @Published private(set) var adbInfo = AdbRuntimeInfo.missing
     @Published private(set) var modelInfo = ModelRuntimeInfo.missing
+    @Published private(set) var qwenEnabled = true
 
     let browser = AdminBrowser()
     private let runtime = RuntimeService.shared
@@ -101,6 +102,7 @@ final class AppModel: ObservableObject {
             nodeInfo = await runtime.nodeStatus()
             adbInfo = await runtime.adbStatus()
             modelInfo = await runtime.modelStatus()
+            qwenEnabled = await runtime.localVisionEnabled()
             if runtimeWasUpdated {
                 updateSteps = [text("Synchronizing bundled runtime…")]
                 updateResult = nil
@@ -400,6 +402,21 @@ final class AppModel: ObservableObject {
             nodeInfo = await runtime.nodeStatus()
             adbInfo = await runtime.adbStatus()
             modelInfo = await runtime.modelStatus()
+            qwenEnabled = await runtime.localVisionEnabled()
+        }
+    }
+
+    func setQwenEnabled(_ enabled: Bool) async {
+        let previous = qwenEnabled
+        qwenEnabled = enabled
+        do {
+            try await runtime.setLocalVisionEnabled(enabled)
+            statusMessage = text(enabled
+                ? "Qwen visual assistance enabled."
+                : "Qwen visual assistance disabled.")
+        } catch {
+            qwenEnabled = previous
+            alertMessage = error.localizedDescription
         }
     }
 

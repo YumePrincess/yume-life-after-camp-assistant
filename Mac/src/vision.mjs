@@ -4,7 +4,7 @@ import { MAC_ROOT } from "./config.mjs";
 import { runFile } from "./process.mjs";
 import { LocalVisionAdvisor } from "./local-vision-advisor.mjs";
 import { isPlausibleMemberName } from "./member-name.mjs";
-import { parseTable } from "./table-parser.mjs";
+import { isStaffSeatPlaceholder, parseTable } from "./table-parser.mjs";
 
 export { isPlausibleMemberName } from "./member-name.mjs";
 
@@ -291,19 +291,26 @@ export class Vision {
       bottom1: "staff-5",
       bottom2: "staff-6"
     };
-    return advised.map((item, index) => ({
-      roleKey:
-        slotKeys[item.slot] ||
-        (item.slot.startsWith("staff")
-          ? `staff-${item.slot.slice(5)}`
-          : `staff-${index + 1}`),
-      roleName:
-        item.slot === "mayor"
-          ? "市长"
-          : item.campTitle || `公职席位 ${index + 1}`,
-      memberName: item.name,
-      campTitle: item.campTitle || null
-    }));
+    return advised
+      .map((item, index) => ({
+        roleKey:
+          slotKeys[item.slot] ||
+          (item.slot.startsWith("staff")
+            ? `staff-${item.slot.slice(5)}`
+            : `staff-${index + 1}`),
+        roleName:
+          item.slot === "mayor"
+            ? item.campTitle || "市长"
+            : item.campTitle || "",
+        memberName: item.name,
+        campTitle: item.campTitle || null
+      }))
+      .filter(
+        (row) =>
+          row.memberName &&
+          row.roleName &&
+          !isStaffSeatPlaceholder(row.roleName)
+      );
   }
 
   async readMemberExpectedBreakdown(signal) {
@@ -723,9 +730,15 @@ export class Vision {
       return {
         upper,
         lower,
+        anchor,
         items,
         identity: inferMemberIdentity(
-          itemsInColumn(items, columnBounds.get("identity"))
+          itemsInColumn(items, columnBounds.get("identity")),
+          {
+            includeCampTitle: false,
+            nameBaselineY: anchor,
+            maxNameOffset: rowSpacing * 0.4
+          }
         )
       };
     });
@@ -757,7 +770,11 @@ export class Vision {
             const y = centerY(item);
             return y >= row.upper && y < row.lower;
           });
-          const identity = inferMemberIdentity(inRow);
+          const identity = inferMemberIdentity(inRow, {
+            includeCampTitle: false,
+            nameBaselineY: row.anchor,
+            maxNameOffset: rowSpacing * 0.4
+          });
           return identity.name ? { row, identity, recovered: inRow } : null;
         })
       );
@@ -846,8 +863,10 @@ export class Vision {
             advisedName
               ? advisedName
               : nativeName,
-          campTitle:
-            identity.campTitle || cleanModelText(ai.campTitle),
+          // The member list is a name roster. Its second identity line is a
+          // camp title, not another member name; only the staff-card parser
+          // is allowed to promote that line to a role field.
+          campTitle: null,
           profession:
             firstColumnText(items, columnBounds.get("profession")),
           weeklyContribution:
@@ -1470,23 +1489,70 @@ function firstColumnText(items, bounds) {
     .trim();
 }
 
-export function inferMemberIdentity(items) {
+export function inferMemberIdentity(items, options = {}) {
+  const includeCampTitle = options.includeCampTitle !== false;
+  const nameBaselineY = Number(options.nameBaselineY);
+  const maxNameOffset = Number(options.maxNameOffset);
   const values = items
-    .flatMap((item) => String(item.text || "").split(/\r?\n/))
-    .map((text) => text.trim())
-    .filter(Boolean);
+    .flatMap((item) => {
+      const parts = String(item.text || "")
+        .split(/\r?\n/)
+        .map((text) => text.trim())
+        .filter(Boolean);
+      const height = Number(item.height);
+      const lineHeight = Number.isFinite(height) && height > 0
+        ? height / parts.length
+        : 0;
+      return parts.map((text, index) => ({
+        text,
+        y: Number.isFinite(Number(item.y)) && lineHeight
+          ? Number(item.y) + lineHeight * (index + 0.5)
+          : Number.NaN
+      }));
+    })
+    .sort((left, right) => {
+      if (Number.isFinite(left.y) && Number.isFinite(right.y)) {
+        return left.y - right.y;
+      }
+      return 0;
+    });
   if (!values.length) return { name: "", campTitle: "" };
-  if (values.length === 1) {
-    return /^(?:#|市长|营地助手)/.test(values[0])
-      ? { name: "", campTitle: values[0] }
-      : { name: values[0], campTitle: "" };
+  const first = values[0].text;
+  const firstLineBelowName =
+    Number.isFinite(nameBaselineY) &&
+    Number.isFinite(maxNameOffset) &&
+    Number.isFinite(values[0].y) &&
+    values[0].y > nameBaselineY + maxNameOffset;
+  const firstLineIsTitle =
+    firstLineBelowName ||
+    (!Number.isFinite(nameBaselineY) &&
+      values.length === 1 &&
+      isLikelyMemberTitle(first));
+  if (firstLineIsTitle) {
+    return {
+      name: "",
+      campTitle: includeCampTitle ? values.map(({ text }) => text).join(" ") : ""
+    };
   }
-  return { name: values[0], campTitle: values.slice(1).join(" ") };
+  return {
+    name: first,
+    campTitle: includeCampTitle
+      ? values.slice(1).map(({ text }) => text).join(" ")
+      : ""
+  };
+}
+
+function isLikelyMemberTitle(value) {
+  return /^(?:#|市长|营地助手|公职人员|职位|title\b)/i.test(
+    String(value || "").trim()
+  );
 }
 
 function cleanMemberName(value) {
   const text = cleanModelText(value);
-  return isPlausibleMemberName(text) ? text : "";
+  return isPlausibleMemberName(text) && !isLikelyMemberTitle(text)
+    ? text
+    : "";
 }
 
 function cleanModelText(value) {
