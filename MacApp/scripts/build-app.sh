@@ -41,13 +41,22 @@ done
 killall YumeLifeAfterMacAgent 2>/dev/null || true
 
 cd "${APP_ROOT}"
-env CLANG_MODULE_CACHE_PATH=/private/tmp/yla-clang-cache \
-  EnableSDKStatCaching=0 \
-  swift build --disable-sandbox -c "${BUILD_CONFIGURATION}" --arch arm64 \
-  --scratch-path "${SWIFT_SCRATCH}" \
-  --cache-path /private/tmp/yla-swift-cache \
-  --config-path /private/tmp/yla-swift-config \
-  --security-path /private/tmp/yla-swift-security
+rm -rf -- "${SWIFT_SCRATCH}"
+if ! env CLANG_MODULE_CACHE_PATH=/private/tmp/yla-clang-cache \
+    EnableSDKStatCaching=0 \
+    swift build --disable-sandbox -c "${BUILD_CONFIGURATION}" --arch arm64 \
+    --scratch-path "${SWIFT_SCRATCH}" \
+    --cache-path /private/tmp/yla-swift-cache \
+    --config-path /private/tmp/yla-swift-config \
+    --security-path /private/tmp/yla-swift-security; then
+  PRODUCT_PATH="${SWIFT_SCRATCH}/out/Products/${PRODUCT_CONFIGURATION}/YumeLifeAfterMacAgent"
+  if [[ -x "${PRODUCT_PATH}" ]]; then
+    echo "SwiftPM produced the executable but could not finish the optional dSYM post-processing; continuing with the verified executable."
+  else
+    echo "SwiftPM did not produce the Agent executable." >&2
+    exit 1
+  fi
+fi
 
 rm -rf -- "${APP_BUNDLE}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS" "${APP_BUNDLE}/Contents/Resources/Runtime"

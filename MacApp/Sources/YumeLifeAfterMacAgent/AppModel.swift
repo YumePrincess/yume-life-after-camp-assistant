@@ -32,9 +32,13 @@ final class AppModel: ObservableObject {
     @Published var updateResult: String?
     @Published var updateProgress = 0.0
     @Published var showUpdateWizard = false
+    @Published var showMigrationExportOptions = false
+    @Published var migrationIncludeModel = false
+    @Published var migrationIncludeCredentials = false
     @Published private(set) var isAppleSilicon = false
     @Published private(set) var nodeInfo = NodeRuntimeInfo.missing
     @Published private(set) var adbInfo = AdbRuntimeInfo.missing
+    @Published private(set) var modelInfo = ModelRuntimeInfo.missing
 
     let browser = AdminBrowser()
     private let runtime = RuntimeService.shared
@@ -96,6 +100,7 @@ final class AppModel: ObservableObject {
             let runtimeWasUpdated = try await runtime.installBundledRuntimeIfNeeded()
             nodeInfo = await runtime.nodeStatus()
             adbInfo = await runtime.adbStatus()
+            modelInfo = await runtime.modelStatus()
             if runtimeWasUpdated {
                 updateSteps = [text("Synchronizing bundled runtime…")]
                 updateResult = nil
@@ -103,6 +108,9 @@ final class AppModel: ObservableObject {
                 showUpdateWizard = true
                 updateSteps.append(text("Bundled runtime replaced."))
                 updateProgress = 0.3
+                updateSteps.append(modelInfo.isInstalled
+                    ? text("External Qwen model found.")
+                    : text("External Qwen model is not installed."))
                 // The previous launchd process may still have the old modules
                 // in memory after Runtime/current is replaced. Repairing here
                 // unloads that process and starts the newly installed bundle.
@@ -154,6 +162,7 @@ final class AppModel: ObservableObject {
         await refreshPlugins()
         nodeInfo = await runtime.nodeStatus()
         adbInfo = await runtime.adbStatus()
+        modelInfo = await runtime.modelStatus()
     }
 
     func refreshStatusAndLogs(loadLogs: Bool = false) async {
@@ -259,6 +268,11 @@ final class AppModel: ObservableObject {
                 guard adbInfo.isAvailable else {
                     throw RuntimeError.failed(text("ADB is required. Install Android platform-tools, then retry."))
                 }
+                modelInfo = await runtime.modelStatus()
+                updateSteps.append(modelInfo.isInstalled
+                    ? text("External Qwen model found.")
+                    : text("External Qwen model is not installed."))
+                updateProgress = 0.5
                 updateSteps.append(text("Updating npm dependencies and rebuilding OCR…"))
                 updateProgress = 0.55
             }
@@ -385,6 +399,7 @@ final class AppModel: ObservableObject {
         Task {
             nodeInfo = await runtime.nodeStatus()
             adbInfo = await runtime.adbStatus()
+            modelInfo = await runtime.modelStatus()
         }
     }
 
@@ -396,6 +411,19 @@ final class AppModel: ObservableObject {
     func openAdbInstallGuide() {
         guard let url = URL(string: "https://developer.android.com/tools/releases/platform-tools") else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    func downloadExternalNode() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            nodeInfo = try await runtime.ensureLocalNodeForUpdate()
+            updateSteps.append(text("External Node.js is ready."))
+            updateProgress = max(updateProgress, 0.35)
+        } catch {
+            alertMessage = error.localizedDescription
+        }
     }
 
     func completeSetup() async {
@@ -424,6 +452,7 @@ final class AppModel: ObservableObject {
             alertMessage = text("ADB is required. Install Android platform-tools, then retry.")
             return
         }
+        modelInfo = await runtime.modelStatus()
         isBusy = true
         setupProgressMessage = ""
         defer { isBusy = false }
@@ -474,24 +503,79 @@ final class AppModel: ObservableObject {
     }
 
     func exportMigration() async {
+        migrationIncludeModel = false
+        migrationIncludeCredentials = false
+        showMigrationExportOptions = true
+    }
+
+    func confirmExportMigration(includeModel: Bool, includeCredentials: Bool) async {
+        showMigrationExportOptions = false
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "Yume-Life-After-Mac-Agent.ylabackup"
         panel.allowedContentTypes = [.zip]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try await runtime.exportMigrationArchive(to: url)
-            alertMessage = text("Migration archive exported without tokens.")
+            try await runtime.exportMigrationArchive(
+                to: url,
+                includeModel: includeModel,
+                includeCredentials: includeCredentials
+            )
+            alertMessage = text("Migration archive exported.")
         } catch { alertMessage = error.localizedDescription }
     }
 
+    func prepareModelRuntime() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            modelInfo = try await runtime.prepareModelRuntime()
+            statusMessage = modelInfo.isReady
+                ? text("Qwen model runtime is ready.")
+                : text("Qwen model was copied, but its runtime is not ready.")
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    func downloadModel() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            modelInfo = try await runtime.installExternalModel()
+            statusMessage = modelInfo.isInstalled
+                ? text("Qwen model is ready.")
+                : text("Qwen model download is incomplete.")
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
     func importMigration() async {
+        await importMigration(showSetupMessage: false)
+    }
+
+    func restoreMigrationForSetup() async {
+        await importMigration(showSetupMessage: true)
+    }
+
+    private func importMigration(showSetupMessage: Bool) async {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.zip]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try await runtime.importMigrationArchive(from: url)
-            alertMessage = text("Migration archive imported. Enter the tokens on this Mac, then restart the Agent.")
+            if let credentials = try? await runtime.loadCredentials() {
+                agentToken = credentials.agentToken
+                debugToken = credentials.debugToken
+                adminKey = credentials.adminKey ?? ""
+            }
+            modelInfo = await runtime.modelStatus()
+            alertMessage = text(showSetupMessage
+                ? "Migration archive restored. Review the settings, then finish installation."
+                : "Migration archive imported. Enter the tokens on this Mac, then restart the Agent.")
             await refreshPlugins()
         } catch { alertMessage = error.localizedDescription }
     }

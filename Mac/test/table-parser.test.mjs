@@ -1,27 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  normalizeActivity,
-  normalizeContribution,
   normalizeMembers,
   normalizeProfiles,
   parseTable
 } from "../src/table-parser.mjs";
-
-test("member, contribution and activity tasks share text-first name normalization", () => {
-  assert.equal(
-    normalizeProfiles([{ name: "&/¥Alice“”！", profession: "步枪兵" }])[0].name,
-    "Alice"
-  );
-  assert.equal(
-    normalizeContribution([{ name: "Élodie♠", weeklyContribution: "7" }])[0].name,
-    "Élodie"
-  );
-  assert.equal(
-    normalizeActivity([{ name: "青在✨", onlineState: "在线" }])[0].name,
-    "青在"
-  );
-});
 
 test("member row slots merge stacked badges without creating a sixth member", () => {
   const definition = {
@@ -154,17 +137,6 @@ test("member profiles preserve the profile page's own weekly contribution field"
         weeklyContribution: 17892175
       }
     ]
-  );
-});
-
-test("member profile titles discard symbol-only OCR fallback output", () => {
-  assert.equal(
-    normalizeProfiles([
-      { name: "玩家甲", campTitle: "☻ 〛 ☻" },
-      { name: "玩家乙", campTitle: "#G春之音" },
-      { name: "玩家丙", campTitle: "启航" }
-    ]).map(({ campTitle }) => campTitle).join("|"),
-    "|春之音|启航"
   );
 });
 

@@ -42,6 +42,16 @@ export async function loadConfig(options = {}) {
     MAC_ROOT,
     config.vision.pixelProbeBinary
   );
+  if (typeof config.localVisionModel?.model === "string") {
+    config.localVisionModel.model = resolveConfiguredPath(
+      config.localVisionModel.model
+    );
+  }
+  if (typeof config.localVisionModel?.pythonBinary === "string") {
+    config.localVisionModel.pythonBinary = resolveConfiguredPath(
+      config.localVisionModel.pythonBinary
+    );
+  }
   config.plugins ||= {};
   config.plugins.userDirectory = resolve(
     expandHome(config.plugins.userDirectory) ||
@@ -116,6 +126,13 @@ function expandHome(value) {
   return value;
 }
 
+function resolveConfiguredPath(value) {
+  const expanded = expandHome(value);
+  return typeof expanded === "string" && expanded.startsWith(".")
+    ? resolve(MAC_ROOT, expanded)
+    : expanded;
+}
+
 function validate(config, { validateCredentials = true } = {}) {
   if (!/^https:\/\//.test(config.server?.baseUrl || "")) {
     throw new Error("server.baseUrl must use HTTPS");
@@ -151,5 +168,16 @@ function validate(config, { validateCredentials = true } = {}) {
   }
   if (config.debug?.host !== "127.0.0.1") {
     throw new Error("debug.host must remain 127.0.0.1");
+  }
+  if (
+    config.localVisionModel?.enabled &&
+    config.localVisionModel?.transport !== "cli" &&
+    !/^http:\/\/127\.0\.0\.1:\d{2,5}$/.test(
+      config.localVisionModel?.baseUrl || ""
+    )
+  ) {
+    throw new Error(
+      "localVisionModel.baseUrl must remain a 127.0.0.1 loopback endpoint"
+    );
   }
 }

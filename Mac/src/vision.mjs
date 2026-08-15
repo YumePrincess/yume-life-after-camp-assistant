@@ -2,20 +2,9 @@ import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { MAC_ROOT } from "./config.mjs";
 import { runFile } from "./process.mjs";
+import { LocalVisionAdvisor } from "./local-vision-advisor.mjs";
 import { isPlausibleMemberName } from "./member-name.mjs";
 import { parseTable } from "./table-parser.mjs";
-import {
-  normalizeIdentityLines,
-  normalizeMemberCampTitle,
-  normalizeMemberIdentityName,
-  stripStackedCampTitleFromName,
-  normalizePlayerName,
-  playerNameHasText,
-  normalizePlayerOcrArtifact,
-  normalizeVisualName,
-  isAvatarYearText,
-  isRepeatedDashArtifact
-} from "./visual-name.mjs";
 
 export { isPlausibleMemberName } from "./member-name.mjs";
 
@@ -60,6 +49,7 @@ export class Vision {
     this.taskPaths = new Set();
     this.ocrModeHealth = new Map();
     this.ocrPrewarmPromise = null;
+    this.advisor = new LocalVisionAdvisor(config.localVisionModel);
   }
 
   ocrHealth() {
@@ -186,8 +176,8 @@ export class Vision {
         );
       } catch (error) {
         if (signal?.aborted) throw error;
-        // Keep the source frame; the deterministic OCR retry path decides
-        // whether to reread it.
+        // Keep the source frame for the advisor recovery path; the caller's
+        // existing empty-page/retry handling decides whether to reread it.
         observations = [];
       }
       return { path: frame.path, observations };
@@ -195,6 +185,50 @@ export class Vision {
     return this.#capture(label, signal, false, this.config.vision.mode, {
       minimumConfidence
     });
+  }
+
+  async startAdvisor(signal) {
+    return this.advisor.start(signal);
+  }
+
+  async stopAdvisor() {
+    return this.advisor.stop();
+  }
+
+  async adviseCurrent(label, context = {}, signal) {
+    if (!this.advisor.enabled) return null;
+    await mkdir(this.snapshotDir, { recursive: true });
+    const stamp = new Date().toISOString().replaceAll(":", "-");
+    const path = resolve(
+      this.snapshotDir,
+      `${stamp}-${String(++this.sequence).padStart(4, "0")}-${safe(label)}-advisor.png`
+    );
+    await this.adb.screenshot(path);
+    this.taskPaths.add(path);
+    try {
+      return await this.advisor.analyze(path, context, signal);
+    } finally {
+      this.taskPaths.delete(path);
+      await rm(path, { force: true });
+    }
+  }
+
+  async adviseOverlayControlCurrent(label, context = {}, signal) {
+    if (!this.advisor.enabled) return null;
+    await mkdir(this.snapshotDir, { recursive: true });
+    const stamp = new Date().toISOString().replaceAll(":", "-");
+    const path = resolve(
+      this.snapshotDir,
+      `${stamp}-${String(++this.sequence).padStart(4, "0")}-${safe(label)}-overlay-advisor.png`
+    );
+    await this.adb.screenshot(path);
+    this.taskPaths.add(path);
+    try {
+      return await this.advisor.identifyOverlayControl(path, context, signal);
+    } finally {
+      this.taskPaths.delete(path);
+      await rm(path, { force: true });
+    }
   }
 
   async extractTableRows(imagePath, definition, label, signal, options = {}) {
@@ -226,6 +260,7 @@ export class Vision {
         signal
       );
     }
+    if (!this.advisor.enabled) return [];
     const isMemberDetails = [
       "identity",
       "profession",
@@ -245,6 +280,32 @@ export class Vision {
     return [];
   }
 
+  async extractStaffRows(imagePath, signal) {
+    const advised = await this.advisor.extractStaff(imagePath, signal);
+    const slotKeys = {
+      mayor: "mayor",
+      top1: "staff-1",
+      top2: "staff-2",
+      top3: "staff-3",
+      top4: "staff-4",
+      bottom1: "staff-5",
+      bottom2: "staff-6"
+    };
+    return advised.map((item, index) => ({
+      roleKey:
+        slotKeys[item.slot] ||
+        (item.slot.startsWith("staff")
+          ? `staff-${item.slot.slice(5)}`
+          : `staff-${index + 1}`),
+      roleName:
+        item.slot === "mayor"
+          ? "市长"
+          : item.campTitle || `公职席位 ${index + 1}`,
+      memberName: item.name,
+      campTitle: item.campTitle || null
+    }));
+  }
+
   async readMemberExpectedBreakdown(signal) {
     const countRegions = {
       members: { left: 345, top: 225, right: 430, bottom: 295 },
@@ -259,8 +320,6 @@ export class Vision {
     let lastError;
     const memberSamples = [];
     const citizenSamples = [];
-    const memberFractions = [];
-    const citizenFractions = [];
     for (let attempt = 1; attempt <= 6; attempt += 1) {
       // A new frame is essential here. Re-running OCR over the same image only
       // repeats the same bad segmentation and was the reason five consecutive
@@ -302,17 +361,12 @@ export class Vision {
         let memberFraction = parsePopulationFraction(
           memberObservations,
           110,
-          { minimumCapacity: 1, allowCurrentOverflow: true }
+          { minimumCapacity: 1 }
         );
         let citizenFraction = parsePopulationFraction(
           citizenObservations,
           10,
-          {
-            minimumCapacity: 0,
-            ignoreTrailingInfoGlyph: true,
-            allowDashSeparator: true,
-            maxDigits: 2
-          }
+          { minimumCapacity: 0 }
         );
 
         // The citizen fraction is small and can be merged with its icon by
@@ -349,17 +403,12 @@ export class Vision {
           memberFraction ??= parsePopulationFraction(
             memberExpanded,
             110,
-            { minimumCapacity: 1, allowCurrentOverflow: true }
+            { minimumCapacity: 1 }
           );
           citizenFraction ??= parsePopulationFraction(
             citizenExpanded,
             10,
-            {
-              minimumCapacity: 0,
-              ignoreTrailingInfoGlyph: true,
-              allowDashSeparator: true,
-              maxDigits: 2
-            }
+            { minimumCapacity: 0 }
           );
         }
 
@@ -387,7 +436,7 @@ export class Vision {
               bottom: 320
             }),
             110,
-            { minimumCapacity: 1, allowCurrentOverflow: true }
+            { minimumCapacity: 1 }
           );
           citizenFraction ??= parsePopulationFraction(
             observationsInHorizontalRegion(fallbackObservations, {
@@ -397,21 +446,9 @@ export class Vision {
               bottom: 320
             }),
             10,
-            {
-              minimumCapacity: 0,
-              ignoreTrailingInfoGlyph: true,
-              allowDashSeparator: true,
-              maxDigits: 2
-            }
+            { minimumCapacity: 0 }
           );
         }
-        // Vision can segment the two adjacent fractions differently from one
-        // frame to the next. Keep the valid result from each frame and merge
-        // the two independent observations after the retry loop instead of
-        // discarding a good member fraction just because the citizen fraction
-        // was missed in that same frame.
-        if (memberFraction !== null) memberFractions.push(memberFraction);
-        if (citizenFraction !== null) citizenFractions.push(citizenFraction);
         if (memberFraction !== null && citizenFraction !== null) {
           return {
             formalCurrent: memberFraction.current,
@@ -425,17 +462,6 @@ export class Vision {
         lastError = error;
         if (signal?.aborted) throw error;
       }
-    }
-    const memberFraction = selectStablePopulationFraction(memberFractions);
-    const citizenFraction = selectStablePopulationFraction(citizenFractions);
-    if (memberFraction !== null && citizenFraction !== null) {
-      return {
-        formalCurrent: memberFraction.current,
-        formalTotal: memberFraction.capacity,
-        sailingCurrent: citizenFraction.current,
-        sailingTotal: citizenFraction.capacity,
-        total: memberFraction.capacity + citizenFraction.capacity
-      };
     }
     if (
       lastError &&
@@ -545,16 +571,50 @@ export class Vision {
         return merged;
       });
     }
-    return rows
-      .map((row) => {
-        const rawName = normalizeVisualName(row.rawName || row.name);
-        return {
+    const region = definition.region;
+    const nameColumn = definition.columns.find(
+      (column) => column.key === "name"
+    );
+    const tableWidth = region.right - region.left;
+    const nameRight =
+      region.left + tableWidth * (nameColumn?.right ?? 0.32);
+    const width = Math.max(1, Math.round(nameRight - region.left));
+    const height = Math.max(1, Math.round(region.bottom - region.top));
+    const cropPath = resolve(
+      this.snapshotDir,
+      `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-name-crop.png`
+    );
+    this.taskPaths.add(cropPath);
+    try {
+      await this.#cropImage(
+        imagePath,
+        {
+          left: region.left,
+          top: region.top,
+          right: region.left + width,
+          bottom: region.top + height
+        },
+        cropPath,
+        signal
+      );
+      const advisedNames = await this.advisor.extractNames(cropPath, signal);
+      const namesByRow = new Map(
+        advisedNames.map((item) => [item.row, item.name])
+      );
+      return rows
+        .map((row, index) => ({
           ...row,
-          rawName,
-          name: normalizePlayerName(rawName)
-        };
-      })
-      .filter((row) => isPlausibleMemberName(row.name));
+          name:
+            (isPlausibleMemberName(row.name) && row.name) ||
+            (isPlausibleMemberName(namesByRow.get(index + 1))
+              ? namesByRow.get(index + 1)
+              : "")
+        }))
+        .filter((row) => row.name);
+    } finally {
+      this.taskPaths.delete(cropPath);
+      await rm(cropPath, { force: true });
+    }
   }
 
   async #extractMemberRows(
@@ -602,10 +662,6 @@ export class Vision {
       1,
       Number(definition.pagination?.rowsPerPage) || anchors.length
     );
-    const fixedRowHeight = Number(definition.pagination?.rowHeightPx);
-    const fixedRowTop = Number(
-      definition.rowAnchorTop ?? definition.pagination?.rowAnchorTop
-    );
     // Avoid a second full-screen OCR when the regional pass omitted the
     // online-state anchor. That fallback caused intermittent 30s stalls.
     // The table has a stable configured row count, so infer row centers from
@@ -624,26 +680,6 @@ export class Vision {
     }
     if (anchors.length > rowsPerPage) {
       anchors = anchors.slice(-rowsPerPage);
-    }
-    // Online-state OCR is only an alignment aid. A decorative/symbol-only
-    // name can make the regional OCR return fewer state anchors even though
-    // the row is visibly present. Once the table supplies calibrated row
-    // geometry, synthesize all row slots instead of letting missing anchors
-    // remove members from the result.
-    if (
-      anchors.length < rowsPerPage &&
-      Number.isFinite(fixedRowHeight) &&
-      fixedRowHeight > 0 &&
-      Number.isFinite(fixedRowTop)
-    ) {
-      anchors = Array.from(
-        { length: rowsPerPage },
-        // `rowAnchorTop` is the calibrated row-center anchor used by
-        // parseTable, not the top edge of the first row. Adding half a row
-        // here shifts every fallback slot and can move a pure-symbol row into
-        // the previous member's crop.
-        (_, index) => fixedRowTop + index * fixedRowHeight
-      );
     }
     if (!anchors.length) return [];
 
@@ -665,141 +701,86 @@ export class Vision {
         return y >= upper && y < lower;
       });
       return {
-        upper,
-        lower,
         items,
-      identity: inferMemberIdentity(
-          filterMemberIdentityItems(
-            itemsInColumn(items, columnBounds.get("identity")),
-            columnBounds.get("identity")
-          )
+        identity: inferMemberIdentity(
+          itemsInColumn(items, columnBounds.get("identity"))
         )
       };
     });
-    const missingIdentityRows = rowData.filter(
-      (row) => !String(row.identity?.name || "").trim()
-    );
-    if (missingIdentityRows.length) {
-      const identityBounds = columnBounds.get("identity");
-      const recoveryRows = await Promise.all(
-        missingIdentityRows.map(async (row, recoveryIndex) => {
-          const identityRegion = {
-            left: identityBounds.left,
-            // Include the antialiased top/bottom pixels of a decorative glyph
-            // when a row is missing its normal online-state anchor. This is
-            // especially important for hollow/solid/double flowers and
-            // symbol-only names, whose visible ink can sit outside the
-            // language OCR line box.
-            top: Math.max(region.top, row.upper - 12),
-            right: identityBounds.right,
-            bottom: Math.min(region.bottom, row.lower + 12)
-          };
-          if (identityRegion.bottom <= identityRegion.top) return null;
-          const recovered = await this.ocrRegion(
-            imagePath,
-            identityRegion,
-            `${label}-identity-row-recovery-${recoveryIndex + 1}`,
-            signal,
-            "accurate",
-            0,
-            8,
-            Math.max(1, Number(this.config.vision?.memberTableTimeoutSeconds) || 2)
-          ).catch(() => []);
-          const inRow = recovered.filter((item) => {
-            const y = centerY(item);
-            return y >= row.upper && y < row.lower;
-          });
-          const identity = inferMemberIdentity(
-            filterMemberIdentityItems(inRow, identityBounds)
-          );
-          return identity.name ? { row, identity, recovered: inRow } : null;
-        })
+    const nativeNameCounts = new Map();
+    for (const row of rowData) {
+      const key = comparableVisionName(
+        isPlausibleMemberName(row.identity.name) ? row.identity.name : ""
       );
-      for (const recovered of recoveryRows.filter(Boolean)) {
-        recovered.row.identity = recovered.identity;
-        recovered.row.items = [
-          ...recovered.row.items.filter(
-            (item) =>
-              centerX(item) < identityBounds.left ||
-              centerX(item) >= identityBounds.right
-          ),
-          ...recovered.recovered
-        ];
-      }
+      if (key) nativeNameCounts.set(key, (nativeNameCounts.get(key) || 0) + 1);
     }
-    const weakIdentityRows = rowData.filter(({ identity }) =>
-      memberIdentityNeedsRecovery(identity)
-    );
-    if (weakIdentityRows.length) {
-      const identityBounds = columnBounds.get("identity");
-      const recoveryRows = await Promise.all(
-        weakIdentityRows.map(async (row, recoveryIndex) => {
-          const identityRegion = {
-            left: Math.max(region.left, identityBounds.left - 12),
-            top: Math.max(region.top, row.upper - 8),
-            right: Math.min(region.right, identityBounds.right + 20),
-            bottom: Math.min(region.bottom, row.lower + 8)
-          };
-          const recovered = await this.ocrRegion(
-            imagePath,
-            identityRegion,
-            `${label}-identity-weak-recovery-${recoveryIndex + 1}`,
-            signal,
-            "accurate",
-            0,
-            8,
-            Math.max(1, Number(this.config.vision?.memberTableTimeoutSeconds) || 2)
-          ).catch(() => []);
-          // A padded crop can include a neighboring row. Never use a token
-          // whose center is outside this calibrated slot; that was the source
-          // of the previous-page name being copied into the pure-symbol row.
-          const inRow = recovered.filter((item) => {
-            const y = centerY(item);
-            return y >= row.upper && y < row.lower;
-          });
-          const identity = inferMemberIdentity(
-            filterMemberIdentityItems(inRow, identityBounds)
-          );
-          return identity.name ? { row, identity, recovered: inRow } : null;
-        })
+    const forceMemberAdvisor = Boolean(options.forceMemberAdvisor);
+    let advisedByRow = new Map();
+    if (
+      forceMemberAdvisor ||
+      rowData.some(
+        (row) =>
+          !isPlausibleMemberName(row.identity.name) ||
+          nativeNameCounts.get(comparableVisionName(row.identity.name)) > 1
+      )
+    ) {
+      const cropPath = resolve(
+        this.snapshotDir,
+        `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-member-crop.png`
       );
-      for (const recovered of recoveryRows.filter(Boolean)) {
-        if (!preferRecoveredMemberIdentity(recovered.row.identity, recovered.identity)) {
-          continue;
-        }
-        recovered.row.identity = recovered.identity;
-        const identityBounds = columnBounds.get("identity");
-        recovered.row.items = [
-          ...recovered.row.items.filter(
-            (item) =>
-              centerX(item) < identityBounds.left ||
-              centerX(item) >= identityBounds.right
-          ),
-          ...recovered.recovered
-        ];
+      this.taskPaths.add(cropPath);
+      try {
+      const cropTop = Math.max(
+        region.top,
+        Math.floor(anchors[0] - rowSpacing / 2)
+      );
+      const cropBottom = Math.min(
+        region.bottom,
+        Math.ceil(anchors.at(-1) + rowSpacing / 2)
+      );
+      await this.#cropImage(
+        imagePath,
+        {
+          left: memberDetailsOcrRegion(definition).left,
+          top: cropTop,
+          right: region.right,
+          bottom: cropBottom
+        },
+        cropPath,
+        signal
+      );
+      const advised = await this.advisor.extractMemberDetails(
+        cropPath,
+        anchors.length,
+        signal
+      );
+        advisedByRow = new Map(advised.map((item) => [item.row, item]));
+      } finally {
+        this.taskPaths.delete(cropPath);
+        await rm(cropPath, { force: true });
       }
     }
     return rowData
       .map(({ items, identity }, index) => {
-        const nativeIdentity = normalizeIdentityLines(
-          filterMemberIdentityItems(
-            itemsInColumn(items, columnBounds.get("identity")),
-            columnBounds.get("identity")
-          )
-        );
-        const campTitle = normalizeMemberCampTitle(
-          identity.campTitle || nativeIdentity.campTitle
-        );
-        const rawName = normalizePlayerOcrArtifact(
-          stripStackedCampTitleFromName(nativeIdentity.name, campTitle)
-        );
-        const nativeName = isPlausibleMemberName(rawName)
-          ? normalizeMemberIdentityName(rawName)
+        const ai = advisedByRow.get(index + 1) || {};
+        const nativeName = isPlausibleMemberName(identity.name)
+          ? identity.name
           : "";
+        const nativeNameDuplicated =
+          nativeNameCounts.get(comparableVisionName(nativeName)) > 1;
+        const advisedName = cleanMemberName(ai.name);
         return {
-          name: nativeName,
-          rawName,
-          campTitle,
+          name:
+            (
+              forceMemberAdvisor ||
+              !nativeName ||
+              nativeNameDuplicated
+            ) &&
+            advisedName
+              ? advisedName
+              : nativeName,
+          campTitle:
+            identity.campTitle || cleanModelText(ai.campTitle),
           profession:
             firstColumnText(items, columnBounds.get("profession")),
           weeklyContribution:
@@ -830,16 +811,7 @@ export class Vision {
       "accurate",
       memberOcrMinimum
     );
-    return parseTable(observations, definition)
-      .map((row) => {
-        const rawName = normalizeVisualName(row.rawName || row.name);
-        return {
-          ...row,
-          rawName,
-          name: normalizePlayerName(rawName)
-        };
-      })
-      .filter(
+    return parseTable(observations, definition).filter(
       (row) =>
         isPlausibleMemberName(row.name) &&
         row.onlineState &&
@@ -848,7 +820,7 @@ export class Vision {
             row.name.includes(value) ||
             row.onlineState.includes(value)
         )
-      );
+    );
   }
 
   async ocrRegion(
@@ -1059,7 +1031,7 @@ export class Vision {
       } catch (error) {
         if (signal?.aborted) throw error;
         this.#recordOcrFailure(error, mode);
-        // Vision framework failures must degrade to another deterministic OCR pass;
+        // Vision framework failures must degrade to the guarded local model;
         // a single OCR subprocess crash must never terminate the game task.
       }
       return { path: transient ? null : path, observations };
@@ -1423,18 +1395,6 @@ function itemsInColumn(items, bounds) {
     .sort((left, right) => centerY(left) - centerY(right) || left.x - right.x);
 }
 
-export function filterMemberIdentityItems(items, bounds) {
-  return (items || []).filter((item) => {
-    if (!item || !bounds) return false;
-    const text = normalizeVisualName(item.text);
-    if (isRepeatedDashArtifact(text)) return false;
-    if (!isAvatarYearText(text)) return true;
-    const left = Number(bounds.left) || 0;
-    const right = Number(bounds.right) || left;
-    return centerX(item) > left + (right - left) * 0.22;
-  });
-}
-
 function firstColumnText(items, bounds) {
   return itemsInColumn(items, bounds)
     .map((item) => String(item.text || "").trim())
@@ -1444,34 +1404,35 @@ function firstColumnText(items, bounds) {
 }
 
 export function inferMemberIdentity(items) {
-  return normalizeIdentityLines(items);
+  const values = items
+    .flatMap((item) => String(item.text || "").split(/\r?\n/))
+    .map((text) => text.trim())
+    .filter(Boolean);
+  if (!values.length) return { name: "", campTitle: "" };
+  if (values.length === 1) {
+    return /^(?:#|市长|营地助手)/.test(values[0])
+      ? { name: "", campTitle: values[0] }
+      : { name: values[0], campTitle: "" };
+  }
+  return { name: values[0], campTitle: values.slice(1).join(" ") };
 }
 
-function memberIdentityNeedsRecovery(identity) {
-  const name = normalizeVisualName(identity?.name);
-  if (!name) return true;
-  if (!playerNameHasText(name)) return true;
-  const textCharacters = Array.from(name).filter((character) =>
-    /[\p{L}\p{N}]/u.test(character)
-  );
-  // A one-glyph result is often a badge or a decorative glyph that Vision
-  // attached to the row. Re-read it at the row level, but keep it if the
-  // second pass cannot produce a longer in-slot name.
-  return textCharacters.length <= 1;
+function cleanMemberName(value) {
+  const text = cleanModelText(value);
+  return isPlausibleMemberName(text) ? text : "";
 }
 
-function preferRecoveredMemberIdentity(current, recovered) {
-  const currentName = normalizeVisualName(current?.name);
-  const recoveredName = normalizeVisualName(recovered?.name);
-  if (!recoveredName) return false;
-  if (!currentName) return true;
-  const currentTextCount = Array.from(currentName).filter((character) =>
-    /[\p{L}\p{N}]/u.test(character)
-  ).length;
-  const recoveredTextCount = Array.from(recoveredName).filter((character) =>
-    /[\p{L}\p{N}]/u.test(character)
-  ).length;
-  return recoveredTextCount > currentTextCount;
+function cleanModelText(value) {
+  const text = String(value || "").trim();
+  return /^(?:0|null|none|无)$/i.test(text) ? "" : text;
+}
+
+function comparableVisionName(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, "");
 }
 
 function medianNumber(values) {
@@ -1494,7 +1455,7 @@ export function parsePopulationFraction(
   const minimumCapacity = Number.isFinite(Number(options.minimumCapacity))
     ? Number(options.minimumCapacity)
     : 1;
-  const candidates = parsePopulationCounts(observations, options).filter(
+  const candidates = parsePopulationCounts(observations).filter(
     (item) =>
       item.capacity >= minimumCapacity &&
       item.capacity <= maximumCapacity
@@ -1502,55 +1463,19 @@ export function parsePopulationFraction(
   return candidates[0] ?? null;
 }
 
-function parsePopulationCounts(observations, options = {}) {
-  const maxDigits = Number.isInteger(Number(options.maxDigits))
-    ? Math.max(1, Math.min(3, Number(options.maxDigits)))
-    : 3;
-  let joined = [...(observations || [])]
+function parsePopulationCounts(observations) {
+  const joined = [...(observations || [])]
     .sort((left, right) => left.x - right.x)
     .map((item) => String(item.text || ""))
     .join("")
     .replace(/\s+/g, "")
     .replace(/[OoＯｏ]/g, "0")
-    .replace(/[／]/g, "/")
-    // Vision occasionally classifies the thin slash between the two header
-    // numbers as an acute mark, bracket, or CJK closing bracket. These glyphs
-    // are safe to normalize only in the numeric header parser.
-    .replace(/[´`′’'⁄∕╱〛】\]｜|¦]/g, "/");
-  if (options.allowDashSeparator) {
-    // Low-confidence Vision output can render the slash as a short dash.
-    // This is enabled only for the bounded 0–10 sailing-citizen field.
-    joined = joined.replace(/[‐‑‒–—−-]/g, "/");
-  }
-  if (options.ignoreTrailingInfoGlyph) {
-    // The circled information icon immediately after the sailing count is
-    // sometimes merged as a trailing `1`, turning the real 0/0 into 0/01.
-    // The game never renders a leading-zero capacity, so only normalize this
-    // exact zero-capacity shape and leave a real 0/1 untouched.
-    joined = joined.replace(/(0\/0)[1lIi|!]+$/u, "$1");
-  }
-  const fractionPattern = new RegExp(
-    `(\\d{1,${maxDigits}})\\/(\\d{1,${maxDigits}})`,
-    "g"
-  );
-  return [...joined.matchAll(fractionPattern)]
-    .flatMap((match) => {
-      const current = Number.parseInt(match[1], 10);
-      const capacity = Number.parseInt(match[2], 10);
-      if (current <= capacity) return [{ current, capacity }];
-      if (!options.allowCurrentOverflow) return [];
-      // A member icon is sometimes merged into the left side of the current
-      // count (for example 4/91 becomes 94/91). Recover only a suffix that is
-      // numerically valid; plain impossible fractions remain rejected by the
-      // default parser and its existing safety tests.
-      for (let offset = 1; offset < match[1].length; offset += 1) {
-        const recoveredCurrent = Number.parseInt(match[1].slice(offset), 10);
-        if (recoveredCurrent <= capacity) {
-          return [{ current: recoveredCurrent, capacity }];
-        }
-      }
-      return [];
-    })
+    .replace(/[／]/g, "/");
+  return [...joined.matchAll(/(\d{1,3})\/(\d{1,3})/g)]
+    .map((match) => ({
+      current: Number.parseInt(match[1], 10),
+      capacity: Number.parseInt(match[2], 10)
+    }))
     .filter(
       (item) =>
         Number.isFinite(item.current) &&
@@ -1558,20 +1483,6 @@ function parsePopulationCounts(observations, options = {}) {
         item.current >= 0 &&
         item.current <= item.capacity
     );
-}
-
-function selectStablePopulationFraction(candidates) {
-  if (!candidates.length) return null;
-  const byCapacity = new Map();
-  for (const candidate of candidates) {
-    const entry = byCapacity.get(candidate.capacity) || { count: 0, candidate };
-    entry.count += 1;
-    entry.candidate = candidate;
-    byCapacity.set(candidate.capacity, entry);
-  }
-  return [...byCapacity.values()]
-    .sort((left, right) => right.count - left.count)
-    .at(0)?.candidate ?? null;
 }
 
 function observationsInHorizontalRegion(observations, region) {

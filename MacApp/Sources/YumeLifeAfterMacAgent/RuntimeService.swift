@@ -39,6 +39,22 @@ actor RuntimeService {
         applicationSupport.appending(path: "credentials.json")
     }
 
+    var modelsDirectory: URL {
+        applicationSupport.appending(path: "Models", directoryHint: .isDirectory)
+    }
+
+    var modelDirectory: URL {
+        modelsDirectory.appending(path: "Qwen3-VL-2B-Instruct-4bit", directoryHint: .isDirectory)
+    }
+
+    var modelRuntimeDirectory: URL {
+        applicationSupport.appending(path: "ModelRuntime", directoryHint: .isDirectory)
+    }
+
+    var modelPythonPath: URL {
+        modelRuntimeDirectory.appending(path: "venv/bin/python", directoryHint: .notDirectory)
+    }
+
     func installBundledRuntimeIfNeeded() throws -> Bool {
         guard let bundled = Bundle.main.resourceURL?.appending(path: "Runtime", directoryHint: .isDirectory),
               fileManager.fileExists(atPath: bundled.appending(path: "src/main.mjs").path)
@@ -57,6 +73,7 @@ actor RuntimeService {
             // bundled runtime code changes. Do not let an old Runtime/current
             // survive solely because its version marker still matches.
             if runtimeCodeMatches(bundled: bundled, installed: destination) {
+                try migrateLegacyModel(from: destination)
                 try ensureRuntimeConfig(at: destination)
                 return false
             }
@@ -74,6 +91,7 @@ actor RuntimeService {
                 try fileManager.copyItem(at: existing, to: replacement)
             }
         }
+        try migrateLegacyModel(from: destination)
         // Node.js is no longer copied from the App bundle. Preserve a local
         // Node downloaded by the runtime updater across bundled-code swaps.
         let existingNode = destination.appending(path: "Toolchain/node", directoryHint: .isDirectory)
@@ -96,6 +114,17 @@ actor RuntimeService {
             throw error
         }
         return replacedExistingRuntime
+    }
+
+    private func migrateLegacyModel(from runtime: URL) throws {
+        let legacyModel = runtime.appending(
+            path: ".local-model/models/Qwen3-VL-2B-Instruct-4bit",
+            directoryHint: .isDirectory
+        )
+        guard !fileManager.fileExists(atPath: modelDirectory.path),
+              fileManager.fileExists(atPath: legacyModel.path) else { return }
+        try fileManager.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+        try fileManager.copyItem(at: legacyModel, to: modelDirectory)
     }
 
     private func runtimeCodeMatches(bundled: URL, installed: URL) -> Bool {
@@ -143,9 +172,6 @@ actor RuntimeService {
             var server = object["server"] as? [String: Any] ?? [:]
             var changed = false
             if object.removeValue(forKey: "memberKick") != nil {
-                changed = true
-            }
-            if object.removeValue(forKey: "localVisionModel") != nil {
                 changed = true
             }
             if server["agentId"] as? String == "mumu-main" {
@@ -362,6 +388,9 @@ actor RuntimeService {
             if migratePatrolSettings(&object) {
                 changed = true
             }
+            if migrateExternalModelSettings(&object) {
+                changed = true
+            }
             if changed {
                 let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
                 try data.write(to: config, options: .atomic)
@@ -547,6 +576,21 @@ actor RuntimeService {
         return changed
     }
 
+    private func migrateExternalModelSettings(_ object: inout [String: Any]) -> Bool {
+        guard var model = object["localVisionModel"] as? [String: Any] else { return false }
+        var changed = false
+        if model["model"] as? String != modelDirectory.path {
+            model["model"] = modelDirectory.path
+            changed = true
+        }
+        if model["pythonBinary"] as? String != modelPythonPath.path {
+            model["pythonBinary"] = modelPythonPath.path
+            changed = true
+        }
+        object["localVisionModel"] = model
+        return changed
+    }
+
     func run(_ arguments: [String], timeout: TimeInterval = 120) async throws -> String {
         let root = runtimeRoot
         let script = root.appending(path: "scripts/manage-local-agent.sh").path
@@ -707,7 +751,7 @@ actor RuntimeService {
         let source = fileManager.fileExists(atPath: path.path) ? path : template
         var object = try JSONSerialization.jsonObject(with: Data(contentsOf: source)) as! [String: Any]
         object.removeValue(forKey: "memberKick")
-        object.removeValue(forKey: "localVisionModel")
+        _ = migrateExternalModelSettings(&object)
         var server = object["server"] as? [String: Any] ?? [:]
         server["baseUrl"] = baseURL
         server["agentId"] = agentID
@@ -720,6 +764,7 @@ actor RuntimeService {
         var adb = object["adb"] as? [String: Any] ?? [:]
         // The matching MuMu instance reports its current loopback ADB port.
         // It is intentionally not persisted as a fragile, hard-coded port.
+        adb["binary"] = "adb"
         adb["serial"] = "auto"
         object["adb"] = adb
         var debug = object["debug"] as? [String: Any] ?? [:]
@@ -767,16 +812,22 @@ actor RuntimeService {
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: credentialsFile.path)
     }
 
-    func exportMigrationArchive(to archive: URL) async throws {
+    func exportMigrationArchive(
+        to archive: URL,
+        includeModel: Bool = false,
+        includeCredentials: Bool = false
+    ) async throws {
         let stagingRoot = fileManager.temporaryDirectory
             .appending(path: "yla-backup-\(UUID().uuidString)", directoryHint: .isDirectory)
         let payload = stagingRoot.appending(path: "YumeLifeAfterBackup", directoryHint: .isDirectory)
         defer { try? fileManager.removeItem(at: stagingRoot) }
         try fileManager.createDirectory(at: payload, withIntermediateDirectories: true)
         let manifest: [String: Any] = [
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "containsSecrets": false
+            "containsSecrets": includeCredentials,
+            "containsModel": includeModel,
+            "containsCredentials": includeCredentials
         ]
         try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
             .write(to: payload.appending(path: "manifest.json"), options: .atomic)
@@ -784,7 +835,7 @@ actor RuntimeService {
         if fileManager.fileExists(atPath: config.path) {
             var object = try JSONSerialization.jsonObject(with: Data(contentsOf: config)) as! [String: Any]
             object.removeValue(forKey: "memberKick")
-            object.removeValue(forKey: "localVisionModel")
+            _ = migrateExternalModelSettings(&object)
             var server = object["server"] as? [String: Any] ?? [:]
             server["agentToken"] = "CREDENTIALS_FILE"
             object["server"] = server
@@ -797,6 +848,23 @@ actor RuntimeService {
         let plugins = applicationSupport.appending(path: "Plugins", directoryHint: .isDirectory)
         if fileManager.fileExists(atPath: plugins.path) {
             try fileManager.copyItem(at: plugins, to: payload.appending(path: "Plugins", directoryHint: .isDirectory))
+        }
+        if includeModel {
+            guard modelStatus().isInstalled else {
+                throw RuntimeError.failed(String(localized: "The local Qwen model is not installed."))
+            }
+            let models = payload.appending(path: "Models", directoryHint: .isDirectory)
+            try fileManager.createDirectory(at: models, withIntermediateDirectories: true)
+            try fileManager.copyItem(
+                at: modelDirectory,
+                to: models.appending(path: modelDirectory.lastPathComponent, directoryHint: .isDirectory)
+            )
+        }
+        if includeCredentials {
+            guard fileManager.fileExists(atPath: credentialsFile.path) else {
+                throw RuntimeError.failed(String(localized: "No saved credentials were found."))
+            }
+            try fileManager.copyItem(at: credentialsFile, to: payload.appending(path: "credentials.json"))
         }
         try? fileManager.removeItem(at: archive)
         _ = try await process("/usr/bin/ditto", ["-c", "-k", "--keepParent", payload.path, archive.path], workingDirectory: stagingRoot, timeout: 120)
@@ -816,7 +884,8 @@ actor RuntimeService {
         let payload = stagingRoot.appending(path: "YumeLifeAfterBackup", directoryHint: .isDirectory)
         let manifestURL = payload.appending(path: "manifest.json")
         let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
-        guard manifest?["schemaVersion"] as? Int == 1 else {
+        let schemaVersion = (manifest?["schemaVersion"] as? NSNumber)?.intValue ?? 0
+        guard schemaVersion == 1 || schemaVersion == 2 else {
             throw RuntimeError.failed(String(localized: "The migration archive is invalid."))
         }
         try fileManager.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
@@ -833,6 +902,22 @@ actor RuntimeService {
                 try? fileManager.moveItem(at: previous, to: target)
                 throw error
             }
+        }
+        let importedModels = payload.appending(
+            path: "Models/Qwen3-VL-2B-Instruct-4bit",
+            directoryHint: .isDirectory
+        )
+        if fileManager.fileExists(atPath: importedModels.appending(path: "config.json").path),
+           (try? fileManager.contentsOfDirectory(at: importedModels, includingPropertiesForKeys: nil)
+               .contains(where: { $0.pathExtension == "safetensors" })) == true {
+            try fileManager.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+            try fileManager.copyItemReplacing(at: importedModels, to: modelDirectory)
+        }
+        let importedCredentials = payload.appending(path: "credentials.json")
+        if fileManager.fileExists(atPath: importedCredentials.path) {
+            try fileManager.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
+            try fileManager.copyItemReplacing(at: importedCredentials, to: credentialsFile)
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: credentialsFile.path)
         }
         let importedConfig = payload.appending(path: "config.json")
         if fileManager.fileExists(atPath: importedConfig.path) {
@@ -879,6 +964,41 @@ actor RuntimeService {
             )
         }
         return .missing
+    }
+
+    func modelStatus() -> ModelRuntimeInfo {
+        let installed = fileManager.fileExists(atPath: modelDirectory.appending(path: "config.json").path) &&
+            ((try? fileManager.contentsOfDirectory(at: modelDirectory, includingPropertiesForKeys: nil)
+                .contains(where: { $0.pathExtension == "safetensors" })) == true)
+        let pythonAvailable = fileManager.isExecutableFile(atPath: modelPythonPath.path)
+        return ModelRuntimeInfo(
+            path: modelDirectory.path,
+            isInstalled: installed,
+            isRuntimeAvailable: pythonAvailable
+        )
+    }
+
+    func prepareModelRuntime() async throws -> ModelRuntimeInfo {
+        try await runModelControl("deps", timeout: 1_800)
+        return modelStatus()
+    }
+
+    func installExternalModel() async throws -> ModelRuntimeInfo {
+        try await runModelControl("install", timeout: 3_600)
+        return modelStatus()
+    }
+
+    private func runModelControl(_ action: String, timeout: TimeInterval) async throws {
+        let script = runtimeRoot.appending(path: "scripts/local-model.sh").path
+        guard fileManager.fileExists(atPath: script) else {
+            throw RuntimeError.failed(String(localized: "The local model installer is missing."))
+        }
+        _ = try await process(
+            "/bin/zsh",
+            [script, action],
+            workingDirectory: runtimeRoot,
+            timeout: timeout
+        )
     }
 
     func adbStatus() async -> AdbRuntimeInfo {

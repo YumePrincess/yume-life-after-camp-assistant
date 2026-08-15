@@ -470,9 +470,12 @@ export class GameUi {
     let deadline = Date.now() + timeoutMs;
     let unchangedSince = Date.now();
     let previousFingerprint = "";
+    let nextAdvisorAt = 0;
     let nextRegionOcrAt = 0;
     let nextAccurateOcrAt = 0;
     let regionOcrFailureReported = false;
+    let lastAdviceSignature = "";
+    let lastAdviceReportAt = 0;
     do {
       const frame = await this.vision.capture("wait-text", signal);
       let found = texts
@@ -520,7 +523,7 @@ export class GameUi {
             await this.report(
               "warning",
               "regional_ocr_unavailable",
-              "目标小区域中文 OCR 本次不可用，保留界面并继续等待",
+              "目标小区域中文 OCR 本次不可用，保留界面并继续等待；不会由模型代替放行",
               { reason: error.message, region: options.region }
             );
           }
@@ -554,6 +557,52 @@ export class GameUi {
             `快速 OCR 漏读后，已通过高精度 OCR 确认界面文字：${accurateFound.text}`
           );
           return { ...accurateFound, frame, accurateOcr: true };
+        }
+      }
+      if (
+        Date.now() >= nextAdvisorAt &&
+        this.vision.advisor?.config.waitTextVerificationEnabled === true &&
+        this.vision.advisor?.enabled &&
+        this.vision.advisor.config.mode === "guarded"
+      ) {
+        nextAdvisorAt = Date.now() + 1_000;
+        const advice = await this.vision.adviseCurrent(
+          "wait-text-advisor",
+          {
+            expectedState: "target_text_visible",
+            taskHint: `确认画面是否清晰显示以下任一文字：${texts.join("、")}`,
+            ocrTexts: frame.observations.map((item) => item.text)
+          },
+          signal
+        ).catch(() => null);
+        const minimum =
+          Number(
+            this.vision.advisor.config.minimumActionConfidence
+          ) || 0.95;
+        const accepted =
+          advice?.state === "target_text_visible" &&
+          Number(advice.confidence) >= minimum;
+        const adviceSignature = `${advice?.state || "unavailable"}:${Number(
+          advice?.confidence || 0
+        ).toFixed(2)}`;
+        if (
+          adviceSignature !== lastAdviceSignature ||
+          Date.now() - lastAdviceReportAt >= 60_000
+        ) {
+          lastAdviceSignature = adviceSignature;
+          lastAdviceReportAt = Date.now();
+          await this.report(
+            "info",
+            "local_model_text_verification",
+            `本地模型页面候选仅供记录：${advice?.state || "unavailable"}；不会替代 OCR 推动流程`,
+            {
+              ...advice,
+              accepted: false,
+              modelWouldAccept: accepted,
+              texts,
+              region: options.region || null
+            }
+          );
         }
       }
       const fingerprint = frame.observations
@@ -1704,6 +1753,8 @@ export class GameUi {
       await this.hudTap(mapButton, signal);
     }
     let deadline = Date.now() + timeoutMs;
+    let advisorChecked = false;
+    let modelMapCandidate = false;
     let accurateCheckedAt = 0;
     let mapButtonFallbackSent = !mapButton || !mapKey;
     const configuredFallbackDelayMs = Number(action.mapButtonFallbackDelayMs);
@@ -1754,6 +1805,41 @@ export class GameUi {
         }
       }
       if (
+        !advisorChecked &&
+        this.vision.advisor?.enabled &&
+        this.vision.advisor.config.mode === "guarded"
+      ) {
+        advisorChecked = true;
+        const advice = await this.vision.adviseCurrent(
+          "teleport-map-advisor",
+          {
+            expectedState: "map",
+            taskHint: `确认营地地图是否已打开；可见文字通常包括${(
+              [action.mapVerificationText || action.mapModeText || "标志查看"]
+            ).join("、")}`,
+            ocrTexts: verification.observations.map((item) => item.text)
+          },
+          signal
+        ).catch(() => null);
+        const minimum =
+          Number(
+            this.vision.advisor.config.minimumActionConfidence
+          ) || 0.95;
+        modelMapCandidate =
+          advice?.state === "map" && advice.confidence >= minimum;
+        await this.report(
+          "info",
+          "local_model_map_verification",
+          `本地模型地图候选仅供记录：${advice?.state || "unavailable"}；仍需 OCR 地图固定文字确认`,
+          {
+            ...advice,
+            accepted: false,
+            modelWouldAccept:
+              modelMapCandidate
+          }
+        );
+      }
+      if (
         !mapButtonFallbackSent &&
         Date.now() >= mapButtonFallbackAt
       ) {
@@ -1772,6 +1858,8 @@ export class GameUi {
         mapKeyAttempts < mapKeyRetryAttempts
       ) {
         await sendMapKey(true);
+        advisorChecked = false;
+        modelMapCandidate = false;
         accurateCheckedAt = 0;
         deadline = Date.now() + timeoutMs;
       }
@@ -1975,16 +2063,8 @@ export class GameUi {
         chatReadyTexts.filter((text) => this.findInRegion(observations, text))
           .length >= Math.max(2, chatReadyMinimum));
     let failedChatClicks = 0;
-    // Once the chat button has been tapped successfully, the panel is a
-    // stateful toggle. OCR can miss its labels for a frame, but sending the
-    // button again would close the panel and make the next retry worse.
-    let chatPanelLikelyOpen = false;
     const recheckAfterRepeatedFailure = async (reason, nextAttempt) => {
-      if (
-        nextAttempt > attempts ||
-        failedChatClicks < 2 ||
-        chatPanelLikelyOpen
-      ) return;
+      if (nextAttempt > attempts || failedChatClicks < 2) return;
       await this.recheckGameMouseForRetry(signal, reason);
     };
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -1996,23 +2076,7 @@ export class GameUi {
       if (this.isCampPanel(before.observations, action)) {
         return;
       }
-      let chatWasReset = false;
-      if (attempt > 1 && chatPanelLikelyOpen) {
-        await this.report(
-          "info",
-          "camp_chat_retry_reset",
-          "上一轮聊天导航未完成；先收起残留聊天层，再按左下角聊天→频道→营地→市政厅完整重试"
-        );
-        await this.tap(
-          action.chatCollapseButton || { x: 1740, y: 1110 },
-          signal
-        );
-        await delay(Number(action.chatCollapseSettleMs) || 500, signal);
-        chatPanelLikelyOpen = false;
-        chatWasReset = true;
-      }
-      let chatReady = chatWasReset ? false : campChatReady(before.observations);
-      if (chatPanelLikelyOpen) chatReady = true;
+      let chatReady = campChatReady(before.observations);
       if (typeof this.vision.captureAccurateTransient === "function") {
         const accurateBefore = await this.vision.captureAccurateTransient(
           `camp-panel-before-accurate-${attempt}`,
@@ -2048,11 +2112,6 @@ export class GameUi {
             },
             signal
           );
-          // Do not tap the same toggle again just because the immediate OCR
-          // verification missed the panel. Continue with the required
-          // channel → camp → city-hall sequence and let its own verification
-          // decide whether the click really opened the panel.
-          chatPanelLikelyOpen = true;
           await delay(action.chatDelayMs || 500, signal);
           chatReady = chatReadyTexts.length === 0;
         }
@@ -2080,22 +2139,14 @@ export class GameUi {
             `第 ${attempt}/${attempts} 次点击聊天入口后未 OCR 确认聊天营地频道；同一步累计失败 ${failedChatClicks + 1} 次，连续 2 次后才检查 keyevent 70`
           );
           failedChatClicks += 1;
-          if (chatPanelLikelyOpen) {
-            chatReady = true;
-            await this.report(
-              "warning",
-              "camp_chat_ocr_fallback",
-              "聊天面板已完成点击但本轮 OCR 未确认；保留当前面板，继续按频道→营地→市政厅顺序操作，不重复点击聊天入口或释放游戏鼠标"
-            );
-          } else if (attempt < attempts) {
+          if (attempt < attempts) {
             await recheckAfterRepeatedFailure(
               `聊天入口连续失败 ${failedChatClicks} 次，重试 ${attempt + 1}/${attempts}`,
               attempt + 1
             );
-            continue;
           }
+          continue;
         }
-        failedChatClicks = 0;
         await this.report(
           "info",
           "camp_chat_verified",
@@ -2105,54 +2156,32 @@ export class GameUi {
           Boolean(action.chatTabText && action.campChannelText);
         if (stableChatNavigation) {
           await delay(Number(action.chatCardSettleMs) || 3000, signal);
-          try {
-            await this.clickText(
-              action.chatTabText,
-              {
-                region: action.chatTabRegion,
-                mode: action.chatTabMode || "exact",
-                timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
-                strictTimeout: true
-              },
-              signal
-            );
-          } catch (error) {
-            if (!action.chatTabButton) throw error;
-            await this.report(
-              "warning",
-              "camp_chat_tab_ocr_fallback",
-              `未识别到“${action.chatTabText}”，使用已校准的频道按钮继续导航`,
-              { reason: error?.message || String(error) }
-            );
-            await this.tap(action.chatTabButton, signal);
-          }
+          await this.clickText(
+            action.chatTabText,
+            {
+              region: action.chatTabRegion,
+              mode: action.chatTabMode || "exact",
+              timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
+              strictTimeout: true
+            },
+            signal
+          );
           await this.report(
             "info",
             "camp_chat_channel_tab_clicked",
             `已等待 ${Number(action.chatCardSettleMs) || 3000}ms 并点击聊天顶部“${action.chatTabText}”`
           );
           await delay(Number(action.chatTabSettleMs) || 3000, signal);
-          try {
-            await this.clickText(
-              action.campChannelText,
-              {
-                region: action.campChannelRegion,
-                mode: action.campChannelMode || "includes",
-                timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
-                strictTimeout: true
-              },
-              signal
-            );
-          } catch (error) {
-            if (!action.campChannelButton) throw error;
-            await this.report(
-              "warning",
-              "camp_channel_ocr_fallback",
-              `未识别到“${action.campChannelText}”，使用已校准的营地频道按钮继续导航`,
-              { reason: error?.message || String(error) }
-            );
-            await this.tap(action.campChannelButton, signal);
-          }
+          await this.clickText(
+            action.campChannelText,
+            {
+              region: action.campChannelRegion,
+              mode: action.campChannelMode || "includes",
+              timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
+              strictTimeout: true
+            },
+            signal
+          );
           await delay(Number(action.campChannelSettleMs) || 3000, signal);
           let channelFrame = await this.vision.captureTransient(
             `camp-channel-verify-${attempt}`,
@@ -2184,10 +2213,8 @@ export class GameUi {
             );
           }
           if (!channelReady) {
-            await this.report(
-              "warning",
-              "camp_channel_ocr_fallback",
-              "已完成频道→营地点击，但顶部营地频道文字暂未被 OCR 确认；继续点击市政厅，由营地首页最终校验结果"
+            throw new Error(
+              "CAMP_CHANNEL_NOT_VERIFIED: 点击频道和营地后未确认顶部营地频道"
             );
           }
           await this.report(
@@ -2208,7 +2235,6 @@ export class GameUi {
           "已确认营地聊天层，正在点击既有校准的市政厅图标"
         );
         await this.tap(action.campIconButton || { x: 980, y: 65 }, signal);
-        chatPanelLikelyOpen = true;
       } catch (error) {
         await this.report(
           "warning",
@@ -2536,6 +2562,56 @@ export class GameUi {
         .map((text) => this.vision.find(observations, text))
         .find(Boolean);
 
+      let advice = null;
+      let overlayAdvice = null;
+      const advisorEnabled =
+        this.vision.advisor?.enabled &&
+        this.vision.advisor.config.mode === "guarded";
+      if (
+        advisorEnabled &&
+        !campPanelOpen &&
+        !chatOpen &&
+        !closeText &&
+        !visiblePanelText &&
+        !visibleInteractionPanelText &&
+        !visibleHudText &&
+        !bottomChannelHud &&
+        !failureOverlay &&
+        typeof this.vision.adviseOverlayControlCurrent === "function"
+      ) {
+        overlayAdvice = await this.vision.adviseOverlayControlCurrent(
+          `map-preparation-overlay-${attempt}`,
+          { ocrTexts: observations.map((item) => item.text) },
+          signal
+        ).catch(() => null);
+      }
+      if (
+        !visiblePanelText &&
+        !visibleInteractionPanelText &&
+        !bottomChannelHud &&
+        !failureOverlay &&
+        advisorEnabled
+      ) {
+        advice = await this.vision.adviseCurrent(
+          `map-preparation-advisor-${attempt}`,
+          {
+            expectedState: "hud or map or panel",
+            taskHint:
+              "打开地图前确认：map=地图已开；hud=无遮挡角色主界面；panel=贡献表、成员页、队伍页、弹窗等功能窗口仍遮挡",
+            ocrTexts: observations.map((item) => item.text)
+          },
+          signal
+        ).catch(() => null);
+      }
+      const minimum =
+        Number(this.vision.advisor?.config.minimumActionConfidence) || 0.95;
+      const overlayMinimum = Math.max(0.95, minimum);
+      const confident = Number(advice?.confidence) >= minimum;
+      const overlayConfident =
+        Number(overlayAdvice?.confidence) >= overlayMinimum &&
+        confident &&
+        advice.state === "panel" &&
+        ["close_x", "back", "collapse"].includes(overlayAdvice?.control);
       if (
         (
           visibleHudText ||
@@ -2572,10 +2648,19 @@ export class GameUi {
         );
         return "hud";
       }
+      if (
+        confident &&
+        advice.state === "hud" &&
+        !visiblePanelText &&
+        !failureOverlay
+      ) {
+        return "hud";
+      }
       const hasExplicitCloseAction =
         campPanelOpen ||
         chatOpen ||
         Boolean(closeText) ||
+        overlayConfident ||
         Boolean(visiblePanelText) ||
         teamPanelOpen ||
         Boolean(failureOverlay);
@@ -2585,6 +2670,8 @@ export class GameUi {
           "map_preparation_no_overlay",
           "未识别到需要关闭的窗口，将直接尝试打开地图；地图固定文字出现前不会执行传送坐标",
           {
+            modelState: advice?.state || null,
+            confidence: advice?.confidence || null,
             ocrTexts: observations
               .map((item) => item.text)
               .filter(Boolean)
@@ -2604,6 +2691,8 @@ export class GameUi {
         "map_page_closing",
         `打开地图前正在关闭遮挡页面（${attempt + 1}/${maximumClosures}）`,
         {
+          modelState: advice?.state || null,
+          confidence: advice?.confidence || null,
           visiblePanelText: visiblePanelText?.text || null,
           visibleInteractionPanelText:
             visibleInteractionPanelText?.text || null,
@@ -2615,7 +2704,9 @@ export class GameUi {
             (item) => item.text
           ),
           teamPanelMarkers: teamPanelMarkers.map((item) => item.text),
-          visibleHudText: visibleHudText?.text || null
+          visibleHudText: visibleHudText?.text || null,
+          overlayControl: overlayAdvice?.control || null,
+          overlayConfidence: overlayAdvice?.confidence || null
         }
       );
       if (
@@ -2636,6 +2727,23 @@ export class GameUi {
         }
       } else if (closeText) {
         await this.tap(center(closeText), signal);
+      } else if (overlayConfident) {
+        await this.report(
+          "info",
+          "map_overlay_ai_close",
+          `AI 已确认安全关闭控件：${overlayAdvice.control}`,
+          overlayAdvice
+        );
+        if (overlayAdvice.control === "close_x") {
+          await this.tap(topRightClose, signal);
+        } else if (overlayAdvice.control === "collapse") {
+          await this.tap(
+            action.chatCollapsePoint || { x: 1700, y: 1040 },
+            signal
+          );
+        } else {
+          await this.tap(bottomLeftBack, signal);
+        }
       }
     }
     return "hud";
@@ -2650,6 +2758,7 @@ export class GameUi {
     const timeoutMs = Math.max(180, Number(timeoutSeconds) || 30) * 1000;
     let deadline = Date.now() + timeoutMs;
     const startedAt = Date.now();
+    let advisorChecks = 0;
     let accurateCheckedAt = 0;
     let consecutiveHudFrames = 0;
     do {
@@ -2753,6 +2862,51 @@ export class GameUi {
           text: "传送进度结束，HUD 已连续稳定"
         };
       }
+      if (
+        Date.now() - startedAt >= 1_500 &&
+        this.vision.advisor?.enabled &&
+        this.vision.advisor.config.mode === "guarded"
+      ) {
+        advisorChecks += 1;
+        const advice = await this.vision.adviseCurrent(
+          `teleport-result-advisor-${advisorChecks % 100}`,
+          {
+            expectedState: "hud or teleport_error",
+            taskHint: `确认传送结果。到达后的HUD提示可能包括${(
+              readyTexts || []
+            ).join("、")}；失败提示包括${(failureTexts || []).join("、")}`,
+            ocrTexts: frame.observations.map((item) => item.text)
+          },
+          signal
+        ).catch(() => null);
+        const minimum =
+          Number(
+            this.vision.advisor.config.minimumActionConfidence
+          ) || 0.95;
+        const accepted = Number(advice?.confidence) >= minimum;
+        await this.report(
+          "info",
+          "local_model_teleport_verification",
+          `本地模型传送候选仅供记录：${advice?.state || "unavailable"}；仍需 OCR 到达或错误文字确认`,
+          {
+            ...advice,
+            accepted: false,
+            modelWouldAccept: accepted
+          }
+        );
+        if (accepted && advice?.state === "hud") {
+          await this.report(
+            "info",
+            "teleport_hud_arrival_ai_confirmed",
+            "本地模型以高置信度确认传送进度已结束并回到 HUD；开始用 W 寻找目标交互按钮",
+            advice
+          );
+          return {
+            state: "arrived_hud",
+            text: "本地模型高置信度确认传送后 HUD"
+          };
+        }
+      }
       await delay(600, signal);
       if (
         Date.now() >= deadline &&
@@ -2763,6 +2917,7 @@ export class GameUi {
           "healthy_teleport_wait_extended",
           "游戏进程健康，继续确认传送结果，不重启游戏"
         );
+        advisorChecks = 0;
         accurateCheckedAt = 0;
         deadline = Date.now() + timeoutMs;
       }

@@ -9,11 +9,20 @@ SERVICE_TARGET="gui/${UID}/${LABEL}"
 PLIST_PATH="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 LAUNCHER_PATH="${SCRIPT_DIR}/agent-launcher.sh"
 CREDENTIALS_PATH="${HOME}/Library/Application Support/Yume Life After Mac Agent/credentials.json"
-NODE_PATH=$(command -v node 2>/dev/null || true)
+LOCAL_NODE_PATH="${HOME}/Library/Application Support/Yume Life After Mac Agent/Runtime/current/Toolchain/node/bin/node"
+SOURCE_NODE_PATH="${MAC_ROOT}/Toolchain/node/bin/node"
+if [[ -x "${LOCAL_NODE_PATH}" ]]; then
+  NODE_PATH="${LOCAL_NODE_PATH}"
+elif [[ -x "${SOURCE_NODE_PATH}" ]]; then
+  NODE_PATH="${SOURCE_NODE_PATH}"
+else
+  NODE_PATH=$(command -v node 2>/dev/null || true)
+fi
 if [[ -z "${NODE_PATH}" || ! -x "${NODE_PATH}" ]]; then
-  echo "macOS Node.js is missing. Install Node.js 22 arm64 before registering the Agent." >&2
+  echo "macOS Node.js is missing. Install Node.js 22 arm64 or use the App update wizard to download it before registering the Agent." >&2
   exit 1
 fi
+NODE_BIN_DIR="${NODE_PATH:h}"
 
 mkdir -p "${HOME}/Library/LaunchAgents" "${MAC_ROOT}/logs"
 chmod 755 "${LAUNCHER_PATH}"
@@ -34,7 +43,7 @@ trap 'rm -f -- "${PLIST_STAGING}"' EXIT
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables dict" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:YUME_AGENT_FILE_LOG string 1" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:YLA_CREDENTIALS_FILE string ${CREDENTIALS_PATH}" "${PLIST_STAGING}"
-/usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PATH string /opt/homebrew/bin:/usr/local/bin:/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "${PLIST_STAGING}"
+/usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PATH string ${NODE_BIN_DIR}:/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :RunAtLoad bool true" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :KeepAlive bool true" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :ThrottleInterval integer 10" "${PLIST_STAGING}"

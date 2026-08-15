@@ -1379,12 +1379,10 @@ async function handleAdminApi(
     const url = new URL(request.url);
     const afterId = Number(url.searchParams.get("afterId"));
     const limit = Number(url.searchParams.get("limit"));
-    const latest = url.searchParams.get("latest") === "1";
     return json({
       ...(await listRunEvents(env, runId, {
         ...(Number.isInteger(afterId) && afterId > 0 ? { afterId } : {}),
-        ...(Number.isInteger(limit) && limit > 0 ? { limit } : {}),
-        ...(latest ? { latest: true } : {})
+        ...(Number.isInteger(limit) && limit > 0 ? { limit } : {})
       }))
     });
   }
@@ -1537,11 +1535,8 @@ async function handleAgentApi(
     };
     const memberRoster = (await listMembers(env))
       .map((member) => ({
-        id: typeof member.id === "string" ? member.id : "",
         name: typeof member.name === "string" ? member.name : "",
-        weeklyContribution: Number(member.weekly_contribution) || 0,
-        profession: typeof member.profession === "string" ? member.profession : null,
-        roommateName: typeof member.roommate_name === "string" ? member.roommate_name : null
+        weeklyContribution: Number(member.weekly_contribution) || 0
       }))
       .filter((member) => member.name);
     return json({

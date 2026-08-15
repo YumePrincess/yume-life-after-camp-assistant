@@ -37,6 +37,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $model.showAbout) { AboutView() }
         .sheet(isPresented: $model.showUpdateWizard) { UpdateWizardView() }
+        .sheet(isPresented: $model.showMigrationExportOptions) {
+            MigrationExportOptionsView()
+        }
     }
 
     @ViewBuilder private var detail: some View {
@@ -271,6 +274,31 @@ struct UpdateWizardView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            HStack(spacing: 10) {
+                Label(
+                    model.nodeSummary,
+                    systemImage: model.nodeInfo.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(model.nodeInfo.isAvailable ? Color.secondary : Color.orange)
+                if !model.nodeInfo.isAvailable && !model.isBusy {
+                    Button(model.text("Download external Node.js")) {
+                        Task { await model.downloadExternalNode() }
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                }
+                Spacer()
+                Label(
+                    model.adbSummary,
+                    systemImage: model.adbInfo.isAvailable ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(model.adbInfo.isAvailable ? Color.secondary : Color.orange)
+                if !model.adbInfo.isAvailable {
+                    Button(model.text("Install Android platform-tools")) {
+                        model.openAdbInstallGuide()
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                }
+            }
             if let result = model.updateResult {
                 Text(result)
                     .font(.callout.weight(.semibold))
@@ -279,6 +307,35 @@ struct UpdateWizardView: View {
                             ? .orange
                             : .green
                     )
+            }
+            Divider().opacity(0.35)
+            HStack(spacing: 10) {
+                Image(systemName: model.modelInfo.isInstalled ? "checkmark.circle.fill" : "arrow.down.circle")
+                    .foregroundStyle(model.modelInfo.isInstalled ? .green : .orange)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.modelInfo.isInstalled
+                        ? model.text("External Qwen model found.")
+                        : model.text("External Qwen model is not installed."))
+                        .font(.callout.weight(.semibold))
+                    Text(model.text("The model is stored in Application Support and is not bundled in the App."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if !model.isBusy {
+                    Button(model.modelInfo.isInstalled
+                        ? model.text("Prepare Qwen runtime")
+                        : model.text("Download Qwen model")) {
+                        Task {
+                            if model.modelInfo.isInstalled {
+                                await model.prepareModelRuntime()
+                            } else {
+                                await model.downloadModel()
+                            }
+                        }
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                }
             }
             HStack {
                 Spacer()
@@ -565,13 +622,43 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Migration") {
-                    Text("The migration archive includes settings and user plugins, but never credentials.")
+                    Text("Choose whether to include the external Qwen model and saved credentials when exporting. Credentials are sensitive.")
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button("Export migration archive…") { Task { await model.exportMigration() } }
                             .buttonStyle(GlassButtonStyle())
                         Button("Import migration archive…") { Task { await model.importMigration() } }
                             .buttonStyle(GlassButtonStyle())
+                    }
+                }
+                Section("External Qwen model") {
+                    Text(model.modelInfo.path.isEmpty
+                        ? model.text("The external Qwen model has not been checked yet.")
+                        : model.modelInfo.path)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                    HStack {
+                        Label(
+                            model.modelInfo.isInstalled
+                                ? (model.modelInfo.isReady ? model.text("Qwen model runtime is ready.") : model.text("Qwen model runtime needs preparation."))
+                                : model.text("External Qwen model is not installed."),
+                            systemImage: model.modelInfo.isReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                        )
+                        Spacer()
+                        if !model.modelInfo.isReady {
+                            Button(model.modelInfo.isInstalled
+                                ? model.text("Prepare Qwen runtime")
+                                : model.text("Download Qwen model")) {
+                                Task {
+                                    if model.modelInfo.isInstalled {
+                                        await model.prepareModelRuntime()
+                                    } else {
+                                        await model.downloadModel()
+                                    }
+                                }
+                            }
+                            .buttonStyle(GlassButtonStyle())
+                        }
                     }
                 }
                 Button("Save settings") { Task { await model.saveSettings() } }
@@ -719,7 +806,7 @@ struct SetupAssistantView: View {
     private var tokenStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Secure credentials").font(.title.bold())
-            Text("Tokens are stored in an owner-only local credentials file and are never included in the App or migration archive.")
+            Text("Tokens are stored in an owner-only local credentials file. Migration export includes them only if you explicitly select saved credentials.")
                 .foregroundStyle(.secondary)
             SecureField("Agent token", text: $model.agentToken).textFieldStyle(.roundedBorder)
             SecureField("Local debug token", text: $model.debugToken).textFieldStyle(.roundedBorder)
@@ -742,6 +829,31 @@ struct SetupAssistantView: View {
                 .font(.caption.monospaced())
             Label(model.mumuInstanceName, systemImage: "square.stack.3d.up")
             Label("5 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
+            HStack(spacing: 10) {
+                Label(
+                    model.modelInfo.isInstalled
+                        ? model.text("External Qwen model found.")
+                        : model.text("External Qwen model is not installed."),
+                    systemImage: model.modelInfo.isInstalled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(model.modelInfo.isInstalled ? Color.secondary : Color.orange)
+                Spacer()
+                if !model.modelInfo.isInstalled && !model.isBusy {
+                    Button(model.text("Download Qwen model")) {
+                        Task { await model.downloadModel() }
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                } else if model.modelInfo.isInstalled && !model.modelInfo.isReady && !model.isBusy {
+                    Button(model.text("Prepare Qwen runtime")) {
+                        Task { await model.prepareModelRuntime() }
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                }
+            }
+            Button(model.text("Restore from migration archive…")) {
+                Task { await model.restoreMigrationForSetup() }
+            }
+            .buttonStyle(GlassButtonStyle())
             if model.isBusy {
                 ProgressView(model.setupProgressMessage.isEmpty ? model.text("Preparing installation…") : model.setupProgressMessage)
             } else if !model.setupProgressMessage.isEmpty {
@@ -749,5 +861,54 @@ struct SetupAssistantView: View {
                     .foregroundStyle(.orange)
             }
         }
+    }
+}
+
+struct MigrationExportOptionsView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(model.text("Export migration archive")).font(.title2.bold())
+            Text(model.text("Choose which external data to include. The App never includes these items unless you select them."))
+                .foregroundStyle(.secondary)
+            Toggle(
+                model.text("Include external Qwen model"),
+                isOn: Binding(
+                    get: { model.migrationIncludeModel },
+                    set: { model.migrationIncludeModel = $0 }
+                )
+            )
+            Toggle(
+                model.text("Include saved credentials"),
+                isOn: Binding(
+                    get: { model.migrationIncludeCredentials },
+                    set: { model.migrationIncludeCredentials = $0 }
+                )
+            )
+            if model.migrationIncludeCredentials {
+                Label(model.text("Credentials are sensitive and will be included in the archive."), systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            HStack {
+                Spacer()
+                Button(model.text("Cancel")) { dismiss() }
+                    .buttonStyle(GlassButtonStyle())
+                Button(model.text("Export")) {
+                    Task {
+                        await model.confirmExportMigration(
+                            includeModel: model.migrationIncludeModel,
+                            includeCredentials: model.migrationIncludeCredentials
+                        )
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
+        .background(AppBackdrop())
     }
 }

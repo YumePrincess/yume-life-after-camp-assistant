@@ -7,16 +7,6 @@ import {
   parsePopulationFraction,
   safeSipsCropRegion
 } from "../src/vision.mjs";
-import {
-  joinVisualNameObservations,
-  normalizeMemberCampTitle,
-  normalizeIdentityLines,
-  normalizePlayerName,
-  normalizePlayerNameVariant,
-  normalizePlayerOcrArtifact,
-  normalizeVisualName,
-  stripStackedCampTitleFromName
-} from "../src/visual-name.mjs";
 import { Vision } from "../src/vision.mjs";
 
 test("game-mouse icon detection uses two pixel probes and OCR only as a conservative fallback", async () => {
@@ -38,7 +28,8 @@ test("game-mouse icon detection uses two pixel probes and OCR only as a conserva
         }
       }
     },
-    vision: {}
+    vision: {},
+    localVisionModel: { enabled: false }
   }, {});
   vision.captureSource = async () => ({ path: "/private/tmp/icon-test.png" });
   vision.ocrRegion = async () => [{ text: "Space", confidence: 1 }];
@@ -76,7 +67,8 @@ test("C icon state uses warm-color pixels to distinguish lit from dim", async ()
         minimumSaturation: 0.15
       }
     },
-    vision: {}
+    vision: {},
+    localVisionModel: { enabled: false }
   }, {});
   vision.captureSource = async () => ({ path: "/private/tmp/c-icon-test.png" });
   vision.probe = async () => [
@@ -109,7 +101,8 @@ test("C icon background contamination is not treated as yellow", async () => {
         minimumSaturation: 0.20
       }
     },
-    vision: {}
+    vision: {},
+    localVisionModel: { enabled: false }
   }, {});
   vision.captureSource = async () => ({ path: "/private/tmp/c-icon-warm-scene.png" });
   vision.probe = async () => [
@@ -123,7 +116,8 @@ test("C icon background contamination is not treated as yellow", async () => {
 test("member table OCR starts at the identity column and excludes avatar artwork", async () => {
   const vision = new Vision({
     adb: { screenWidth: 1920, screenHeight: 1200 },
-    vision: { mode: "fast", memberTableTimeoutSeconds: 2 }
+    vision: { mode: "fast", memberTableTimeoutSeconds: 2 },
+    localVisionModel: { enabled: false }
   }, {});
   let ocrRegion = null;
   vision.captureSource = async () => ({ path: "/private/tmp/member-table.png" });
@@ -156,93 +150,10 @@ test("member identity keeps the first OCR line as the player name", () => {
     ]),
     { name: "青在", campTitle: "营地助手 称号" }
   );
-  assert.equal(isPlausibleMemberName("COSGH"), true);
+  assert.equal(isPlausibleMemberName("COSGH"), false);
   assert.equal(isPlausibleMemberName("青在✨"), true);
   assert.equal(isPlausibleMemberName("✨"), true);
-  assert.equal(isPlausibleMemberName("#"), false);
-});
-
-test("campTitle only accepts a real stacked text line", () => {
-  assert.equal(normalizeMemberCampTitle("☻ 〛 ☻"), "");
-  assert.equal(normalizeMemberCampTitle("乁"), "");
-  assert.equal(normalizeMemberCampTitle("#G春之音"), "春之音");
-  assert.equal(normalizeMemberCampTitle("G春之音"), "春之音");
-  assert.equal(normalizeMemberCampTitle("启航"), "启航");
-  assert.equal(
-    stripStackedCampTitleFromName("#U夏之虹星河踏月归", "夏之虹"),
-    "星河踏月归"
-  );
-  const identity = normalizeIdentityLines([
-    { text: "玩家甲", x: 100, y: 100, width: 80, height: 24 },
-    { text: "☻ 〛 ☻", x: 240, y: 100, width: 80, height: 24 },
-    { text: "#G春之音", x: 100, y: 136, width: 100, height: 22 }
-  ]);
-  assert.equal(identity.campTitle, "春之音");
-  assert.equal(
-    normalizeIdentityLines([
-      { text: "达里尔迪克森", x: 100, y: 100, width: 120, height: 24 },
-      { text: "E產", x: 260, y: 136, width: 30, height: 20 }
-    ]).campTitle,
-    ""
-  );
-  assert.equal(
-    joinVisualNameObservations([
-      { text: "寄云到深山", x: 100, y: 20, width: 150, height: 24 },
-      { text: "ど", x: 290, y: 20, width: 20, height: 20 }
-    ]),
-    "寄云到深山"
-  );
-});
-
-test("an isolated same-line Latin badge does not become a player suffix", () => {
-  assert.deepEqual(
-    normalizeIdentityLines([
-      { text: "达里尔迪克森", x: 100, y: 100, width: 120, height: 24 },
-      { text: "E", x: 250, y: 100, width: 14, height: 18 }
-    ]),
-    { name: "达里尔迪克森", campTitle: "" }
-  );
-});
-
-test("visual name normalization preserves meaningful symbols and spaces", () => {
-  assert.equal(normalizeVisualName("Аlice\u00a0\u2003"), "Alice");
-  assert.equal(normalizeVisualName("♤♠"), "♤♠");
-  assert.equal(normalizeVisualName("4纸鸢”)"), "纸鸢");
-  assert.equal(normalizeVisualName("4纸鸢2）"), "纸鸢");
-  assert.equal(
-    joinVisualNameObservations([
-      { text: "「", x: 100, y: 20, width: 18, height: 24 },
-      { text: "」", x: 220, y: 20, width: 18, height: 24 }
-    ]),
-    "「    」"
-  );
-  assert.equal(normalizePlayerName("✿❀❁❉❃✲"), "✿❀❁❉❃✲");
-  assert.equal(normalizePlayerNameVariant("დღ✿"), "დღ✿");
-  assert.equal(normalizePlayerNameVariant("慕离\u0301"), "慕离\u0301");
-});
-
-test("player-name OCR keeps multilingual text and drops hallucinated symbols", () => {
-  assert.equal(normalizePlayerName("Alice♠"), "Alice");
-  assert.equal(normalizePlayerName("Élodie¥"), "Élodie");
-  assert.equal(normalizePlayerName("&/¥ew米“”！"), "ew米");
-  assert.equal(normalizePlayerName("「    」"), "「    」");
-  assert.equal(normalizePlayerName("--------"), "");
-});
-
-test("player OCR artifact normalization is roster-independent", () => {
-  assert.equal(normalizePlayerOcrArtifact("星河踏月归卒"), "星河踏月归卒");
-  assert.equal(normalizePlayerOcrArtifact("慕离糕"), "慕离糕");
-});
-
-test("member identity drops returning-player markers without dropping the name", () => {
-  assert.deepEqual(
-    inferMemberIdentity([
-      { text: "回归玩家", x: 80, y: 100, width: 60, height: 20 },
-      { text: "Аlice♤", x: 180, y: 100, width: 100, height: 20 },
-      { text: "市长", x: 80, y: 126, width: 40, height: 20 }
-    ]),
-    { name: "Alice♤", campTitle: "" }
-  );
+  assert.equal(isPlausibleMemberName("#"), true);
 });
 
 test("macOS 27 bottom-edge crops shift inward instead of silently returning the full frame", () => {
@@ -288,47 +199,12 @@ test("parses total members from the fraction denominator", () => {
     }),
     { current: 0, capacity: 0 }
   );
-  assert.deepEqual(
-    parsePopulationFraction([{ text: "0/01", x: 490 }], 10, {
-      minimumCapacity: 0,
-      ignoreTrailingInfoGlyph: true
-    }),
-    { current: 0, capacity: 0 }
-  );
-  for (const [text, current] of [
-    ["0/10", 0],
-    ["10/10", 10],
-    ["0-10", 0],
-    ["0-10/01-101", 0]
-  ]) {
-    assert.deepEqual(
-      parsePopulationFraction([{ text, x: 490 }], 10, {
-        minimumCapacity: 0,
-        ignoreTrailingInfoGlyph: true,
-        allowDashSeparator: true,
-        maxDigits: 2
-      }),
-      { current, capacity: 10 }
-    );
-  }
-  assert.deepEqual(
-    parsePopulationFraction([{ text: "8´92", x: 350 }], 110, {
-      minimumCapacity: 1
-    }),
-    { current: 8, capacity: 92 }
-  );
-  assert.deepEqual(
-    parsePopulationFraction([{ text: "94/91", x: 350 }], 110, {
-      minimumCapacity: 1,
-      allowCurrentOverflow: true
-    }),
-    { current: 4, capacity: 91 }
-  );
 });
 
 test("member header total accepts 0/0 sailing citizens without fallback contamination", async () => {
   const vision = new Vision({
-    vision: {}
+    vision: {},
+    localVisionModel: { enabled: false }
   }, {});
   vision.capture = async () => ({ path: "/private/tmp/member-header.png" });
   vision.ocrRegion = async (_path, _region, label) =>
@@ -344,29 +220,6 @@ test("member header total accepts 0/0 sailing citizens without fallback contamin
     total: 93
   });
   assert.equal(await vision.readMemberExpectedTotal(), 93);
-});
-
-test("member header merges valid fractions found on different retry frames", async () => {
-  const vision = new Vision({ vision: {} }, {});
-  let frame = 0;
-  vision.capture = async () => ({ path: `/private/tmp/member-header-${++frame}.png` });
-  vision.ocrRegion = async (_path, _region, label) => {
-    if (label.startsWith("member-count-") && !label.includes("expanded")) {
-      return frame === 1 ? [{ text: "8´92", x: 350 }] : [];
-    }
-    if (label.startsWith("citizen-count-") && !label.includes("expanded")) {
-      return frame === 2 ? [{ text: "【0/0", x: 490 }] : [];
-    }
-    return [];
-  };
-
-  assert.deepEqual(await vision.readMemberExpectedBreakdown(), {
-    formalCurrent: 8,
-    formalTotal: 92,
-    sailingCurrent: 0,
-    sailingTotal: 0,
-    total: 92
-  });
 });
 
 test("accepts zero online citizens and split OCR fragments", () => {

@@ -33,6 +33,12 @@
     "agent:repair": "./scripts/manage-local-agent.sh repair",
     "agent:logs": "./scripts/manage-local-agent.sh logs",
     "manage": "./scripts/manage-local-agent.sh",
+    "model:install": "./scripts/local-model.sh install",
+    "model:start": "./scripts/local-model.sh start",
+    "model:stop": "./scripts/local-model.sh stop",
+    "model:status": "./scripts/local-model.sh status",
+    "model:update": "./scripts/local-model.sh update",
+    "model:uninstall": "./scripts/local-model.sh uninstall",
     "plugins": "node src/plugin-manager.mjs list"
   }
 }

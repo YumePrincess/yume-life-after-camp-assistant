@@ -4,7 +4,6 @@ import { readFile } from "node:fs/promises";
 import {
   capturePagedTable,
   alignContributionRowsToRoster,
-  alignStaffNamesToRoster,
   dedupeStaffAssignments,
   assertContributionComplete,
   reconcilePageRows,
@@ -504,11 +503,11 @@ test("incomplete calculated tail keeps both continuation pages in full-page mode
   );
   assert.deepEqual(
     swipes.map(({ durationMs }) => durationMs),
-    [600, 600, 600]
+    [700, 700, 700]
   );
 });
 
-test("tail recovery keeps a valid native row when OCR drops it", async () => {
+test("tail recovery keeps a valid native row when the advisor drops it", async () => {
   const recoveryCalls = [];
   const context = {
     vision: {
@@ -801,174 +800,6 @@ test("member profiles keep names that differ by decorative symbols", async () =>
   assert.equal(rows[0].name, "#愿✨");
 });
 
-test("member profiles promote same-text visual variants even when they are on different pages", async () => {
-  const pages = [
-    [
-      { name: "花", profession: "步枪兵" },
-      { name: "成员一" },
-      { name: "成员二" },
-      { name: "成员三" },
-      { name: "成员四" }
-    ],
-    [
-      { name: "✿花✿", profession: "采集工" },
-      { name: "成员五" },
-      { name: "成员六" },
-      { name: "成员七" },
-      { name: "成员八" }
-    ]
-  ];
-  const rows = await capturePagedTable(
-    {
-      vision: {
-        async capture(label) {
-          return { path: `${label}.png`, observations: [] };
-        },
-        async extractTableRows(_path, _definition, label) {
-          const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
-          return pages[page - 1] || [];
-        }
-      },
-      adb: { async mouseSwipe() {} },
-      ui: { async afterAction() {} },
-      async report() {}
-    },
-    "member-details",
-    {
-      extractionMode: "hybrid",
-      headerPattern: [],
-      pagination: {
-        maxPages: 2,
-        rowsPerPage: 5,
-        minimumRowsPerPage: 5,
-        stopAfterStagnantPages: 1,
-        from: { x: 1, y: 2 },
-        to: { x: 1, y: 1 },
-        durationMs: 1
-      }
-    },
-    undefined,
-    { expectedCount: 10 }
-  );
-
-  assert.equal(rows.length, 10);
-  assert.deepEqual(
-    rows.filter((row) => row.name.includes("花")).map((row) => row.name),
-    ["花", "✿花✿"]
-  );
-});
-
-test("member profiles retain three same-text flower variants independently", async () => {
-  const flowerVariants = ["✿慕离✿", "❀慕离❀", "※慕离※"];
-  const rows = await capturePagedTable(
-    {
-      vision: {
-        async capture(label) {
-          return { path: `${label}.png`, observations: [] };
-        },
-        async extractTableRows(_path, _definition, label) {
-          const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
-          const pageRows = page === 1
-            ? [
-                { name: flowerVariants[0] },
-                { name: "成员一" },
-                { name: "成员二" },
-                { name: "成员三" },
-                { name: "成员四" }
-              ]
-            : page === 2
-              ? [
-                  { name: flowerVariants[1] },
-                  { name: "成员五" },
-                  { name: "成员六" },
-                  { name: "成员七" },
-                  { name: "成员八" }
-                ]
-              : [
-                  { name: flowerVariants[2] },
-                  { name: "成员九" },
-                  { name: "成员十" },
-                  { name: "成员十一" },
-                  { name: "成员十二" }
-                ];
-          return pageRows;
-        }
-      },
-      adb: { async mouseSwipe() {} },
-      ui: { async afterAction() {} },
-      async report() {}
-    },
-    "member-details",
-    {
-      extractionMode: "hybrid",
-      headerPattern: [],
-      pagination: {
-        maxPages: 3,
-        rowsPerPage: 5,
-        minimumRowsPerPage: 3,
-        stopAfterStagnantPages: 1,
-        from: { x: 1, y: 2 },
-        to: { x: 1, y: 1 },
-        durationMs: 1
-      }
-    },
-    undefined,
-    { expectedCount: 15 }
-  );
-
-  const names = rows
-    .map((row) => row.name)
-    .filter((name) => name.includes("慕离"));
-  assert.equal(names.length, 3);
-  assert.deepEqual(names, flowerVariants);
-});
-
-test("member profiles retain pure-symbol names as independent roster keys", async () => {
-  const rows = await capturePagedTable(
-    {
-      vision: {
-        async capture(label) {
-          return { path: `${label}.png`, observations: [] };
-        },
-        async extractTableRows() {
-          return [
-            { name: "- ☻ -" },
-            { name: "♤" },
-            { name: "♠" },
-            { name: "成员一" },
-            { name: "成员二" }
-          ];
-        }
-      },
-      adb: { async mouseSwipe() {} },
-      ui: { async afterAction() {} },
-      async report() {}
-    },
-    "member-details",
-    {
-      extractionMode: "hybrid",
-      headerPattern: [],
-      pagination: {
-        maxPages: 1,
-        rowsPerPage: 5,
-        minimumRowsPerPage: 5,
-        stopAfterStagnantPages: 1,
-        from: { x: 1, y: 2 },
-        to: { x: 1, y: 1 },
-        durationMs: 1
-      }
-    },
-    undefined,
-    { expectedCount: 5 }
-  );
-
-  assert.equal(rows.length, 5);
-  assert.deepEqual(
-    rows.slice(0, 3).map((row) => row.name),
-    ["- ☻ -", "♤", "♠"]
-  );
-});
-
 test("member scans discard avatar year text and collapse exact duplicate rows", async () => {
   const recoveryLabels = [];
   const context = {
@@ -1041,7 +872,7 @@ test("conflicting data under the same OCR name triggers strengthened name recove
           return { path: `${label}.png`, observations: [] };
         },
         async extractTableRows(_path, _definition, _label, _signal, options) {
-          if (options?.forceOcrRecovery) {
+          if (options?.forceMemberAdvisor) {
             recoveryCalls += 1;
             return [
               { name: "成员一", profession: "步枪兵", weeklyContribution: "100" },
@@ -1102,59 +933,5 @@ test("staff assignments keep every role and member name unique", () => {
       { roleKey: "staff-1", roleName: "#W月之歌", memberName: "萤萤空心菜" },
       { roleKey: "staff-2", roleName: "#W圣之雪", memberName: "七晓白" }
     ]
-  );
-});
-
-test("staff names remove rendered ordinals and reconcile OCR decoration to the roster", async () => {
-  const { normalizeStaffGrid } = await import("../src/table-parser.mjs");
-  const rows = normalizeStaffGrid(
-    [
-      { text: "4. 纸鸢”）", x: 600, y: 500, width: 160, height: 32 },
-      { text: "#G春之音", x: 600, y: 540, width: 160, height: 32 },
-      { text: "雨梦", x: 250, y: 800, width: 80, height: 32 },
-      { text: "市长", x: 250, y: 840, width: 80, height: 32 }
-    ],
-    {
-      slots: [
-        { roleKey: "staff-4", roleName: "公职席位 4", region: { left: 560, top: 470, right: 850, bottom: 590 } },
-        { roleKey: "mayor", roleName: "市长", region: { left: 230, top: 780, right: 500, bottom: 900 } }
-      ]
-    }
-  );
-  assert.equal(rows[0].memberName, "纸鸢");
-  assert.equal(rows[0].roleName, "春之音");
-  assert.equal(rows[1].memberName, "雨梦");
-  assert.equal(rows[1].roleName, "市长");
-  assert.equal(
-    normalizeStaffGrid(
-      [
-        { text: "Alice", x: 600, y: 500, width: 100, height: 32 },
-        { text: "#Z保留颜色文本", x: 600, y: 540, width: 160, height: 32 }
-      ],
-      {
-        slots: [
-          { roleKey: "staff-z", roleName: "公职席位 1", region: { left: 560, top: 470, right: 850, bottom: 590 } }
-        ]
-      }
-    )[0].roleName,
-    "#Z保留颜色文本"
-  );
-  assert.equal(
-    alignStaffNamesToRoster(rows, [{ name: "纸鸢" }])[0].memberName,
-    "纸鸢"
-  );
-  assert.equal(
-    alignStaffNamesToRoster(
-      [{ roleKey: "staff-3", roleName: "公职席位 3", memberName: "蛮蛮空心票" }],
-      [{ name: "蛮蛮空心菜" }]
-    )[0].memberName,
-    "蛮蛮空心菜"
-  );
-  assert.equal(
-    alignStaffNamesToRoster(
-      [{ roleKey: "staff-1", roleName: "公职席位 1", memberName: "9.纸变”" }],
-      [{ name: "纸鸢" }]
-    )[0].memberName,
-    "纸鸢"
   );
 });

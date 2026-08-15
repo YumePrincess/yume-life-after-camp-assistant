@@ -44,6 +44,15 @@ struct AgentHealth: Decodable {
     let plugins: [HealthPlugin]?
 }
 
+struct ModelRuntimeInfo: Sendable {
+    let path: String
+    let isInstalled: Bool
+    let isRuntimeAvailable: Bool
+
+    static let missing = ModelRuntimeInfo(path: "", isInstalled: false, isRuntimeAvailable: false)
+    var isReady: Bool { isInstalled && isRuntimeAvailable }
+}
+
 enum AdbRuntimeSource: String, Sendable {
     case system
     case missing

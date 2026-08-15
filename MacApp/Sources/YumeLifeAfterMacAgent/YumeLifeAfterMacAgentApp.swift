@@ -2,56 +2,42 @@ import SwiftUI
 import AppKit
 
 @MainActor
-final class YumeLifeAfterMacAgentAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class YumeLifeAfterMacAgentAppDelegate: NSObject, NSApplicationDelegate {
     private var terminationInProgress = false
-    private var windowObserver: NSObjectProtocol?
+    private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        windowObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let window = notification.object as? NSWindow else { return }
-            Task { @MainActor [weak self] in
-                self?.installBackgroundWindowPolicy(on: window)
-            }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = item.button {
+            button.image = NSImage(
+                systemSymbolName: "gamecontroller.fill",
+                accessibilityDescription: "Yume Life After Mac Agent"
+            )
+            button.imagePosition = .imageOnly
+            button.toolTip = "Yume Life After Mac Agent"
+            button.target = self
+            button.action = #selector(statusItemAction(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        NSApp.windows.forEach { installBackgroundWindowPolicy(on: $0) }
-    }
-
-    func applicationDidBecomeActive(_ notification: Notification) {
-        NSApp.windows.forEach { installBackgroundWindowPolicy(on: $0) }
-    }
-
-    private func installBackgroundWindowPolicy(on window: NSWindow) {
-        // Sheets must keep their normal close behavior. Only top-level App
-        // windows are hidden on X so the Agent process and polling remain alive.
-        guard window.parent == nil, window.canBecomeKey else { return }
-        window.delegate = self
-    }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard !terminationInProgress else { return true }
-        sender.orderOut(nil)
-        return false
+        statusItem = item
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(
         _ sender: NSApplication
     ) -> Bool {
         // Closing the window hides the control surface but deliberately keeps
-        // the Agent and its LaunchAgent alive. Use Dock > Quit for an explicit
-        // application termination.
+        // the Agent and its LaunchAgent alive. Use the status-item right click
+        // to perform the explicit application quit below.
         false
     }
 
-    func applicationShouldHandleReopen(
-        _ sender: NSApplication,
-        hasVisibleWindows flag: Bool
-    ) -> Bool {
+    @objc private func statusItemAction(_ sender: Any?) {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.buttonNumber == 2 {
+            NSApp.terminate(nil)
+            return
+        }
         showMainWindow()
-        return true
     }
 
     private func showMainWindow() {
@@ -86,7 +72,7 @@ struct YumeLifeAfterMacAgentApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        Window("Yume Life After Mac Agent", id: "main") {
+        WindowGroup {
             RootView()
                 .environmentObject(model)
                 .preferredColorScheme(model.theme.colorScheme)

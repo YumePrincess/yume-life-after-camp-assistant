@@ -154,50 +154,6 @@ test("an activity call-to-action closes a post-login promotion at the calibrated
   );
 });
 
-test("a stylized activity CTA is recovered from the calibrated keyword region", async () => {
-  const fixture = createFixture(
-    [["登录游戏"], [], ["背包"]],
-    null,
-    [],
-    "shadow",
-    {
-      readyMinimumTexts: 1,
-      readyStableFrames: 1,
-      readyStableMs: 0,
-      postLoginMinimumWaitMs: 0,
-      loadingQuietMs: 0
-    },
-    [[]],
-    [[{ text: "立即前往", x: 900, y: 930 }], []]
-  );
-  await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [
-    { x: 960, y: 945 },
-    { x: 960, y: 1140 }
-  ]);
-  assert.ok(
-    fixture.messages.some((message) =>
-      message.includes("高精度 OCR") || message.includes("活动宣传页特征")
-    )
-  );
-});
-
-test("a split newspaper keyword still closes the Hope newspaper page", async () => {
-  const fixture = createFixture([
-    ["登录游戏"],
-    ["希望报"],
-    ["背包"]
-  ]);
-  await waitForGameReady(fixture.context);
-  assert.deepEqual(fixture.taps, [
-    { x: 960, y: 945 },
-    { x: 960, y: 1140 }
-  ]);
-  assert.ok(
-    fixture.messages.some((message) => message.includes("关键词“希望报”"))
-  );
-});
-
 test("an accidental activity page returns through the bottom-left back point", async () => {
   const fixture = createFixture([
     ["登录游戏"],
@@ -212,6 +168,30 @@ test("an accidental activity page returns through the bottom-left back point", a
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("检测到活动页面左侧")
+    )
+  );
+});
+
+test("guarded AI closes a post-login system announcement with the top-right X", async () => {
+  const fixture = createFixture(
+    [["登录游戏"], [], [], [], ["背包"]],
+    {
+      state: "prelogin_announcement",
+      action: "wait",
+      confidence: 0.97,
+      evidence: "全屏活动主视觉"
+    },
+    [],
+    "guarded"
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [
+    { x: 960, y: 945 },
+    { x: 1742, y: 155 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("本地模型确认系统公告")
     )
   );
 });
@@ -264,6 +244,42 @@ test("a system announcement shown after the login tap still closes by its top-ri
   );
 });
 
+test("a very-low-confidence local-model login candidate never clicks", async () => {
+  const fixture = createFixture(
+    [[], ["背包"]],
+    {
+      state: "login",
+      action: "wait",
+      confidence: 0.2,
+      evidence: "误判"
+    },
+    [],
+    "guarded"
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, []);
+});
+
+test("a clear local-model login candidate clicks the calibrated login button", async () => {
+  const fixture = createFixture(
+    [[], [], ["背包"]],
+    {
+      state: "login",
+      action: "wait",
+      confidence: 0.45,
+      evidence: "底部登录按钮"
+    },
+    [],
+    "guarded"
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+  assert.deepEqual(fixture.touchTaps, [{ x: 960, y: 945 }]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("固定登录按钮"))
+  );
+});
+
 test("accurate OCR recovers a login button missed by fast OCR", async () => {
   const fixture = createFixture(
     [[], [], ["背包"]],
@@ -280,6 +296,17 @@ test("accurate OCR recovers a login button missed by fast OCR", async () => {
   );
 });
 
+test("a slow local model never blocks the deterministic login loop", async () => {
+  const fixture = createFixture(
+    [[], ["背包"]],
+    () => new Promise(() => {})
+  );
+  const startedAt = Date.now();
+  await waitForGameReady(fixture.context);
+  assert.ok(Date.now() - startedAt < 1_500);
+  assert.deepEqual(fixture.taps, []);
+});
+
 test("an accurate OCR timeout degrades to fast OCR without ending login", async () => {
   const fixture = createFixture(
     [[], [], ["背包"]],
@@ -291,6 +318,27 @@ test("an accurate OCR timeout degrades to fast OCR without ending login", async 
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("已自动退回快速 OCR")
+    )
+  );
+});
+
+test("guarded mode permits a fixed login tap at 0.95 confidence", async () => {
+  const fixture = createFixture(
+    [[], [], [], ["背包"]],
+    {
+      state: "login",
+      action: "wait",
+      confidence: 0.95,
+      evidence: "底部登录按钮清晰可见"
+    },
+    [],
+    "guarded"
+  );
+  await waitForGameReady(fixture.context);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("高置信度")
     )
   );
 });
@@ -362,7 +410,7 @@ test("HUD distance and status numbers outside the loading bar never reset readin
   assert.match(fixture.messages.at(-1), /游戏界面已就绪/);
 });
 
-test("two bottom-left chat channel anchors confirm HUD using OCR", async () => {
+test("two bottom-left chat channel anchors confirm HUD without local-model classification", async () => {
   const channelFrame = [
     { text: "综合", x: 30, y: 1090 },
     { text: "世界", x: 120, y: 1090 },
@@ -581,8 +629,7 @@ function createFixture(
   accurateFrames = [],
   advisorMode = "shadow",
   readyPolicy = {},
-  regionalFrames = [],
-  promotionFrames = []
+  regionalFrames = []
 ) {
   const taps = [];
   const touchTaps = [];
@@ -590,7 +637,6 @@ function createFixture(
   let frameIndex = 0;
   let accurateFrameIndex = 0;
   let regionalFrameIndex = 0;
-  let promotionFrameIndex = 0;
   const vision = {
     advisor: modelAdvice
       ? {
@@ -621,24 +667,17 @@ function createFixture(
         })
       };
     },
-    ...(regionalFrames.length || promotionFrames.length
+    ...(regionalFrames.length
       ? {
-          async captureSource(label) {
-            return {
-              path: label.includes("promotion")
-                ? "/tmp/mock-game-promotion.png"
-                : "/tmp/mock-game-ready-channel.png",
-              observations: []
-            };
+          async captureSource() {
+            return { path: "/tmp/mock-game-ready-channel.png", observations: [] };
           },
-          async ocrRegion(_path, _region, label) {
-            const sourceFrames = label.includes("promotion")
-              ? promotionFrames
-              : regionalFrames;
-            const index = label.includes("promotion")
-              ? promotionFrameIndex++
-              : regionalFrameIndex++;
-            return (sourceFrames[Math.min(index, sourceFrames.length - 1)] || []).map((item) => ({
+          async ocrRegion() {
+            return (
+              regionalFrames[
+                Math.min(regionalFrameIndex++, regionalFrames.length - 1)
+              ] || []
+            ).map((item) => ({
               confidence: 1,
               width: 10,
               height: 10,

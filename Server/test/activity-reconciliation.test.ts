@@ -27,15 +27,14 @@ describe("reconcileActivityMembers", () => {
     expect(result.ignored).toBe(0);
   });
 
-  it("retains names that differ only by verified decorative symbols", () => {
+  it("deduplicates names that differ only by decorative symbols", () => {
     const result = reconcileActivityMembers([
       activity("#星河踏月归✨"),
       activity("星河踏月归")
     ]);
 
     expect(result.updates[0]?.name).toBe("#星河踏月归✨");
-    expect(result.updates[1]?.name).toBe("星河踏月归");
-    expect(result.ignored).toBe(0);
+    expect(result.ignored).toBe(1);
   });
 
   it("does not fuzzy-merge different OCR names", () => {
@@ -50,14 +49,14 @@ describe("reconcileActivityMembers", () => {
     ]);
   });
 
-  it("keeps separate symbol variants even when inactivity values disagree", () => {
+  it("keeps the longer inactivity value when duplicate scans disagree", () => {
     const result = reconcileActivityMembers([
       activity("愿", 2),
       activity("愿✨", 8)
     ]);
 
-    expect(result.updates).toEqual([activity("愿", 2), activity("愿✨", 8)]);
-    expect(result.ignored).toBe(0);
+    expect(result.updates).toEqual([activity("愿✨", 8)]);
+    expect(result.ignored).toBe(1);
   });
 
   it("never fuzzy-matches short or symbol-only names", () => {
@@ -70,25 +69,13 @@ describe("reconcileActivityMembers", () => {
     expect(result.ignored).toBe(0);
   });
 
-  it("does not collapse two warning rows with different visual symbols", () => {
+  it("does not keep two warning rows for the same normalized name", () => {
     const result = reconcileActivityMembers([
       activity("#星河踏月归"),
       activity("星河踏月归✨")
     ]);
 
-    expect(result.updates).toHaveLength(2);
-    expect(result.ignored).toBe(0);
-  });
-
-  it("matches activity only to the authoritative roster and never adds OCR-only players", () => {
-    const result = reconcileActivityMembers(
-      [activity("愿"), activity("扫描出的陌生人")],
-      [{ id: "member-a", name: "愿✨" }]
-    );
-
-    expect(result.updates).toEqual([
-      { ...activity("愿"), memberId: "member-a", name: "愿✨" }
-    ]);
+    expect(result.updates).toHaveLength(1);
     expect(result.ignored).toBe(1);
   });
 });

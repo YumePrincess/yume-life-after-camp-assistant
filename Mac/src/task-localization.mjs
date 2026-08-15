@@ -1,6 +1,18 @@
 const LOCALES = new Set(["zh-cn", "zh-tw", "en", "fr", "ja"]);
 
 const FIXED_TRANSLATIONS = {
+  "正在按任务启动本地视觉辅助模型": {
+    "zh-tw": "正在依任務啟動本機視覺輔助模型",
+    en: "Starting the local vision assistant for this task",
+    fr: "Démarrage de l’assistant visuel local pour cette tâche",
+    ja: "タスク用のローカル視覚アシスタントを起動しています"
+  },
+  "本地视觉模型未能启动，本次任务继续使用 OCR 与确定性流程": {
+    "zh-tw": "本機視覺模型未能啟動，本次任務繼續使用 OCR 與確定性流程",
+    en: "The local vision model did not start; continuing with OCR and deterministic steps",
+    fr: "Le modèle visuel local n’a pas démarré ; poursuite avec l’OCR et les étapes déterministes",
+    ja: "ローカル視覚モデルを起動できないため、OCR と決定的な手順で続行します"
+  },
   "正在后台启动 MuMu 模拟器": {
     "zh-tw": "正在背景啟動 MuMu 模擬器",
     en: "Starting the MuMu emulator in the background",
@@ -36,6 +48,12 @@ const FIXED_TRANSLATIONS = {
     en: "The task is complete; stopping MuMu to save resources and power",
     fr: "Tâche terminée ; arrêt de MuMu pour économiser les ressources et l’énergie",
     ja: "タスクが終了したため、リソースと電力節約のため MuMu を停止しています"
+  },
+  "任务已结束，正在释放本地视觉模型内存": {
+    "zh-tw": "任務已結束，正在釋放本機視覺模型記憶體",
+    en: "The task is complete; releasing local vision-model memory",
+    fr: "Tâche terminée ; libération de la mémoire du modèle visuel local",
+    ja: "タスクが終了したため、ローカル視覚モデルのメモリを解放しています"
   },
   "任务成功；已完成资源清理": {
     "zh-tw": "任務成功；已完成資源清理",

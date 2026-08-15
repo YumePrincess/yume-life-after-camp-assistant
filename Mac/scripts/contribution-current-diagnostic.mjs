@@ -43,11 +43,13 @@ for (const signalName of ["SIGINT", "SIGTERM"]) {
 }
 
 vision.beginTask();
+let advisorStarted = false;
 let rows = [];
 let completed = false;
 const startedAt = Date.now();
 try {
   await adb.connect();
+  advisorStarted = await vision.startAdvisor(controller.signal);
   rows = normalizeContribution(
     await capturePagedTable(
       context,
@@ -60,6 +62,9 @@ try {
   completed = true;
 } finally {
   const removedScreenshots = await vision.cleanupTask().catch(() => 0);
+  if (advisorStarted) {
+    await vision.stopAdvisor().catch(() => undefined);
+  }
   const maximumMaterial = rows.reduce(
     (maximum, row) =>
       Math.max(maximum, Number(row.materialContribution) || 0),
