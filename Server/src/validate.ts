@@ -9,7 +9,13 @@ import type {
   TechnologyDefinition,
   TechnologyLane
 } from "./domain";
-import { assertClock, assertTimezone, assertWindowEndClock } from "./time";
+import {
+  assertClock,
+  assertTimezone,
+  assertWindowEndClock,
+  clockToMinutes,
+  windowEndClockToMinutes
+} from "./time";
 
 const CATEGORY_VALUES = new Set<TechnologyCategory>([
   "military",
@@ -202,6 +208,12 @@ export function validateCampConfig(value: unknown): CampConfig {
   assertWindowEndClock(voteWindowEnd, "campConfig.voteWindowEnd");
   if (voteWindowStart === voteWindowEnd) {
     throw new Error("campConfig vote window cannot be empty");
+  }
+  if (
+    clockToMinutes(voteWindowStart) > windowEndClockToMinutes(voteWindowEnd) &&
+    windowEndClockToMinutes(voteWindowEnd) >= clockToMinutes(gameResetTime)
+  ) {
+    throw new Error("跨日科技投票截止时间必须早于游戏每日刷新时间");
   }
   return {
     timezone,

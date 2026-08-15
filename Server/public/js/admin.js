@@ -460,12 +460,10 @@
 
   function setTechnologyVoteEnd(value) {
     const field = input("voteWindowEnd");
-    const preset = byId("technology-vote-end-midnight");
     if (!field) return;
     const isMidnight = value === "24:00";
     field.value = isMidnight ? "23:59" : value || "";
-    field.dataset.midnight = String(isMidnight);
-    if (preset) preset.setAttribute("aria-pressed", String(isMidnight));
+    field.dataset.legacyValue = isMidnight ? "24:00" : "";
   }
 
   function updateSaveState(fallback = "") {
@@ -2303,7 +2301,7 @@
         ...next.campConfig,
         voteWindowStart: String(getField("voteWindowStart")).trim(),
         voteWindowEnd:
-          input("voteWindowEnd")?.dataset.midnight === "true"
+          input("voteWindowEnd")?.dataset.legacyValue === "24:00"
             ? "24:00"
             : String(getField("voteWindowEnd")).trim(),
         currentCampType: getField("currentCampType")
@@ -3052,12 +3050,7 @@
   input("voteWindowEnd")?.addEventListener("input", () => {
     const field = input("voteWindowEnd");
     if (!field) return;
-    field.dataset.midnight = "false";
-    byId("technology-vote-end-midnight")?.setAttribute("aria-pressed", "false");
-  });
-  byId("technology-vote-end-midnight")?.addEventListener("click", () => {
-    setTechnologyVoteEnd("24:00");
-    markTechnologyDirty();
+    field.dataset.legacyValue = "";
   });
   byId("refresh-technology-history").addEventListener("click", () =>
     loadTechnologyHistory(byId("technology-history-date").value)

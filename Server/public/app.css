@@ -2361,40 +2361,6 @@ select option {
   margin: 0;
 }
 
-.technology-time-control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: stretch;
-  gap: 8px;
-}
-
-.time-preset-button {
-  min-width: 62px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.035);
-  cursor: pointer;
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  transition:
-    color var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out),
-    background var(--duration-fast) var(--ease-out),
-    transform var(--duration-fast) var(--ease-out);
-}
-
-.time-preset-button[aria-pressed="true"] {
-  border-color: rgba(235, 184, 97, 0.72);
-  color: var(--text);
-  background: rgba(221, 161, 70, 0.14);
-}
-
-.time-preset-button:active {
-  transform: scale(0.98);
-}
-
 .policy-advice {
   margin-top: 14px;
   padding: 13px 15px;

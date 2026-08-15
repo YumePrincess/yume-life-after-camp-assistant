@@ -45,6 +45,14 @@ describe("daily voting window", () => {
         "02:00"
       )
     ).toBe(true);
+    expect(
+      isWithinDailyClockWindow(
+        new Date("2026-07-26T19:00:00.000Z"),
+        "Asia/Shanghai",
+        "03:00",
+        "02:30"
+      )
+    ).toBe(true);
   });
 
   it("uses the configured daily reset as the archive boundary", () => {
@@ -83,6 +91,14 @@ describe("technology target date", () => {
         "03:00"
       )
     ).toBe("2026-07-27");
+    expect(
+      nextTechnologyTargetDate(
+        new Date("2026-07-26T19:00:00.000Z"),
+        "Asia/Shanghai",
+        "03:00",
+        "03:00"
+      )
+    ).toBe("2026-07-28");
   });
 
   it("keeps the next-day result through midnight until the daily refresh", () => {

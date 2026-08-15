@@ -7,26 +7,50 @@ import {
 } from "../src/validate";
 
 describe("five-task automation configuration", () => {
-  it("defaults the reserved special daily refresh to midnight", () => {
-    const base = {
-      timezone: "Asia/Shanghai",
-      gameResetTime: "03:00",
-      voteWindowStart: "06:30",
-      voteWindowEnd: "24:00",
-      currentCampType: "agriculture",
-      agentId: "",
-      publicSiteName: "Site",
-      campName: "Camp",
-      serverName: "Server",
-      publicMembersEnabled: true,
-      inactivityWarningDays: 1
-    };
+  const base = {
+    timezone: "Asia/Shanghai",
+    gameResetTime: "03:00",
+    voteWindowStart: "06:30",
+    voteWindowEnd: "24:00",
+    currentCampType: "agriculture",
+    agentId: "",
+    publicSiteName: "Site",
+    campName: "Camp",
+    serverName: "Server",
+    publicMembersEnabled: true,
+    inactivityWarningDays: 1
+  };
 
+  it("defaults the reserved special daily refresh to midnight", () => {
     expect(validateCampConfig(base).specialDailyRefreshTime).toBe("00:00");
     expect(
       validateCampConfig({ ...base, specialDailyRefreshTime: "01:15" })
         .specialDailyRefreshTime
     ).toBe("01:15");
+  });
+
+  it("keeps an overnight vote cutoff before the next game refresh", () => {
+    const overnight = validateCampConfig({
+      ...base,
+      voteWindowStart: "03:00",
+      voteWindowEnd: "02:30"
+    });
+    expect(overnight.voteWindowStart).toBe("03:00");
+    expect(overnight.voteWindowEnd).toBe("02:30");
+    expect(() =>
+      validateCampConfig({
+        ...base,
+        voteWindowStart: "03:30",
+        voteWindowEnd: "03:30"
+      })
+    ).toThrow("campConfig vote window cannot be empty");
+    expect(() =>
+      validateCampConfig({
+        ...base,
+        voteWindowStart: "04:30",
+        voteWindowEnd: "03:00"
+      })
+    ).toThrow("跨日科技投票截止时间必须早于游戏每日刷新时间");
   });
 
   it("defaults the four daytime tasks and removes legacy routines", () => {
