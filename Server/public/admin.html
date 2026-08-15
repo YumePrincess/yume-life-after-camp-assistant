@@ -384,41 +384,39 @@
                     <option value="industry">工业</option>
                   </select>
                 </label>
+                <label class="field technology-vote-limit-field">
+                  <span>每人投票上限（0–12）</span>
+                  <input id="technology-vote-limit" type="number" min="0" max="12" step="1" value="6" />
+                </label>
+                <label class="field technology-row-limit-field">
+                  <span>第一行科技最大开放数量</span>
+                  <select id="technology-core-limit">
+                    <option value="0">0</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6" selected>6</option>
+                  </select>
+                </label>
+                <label class="field technology-row-limit-field">
+                  <span>第二行科技最大开放数量</span>
+                  <select id="technology-general-limit">
+                    <option value="0">0</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6" selected>6</option>
+                  </select>
+                </label>
               </div>
               <div class="technology-editor-toolbar">
                 <div class="technology-date-picker">
                   <span class="field-label">固定科技适用日期</span>
                   <div id="technology-weekdays" class="weekday-tabs" role="tablist"></div>
-                </div>
-                <div class="technology-limits">
-                  <label class="field technology-vote-limit-field">
-                    <span>每人投票上限（0–12）</span>
-                    <input id="technology-vote-limit" type="number" min="0" max="12" step="1" value="6" />
-                  </label>
-                  <label class="field technology-row-limit-field">
-                    <span>第一行科技最大开放数量</span>
-                    <select id="technology-core-limit">
-                      <option value="0">0</option>
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4</option>
-                      <option value="5">5</option>
-                      <option value="6" selected>6</option>
-                    </select>
-                  </label>
-                  <label class="field technology-row-limit-field">
-                    <span>第二行科技最大开放数量</span>
-                    <select id="technology-general-limit">
-                      <option value="0">0</option>
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4</option>
-                      <option value="5">5</option>
-                      <option value="6" selected>6</option>
-                    </select>
-                  </label>
                 </div>
               </div>
               <div class="technology-preview-heading">

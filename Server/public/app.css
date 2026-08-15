@@ -2301,7 +2301,7 @@ select option {
 
 .technology-editor-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.42fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 18px;
   margin: 22px 0 14px;
@@ -2314,7 +2314,7 @@ select option {
 .technology-schedule-settings {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0 15px;
+  gap: 16px 15px;
   margin-top: 22px;
   padding: 16px;
   border: 1px solid var(--line);
@@ -2352,8 +2352,7 @@ select option {
   font-size: 12px;
 }
 
-.weekday-tabs,
-.technology-limits {
+.weekday-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -2363,12 +2362,6 @@ select option {
   min-width: 0;
   display: grid;
   align-content: start;
-}
-
-.technology-limits {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: stretch;
 }
 
 .weekday-tab {
@@ -2384,49 +2377,22 @@ select option {
 }
 
 .technology-vote-limit-field {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
+  min-width: 0;
 }
 
-.technology-vote-limit-field > span {
-  min-height: 0;
-  justify-content: flex-start;
-  padding: 0;
-  border: 0;
-  color: var(--muted);
-  background: transparent;
-  font-size: 12px;
-  white-space: normal;
-}
-
-.technology-vote-limit-field input {
-  min-height: 40px;
-  padding-inline: 12px;
-}
-
-.technology-row-limit-field {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px;
-  align-items: center;
-  gap: 10px;
+.technology-schedule-settings .technology-vote-limit-field,
+.technology-schedule-settings .technology-row-limit-field {
   min-width: 0;
   margin: 0;
 }
 
-.technology-row-limit-field > span {
-  min-width: 0;
-  color: var(--muted);
-  font-size: 12px;
+.technology-schedule-settings .technology-vote-limit-field > span,
+.technology-schedule-settings .technology-row-limit-field > span {
   line-height: 1.35;
 }
 
-.technology-row-limit-field select {
-  min-height: 40px;
-  padding-inline: 12px 30px;
+.technology-row-limit-field {
+  min-width: 0;
 }
 
 .weekday-tab {
@@ -3357,10 +3323,6 @@ dialog::backdrop {
 
   .technology-editor-toolbar {
     align-items: stretch;
-    grid-template-columns: 1fr;
-  }
-
-  .technology-limits {
     grid-template-columns: 1fr;
   }
 
