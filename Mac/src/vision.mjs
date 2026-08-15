@@ -260,7 +260,6 @@ export class Vision {
         signal
       );
     }
-    if (!this.advisor.enabled) return [];
     const isMemberDetails = [
       "identity",
       "profession",
@@ -277,6 +276,7 @@ export class Vision {
         options
       );
     }
+    if (!this.advisor.enabled) return [];
     return [];
   }
 
@@ -681,6 +681,26 @@ export class Vision {
     if (anchors.length > rowsPerPage) {
       anchors = anchors.slice(-rowsPerPage);
     }
+    // Online/offline OCR is only an alignment aid. A single missed status
+    // token must not make the whole page look like a four-row page: the table
+    // has calibrated geometry, so rebuild all row slots from that geometry
+    // whenever the regional OCR returns fewer anchors than the visible page.
+    // The caller still stops when repeated reads remain below the page minimum.
+    const fixedRowHeight = Number(definition.pagination?.rowHeightPx);
+    const fixedRowTop = Number(
+      definition.rowAnchorTop ?? definition.pagination?.rowAnchorTop
+    );
+    if (
+      anchors.length < rowsPerPage &&
+      Number.isFinite(fixedRowHeight) &&
+      fixedRowHeight > 0 &&
+      Number.isFinite(fixedRowTop)
+    ) {
+      anchors = Array.from(
+        { length: rowsPerPage },
+        (_, index) => fixedRowTop + index * fixedRowHeight
+      );
+    }
     if (!anchors.length) return [];
 
     const rowSpacing =
@@ -701,12 +721,58 @@ export class Vision {
         return y >= upper && y < lower;
       });
       return {
+        upper,
+        lower,
         items,
         identity: inferMemberIdentity(
           itemsInColumn(items, columnBounds.get("identity"))
         )
       };
     });
+    const missingIdentityRows = rowData.filter(
+      (row) => !String(row.identity?.name || "").trim()
+    );
+    if (missingIdentityRows.length) {
+      const identityBounds = columnBounds.get("identity");
+      const recoveryRows = await Promise.all(
+        missingIdentityRows.map(async (row, recoveryIndex) => {
+          const identityRegion = {
+            left: identityBounds.left,
+            top: Math.max(region.top, row.upper - 12),
+            right: identityBounds.right,
+            bottom: Math.min(region.bottom, row.lower + 12)
+          };
+          if (identityRegion.bottom <= identityRegion.top) return null;
+          const recovered = await this.ocrRegion(
+            imagePath,
+            identityRegion,
+            `${label}-identity-row-recovery-${recoveryIndex + 1}`,
+            signal,
+            "accurate",
+            0,
+            8,
+            Math.max(1, Number(this.config.vision?.memberTableTimeoutSeconds) || 2)
+          ).catch(() => []);
+          const inRow = recovered.filter((item) => {
+            const y = centerY(item);
+            return y >= row.upper && y < row.lower;
+          });
+          const identity = inferMemberIdentity(inRow);
+          return identity.name ? { row, identity, recovered: inRow } : null;
+        })
+      );
+      for (const recovered of recoveryRows.filter(Boolean)) {
+        recovered.row.identity = recovered.identity;
+        recovered.row.items = [
+          ...recovered.row.items.filter(
+            (item) =>
+              centerX(item) < identityBounds.left ||
+              centerX(item) >= identityBounds.right
+          ),
+          ...recovered.recovered
+        ];
+      }
+    }
     const nativeNameCounts = new Map();
     for (const row of rowData) {
       const key = comparableVisionName(
@@ -717,12 +783,13 @@ export class Vision {
     const forceMemberAdvisor = Boolean(options.forceMemberAdvisor);
     let advisedByRow = new Map();
     if (
-      forceMemberAdvisor ||
-      rowData.some(
-        (row) =>
-          !isPlausibleMemberName(row.identity.name) ||
-          nativeNameCounts.get(comparableVisionName(row.identity.name)) > 1
-      )
+      this.advisor.enabled &&
+      (forceMemberAdvisor ||
+        rowData.some(
+          (row) =>
+            !isPlausibleMemberName(row.identity.name) ||
+            nativeNameCounts.get(comparableVisionName(row.identity.name)) > 1
+        ))
     ) {
       const cropPath = resolve(
         this.snapshotDir,

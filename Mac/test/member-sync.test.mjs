@@ -314,8 +314,8 @@ test("member profile pagination reaches the bottom before organizing to the head
       }
     },
     ui: { async afterAction() {} },
-    async report(_level, step) {
-      reports.push(step);
+    async report(_level, step, message, detail) {
+      reports.push({ step, message, detail });
     }
   };
   const rows = await capturePagedTable(
@@ -343,8 +343,15 @@ test("member profile pagination reaches the bottom before organizing to the head
   );
   assert.equal(swipes, 4);
   assert.ok(
-    reports.includes("member_details_bottom_reached")
+    reports.some(({ step }) => step === "member_details_bottom_reached")
   );
+  const pageReport = reports.find(({ step }) => step === "member-details_page");
+  assert.deepEqual(pageReport.detail.finalPlayerNames, [
+    "成员一",
+    "成员二",
+    "成员三"
+  ]);
+  assert.match(pageReport.message, /最终玩家：成员一、成员二、成员三/);
 });
 
 test("member profile scan uses five-row pages and a full tail page", async () => {
@@ -505,6 +512,60 @@ test("incomplete calculated tail keeps both continuation pages in full-page mode
     swipes.map(({ durationMs }) => durationMs),
     [700, 700, 700]
   );
+});
+
+test("member profile scan stops immediately when a page remains incomplete", async () => {
+  let swipes = 0;
+  const reports = [];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows() {
+        return Array.from({ length: 4 }, (_, index) => ({
+          name: `成员${index + 1}`
+        }));
+      }
+    },
+    adb: {
+      async mouseSwipe() {
+        swipes += 1;
+      }
+    },
+    ui: { async afterAction() {} },
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 30,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        maxIncompletePageRetries: 3,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 7,
+        stopAfterStagnantPages: 3,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 90 }
+  );
+
+  assert.equal(rows.length, 4);
+  assert.equal(swipes, 0);
+  assert.ok(reports.includes("member_details_tail_complete"));
+  assert.ok(reports.includes("member_details_bottom_reached"));
 });
 
 test("tail recovery keeps a valid native row when the advisor drops it", async () => {

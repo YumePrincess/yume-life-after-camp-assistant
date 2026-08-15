@@ -977,15 +977,23 @@ export async function capturePagedTable(
       );
     }
     const elapsedMs = Date.now() - pageStartedAt;
+    const finalPlayerNames = memberDetailsMode
+      ? rows
+          .map((row) => String(row?.name || "").trim())
+          .filter(Boolean)
+      : null;
     await report(
       "info",
       `${label}_page`,
-      `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${byName.size} 名成员（耗时 ${elapsedMs}ms）`,
+      memberDetailsMode
+        ? `第 ${page + 1} 页识别 ${rows.length} 行，最终玩家：${finalPlayerNames.join("、") || "无"}，累计 ${byName.size} 名成员（耗时 ${elapsedMs}ms）`
+        : `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${byName.size} 名成员（耗时 ${elapsedMs}ms）`,
       {
         screenshot: frame.path,
         expectedCount,
         rejectedAfterExpectedCount,
-        elapsedMs
+        elapsedMs,
+        ...(memberDetailsMode ? { finalPlayerNames } : {})
       }
     );
     const scanProgress = progressForRange(

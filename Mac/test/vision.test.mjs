@@ -142,6 +142,60 @@ test("member table OCR starts at the identity column and excludes avatar artwork
   assert.equal(ocrRegion.right, 1800);
 });
 
+test("member table OCR restores missing row slots from calibrated geometry", async () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ],
+    pagination: { rowsPerPage: 5, rowHeightPx: 95 }
+  };
+  const vision = new Vision({
+    adb: { screenWidth: 1920, screenHeight: 1200 },
+    vision: {},
+    localVisionModel: { enabled: false }
+  }, {});
+  let pass = 0;
+  vision.ocrRegion = async (_path, region) => {
+    pass += 1;
+    if (pass === 1) {
+      return [
+        { text: "成员一", x: 320, y: 315, width: 80, height: 24 },
+        { text: "在线", x: 1200, y: 315, width: 40, height: 24 },
+        { text: "成员二", x: 320, y: 410, width: 80, height: 24 },
+        { text: "离线", x: 1200, y: 410, width: 40, height: 24 },
+        { text: "成员三", x: 320, y: 505, width: 80, height: 24 },
+        { text: "在线", x: 1200, y: 505, width: 40, height: 24 },
+        { text: "成员五", x: 320, y: 695, width: 80, height: 24 },
+        { text: "在线", x: 1200, y: 695, width: 40, height: 24 }
+      ];
+    }
+    return region.top < 600
+      ? [{ text: "成员四", x: 320, y: 600, width: 80, height: 24 }]
+      : [];
+  };
+
+  const rows = await vision.extractTableRows(
+    "/private/tmp/member-table.png",
+    definition,
+    "member-details-test"
+  );
+
+  assert.equal(rows.length, 5);
+  assert.deepEqual(rows.map((row) => row.name), [
+    "成员一",
+    "成员二",
+    "成员三",
+    "成员四",
+    "成员五"
+  ]);
+});
+
 test("member identity keeps the first OCR line as the player name", () => {
   assert.deepEqual(
     inferMemberIdentity([
