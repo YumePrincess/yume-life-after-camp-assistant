@@ -20,11 +20,13 @@ struct RootView: View {
                 }
                 .navigationSplitViewStyle(.balanced)
                 .toolbar(removing: .sidebarToggle)
-                .toolbar(.hidden, for: .windowToolbar)
                 .background(.clear)
             } else {
                 UnsupportedPlatformView()
             }
+            WindowChromeConfigurator()
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
         }
         .environment(\.locale, model.locale)
         .onAppear {
@@ -61,6 +63,42 @@ struct RootView: View {
         case .plugins: PluginsView()
         case .admin: AdminView()
         case .settings: SettingsView()
+        }
+    }
+}
+
+private struct WindowChromeConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        WindowChromeView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class WindowChromeView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+
+            // Keep the custom content under a transparent native title bar,
+            // while explicitly restoring the familiar macOS traffic lights.
+            window.styleMask.insert(.titled)
+            window.styleMask.insert(.closable)
+            window.styleMask.insert(.miniaturizable)
+            window.styleMask.insert(.resizable)
+            window.styleMask.insert(.fullSizeContentView)
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.isMovableByWindowBackground = true
+
+            for button in [
+                window.standardWindowButton(.closeButton),
+                window.standardWindowButton(.miniaturizeButton),
+                window.standardWindowButton(.zoomButton)
+            ] {
+                button?.isHidden = false
+                button?.alphaValue = 1
+                button?.superview?.isHidden = false
+            }
         }
     }
 }

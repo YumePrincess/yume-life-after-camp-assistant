@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import Foundation
+import AppKit
 
 @MainActor
 final class AdminBrowser: NSObject, ObservableObject, WKNavigationDelegate {
@@ -20,6 +21,27 @@ final class AdminBrowser: NSObject, ObservableObject, WKNavigationDelegate {
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.navigationDelegate = self
+    }
+
+    func hideScrollIndicators() {
+        DispatchQueue.main.async { [weak self] in
+            guard let webView = self?.webView,
+                  let scrollView = webView.enclosingScrollView ?? Self.firstScrollView(in: webView)
+            else { return }
+            scrollView.hasVerticalScroller = true
+            scrollView.hasHorizontalScroller = false
+            scrollView.scrollerStyle = .overlay
+            scrollView.verticalScroller?.isHidden = true
+            scrollView.horizontalScroller?.isHidden = true
+        }
+    }
+
+    private static func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let scrollView = view as? NSScrollView { return scrollView }
+        for child in view.subviews {
+            if let scrollView = firstScrollView(in: child) { return scrollView }
+        }
+        return nil
     }
 
     func load(baseURL: String, adminKey: String? = nil) {
@@ -53,6 +75,7 @@ final class AdminBrowser: NSObject, ObservableObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isLoading = false
         pageTitle = webView.title ?? ""
+        hideScrollIndicators()
         let path = webView.url?.path ?? ""
         if path == "/login" {
             loginWithPendingAdminKeyIfNeeded()
@@ -122,6 +145,9 @@ final class AdminBrowser: NSObject, ObservableObject, WKNavigationDelegate {
 
 struct AdminWebView: NSViewRepresentable {
     @ObservedObject var browser: AdminBrowser
-    func makeNSView(context: Context) -> WKWebView { browser.webView }
+    func makeNSView(context: Context) -> WKWebView {
+        browser.hideScrollIndicators()
+        return browser.webView
+    }
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
