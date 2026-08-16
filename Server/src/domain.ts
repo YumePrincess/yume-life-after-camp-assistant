@@ -88,6 +88,7 @@ export interface AutomationConfig {
   timezone: string;
   schedulerGraceMinutes: number;
   scheduledRetryCount: number;
+  manualRetryCount: number;
   agentPolling: {
     activeSeconds: number;
     idleSeconds: number;

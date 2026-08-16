@@ -30,6 +30,14 @@
 "The latest Agent output refreshes automatically." = "自動重新整理 Agent 的最新輸出。";
 "Refresh" = "重新整理";
 "No log entries yet." = "暫無記錄。";
+"Clear logs" = "清除記錄";
+"Current task only" = "僅顯示目前任務";
+"All logs" = "全部記錄";
+"Logs cleared" = "執行記錄已清除";
+"Previous" = "上一頁";
+"Next" = "下一頁";
+"Page {current} of {total}" = "第 {current} / {total} 頁";
+"Log page" = "記錄頁碼";
 "Add plugin…" = "加入外掛…";
 "Check for updates" = "檢查更新";
 "Built-in" = "內建";

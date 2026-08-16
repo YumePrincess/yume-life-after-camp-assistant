@@ -11,10 +11,14 @@ BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${APP_BUNDLE}/Cont
 RELEASE_LABEL="Yume Life After Mac Agent ${VERSION} Build ${BUILD}"
 # Keep the mounted volume name distinct from older open release windows. This
 # prevents Finder from reusing a stale window and writing its .DS_Store to the
-# wrong image while retaining the release name in the DMG filename.
+# wrong image while retaining the release name in the DMG filename. When an
+# image is attached with an explicit mountpoint, Finder addresses the mounted
+# disk by that mountpoint basename rather than the HFS volume name.
 VOLUME_NAME="${RELEASE_LABEL} Installer"
 STAGING="/private/tmp/yla-dmg-root"
 RW_IMAGE="/private/tmp/Yume-Life-After-Mac-Agent-rw.dmg"
+MOUNT_POINT="/private/tmp/yla-dmg-mount"
+MOUNT_NAME="${MOUNT_POINT:t}"
 FINAL_IMAGE="${DIST_ROOT}/${RELEASE_LABEL}.dmg"
 PYTHON_BIN="${YLA_DMG_PYTHON:-$(command -v python3 || true)}"
 
@@ -45,7 +49,7 @@ detach_existing_image() {
 osascript <<APPLESCRIPT >/dev/null 2>&1 || true
 tell application "Finder"
   try
-    set previousDisk to disk "${VOLUME_NAME}"
+    set previousDisk to disk "${MOUNT_NAME}"
     try
       close container window of previousDisk
     end try
@@ -58,19 +62,16 @@ detach_existing_image "${FINAL_IMAGE}"
 rm -rf -- "${STAGING}"
 rm -f -- "${RW_IMAGE}" "${FINAL_IMAGE}"
 mkdir -p "${STAGING}/.background"
+mkdir -p "${MOUNT_POINT}"
 ditto "${APP_BUNDLE}" "${STAGING}/${APP_NAME}"
 ln -s /Applications "${STAGING}/Applications"
 "${PYTHON_BIN}" "${SCRIPT_DIR}/build-dmg-background.py" "${STAGING}/.background/background.png"
 
 hdiutil create -quiet -srcfolder "${STAGING}" -volname "${VOLUME_NAME}" -fs HFS+ -format UDRW "${RW_IMAGE}"
-ATTACH_OUTPUT=$(hdiutil attach -readwrite -noverify -noautoopen "${RW_IMAGE}")
+ATTACH_OUTPUT=$(hdiutil attach -readwrite -noverify -noautoopen -mountpoint "${MOUNT_POINT}" "${RW_IMAGE}")
 DEVICE=$(echo "${ATTACH_OUTPUT}" | awk '/Apple_HFS/ {print $1; exit}')
-MOUNT_POINT=$(echo "${ATTACH_OUTPUT}" | awk -F '\t' '/Apple_HFS/ {print $3; exit}')
-[[ -n "${MOUNT_POINT}" ]] || { echo "Could not determine the mounted DMG path." >&2; exit 1; }
-MOUNT_NAME="${MOUNT_POINT##*/}"
-
-layout_ok=0
-osascript <<APPLESCRIPT >/dev/null 2>&1 || true
+[[ -n "${DEVICE}" ]] || { echo "Could not determine the writable DMG device." >&2; exit 1; }
+LAYOUT_RESULT=$(osascript <<APPLESCRIPT 2>&1 || true
 tell application "Finder"
   tell disk "${MOUNT_NAME}"
     open
@@ -80,44 +81,45 @@ tell application "Finder"
     set toolbar visible of targetWindow to false
     set statusbar visible of targetWindow to false
     set pathbar visible of targetWindow to false
-    set sidebar width of targetWindow to 0
+    try
+      set sidebar width of targetWindow to 0
+    end try
     set the bounds of targetWindow to {120, 120, 1020, 680}
     set opts to the icon view options of targetWindow
     set arrangement of opts to not arranged
     set icon size of opts to 128
     set text size of opts to 14
     set background picture of opts to POSIX file "${MOUNT_POINT}/.background/background.png"
-    try
-      set position of item "${APP_NAME}" of targetWindow to {225, 340}
-      set position of item "Applications" of targetWindow to {675, 340}
-    end try
+    set expectedAppPosition to {225, 340}
+    set expectedApplicationsPosition to {675, 340}
+    set positioned to false
+    repeat with attempt from 1 to 8
+      try
+        set appItem to item "${APP_NAME}" of targetWindow
+        set applicationsItem to item "Applications" of targetWindow
+        set position of appItem to expectedAppPosition
+        set position of applicationsItem to expectedApplicationsPosition
+        delay 0.4
+        if (position of appItem) is expectedAppPosition and (position of applicationsItem) is expectedApplicationsPosition then
+          set positioned to true
+          exit repeat
+        end if
+      end try
+      delay 0.4
+    end repeat
+    if not positioned then error "Finder did not persist the requested icon positions"
     -- Setting the view options/background itself persists .DS_Store on
     -- current macOS. The older update-without-registering-applications
     -- command attempts to eject this writable image on newer Finder builds.
     delay 1
   end tell
 end tell
+return "ok"
 APPLESCRIPT
-if [[ ! -f "${MOUNT_POINT}/.DS_Store" ]]; then
-  # Some Finder builds report an eject error after applying icon view options.
-  # Retry only the essential background assignment before deciding that the
-  # image is unbranded.
-  osascript <<APPLESCRIPT >/dev/null 2>&1 || true
-tell application "Finder"
-  tell disk "${MOUNT_NAME}"
-    open
-    set opts to the icon view options of container window
-    set background picture of opts to POSIX file "${MOUNT_POINT}/.background/background.png"
-  end tell
-end tell
-APPLESCRIPT
-fi
-if [[ -f "${MOUNT_POINT}/.DS_Store" ]]; then
-  layout_ok=1
-fi
+)
 
-if [[ "${layout_ok}" != "1" ]]; then
-  echo "Finder did not write a branded DMG layout (.DS_Store missing)." >&2
+if [[ "${LAYOUT_RESULT}" != "ok" || ! -f "${MOUNT_POINT}/.DS_Store" ]]; then
+  echo "Finder did not persist the branded DMG layout or icon positions." >&2
   hdiutil detach -quiet "${DEVICE}" || hdiutil detach -force "${DEVICE}"
   rm -f -- "${RW_IMAGE}"
   exit 1

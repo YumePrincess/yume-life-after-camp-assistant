@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationConfig } from "../src/domain";
+import { isManualRetryEligible } from "../src/tasks";
 import {
   preserveAutomationScheduleTimes,
   validateAutomationConfig,
@@ -21,12 +22,86 @@ describe("five-task automation configuration", () => {
     inactivityWarningDays: 1
   };
 
+  it("allows manual retries only inside the scheduled task window", () => {
+    const bundle = {
+      automationConfig: {
+        timezone: "Asia/Shanghai",
+        tasks: {
+          tech_switch: { time: "02:00", times: ["02:00"] },
+          contribution_sync: { time: "02:30", times: ["02:30", "12:30"] },
+          inactivity_sync: { time: "02:45", times: ["02:45"] },
+          member_profile_sync: { time: "02:15", times: ["02:15"] },
+          patrol: { time: "19:20", deadline: "21:25" }
+        }
+      }
+    } as any;
+    expect(
+      isManualRetryEligible(
+        bundle,
+        "contribution_sync",
+        new Date("2026-07-26T18:40:00.000Z")
+      )
+    ).toBe(true);
+    expect(
+      isManualRetryEligible(
+        bundle,
+        "contribution_sync",
+        new Date("2026-07-26T18:45:00.000Z")
+      )
+    ).toBe(false);
+    expect(
+      isManualRetryEligible(
+        bundle,
+        "patrol",
+        new Date("2026-07-26T13:00:00.000Z")
+      )
+    ).toBe(true);
+    expect(
+      isManualRetryEligible(
+        bundle,
+        "patrol",
+        new Date("2026-07-26T13:25:00.000Z")
+      )
+    ).toBe(false);
+  });
+
   it("defaults the reserved special daily refresh to midnight", () => {
     expect(validateCampConfig(base).specialDailyRefreshTime).toBe("00:00");
     expect(
       validateCampConfig({ ...base, specialDailyRefreshTime: "01:15" })
         .specialDailyRefreshTime
     ).toBe("01:15");
+  });
+
+  it("defaults manual retries to zero and accepts a separate manual retry count", () => {
+    const baseAutomation = {
+      timezone: "Asia/Shanghai",
+      schedulerGraceMinutes: 5,
+      scheduledRetryCount: 2,
+      agentPolling: { activeSeconds: 2, idleSeconds: 300, windows: [] },
+      gameWatchdog: {
+        enabled: true,
+        healthCheckSeconds: 10,
+        actionTimeoutSeconds: 45,
+        frozenScreenSeconds: 90,
+        maxRestarts: 2,
+        restartCooldownSeconds: 8
+      },
+      tasks: {
+        patrol: {
+          enabled: true,
+          time: "19:20",
+          teamReadyTime: "19:30",
+          shareIntervalMinutes: 10,
+          chatPollSeconds: 5,
+          deadline: "21:25"
+        }
+      }
+    };
+    expect(validateAutomationConfig(baseAutomation).manualRetryCount).toBe(0);
+    expect(
+      validateAutomationConfig({ ...baseAutomation, manualRetryCount: 3 }).manualRetryCount
+    ).toBe(3);
   });
 
   it("keeps an overnight vote cutoff before the next game refresh", () => {

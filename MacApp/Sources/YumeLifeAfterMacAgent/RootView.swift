@@ -468,12 +468,18 @@ struct LogsView: View {
                 .onChange(of: model.visibleLogLines) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
             }
             HStack {
-                Button(model.text("Previous")) { model.previousLogPage() }
-                    .disabled(model.logPage == 0)
-                Text(model.logPageLabel).monospacedDigit().foregroundStyle(.secondary)
-                Button(model.text("Next")) { model.nextLogPage() }
-                    .disabled(model.logPage >= model.logPageCount - 1)
-                Spacer()
+                Spacer(minLength: 0)
+                HStack(spacing: 12) {
+                    Button(model.text("Previous")) { model.previousLogPage() }
+                        .disabled(model.logPage == 0)
+                    Text(model.logPageLabel)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(model.text("Log page"))
+                    Button(model.text("Next")) { model.nextLogPage() }
+                        .disabled(model.logPage >= model.logPageCount - 1)
+                }
+                Spacer(minLength: 0)
             }
             .buttonStyle(GlassButtonStyle())
         }

@@ -758,6 +758,7 @@
       state.scheduleReplacements = {};
       for (const [name, value] of Object.entries({
         scheduledRetryCount: automation.scheduledRetryCount ?? 2,
+        manualRetryCount: automation.manualRetryCount ?? 0,
         techEnabled: tasks.tech_switch.enabled,
         techTime: tasks.tech_switch.time,
         contributionEnabled: tasks.contribution_sync.enabled,
@@ -929,7 +930,7 @@
       ? window.MrzhI18n.t("巡逻任务只支持一个启动时间。")
       : taskKey === "tech_switch"
         ? window.MrzhI18n.t("科技切换任务只支持一个执行时间。")
-        : window.MrzhI18n.t("默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。");
+        : window.MrzhI18n.t("默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。");
     byId("schedule-dialog-enabled").checked = Boolean(getField(field.enabled));
     const patrolFields = byId("schedule-patrol-fields");
     if (patrolFields) {
@@ -2241,6 +2242,7 @@
       const profileTimes = timesFor("member_profile_sync", "profileTime");
       const patrolTime = String(getField("patrolTime") || "");
       next.automationConfig.scheduledRetryCount = Number(getField("scheduledRetryCount"));
+      next.automationConfig.manualRetryCount = Number(getField("manualRetryCount"));
       next.automationConfig.tasks = {
         tech_switch: {
           enabled: getField("techEnabled"),

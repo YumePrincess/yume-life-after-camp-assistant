@@ -43,6 +43,10 @@
 "Current task only" = "仅显示当前任务";
 "All logs" = "全部日志";
 "Logs cleared" = "运行日志已清空";
+"Previous" = "上一页";
+"Next" = "下一页";
+"Page {current} of {total}" = "第 {current} / {total} 页";
+"Log page" = "日志页码";
 "Add plugin…" = "添加插件…";
 "Check for updates" = "检查更新";
 "Built-in" = "内置";

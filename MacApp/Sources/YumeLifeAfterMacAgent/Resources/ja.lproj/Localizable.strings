@@ -30,6 +30,14 @@
 "The latest Agent output refreshes automatically." = "Agent の最新出力を自動更新します。";
 "Refresh" = "更新";
 "No log entries yet." = "ログはまだありません。";
+"Clear logs" = "ログを消去";
+"Current task only" = "現在のタスクのみ";
+"All logs" = "すべてのログ";
+"Logs cleared" = "ログを消去しました";
+"Previous" = "前へ";
+"Next" = "次へ";
+"Page {current} of {total}" = "{total} ページ中 {current} ページ";
+"Log page" = "ログページ";
 "Add plugin…" = "プラグインを追加…";
 "Check for updates" = "更新を確認";
 "Built-in" = "内蔵";

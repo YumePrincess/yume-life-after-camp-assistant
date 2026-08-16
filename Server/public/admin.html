@@ -264,7 +264,8 @@
                   <p class="eyebrow">SCHEDULE</p>
                   <h1>自动任务时间</h1>
                   <p class="section-intro">各任务独立启停；全部时间使用基础设置中的时区。</p>
-                  <label class="field schedule-retry-setting"><span>定时任务失败重试次数（手动任务不重试）</span><input name="scheduledRetryCount" type="number" min="0" max="6" /></label>
+                  <label class="field schedule-retry-setting"><span>定时任务失败重试次数（计划窗口内手动任务也适用）</span><input name="scheduledRetryCount" type="number" min="0" max="6" /></label>
+                  <label class="field schedule-retry-setting"><span>手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）</span><input name="manualRetryCount" type="number" min="0" max="6" /></label>
                 </div>
               </div>
               <div class="schedule-grid">

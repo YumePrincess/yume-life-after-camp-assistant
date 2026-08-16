@@ -17,6 +17,7 @@ import {
   technologyCatalogWithPrerequisites
 } from "./tech";
 import {
+  isWithinDueWindow,
   isWithinDailyClockWindow,
   nextTechnologyTargetDate,
   technologyEffectiveDateAtDailyReset,
@@ -26,6 +27,43 @@ import {
   zonedDateTimeToIso
 } from "./time";
 import { builtPluginForTask, isWorkerPluginEnabled } from "./plugin-system";
+
+const MANUAL_RETRY_GRACE_MINUTES = 15;
+
+/**
+ * Manual runs inherit the configured retry policy only when they are started
+ * from the same window in which the corresponding scheduled run is due. The
+ * eligibility is persisted on the run so a later failure does not depend on
+ * the clock still being inside that window.
+ */
+export function isManualRetryEligible(
+  bundle: ConfigBundle,
+  taskKey: TaskKey,
+  now: Date
+): boolean {
+  const { automationConfig } = bundle;
+  const timezone = automationConfig.timezone;
+  if (taskKey === "patrol") {
+    const patrol = automationConfig.tasks.patrol;
+    return isWithinDailyClockWindow(now, timezone, patrol.time, patrol.deadline);
+  }
+  if (
+    taskKey !== "tech_switch" &&
+    taskKey !== "contribution_sync" &&
+    taskKey !== "inactivity_sync" &&
+    taskKey !== "member_profile_sync"
+  ) {
+    return false;
+  }
+  return automationConfig.tasks[taskKey].times.some((scheduledTime) =>
+    isWithinDueWindow(
+      now,
+      timezone,
+      scheduledTime,
+      MANUAL_RETRY_GRACE_MINUTES
+    )
+  );
+}
 
 export async function buildVoteSummary(
   env: Env,
@@ -186,14 +224,25 @@ export async function enqueueTask(
   const now = input.now ?? new Date();
   const localDate =
     input.localDate ?? zonedDateKey(now, input.bundle.automationConfig.timezone);
+  const manualRetryEligible =
+    input.triggerMode === "manual" &&
+    isManualRetryEligible(input.bundle, input.taskKey, now);
+  const retryPolicy =
+    input.triggerMode === "scheduled"
+      ? "scheduled"
+      : manualRetryEligible
+        ? "scheduled_window"
+        : "manual";
   const detail: Record<string, unknown> = {
     requestedAt: now.toISOString(),
     requestedBy: input.requestedBy?.email ?? input.triggerMode,
     scheduledRetryLimit:
-      input.triggerMode === "scheduled"
+      input.triggerMode === "scheduled" || manualRetryEligible
         ? input.bundle.automationConfig.scheduledRetryCount
-        : 0,
+        : input.bundle.automationConfig.manualRetryCount,
     scheduledRetryAttempt: 0,
+    manualRetryEligible,
+    retryPolicy,
     ...(input.payloadDetail ?? {})
   };
   if (input.taskKey === "tech_switch") {

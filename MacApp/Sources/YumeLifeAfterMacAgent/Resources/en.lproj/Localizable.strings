@@ -43,6 +43,10 @@
 "Current task only" = "Current task only";
 "All logs" = "All logs";
 "Logs cleared" = "Logs cleared";
+"Previous" = "Previous";
+"Next" = "Next";
+"Page {current} of {total}" = "Page {current} of {total}";
+"Log page" = "Log page";
 "Add plugin…" = "Add plugin…";
 "Check for updates" = "Check for updates";
 "Built-in" = "Built-in";

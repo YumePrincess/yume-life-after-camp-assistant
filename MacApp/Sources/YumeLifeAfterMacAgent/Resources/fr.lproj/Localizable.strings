@@ -30,6 +30,14 @@
 "The latest Agent output refreshes automatically." = "La dernière sortie de l’Agent est actualisée automatiquement.";
 "Refresh" = "Actualiser";
 "No log entries yet." = "Aucune entrée de journal.";
+"Clear logs" = "Effacer les journaux";
+"Current task only" = "Tâche actuelle uniquement";
+"All logs" = "Tous les journaux";
+"Logs cleared" = "Journaux effacés";
+"Previous" = "Précédent";
+"Next" = "Suivant";
+"Page {current} of {total}" = "Page {current} sur {total}";
+"Log page" = "Page de journal";
 "Add plugin…" = "Ajouter une extension…";
 "Check for updates" = "Rechercher des mises à jour";
 "Built-in" = "Intégrée";

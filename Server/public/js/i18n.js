@@ -2536,7 +2536,8 @@
 
   const scheduleTranslations = {
     en: {
-      "定时任务失败重试次数（手动任务不重试）": "Scheduled-task retries (manual tasks are not retried)",
+      "定时任务失败重试次数（计划窗口内手动任务也适用）": "Scheduled-task failure retries (also apply to manual tasks in the scheduled window)",
+      "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "Manual-task failure retries (0 by default; excludes manual tasks in the scheduled window)",
       "配置执行计划": "Configure execution plan",
       "增加一次执行时间": "Add execution time",
       "保存此任务计划": "Save this task plan",
@@ -2547,12 +2548,13 @@
       "删除": "Delete",
       "巡逻任务只支持一个启动时间。": "Patrol supports one start time only.",
       "科技切换任务只支持一个执行时间。": "Technology switching supports one execution time only.",
-      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。":
-        "The current time is kept by default. Set each time after adding executions. Manual tasks are not retried.",
+      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。":
+        "The current time is kept by default. Set each time after adding executions. Manual tasks submitted within 15 minutes after a scheduled time use the scheduled-task retry count; other manual tasks use the manual-task retry count.",
       "请为每次执行填写有效时间。": "Enter a valid time for every execution."
     },
     fr: {
-      "定时任务失败重试次数（手动任务不重试）": "Nouvelles tentatives planifiées (les tâches manuelles ne sont pas relancées)",
+      "定时任务失败重试次数（计划窗口内手动任务也适用）": "Nouvelles tentatives des tâches planifiées (également pour les tâches manuelles dans la fenêtre planifiée)",
+      "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "Nouvelles tentatives des tâches manuelles (0 par défaut ; hors tâches manuelles dans la fenêtre planifiée)",
       "配置执行计划": "Configurer le plan d’exécution",
       "增加一次执行时间": "Ajouter une heure",
       "保存此任务计划": "Enregistrer ce plan",
@@ -2563,12 +2565,13 @@
       "删除": "Supprimer",
       "巡逻任务只支持一个启动时间。": "La patrouille ne prend qu’une heure de début.",
       "科技切换任务只支持一个执行时间。": "Le changement de technologie ne prend qu’une heure.",
-      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。":
-        "L’heure actuelle est conservée par défaut. Définissez chaque heure ajoutée. Les tâches manuelles ne sont pas relancées.",
+      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。":
+        "L’heure actuelle est conservée par défaut. Définissez chaque heure ajoutée. Les tâches manuelles lancées dans les 15 minutes suivant l’heure planifiée utilisent le nombre de relances planifiées ; les autres utilisent le nombre de relances manuelles.",
       "请为每次执行填写有效时间。": "Saisissez une heure valide pour chaque exécution."
     },
     ja: {
-      "定时任务失败重试次数（手动任务不重试）": "定期タスクの失敗リトライ回数（手動タスクはリトライしません）",
+      "定时任务失败重试次数（计划窗口内手动任务也适用）": "定期タスクの失敗リトライ回数（予定ウィンドウ内の手動タスクにも適用）",
+      "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "手動タスクの失敗リトライ回数（初期値0回、予定ウィンドウ内の手動タスクを除く）",
       "配置执行计划": "実行計画を設定",
       "增加一次执行时间": "実行時刻を追加",
       "保存此任务计划": "この計画を保存",
@@ -2579,12 +2582,13 @@
       "删除": "削除",
       "巡逻任务只支持一个启动时间。": "巡回タスクは開始時刻を1つだけ設定できます。",
       "科技切换任务只支持一个执行时间。": "科技切替は実行時刻を1つだけ設定できます。",
-      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。":
-        "現在の時刻を既定値として保持します。回数を追加したら各時刻を設定してください。手動タスクはリトライしません。",
+      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。":
+        "現在の時刻を既定値として保持します。回数を追加したら各時刻を設定してください。予定時刻から15分以内の手動タスクは定期タスクの回数を使い、それ以外は手動タスクの回数を使います。",
       "请为每次执行填写有效时间。": "各実行に有効な時刻を入力してください。"
     },
     "zh-tw": {
-      "定时任务失败重试次数（手动任务不重试）": "定時任務失敗重試次數（手動任務不重試）",
+      "定时任务失败重试次数（计划窗口内手动任务也适用）": "定時任務失敗重試次數（計畫時段內的手動任務也適用）",
+      "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "手動任務失敗重試次數（預設 0 次；不包含計畫時段內的手動任務）",
       "配置执行计划": "設定執行計畫",
       "增加一次执行时间": "增加一次執行時間",
       "保存此任务计划": "儲存此任務計畫",
@@ -2595,8 +2599,8 @@
       "删除": "刪除",
       "巡逻任务只支持一个启动时间。": "巡邏任務只支援一個啟動時間。",
       "科技切换任务只支持一个执行时间。": "科技切換任務只支援一個執行時間。",
-      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。手动发起任务不使用失败重试。":
-        "預設保留目前時間。增加執行次數後，請分別設定每次執行時間。手動發起任務不使用失敗重試。",
+      "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。":
+        "預設保留目前時間。增加執行次數後，請分別設定每次執行時間。計畫時間後 15 分鐘內提交的手動任務使用定時任務重試次數；其他手動任務使用手動任務失敗重試次數。",
       "请为每次执行填写有效时间。": "請為每次執行填寫有效時間。"
     }
   };

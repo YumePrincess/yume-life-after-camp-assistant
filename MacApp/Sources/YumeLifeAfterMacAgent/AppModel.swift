@@ -225,7 +225,10 @@ final class AppModel: ObservableObject {
     }
 
     var logPageLabel: String {
-        "\(min(logPage + 1, logPageCount)) / \(logPageCount)"
+        let current = min(logPage + 1, logPageCount)
+        return text("Page {current} of {total}")
+            .replacingOccurrences(of: "{current}", with: String(current))
+            .replacingOccurrences(of: "{total}", with: String(logPageCount))
     }
 
     func previousLogPage() {

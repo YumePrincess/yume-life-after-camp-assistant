@@ -1330,6 +1330,8 @@ async function handleAdminApi(
         ? {
             automationConfig: {
               ...current.automationConfig,
+              scheduledRetryCount: submitted.automationConfig.scheduledRetryCount,
+              manualRetryCount: submitted.automationConfig.manualRetryCount,
               tasks: preserveAutomationScheduleTimes(
                 current.automationConfig.tasks,
                 submitted.automationConfig.tasks,

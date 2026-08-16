@@ -525,6 +525,10 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
       source.scheduledRetryCount === undefined
         ? 2
         : integer(source.scheduledRetryCount, "automationConfig.scheduledRetryCount", 0, 6),
+    manualRetryCount:
+      source.manualRetryCount === undefined
+        ? 0
+        : integer(source.manualRetryCount, "automationConfig.manualRetryCount", 0, 6),
     agentPolling: {
       activeSeconds:
         pollingSource.activeSeconds === undefined

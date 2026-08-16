@@ -1469,7 +1469,9 @@ export async function updateRun(
       input.progress === undefined
         ? current.progress
         : Math.min(1, Math.max(0, input.progress)),
-      input.detail === undefined ? current.detail_json : JSON.stringify(input.detail),
+      input.detail === undefined
+        ? current.detail_json
+        : mergeRunDetail(current.detail_json, input.detail),
       startedAt,
       terminal ? now : current.finished_at,
       now,
@@ -1699,7 +1701,12 @@ export async function completeCommand(
     completed &&
     input.state === "failed" &&
     command?.type === "run_task" &&
-    completedRun?.trigger_mode === "scheduled"
+    completedRun &&
+    (completedRun.trigger_mode === "scheduled" ||
+      ["manual", "scheduled_window"].includes(
+        String(safeJsonObject(completedRun.detail_json).retryPolicy)
+      ) ||
+      safeJsonObject(completedRun.detail_json).manualRetryEligible === true)
   ) {
     const detail = safeJsonObject(completedRun.detail_json);
     const suppressScheduledRetry = detail.suppressScheduledRetry === true;
@@ -1801,14 +1808,25 @@ export async function completeCommand(
   return completed;
 }
 
-function safeJsonObject(value: string | null): Record<string, any> {
+function safeJsonObject(value: unknown): Record<string, any> {
   if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, any>;
+  }
+  if (typeof value !== "string") return {};
   try {
     const parsed = JSON.parse(value);
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
   }
+}
+
+export function mergeRunDetail(currentDetail: string | null, nextDetail: unknown): string {
+  return JSON.stringify({
+    ...safeJsonObject(currentDetail),
+    ...safeJsonObject(nextDetail)
+  });
 }
 
 export function scheduledRetryAttempt(

@@ -1,11 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
   completeCommand,
+  mergeRunDetail,
   reconcileTerminalRunCommands,
   scheduledRetryAttempt
 } from "../src/db";
 
 describe("scheduled retry accounting", () => {
+  it("keeps the retry policy when an Agent sends a partial run detail update", () => {
+    expect(
+      JSON.parse(
+        mergeRunDetail(
+          JSON.stringify({ scheduledRetryLimit: 2, patrolDeadlineAt: "deadline" }),
+          { locale: "zh-cn", currentStep: "starting" }
+        )
+      )
+    ).toMatchObject({
+      scheduledRetryLimit: 2,
+      patrolDeadlineAt: "deadline",
+      locale: "zh-cn",
+      currentStep: "starting"
+    });
+  });
+
   it("trusts the persisted retry suffix when a run detail was reset by an older agent", () => {
     expect(
       scheduledRetryAttempt(
