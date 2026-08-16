@@ -2,8 +2,56 @@ import SwiftUI
 import AppKit
 
 @MainActor
+enum NativeWindowChrome {
+    static func configure(_ window: NSWindow) {
+        // Keep the custom content under a transparent native title bar,
+        // while explicitly restoring the familiar macOS traffic lights.
+        window.styleMask.insert(.titled)
+        window.styleMask.insert(.closable)
+        window.styleMask.insert(.miniaturizable)
+        window.styleMask.insert(.resizable)
+        window.styleMask.insert(.fullSizeContentView)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+
+        for button in [
+            window.standardWindowButton(.closeButton),
+            window.standardWindowButton(.miniaturizeButton),
+            window.standardWindowButton(.zoomButton)
+        ] {
+            button?.isHidden = false
+            button?.alphaValue = 1
+            button?.superview?.isHidden = false
+        }
+    }
+
+    static func configureMainWindow() {
+        guard let window = NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isMainWindow }) else { return }
+        configure(window)
+    }
+}
+
+@MainActor
 final class YumeLifeAfterMacAgentAppDelegate: NSObject, NSApplicationDelegate {
     private var terminationInProgress = false
+    private var windowObservers: [NSObjectProtocol] = []
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let center = NotificationCenter.default
+        for name in [NSWindow.didBecomeMainNotification, NSWindow.didEndSheetNotification] {
+            windowObservers.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                    DispatchQueue.main.async {
+                        NativeWindowChrome.configureMainWindow()
+                    }
+                }
+            )
+        }
+        DispatchQueue.main.async {
+            NativeWindowChrome.configureMainWindow()
+        }
+    }
 
     func applicationShouldTerminateAfterLastWindowClosed(
         _ sender: NSApplication

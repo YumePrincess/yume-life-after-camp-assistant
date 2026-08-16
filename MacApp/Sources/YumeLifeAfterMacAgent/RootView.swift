@@ -86,27 +86,7 @@ private struct WindowChromeConfigurator: NSViewRepresentable {
 
         func configureWindow() {
             guard let window else { return }
-
-            // Keep the custom content under a transparent native title bar,
-            // while explicitly restoring the familiar macOS traffic lights.
-            window.styleMask.insert(.titled)
-            window.styleMask.insert(.closable)
-            window.styleMask.insert(.miniaturizable)
-            window.styleMask.insert(.resizable)
-            window.styleMask.insert(.fullSizeContentView)
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-            window.isMovableByWindowBackground = true
-
-            for button in [
-                window.standardWindowButton(.closeButton),
-                window.standardWindowButton(.miniaturizeButton),
-                window.standardWindowButton(.zoomButton)
-            ] {
-                button?.isHidden = false
-                button?.alphaValue = 1
-                button?.superview?.isHidden = false
-            }
+            NativeWindowChrome.configure(window)
         }
     }
 }
@@ -602,7 +582,9 @@ struct PluginsView: View {
                     }
                     .glassPanel(radius: 20, padding: 16)
                 }
-            }.padding(30)
+            }
+            .frame(maxWidth: 900, alignment: .leading)
+            .padding(30)
         }
     }
 }
