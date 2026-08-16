@@ -39,6 +39,20 @@ detach_existing_image() {
   done
 }
 
+# Finder can retain the previous release window after the same-named DMG was
+# ejected. Close that window before attaching the new writable image; otherwise
+# Finder may route the layout commands to the stale disk and return -1728.
+osascript <<APPLESCRIPT >/dev/null 2>&1 || true
+tell application "Finder"
+  try
+    set previousDisk to disk "${VOLUME_NAME}"
+    try
+      close container window of previousDisk
+    end try
+  end try
+end tell
+APPLESCRIPT
+
 detach_existing_image "${RW_IMAGE}"
 detach_existing_image "${FINAL_IMAGE}"
 rm -rf -- "${STAGING}"
@@ -55,29 +69,58 @@ MOUNT_POINT=$(echo "${ATTACH_OUTPUT}" | awk -F '\t' '/Apple_HFS/ {print $3; exit
 [[ -n "${MOUNT_POINT}" ]] || { echo "Could not determine the mounted DMG path." >&2; exit 1; }
 MOUNT_NAME="${MOUNT_POINT##*/}"
 
-if ! osascript <<APPLESCRIPT
+layout_ok=0
+osascript <<APPLESCRIPT >/dev/null 2>&1 || true
 tell application "Finder"
-  set targetDisk to disk "${MOUNT_NAME}"
-  open targetDisk
-  delay 2
-  set targetWindow to container window of targetDisk
-  set opts to the icon view options of targetWindow
-  set arrangement of opts to not arranged
-  set icon size of opts to 128
-  set text size of opts to 14
-  set background picture of opts to POSIX file "${MOUNT_POINT}/.background/background.png"
-  set position of item "${APP_NAME}" of targetWindow to {225, 340}
-  set position of item "Applications" of targetWindow to {675, 340}
-  delay 3
-  -- Keep the Finder window open until hdiutil detaches the image. Closing a
-  -- disk window can be interpreted as an eject on some macOS Finder builds.
+  tell disk "${MOUNT_NAME}"
+    open
+    delay 1
+    set targetWindow to container window
+    set current view of targetWindow to icon view
+    set toolbar visible of targetWindow to false
+    set statusbar visible of targetWindow to false
+    set pathbar visible of targetWindow to false
+    set sidebar width of targetWindow to 0
+    set the bounds of targetWindow to {120, 120, 1020, 680}
+    set opts to the icon view options of targetWindow
+    set arrangement of opts to not arranged
+    set icon size of opts to 128
+    set text size of opts to 14
+    set background picture of opts to POSIX file "${MOUNT_POINT}/.background/background.png"
+    try
+      set position of item "${APP_NAME}" of targetWindow to {225, 340}
+      set position of item "Applications" of targetWindow to {675, 340}
+    end try
+    -- Setting the view options/background itself persists .DS_Store on
+    -- current macOS. The older update-without-registering-applications
+    -- command attempts to eject this writable image on newer Finder builds.
+    delay 1
+  end tell
 end tell
 APPLESCRIPT
-then
-  # Finder can return -1728 when the temporary volume is already closing or
-  # another Finder window owns the eject transition. The icon layout is
-  # optional; the image must still be detached, compressed, and signed.
-  echo "Finder could not finish the optional DMG layout; continuing with the default layout." >&2
+if [[ ! -f "${MOUNT_POINT}/.DS_Store" ]]; then
+  # Some Finder builds report an eject error after applying icon view options.
+  # Retry only the essential background assignment before deciding that the
+  # image is unbranded.
+  osascript <<APPLESCRIPT >/dev/null 2>&1 || true
+tell application "Finder"
+  tell disk "${MOUNT_NAME}"
+    open
+    set opts to the icon view options of container window
+    set background picture of opts to POSIX file "${MOUNT_POINT}/.background/background.png"
+  end tell
+end tell
+APPLESCRIPT
+fi
+if [[ -f "${MOUNT_POINT}/.DS_Store" ]]; then
+  layout_ok=1
+fi
+
+if [[ "${layout_ok}" != "1" ]]; then
+  echo "Finder did not write a branded DMG layout (.DS_Store missing)." >&2
+  hdiutil detach -quiet "${DEVICE}" || hdiutil detach -force "${DEVICE}"
+  rm -f -- "${RW_IMAGE}"
+  exit 1
 fi
 
 sync

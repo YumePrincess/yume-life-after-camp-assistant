@@ -20,7 +20,6 @@ struct RootView: View {
                 }
                 .navigationSplitViewStyle(.balanced)
                 .toolbar(removing: .sidebarToggle)
-                .toolbar(.hidden, for: .windowToolbar)
                 .ignoresSafeArea(.container, edges: .top)
                 .background(.clear)
             } else {
@@ -36,21 +35,41 @@ struct RootView: View {
             model.syncLanguageToBrowser()
         }
         .onChange(of: model.language) { _, language in
-            UserDefaults.standard.set(language, forKey: "language")
-            DispatchQueue.main.async { MenuLocalization.apply(language: language) }
+            model.didSelectLanguage(language)
+            for delay in [0.0, 0.15, 0.5] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    MenuLocalization.apply(language: language)
+                }
+            }
             model.syncLanguageToBrowser()
             Task { await model.syncLanguageToRuntime() }
         }
         .alert(
             model.text("Yume Life After Mac Agent"),
             isPresented: Binding(
-                get: { model.alertMessage != nil },
-                set: { if !$0 { model.alertMessage = nil } }
+                get: { model.alertMessage != nil || model.showLanguageRestartPrompt },
+                set: {
+                    if !$0 {
+                        model.alertMessage = nil
+                        model.showLanguageRestartPrompt = false
+                    }
+                }
             )
         ) {
-            Button(model.text("OK")) { model.alertMessage = nil }
+            if model.showLanguageRestartPrompt {
+                Button(model.text("Restart App")) { model.restartForLanguage() }
+                Button(model.text("Later"), role: .cancel) {
+                    model.showLanguageRestartPrompt = false
+                }
+            } else {
+                Button(model.text("OK")) { model.alertMessage = nil }
+            }
         } message: {
-            Text(model.alertMessage ?? "")
+            Text(
+                model.showLanguageRestartPrompt
+                    ? model.text("Restart the App to apply the macOS menu language.")
+                    : (model.alertMessage ?? "")
+            )
         }
         .sheet(isPresented: $model.showAbout) { AboutView() }
         .sheet(isPresented: $model.showUpdateWizard) { UpdateWizardView() }
@@ -458,7 +477,9 @@ struct LogsView: View {
             }
             .buttonStyle(GlassButtonStyle())
         }
+        .frame(maxWidth: 900, maxHeight: .infinity, alignment: .topLeading)
         .padding(30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshStatusAndLogs(loadLogs: true) }
     }
 }

@@ -126,6 +126,7 @@
 "Enter both Agent tokens to continue." = "请输入两个 Agent 令牌后继续。";
 "Setup completed" = "配置已完成";
 "Close" = "关闭";
+"Minimize" = "收起";
 "Operation status" = "操作状态";
 "Copyright © 2026 Yume Internet LLC. All rights reserved." = "版权所有 © 2026 Yume Internet LLC. 保留所有权利。";
 "The bundled runtime configuration template is missing." = "随附的运行环境配置模板缺失。";
@@ -191,3 +192,6 @@
 "Log display" = "日志显示";
 "Simplified" = "简易";
 "Raw" = "原始";
+"Restart App" = "重新启动 App";
+"Later" = "稍后";
+"Restart the App to apply the macOS menu language." = "重新启动 App 后，macOS 顶部菜单会使用当前语言。";

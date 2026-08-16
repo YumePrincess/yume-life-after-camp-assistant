@@ -126,6 +126,7 @@
 "Enter both Agent tokens to continue." = "Enter both Agent tokens to continue.";
 "Setup completed" = "Setup completed";
 "Close" = "Close";
+"Minimize" = "Minimize";
 "Operation status" = "Operation status";
 "Copyright © 2026 Yume Internet LLC. All rights reserved." = "Copyright © 2026 Yume Internet LLC. All rights reserved.";
 "The bundled runtime configuration template is missing." = "The bundled runtime configuration template is missing.";
@@ -191,3 +192,6 @@
 "Log display" = "Log display";
 "Simplified" = "Simplified";
 "Raw" = "Raw";
+"Restart App" = "Restart App";
+"Later" = "Later";
+"Restart the App to apply the macOS menu language." = "Restart the App to apply the macOS menu language.";

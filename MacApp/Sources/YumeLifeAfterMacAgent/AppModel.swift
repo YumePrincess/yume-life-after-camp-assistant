@@ -25,6 +25,7 @@ final class AppModel: ObservableObject {
     @Published var mumuInstanceName: String
     @Published var allowUnsignedPlugins: Bool
     @Published var language: String
+    @Published var showLanguageRestartPrompt = false
     @Published var theme: AppTheme
     @Published var setupCompleted: Bool
     @Published var setupStep = 0
@@ -67,7 +68,10 @@ final class AppModel: ObservableObject {
         adminKey = ""
         mumuInstanceName = defaults.string(forKey: "mumuInstanceName") ?? "Life After CN Auto"
         allowUnsignedPlugins = defaults.bool(forKey: "allowUnsignedPlugins")
-        language = defaults.string(forKey: "language") ?? Self.preferredLanguage()
+        let selectedLanguage = defaults.string(forKey: "language") ?? Self.preferredLanguage()
+        language = selectedLanguage
+        defaults.set([selectedLanguage], forKey: "AppleLanguages")
+        defaults.set(Self.appleLocale(for: selectedLanguage), forKey: "AppleLocale")
         theme = AppTheme(rawValue: defaults.string(forKey: "theme") ?? "system") ?? .system
         logDisplayMode = LogDisplayMode(
             rawValue: defaults.string(forKey: "logDisplayMode") ?? LogDisplayMode.raw.rawValue
@@ -508,6 +512,43 @@ final class AppModel: ObservableObject {
 
     func syncLanguageToBrowser() {
         browser.setLanguage(language)
+    }
+
+    func didSelectLanguage(_ language: String) {
+        let defaults = UserDefaults.standard
+        defaults.set(language, forKey: "language")
+        defaults.set([language], forKey: "AppleLanguages")
+        defaults.set(Self.appleLocale(for: language), forKey: "AppleLocale")
+        showLanguageRestartPrompt = true
+    }
+
+    func restartForLanguage() {
+        showLanguageRestartPrompt = false
+        // AppKit localizes the process-owned menu bar while the application is
+        // launching. Open a fresh instance after writing AppleLanguages so the
+        // menu bar follows the in-App language choice without requiring the
+        // user to open macOS System Settings.
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(
+            at: Bundle.main.bundleURL,
+            configuration: configuration
+        ) { _, _ in
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private static func appleLocale(for language: String) -> String {
+        switch language {
+        case "zh-Hans": return "zh_CN"
+        case "zh-Hant": return "zh_TW"
+        case "ja": return "ja_JP"
+        case "fr": return "fr_FR"
+        default: return "en_US"
+        }
     }
 
     func exportMigration() async {

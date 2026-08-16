@@ -113,6 +113,7 @@
 "Enter both Agent tokens to continue." = "続けるには 2 つの Agent トークンを入力してください。";
 "Setup completed" = "設定が完了しました";
 "Close" = "閉じる";
+"Minimize" = "しまう";
 "Operation status" = "操作状況";
 "Copyright © 2026 Yume Internet LLC. All rights reserved." = "Copyright © 2026 Yume Internet LLC. All rights reserved.";
 "The bundled runtime configuration template is missing." = "同梱ランタイムの設定テンプレートがありません。";
@@ -178,3 +179,6 @@
 "Log display" = "ログ表示";
 "Simplified" = "簡易";
 "Raw" = "生ログ";
+"Restart App" = "Appを再起動";
+"Later" = "あとで";
+"Restart the App to apply the macOS menu language." = "macOS メニューの言語を適用するには App を再起動してください。";
