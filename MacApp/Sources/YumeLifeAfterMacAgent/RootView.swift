@@ -20,6 +20,8 @@ struct RootView: View {
                 }
                 .navigationSplitViewStyle(.balanced)
                 .toolbar(removing: .sidebarToggle)
+                .toolbar(.hidden, for: .windowToolbar)
+                .ignoresSafeArea(.container, edges: .top)
                 .background(.clear)
             } else {
                 UnsupportedPlatformView()
@@ -72,11 +74,17 @@ private struct WindowChromeConfigurator: NSViewRepresentable {
         WindowChromeView()
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? WindowChromeView)?.configureWindow()
+    }
 
     private final class WindowChromeView: NSView {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            configureWindow()
+        }
+
+        func configureWindow() {
             guard let window else { return }
 
             // Keep the custom content under a transparent native title bar,

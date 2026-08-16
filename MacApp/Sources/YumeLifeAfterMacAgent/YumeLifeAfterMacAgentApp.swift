@@ -46,10 +46,10 @@ struct YumeLifeAfterMacAgentApp: App {
                 .frame(minWidth: 1040, minHeight: 680)
                 .task { await model.bootstrap() }
         }
-        // Keep the native title bar so macOS shows the standard close,
-        // minimize, and fullscreen controls. The custom toolbar content is
-        // hidden in RootView, but the traffic-light buttons remain available.
-        .windowStyle(.titleBar)
+        // Use a transparent content-first window. RootView explicitly restores
+        // the native traffic lights while hiding the SwiftUI window toolbar,
+        // including the sidebar-collapse control.
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button(model.text("About Yume Life After Mac Agent")) {
