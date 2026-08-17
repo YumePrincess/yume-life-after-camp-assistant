@@ -522,7 +522,15 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
       staff = advisedStaff;
     }
   }
-  staff = dedupeStaffAssignments(staff);
+  staff = dedupeStaffAssignments(
+    staff.map((row) => ({
+      ...row,
+      roleName: stripStaffColorCodes(row.roleName),
+      ...(row.campTitle
+        ? { campTitle: stripStaffColorCodes(row.campTitle) }
+        : {})
+    }))
+  );
   if (!staff.length) throw new Error("No staff rows recognized; snapshot was not uploaded");
   if (staff.length > 11) {
     throw new Error(
@@ -560,6 +568,24 @@ export function dedupeStaffAssignments(rows) {
   return unique;
 }
 
+const STAFF_COLOR_CODE_PATTERN = /#\s*[BDGKOPRUWY]/gi;
+const STAFF_COLOR_CODE_CAPTURE_PATTERN = /#\s*[BDGKOPRUWY]\s*(.*)$/i;
+
+export function stripStaffColorCodes(value) {
+  return String(value || "")
+    .replace(STAFF_COLOR_CODE_PATTERN, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function containsSailingTitleLeak(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text === "启航") return true;
+  if (!STAFF_COLOR_CODE_CAPTURE_PATTERN.test(text)) return false;
+  const codedTitle = stripStaffColorCodes(text);
+  return Boolean(codedTitle) && codedTitle !== "启航";
+}
+
 function comparableStaffText(value, removeSymbols = false) {
   const normalized = String(value || "")
     .normalize("NFKC")
@@ -591,6 +617,14 @@ export async function capturePagedTable(
   const byName = new Map();
   const memberDetailsMode = label === "member-details";
   const contributionTableMode = label.startsWith("member-contribution");
+  const alignedPagedTableMode =
+    contributionTableMode || label.startsWith("member-activity");
+  if (alignedPagedTableMode) {
+    definition = withAlignedPagedTableCalibration(
+      definition,
+      contributionTableMode ? "contribution" : "activity"
+    );
+  }
   let stagnantPages = 0;
   let previousFingerprint = "";
   let previousRows = [];
@@ -630,6 +664,11 @@ export async function capturePagedTable(
           0,
           Number(definition.pagination.maxExtraPagesAfterExpected) || 2
         );
+  let alignedPageHeightPx = Math.max(
+    0,
+    Number(definition.pagination.pageHeightPx) || 0
+  );
+  let alignedTableFirstRowKind = null;
   const scanState = options.scanState;
   for (let page = 0; page < definition.pagination.maxPages; ) {
     memberPageHadExactCollision = false;
@@ -675,10 +714,24 @@ export async function capturePagedTable(
         page,
         signal
       );
+    } else if (alignedPagedTableMode && page > 0) {
+      preparedFrame = await alignPagedTablePage(
+        context,
+        `${label}-${page + 1}`,
+        pageDefinition,
+        page,
+        signal,
+        alignedTableFirstRowKind
+      );
     }
+    const rowsPerPage = Math.max(
+      1,
+      Number(definition.pagination.rowsPerPage) ||
+        (alignedPagedTableMode ? 11 : 1)
+    );
     const minimumRowsPerPage = Math.max(
       1,
-      Number(definition.pagination.minimumRowsPerPage) || 1
+      Number(definition.pagination.minimumRowsPerPage) || rowsPerPage
     );
     for (let readAttempt = 1; readAttempt <= 3; readAttempt += 1) {
       const attemptLabel =
@@ -732,13 +785,18 @@ export async function capturePagedTable(
             "materialContribution"
           ].some((field) => !/\d/.test(String(row[field] || "")))
         );
+      const sailingTitleLeak =
+        memberDetailsMode &&
+        attemptRows.some((row) => containsSailingTitleLeak(row?.name));
       const shouldRequestMemberAdvisor =
-        memberDetailsMode && attemptRows.length < minimumRowsPerPage;
+        memberDetailsMode &&
+        (attemptRows.length < minimumRowsPerPage || sailingTitleLeak);
       if (
         (!attemptRows.length ||
           (definition.extractionMode === "hybrid" &&
             attemptRows.length < minimumRowsPerPage) ||
-          contributionNeedsRecovery) &&
+          contributionNeedsRecovery ||
+          shouldRequestMemberAdvisor) &&
         typeof vision.extractTableRows === "function"
       ) {
         if (shouldRequestMemberAdvisor) {
@@ -749,12 +807,15 @@ export async function capturePagedTable(
             advisorConfigured ? "info" : "warning",
             "member_details_ai_recovery_attempt",
             advisorConfigured
-              ? `第 ${page + 1} 页识别不足，正在调用 Qwen 本地视觉辅助模型重读当前页；当前已读到：${attemptRows.map((row) => row.name).filter(Boolean).join("、") || "无"}`
+              ? sailingTitleLeak
+                ? `第 ${page + 1} 页疑似将带颜色码的“启航”职位识别为名字，正在调用 Qwen 本地视觉辅助模型重读当前页；当前已读到：${attemptRows.map((row) => row.name).filter(Boolean).join("、") || "无"}`
+                : `第 ${page + 1} 页识别不足，正在调用 Qwen 本地视觉辅助模型重读当前页；当前已读到：${attemptRows.map((row) => row.name).filter(Boolean).join("、") || "无"}`
               : `第 ${page + 1} 页识别不足，Qwen 本地视觉辅助模型当前不可用，继续使用 OCR 重读；当前已读到：${attemptRows.map((row) => row.name).filter(Boolean).join("、") || "无"}`,
             {
               page: page + 1,
               forceMemberAdvisor: true,
               advisorConfigured,
+              sailingTitleLeak,
               recognizedNames: attemptRows.map((row) => row.name).filter(Boolean)
             }
           );
@@ -794,6 +855,9 @@ export async function capturePagedTable(
           }
         }
       }
+      if (alignedPagedTableMode) {
+        attemptRows = attemptRows.slice(0, rowsPerPage);
+      }
       if (
         !frame ||
         attemptRows.length > rows.length ||
@@ -820,6 +884,55 @@ export async function capturePagedTable(
         row.name &&
         !pageDefinition.headerPattern.some((value) => row.name.includes(value))
     );
+    if (
+      alignedPagedTableMode &&
+      page === 0 &&
+      alignedPageHeightPx <= 0 &&
+      definition.pagination.measurePageHeightFromRows !== false
+    ) {
+      const measurement = measureAlignedTableHeight(
+        frame,
+        pageDefinition,
+        rowsPerPage
+      );
+      if (measurement) {
+        const pageHeightExtraPx = Math.max(
+          0,
+          Number(definition.pagination.pageHeightExtraPx) || 0
+        );
+        alignedPageHeightPx = measurement.totalHeightPx + pageHeightExtraPx;
+        await report(
+          "info",
+          "table_page_height_calibrated",
+          `第 1 页读取 ${rowsPerPage} 行整体高度 ${measurement.totalHeightPx}px，增加 ${pageHeightExtraPx}px 后按 ${alignedPageHeightPx}px 翻页`,
+          {
+            page: 1,
+            rows: rowsPerPage,
+            totalHeightPx: measurement.totalHeightPx,
+            extraHeightPx: pageHeightExtraPx,
+            swipeHeightPx: alignedPageHeightPx,
+            firstRowCenterY: measurement.firstRowCenterY,
+            lastRowCenterY: measurement.lastRowCenterY,
+            medianRowGapPx: measurement.medianRowGapPx
+          }
+        );
+      }
+    }
+    if (
+      alignedPagedTableMode &&
+      page === 0 &&
+      !alignedTableFirstRowKind &&
+      frame?.path &&
+      typeof vision?.probe === "function"
+    ) {
+      const baselineBands = await readTableColorBands(
+        vision,
+        frame.path,
+        pageDefinition,
+        signal
+      );
+      alignedTableFirstRowKind = baselineBands[0]?.kind || null;
+    }
     if (memberDetailsMode) {
       // Normal pages are deliberately non-overlapping five-row windows. Do
       // not run cross-page aliasing/reconciliation on them: a visually valid
@@ -1277,17 +1390,24 @@ export async function capturePagedTable(
       memberDetailsMode && page === 0 && definition.pagination.firstPageTo
         ? definition.pagination.firstPageTo
         : definition.pagination.to;
-    if (memberDetailsMode) {
+    const effectiveAlignedSwipeTo =
+      alignedPagedTableMode && alignedPageHeightPx > 0
+        ? {
+            ...swipeTo,
+            y: Math.round(Number(swipeFrom.y) - alignedPageHeightPx)
+          }
+        : swipeTo;
+    if (memberDetailsMode || alignedPagedTableMode) {
       // MuMu accelerates a single long mouse swipe near the endpoint. That
-      // can jump past one or more 95px rows. Send the same calibrated drag as
-      // small MOVE segments and release immediately at the exact 475px
-      // (5-row) endpoint so the next page starts on a row boundary. The
-      // calibrated duration is shortened by 30% to increase speed without
-      // changing either endpoint or the segmented path.
+      // can jump past one or more rows. Send the same calibrated drag as
+      // small MOVE segments and release immediately at the calibrated
+      // endpoint so the next page starts on a row boundary. The calibrated
+      // duration is shortened by 30% to increase speed without changing
+      // either endpoint or the segmented path.
       const usedTouchFallback = await memberAlignmentSwipe(
         adb,
         swipeFrom,
-        swipeTo,
+        effectiveAlignedSwipeTo,
         Math.max(
           100,
           Math.round((Number(definition.pagination.durationMs) || 1_000) * 0.7)
@@ -1297,8 +1417,12 @@ export async function capturePagedTable(
       if (usedTouchFallback) {
         await report(
           "warning",
-          "member_details_swipe_touch_fallback",
-          "成员详情滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动"
+          memberDetailsMode
+            ? "member_details_swipe_touch_fallback"
+            : "table_swipe_touch_fallback",
+          memberDetailsMode
+            ? "成员详情滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动"
+            : `${contributionTableMode ? "贡献" : "斩杀预警"}列表滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动`
         );
       }
     } else {
@@ -1312,7 +1436,12 @@ export async function capturePagedTable(
     const fixedPageSettle =
       label.startsWith("member-contribution") || label.startsWith("member-activity");
     const settleAfterSwipeMs = fixedPageSettle
-      ? Math.max(3_000, Number(definition.pagination.settleAfterSwipeMs) || 3_000)
+      ? alignedPagedTableMode
+        ? Math.max(
+            1_000,
+            Math.min(2_000, Number(definition.pagination.settleAfterSwipeMs) || 2_000)
+          )
+        : Math.max(3_000, Number(definition.pagination.settleAfterSwipeMs) || 3_000)
       : Math.max(0, Number(definition.pagination.settleAfterSwipeMs) || 0);
     if (settleAfterSwipeMs > 0) {
       await (context.sleep || delay)(settleAfterSwipeMs, signal);
@@ -1358,6 +1487,380 @@ export async function capturePagedTable(
     return reconciled;
   }
   return rows;
+}
+
+function measureAlignedTableHeight(frame, definition, expectedRows) {
+  const observations = Array.isArray(frame?.observations)
+    ? frame.observations
+    : [];
+  const region = definition?.region;
+  const nameColumn = definition?.columns?.find((column) => column.key === "name");
+  if (!observations.length || !region || !nameColumn) return null;
+  const width = region.right - region.left;
+  const left = region.left + width * Number(nameColumn.left || 0);
+  const right = region.left + width * Number(nameColumn.right || 1);
+  const candidates = observations
+    .filter((item) => {
+      const centerX = Number(item.x) + Number(item.width || 0) / 2;
+      const centerY = Number(item.y) + Number(item.height || 0) / 2;
+      return (
+        Number.isFinite(centerX) &&
+        Number.isFinite(centerY) &&
+        centerX >= left &&
+        centerX <= right &&
+        centerY >= region.top &&
+        centerY <= region.bottom &&
+        String(item.text || "").trim()
+      );
+    })
+    .map((item) => ({
+      centerY: Number(item.y) + Number(item.height || 0) / 2,
+      height: Math.max(1, Number(item.height) || 1)
+    }))
+    .sort((a, b) => a.centerY - b.centerY);
+  if (!candidates.length) return null;
+  const medianTextHeight = medianValue(candidates.map((item) => item.height)) || 24;
+  const rows = [];
+  for (const candidate of candidates) {
+    const previous = rows.at(-1);
+    if (
+      !previous ||
+      candidate.centerY - previous.centerY > Math.max(18, medianTextHeight * 1.25)
+    ) {
+      rows.push({ ...candidate });
+    } else {
+      previous.centerY = (previous.centerY + candidate.centerY) / 2;
+      previous.height = Math.max(previous.height, candidate.height);
+    }
+  }
+  const selected = rows.slice(0, Math.max(1, Number(expectedRows) || 11));
+  if (selected.length < Math.max(1, Number(expectedRows) || 11)) return null;
+  const gaps = selected
+    .slice(1)
+    .map((row, index) => row.centerY - selected[index].centerY)
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (!gaps.length) return null;
+  const medianRowGapPx = medianValue(gaps);
+  return {
+    firstRowCenterY: Math.round(selected[0].centerY),
+    lastRowCenterY: Math.round(selected.at(-1).centerY),
+    medianRowGapPx: Math.round(medianRowGapPx),
+    totalHeightPx: Math.round(
+      selected.at(-1).centerY - selected[0].centerY + medianRowGapPx
+    )
+  };
+}
+
+function withAlignedPagedTableCalibration(definition, kind) {
+  const source = definition || {};
+  const sourcePagination = source.pagination || {};
+  const hasPageHeightOverride = Object.prototype.hasOwnProperty.call(
+    sourcePagination,
+    "pageHeightPx"
+  );
+  const rowsPerPage = Math.max(
+    1,
+    Number(sourcePagination.rowsPerPage) || 11
+  );
+  const rowHeightPx = Math.max(
+    1,
+    Number(sourcePagination.rowHeightPx) || 66
+  );
+  const configuredMaxAlignments = Number(sourcePagination.maxRowAlignments);
+  const sourceFrom = sourcePagination.from || {};
+  const from = {
+    x: Number(sourceFrom.x) || 1550,
+    y: Number(sourcePagination.swipeStartY) || 980
+  };
+  const to = {
+    x: Number(sourcePagination.to?.x) || Number(from.x) || 1550,
+    y: Math.round(Number(from.y) - rowsPerPage * rowHeightPx)
+  };
+  return {
+    ...source,
+    rowAnchorTop:
+      Number(source.rowAnchorTop ?? sourcePagination.rowAnchorTop) || 285,
+    pagination: {
+      ...sourcePagination,
+      from,
+      to,
+      durationMs: Math.max(1_000, Number(sourcePagination.durationMs) || 1_000),
+      rowsPerPage,
+      minimumRowsPerPage: rowsPerPage,
+      rowHeightPx,
+      measurePageHeightFromRows:
+        sourcePagination.measurePageHeightFromRows !== false,
+      // Runtime configs from before the explicit calibration field did not
+      // carry pageHeightPx. Use the validated MuMu target of 730px for those
+      // configs; tests/plugins can explicitly set 0 to keep measurement mode.
+      pageHeightPx: hasPageHeightOverride
+        ? Math.max(0, Number(sourcePagination.pageHeightPx) || 0)
+        : 730,
+      pageHeightExtraPx: Math.max(
+        0,
+        Number(sourcePagination.pageHeightExtraPx) ||
+          (hasPageHeightOverride ? 5 : 0)
+      ),
+      rowColorMetric: sourcePagination.rowColorMetric || "luminance",
+      rowColorAdaptive: sourcePagination.rowColorAdaptive !== false,
+      rowColorSampleStepPx:
+        Math.max(2, Number(sourcePagination.rowColorSampleStepPx) || 5),
+      rowResidualMaxPx: Math.max(
+        8,
+        Number(sourcePagination.rowResidualMaxPx) || 18
+      ),
+      maxRowAlignments: Number.isFinite(configuredMaxAlignments)
+        ? Math.max(0, Math.min(2, configuredMaxAlignments))
+        : 1,
+      rowAlignmentDurationMs:
+        Math.max(100, Number(sourcePagination.rowAlignmentDurationMs) || 1_000),
+      rowAlignmentSettleMs:
+        Math.max(500, Number(sourcePagination.rowAlignmentSettleMs) || 1_500),
+      calibrationKind: kind
+    }
+  };
+}
+
+async function alignPagedTablePage(
+  context,
+  label,
+  definition,
+  page,
+  signal,
+  firstRowKind = null
+) {
+  const { vision, adb, report } = context;
+  if (
+    !definition?.region ||
+    typeof vision?.probe !== "function" ||
+    typeof adb?.mouseSwipe !== "function"
+  ) {
+    return null;
+  }
+  let frame = await captureTableFrame(context, `${label}-alignment`, definition, signal);
+  const pagination = definition.pagination || {};
+  const configuredMaxAdjustments = Number(pagination.maxRowAlignments);
+  const maxAdjustments = Number.isFinite(configuredMaxAdjustments)
+    ? Math.max(0, Math.min(2, configuredMaxAdjustments))
+    : 1;
+  for (let attempt = 1; attempt <= maxAdjustments; attempt += 1) {
+    const bands = await readTableColorBands(
+      vision,
+      frame.path,
+      definition,
+      signal
+    );
+    const adjustment = tableRowAlignmentAdjustment(
+      bands,
+      definition,
+      pagination,
+      page,
+      firstRowKind
+    );
+    if (!adjustment) return frame;
+    const directionLabel = adjustment.direction === "up" ? "上移" : "下移";
+    await report(
+      "info",
+      "table_row_alignment",
+      `${label} 第 ${page + 1} 页检测到顶部色带偏移，按 ${adjustment.distance}px ${directionLabel}自动修正后再读取 ${pagination.rowsPerPage} 行`,
+      {
+        page: page + 1,
+        attempt,
+        table: pagination.calibrationKind,
+        direction: adjustment.direction,
+        distance: adjustment.distance,
+        visibleFirstHeight: adjustment.visibleFirstHeight,
+        rowHeight: adjustment.rowHeight,
+        bands: bands.slice(0, 8)
+      }
+    );
+    const usedTouchFallback = await memberAlignmentSwipe(
+      adb,
+      { x: adjustment.x, y: adjustment.anchorY },
+      {
+        x: adjustment.x,
+        y:
+          adjustment.direction === "up"
+            ? adjustment.anchorY - adjustment.distance
+            : adjustment.anchorY + adjustment.distance
+      },
+      Math.max(
+        100,
+        Math.round(
+          (Number(pagination.rowAlignmentDurationMs) || 1_000) * 0.7
+        )
+      ),
+      signal
+    );
+    if (usedTouchFallback) {
+      await report(
+        "warning",
+        "table_swipe_touch_fallback",
+        `${pagination.calibrationKind === "contribution" ? "贡献" : "斩杀预警"}列表行对齐的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动`
+      );
+    }
+    await (context.sleep || delay)(
+      Math.max(500, Number(pagination.rowAlignmentSettleMs) || 1_500),
+      signal
+    );
+    frame = await captureTableFrame(
+      context,
+      `${label}-alignment-${attempt + 1}`,
+      definition,
+      signal
+    );
+  }
+  return frame;
+}
+
+async function readTableColorBands(vision, imagePath, definition, signal) {
+  if (!imagePath || !definition?.region) return [];
+  const region = definition.region;
+  const pagination = definition.pagination || {};
+  const step = Math.max(2, Number(pagination.rowColorSampleStepPx) || 5);
+  const sampleStart = Math.max(
+    region.top,
+    Number(definition.rowAnchorTop ?? pagination.rowAnchorTop) || region.top
+  );
+  const sampleXFractions = [0.12, 0.28, 0.44, 0.60, 0.78, 0.94];
+  const points = [];
+  for (let y = sampleStart; y <= region.bottom - 5; y += step) {
+    for (const fraction of sampleXFractions) {
+      points.push({
+        x: Math.round(region.left + (region.right - region.left) * fraction),
+        y
+      });
+    }
+  }
+  let probes;
+  try {
+    probes = await vision.probe(imagePath, points, 6, signal);
+  } catch {
+    return [];
+  }
+  const metric = String(pagination.rowColorMetric || "luminance");
+  const byY = new Map();
+  for (const probe of Array.isArray(probes) ? probes : []) {
+    const y = Number(probe?.y);
+    if (!Number.isFinite(y)) continue;
+    const value = tableColorValue(probe, metric);
+    if (!Number.isFinite(value)) continue;
+    const values = byY.get(y) || [];
+    values.push(value);
+    byY.set(y, values);
+  }
+  const samples = [...byY.entries()]
+    .map(([y, values]) => ({ y: Number(y), value: medianValue(values) }))
+    .filter((sample) => Number.isFinite(sample.value))
+    .sort((left, right) => left.y - right.y);
+  if (!samples.length) return [];
+  const adaptive = pagination.rowColorAdaptive !== false;
+  const configuredThreshold = Number(pagination.rowColorThreshold);
+  const threshold = adaptive
+    ? (percentile(samples.map((sample) => sample.value), 0.15) +
+        percentile(samples.map((sample) => sample.value), 0.85)) /
+      2
+    : Number.isFinite(configuredThreshold)
+      ? configuredThreshold
+      : 0.3;
+  const bands = [];
+  for (const sample of samples) {
+    const kind = sample.value >= threshold ? "light" : "dark";
+    const previous = bands.at(-1);
+    if (!previous || previous.kind !== kind) {
+      bands.push({ kind, start: sample.y, end: sample.y + step });
+    } else {
+      previous.end = sample.y + step;
+    }
+  }
+  while (
+    bands.length > 1 &&
+    bands[0].end - bands[0].start < step
+  ) {
+    bands.shift();
+  }
+  return bands.map((band) => ({
+    ...band,
+    length: Math.max(0, band.end - band.start)
+  }));
+}
+
+function tableColorValue(probe, metric) {
+  if (metric === "blue") return Number(probe.meanBlue);
+  if (metric === "green") return Number(probe.meanGreen);
+  if (metric === "red") return Number(probe.meanRed);
+  return (
+    Number(probe.meanRed) * 0.2126 +
+    Number(probe.meanGreen) * 0.7152 +
+    Number(probe.meanBlue) * 0.0722
+  );
+}
+
+function percentile(values, fraction) {
+  const sorted = values.filter(Number.isFinite).sort((left, right) => left - right);
+  if (!sorted.length) return 0;
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.round((sorted.length - 1) * fraction))
+  );
+  return sorted[index];
+}
+
+export function tableRowAlignmentAdjustment(
+  bands,
+  definition,
+  pagination,
+  page = 1,
+  firstRowKind = null
+) {
+  if (!Array.isArray(bands) || bands.length < 2) return null;
+  const rowHeight = Math.max(1, Number(pagination.rowHeightPx) || 66);
+  const first = bands[0];
+  const next = bands[1];
+  const residualMaxPx = Math.max(
+    8,
+    Number(pagination.rowResidualMaxPx) || Math.round(rowHeight * 0.25)
+  );
+  if (first.length > residualMaxPx || next.length < rowHeight * 0.6) {
+    return null;
+  }
+  const visibleFirstHeight = first.length;
+  // The first two bands are only actionable when the first visible band is a
+  // small residual. Use the alternating row color to distinguish the two
+  // possible errors: the expected first-row color means that row is clipped
+  // at the top and the list must move down by its missing height; the other
+  // color is the previous page's residual and must move up by its visible
+  // height. This keeps the correction equal to the measured error rather
+  // than applying a full-row gesture that can cover the first row.
+  const rowsPerPage = Math.max(1, Number(pagination.rowsPerPage) || 11);
+  const expectedFirstRowKind = firstRowKind
+    ? (Math.floor(page * rowsPerPage) % 2 === 0
+        ? firstRowKind
+        : firstRowKind === "light"
+          ? "dark"
+          : "light")
+    : null;
+  const direction =
+    expectedFirstRowKind && first.kind === expectedFirstRowKind
+      ? "down"
+      : "up";
+  const distance =
+    direction === "down"
+      ? Math.max(8, Math.round(rowHeight - visibleFirstHeight))
+      : Math.max(8, Math.round(visibleFirstHeight));
+  const region = definition.region;
+  const anchorY = Math.round(
+    region.top + (region.bottom - region.top) * 0.42
+  );
+  const from = pagination.from || {};
+  return {
+    direction,
+    distance,
+    visibleFirstHeight,
+    rowHeight,
+    anchorY,
+    x: Number(from.x) || Math.round(region.right - 20)
+  };
 }
 
 async function alignMemberDetailsPage(

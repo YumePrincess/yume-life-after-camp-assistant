@@ -264,8 +264,10 @@
                   <p class="eyebrow">SCHEDULE</p>
                   <h1>自动任务时间</h1>
                   <p class="section-intro">各任务独立启停；全部时间使用基础设置中的时区。</p>
-                  <label class="field schedule-retry-setting"><span>定时任务失败重试次数（计划窗口内手动任务也适用）</span><input name="scheduledRetryCount" type="number" min="0" max="6" /></label>
-                  <label class="field schedule-retry-setting"><span>手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）</span><input name="manualRetryCount" type="number" min="0" max="6" /></label>
+                  <div class="schedule-retry-grid">
+                    <label class="field schedule-retry-setting"><span>定时任务失败重试次数（计划窗口内手动任务也适用）</span><input name="scheduledRetryCount" type="number" min="0" max="6" /></label>
+                    <label class="field schedule-retry-setting"><span>手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）</span><input name="manualRetryCount" type="number" min="0" max="6" /></label>
+                  </div>
                 </div>
               </div>
               <div class="schedule-grid">
@@ -400,8 +402,14 @@
               </div>
               <div class="technology-editor-toolbar">
                 <div class="technology-date-picker">
-                  <span class="field-label">固定科技适用日期</span>
-                  <div id="technology-weekdays" class="weekday-tabs" role="tablist"></div>
+                  <div class="technology-date-picker-recent">
+                    <span class="field-label">固定科技适用日期</span>
+                    <div id="technology-weekdays" class="weekday-tabs" role="tablist"></div>
+                  </div>
+                  <label class="field technology-date-query">
+                    <span>设置更远日期</span>
+                    <input id="technology-fixed-date" type="date" />
+                  </label>
                 </div>
               </div>
               <div class="technology-preview-heading">

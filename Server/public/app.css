@@ -2219,9 +2219,16 @@ select option {
   width: 100%;
 }
 
-.schedule-retry-setting {
-  max-width: 360px;
+.schedule-retry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 360px));
+  gap: 16px;
   margin-top: 16px;
+}
+
+.schedule-retry-setting {
+  min-width: 0;
+  margin: 0;
 }
 
 .schedule-time-list {
@@ -2408,7 +2415,23 @@ select option {
 .technology-date-picker {
   min-width: 0;
   display: grid;
-  align-content: start;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.42fr);
+  align-items: end;
+  gap: 16px;
+}
+
+.technology-date-picker-recent {
+  min-width: 0;
+}
+
+.technology-date-query {
+  min-width: 0;
+  margin: 0;
+}
+
+.technology-date-query input {
+  width: 100%;
+  min-height: 40px;
 }
 
 .weekday-tab {
@@ -3472,6 +3495,11 @@ dialog::backdrop {
 
   .technology-editor-toolbar {
     align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .schedule-retry-grid,
+  .technology-date-picker {
     grid-template-columns: 1fr;
   }
 

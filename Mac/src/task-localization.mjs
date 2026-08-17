@@ -269,6 +269,69 @@ const PATTERN_TRANSLATIONS = [
     }
   },
   {
+    test: /^第 (\d+) 页疑似将带颜色码的“启航”职位识别为名字，正在调用 Qwen 本地视觉辅助模型重读当前页；当前已读到：(.+)$/,
+    values: {
+      "zh-tw": "第 $1 頁疑似將帶顏色碼的「啟航」職位識別為姓名，正在呼叫 Qwen 本機視覺輔助模型重讀目前頁面；目前已讀到：$2",
+      en: "Page $1 may have read a color-coded sailing title as a name; asking the Qwen local vision assistant to reread it; names currently recognized: $2",
+      fr: "La page $1 a peut-être reconnu un titre de navigation codé par couleur comme un nom ; nouvelle lecture par l’assistant visuel local Qwen ; noms reconnus : $2",
+      ja: "$1 ページ目で色コード付きの「啓航」役職を名前として認識した可能性があるため、Qwen ローカル視覚アシスタントで再読；現在認識した名前：$2"
+    }
+  },
+  {
+    test: /^第 1 页读取 (\d+) 行整体高度 (\d+)px，增加 (\d+)px 后按 (\d+)px 翻页$/,
+    values: {
+      "zh-tw": "第 1 頁讀取 $1 行整體高度 $2px，增加 $3px 後按 $4px 翻頁",
+      en: "Page 1 measured an overall height of $2px for $1 rows; added $3px and will use $4px for subsequent pages",
+      fr: "La page 1 a mesuré une hauteur totale de $2 px pour $1 lignes ; ajout de $3 px, puis utilisation de $4 px pour les pages suivantes",
+      ja: "1ページ目で$1行の全体高さ$2pxを測定；$3pxを加え、以降は$4pxでスクロールします"
+    }
+  },
+  {
+    test: /^(.+) 第 (\d+) 页检测到顶部色带偏移，按 (\d+)px 上移自动修正后再读取 (\d+) 行$/,
+    values: {
+      "zh-tw": "$1 第 $2 頁偵測到頂部色帶偏移，向上自動修正 $3px 後再讀取 $4 行",
+      en: "$1 page $2 detected a top color-band offset; moved up $3px before rereading $4 rows",
+      fr: "$1 page $2 a détecté un décalage de bande de couleur en haut ; décalage vers le haut de $3 px avant la relecture de $4 lignes",
+      ja: "$1 の $2 ページ目で上端の色帯ずれを検出；$3px 上へ自動補正して $4 行を再読します"
+    }
+  },
+  {
+    test: /^(.+) 第 (\d+) 页检测到顶部色带偏移，按 (\d+)px 下移自动修正后再读取 (\d+) 行$/,
+    values: {
+      "zh-tw": "$1 第 $2 頁偵測到頂部色帶偏移，向下自動修正 $3px 後再讀取 $4 行",
+      en: "$1 page $2 detected a top color-band offset; moved down $3px before rereading $4 rows",
+      fr: "$1 page $2 a détecté un décalage de bande de couleur en haut ; décalage vers le bas de $3 px avant la relecture de $4 lignes",
+      ja: "$1 の $2 ページ目で上端の色帯ずれを検出；$3px 下へ自動補正して $4 行を再読します"
+    }
+  },
+  {
+    test: /^(.+) 第 (\d+) 页检测到顶部残留色带，按 (\d+)px 上移自动修正后再读取 (\d+) 行$/,
+    values: {
+      "zh-tw": "$1 第 $2 頁偵測到頂部殘留色帶，向上自動修正 $3px 後再讀取 $4 行",
+      en: "$1 page $2 detected a small residual top color band; moved up $3px before rereading $4 rows",
+      fr: "$1 page $2 a détecté une petite bande de couleur résiduelle en haut ; décalage vers le haut de $3 px avant la relecture de $4 lignes",
+      ja: "$1 の $2 ページ目で上端の小さな残留色帯を検出；$3px 上へ自動補正して $4 行を再読します"
+    }
+  },
+  {
+    test: /^(贡献|斩杀预警)列表行对齐的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动$/,
+    values: {
+      "zh-tw": "$1 列表行對齊的 MuMu 滑鼠注入遭系統拒絕，已切換 Android 觸控滑動",
+      en: "MuMu mouse injection for $1 row alignment was rejected by Android; switched to touch swipe",
+      fr: "L’injection de souris MuMu pour l’alignement des lignes $1 a été refusée par Android ; passage au geste tactile",
+      ja: "$1 リストの行揃えで MuMu のマウス入力が Android に拒否されたため、タッチスクロールに切り替えました"
+    }
+  },
+  {
+    test: /^(贡献|斩杀预警)列表滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动$/,
+    values: {
+      "zh-tw": "$1 列表滾動的 MuMu 滑鼠注入遭系統拒絕，已切換 Android 觸控滑動",
+      en: "MuMu mouse injection for $1 scrolling was rejected by Android; switched to touch swipe",
+      fr: "L’injection de souris MuMu pour le défilement $1 a été refusée par Android ; passage au geste tactile",
+      ja: "$1 リストのスクロールで MuMu のマウス入力が Android に拒否されたため、タッチスクロールに切り替えました"
+    }
+  },
+  {
     test: /^第 (\d+) 页识别不足，Qwen 本地视觉辅助模型当前不可用，继续使用 OCR 重读；当前已读到：(.+)$/,
     values: {
       "zh-tw": "第 $1 頁識別不足，Qwen 本機視覺輔助模型目前不可用，繼續使用 OCR 重讀；目前已讀到：$2",

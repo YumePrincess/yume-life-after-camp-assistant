@@ -2538,6 +2538,7 @@
     en: {
       "定时任务失败重试次数（计划窗口内手动任务也适用）": "Scheduled-task failure retries (also apply to manual tasks in the scheduled window)",
       "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "Manual-task failure retries (0 by default; excludes manual tasks in the scheduled window)",
+      "设置更远日期": "Set a farther date",
       "配置执行计划": "Configure execution plan",
       "增加一次执行时间": "Add execution time",
       "保存此任务计划": "Save this task plan",
@@ -2555,6 +2556,7 @@
     fr: {
       "定时任务失败重试次数（计划窗口内手动任务也适用）": "Nouvelles tentatives des tâches planifiées (également pour les tâches manuelles dans la fenêtre planifiée)",
       "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "Nouvelles tentatives des tâches manuelles (0 par défaut ; hors tâches manuelles dans la fenêtre planifiée)",
+      "设置更远日期": "Définir une date plus lointaine",
       "配置执行计划": "Configurer le plan d’exécution",
       "增加一次执行时间": "Ajouter une heure",
       "保存此任务计划": "Enregistrer ce plan",
@@ -2572,6 +2574,7 @@
     ja: {
       "定时任务失败重试次数（计划窗口内手动任务也适用）": "定期タスクの失敗リトライ回数（予定ウィンドウ内の手動タスクにも適用）",
       "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "手動タスクの失敗リトライ回数（初期値0回、予定ウィンドウ内の手動タスクを除く）",
+      "设置更远日期": "先の日付を設定",
       "配置执行计划": "実行計画を設定",
       "增加一次执行时间": "実行時刻を追加",
       "保存此任务计划": "この計画を保存",
@@ -2589,6 +2592,7 @@
     "zh-tw": {
       "定时任务失败重试次数（计划窗口内手动任务也适用）": "定時任務失敗重試次數（計畫時段內的手動任務也適用）",
       "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "手動任務失敗重試次數（預設 0 次；不包含計畫時段內的手動任務）",
+      "设置更远日期": "設定更遠日期",
       "配置执行计划": "設定執行計畫",
       "增加一次执行时间": "增加一次執行時間",
       "保存此任务计划": "儲存此任務計畫",

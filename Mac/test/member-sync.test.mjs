@@ -6,8 +6,11 @@ import {
   alignContributionRowsToRoster,
   dedupeStaffAssignments,
   assertContributionComplete,
+  containsSailingTitleLeak,
   reconcilePageRows,
-  selectActivityWarningRows
+  selectActivityWarningRows,
+  stripStaffColorCodes,
+  tableRowAlignmentAdjustment
 } from "../src/workflows/member-sync.mjs";
 
 test("contribution OCR role badges are aligned to the authoritative roster", () => {
@@ -73,11 +76,24 @@ test("contribution and inactivity scans wait three seconds after paging and stop
         config.tables[table].pagination.initialSettleMs,
         3000
       );
+      assert.equal(config.tables[table].pagination.durationMs, 1000);
       assert.equal(config.tables[table].ocrMinimumConfidence, 0.3);
       assert.equal(
         config.tables[table].pagination.settleAfterSwipeMs,
-        3000
+        2000
       );
+      assert.equal(config.tables[table].pagination.rowsPerPage, 11);
+      assert.equal(config.tables[table].pagination.minimumRowsPerPage, 11);
+      assert.equal(config.tables[table].pagination.visibleRowsPerPage, 11);
+      assert.equal(config.tables[table].pagination.lastPageRows, 11);
+      assert.equal(config.tables[table].pagination.swipeStartY, 980);
+      assert.equal(config.tables[table].pagination.rowAnchorTop, 285);
+      assert.equal(config.tables[table].pagination.rowHeightPx, 66);
+      assert.equal(config.tables[table].pagination.measurePageHeightFromRows, true);
+      assert.equal(config.tables[table].pagination.pageHeightPx, 730);
+      assert.equal(config.tables[table].pagination.pageHeightExtraPx, 0);
+      assert.equal(config.tables[table].pagination.rowResidualMaxPx, 18);
+      assert.equal(config.tables[table].pagination.to.y, 250);
     }
     assert.equal(config.tables.members.ocrMinimumConfidence, 0.3);
     assert.deepEqual(config.tables.members.pagination.from, { x: 1700, y: 700 });
@@ -98,6 +114,243 @@ test("contribution and inactivity scans wait three seconds after paging and stop
     assert.equal(config.flows.resetMemberPanelForRescan[0].text, "首页");
     assert.equal(config.flows.resetMemberPanelForRescan[2].text, "成员");
   }
+});
+
+test("member profile helpers clean staff color codes and detect leaked sailing titles", () => {
+  assert.equal(stripStaffColorCodes("#P 营地助手"), "营地助手");
+  assert.equal(stripStaffColorCodes("#B#G 资源官"), "资源官");
+  assert.equal(stripStaffColorCodes("市长"), "市长");
+  assert.equal(containsSailingTitleLeak("启航"), true);
+  assert.equal(containsSailingTitleLeak("#B XXX"), true);
+  assert.equal(containsSailingTitleLeak("#YXXX"), true);
+  assert.equal(containsSailingTitleLeak("#B XXX #YXXX"), true);
+  assert.equal(containsSailingTitleLeak("#B启航"), false);
+  assert.equal(containsSailingTitleLeak("#Y启航"), false);
+  assert.equal(containsSailingTitleLeak("#P 启航"), false);
+  assert.equal(containsSailingTitleLeak("#W#Y 启航"), false);
+  assert.equal(containsSailingTitleLeak("雨梦"), false);
+});
+
+test("member scan rereads a full page when a sailing title leaks into the name", async () => {
+  const advisorOptions = [];
+  const context = {
+    vision: {
+      async capture(label) {
+        return {
+          path: `${label}.png`,
+          observations: [
+            "#B XXX",
+            "成员二",
+            "成员三",
+            "成员四",
+            "成员五"
+          ].map((text, index) => ({
+            text,
+            x: 300,
+            y: 320 + index * 95,
+            width: 120,
+            height: 36
+          }))
+        };
+      },
+      async extractTableRows(_path, _definition, _label, _signal, options) {
+        advisorOptions.push(options);
+        return [
+          { name: "成员一" },
+          { name: "成员二" },
+          { name: "成员三" },
+          { name: "成员四" },
+          { name: "成员五" }
+        ];
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: { async afterAction() {} },
+    async report() {}
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      rowAnchorTop: 315,
+      columns: [
+        { key: "identity", left: 0, right: 1, stackedKeys: ["name"] }
+      ],
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        stopAfterStagnantPages: 1
+      }
+    }
+  );
+
+  assert.deepEqual(rows.map((row) => row.name), [
+    "成员一",
+    "成员二",
+    "成员三",
+    "成员四",
+    "成员五"
+  ]);
+  assert.equal(advisorOptions.length, 1);
+  assert.equal(advisorOptions[0].forceMemberAdvisor, true);
+});
+
+test("contribution and activity pages use 11-row calibrated segmented swipes", async () => {
+  for (const label of ["member-contribution", "member-activity"]) {
+    const swipes = [];
+    const shellCalls = [];
+    let probeCalls = 0;
+    const reports = [];
+    const context = {
+      config: { localVisionModel: { enabled: false, transport: "http" } },
+      vision: {
+        async capture(currentLabel) {
+          const capturePage = Number(currentLabel.match(/-(\d+)/)?.[1] || 1);
+          return {
+            path: `${currentLabel}.png`,
+            observations: Array.from({ length: 11 }, (_, index) => ({
+              text: `raw-${label}-${capturePage}-${index}`,
+              x: 1240,
+              y: 290 + index * 68,
+              width: 100,
+              height: 20
+            }))
+          };
+        },
+        async probe(_path, points) {
+          probeCalls += 1;
+          return points.map(({ x, y }) => {
+            const level =
+              probeCalls === 1
+                ? y < 295
+                  ? 0.1
+                  : Math.floor((y - 295) / 66) % 2
+                    ? 0.1
+                    : 0.3
+                : probeCalls === 2
+                  ? y < 295
+                    ? 0.1
+                    : Math.floor((y - 295) / 66) % 2
+                      ? 0.1
+                      : 0.3
+                  : Math.floor((y - 285) / 66) % 2
+                    ? 0.1
+                    : 0.3;
+            return {
+              x,
+              y,
+              meanRed: level,
+              meanGreen: level,
+              meanBlue: level
+            };
+          });
+        },
+        async extractTableRows(_path, _definition, currentLabel) {
+          const page = Number(currentLabel.match(/-(\d+)/)?.[1] || 1);
+          return Array.from({ length: 11 }, (_, index) => ({
+            name: `${label}-${page}-${index}`,
+            ...(label === "member-contribution"
+              ? {
+                  weeklyContribution: "1",
+                  technologyPointsUsed: "2",
+                  materialContribution: "3"
+                }
+              : { onlineState: "在线" })
+          }));
+        }
+      },
+      adb: {
+        async mouseSwipe(from, to, durationMs) {
+          swipes.push({ from, to, durationMs });
+        },
+        async shell(args) {
+          shellCalls.push(args);
+        }
+      },
+      ui: { async afterAction() {} },
+      async sleep() {},
+      async report(_level, step, message, detail) {
+        reports.push({ step, message, detail });
+      }
+    };
+    const rows = await capturePagedTable(
+      context,
+      label,
+      {
+        region: { left: 1220, top: 270, right: 1900, bottom: 1000 },
+        columns: [{ key: "name", left: 0, right: 1 }],
+        headerPattern: [],
+        pagination: {
+          maxPages: 2,
+          stopAfterStagnantPages: 2,
+          pageHeightPx: 0,
+          pageHeightExtraPx: 5
+        }
+      }
+    );
+    assert.equal(rows.length, 22);
+    assert.equal(swipes.length, 0);
+    assert.ok(probeCalls >= 1);
+    assert.ok(shellCalls.some((args) => args[0] === "input" && args[2] === "motionevent"));
+    const motionY = shellCalls
+      .filter((args) => args[0] === "input" && args[2] === "motionevent")
+      .map((args) => Number(args[5]));
+    const alignmentStart = motionY.indexOf(577);
+    assert.ok(alignmentStart >= 0);
+    assert.ok(motionY.includes(567));
+    assert.ok(motionY.includes(980));
+    assert.ok(motionY.includes(227));
+    assert.ok(reports.some(({ step }) => step === "table_row_alignment"));
+    assert.equal(reports.find(({ step }) => step === "table_row_alignment").detail.distance, 10);
+    assert.equal(reports.find(({ step }) => step === "table_row_alignment").detail.direction, "up");
+    assert.equal(
+      reports.find(({ step }) => step === "table_page_height_calibrated").detail.totalHeightPx,
+      748
+    );
+    assert.equal(
+      reports.find(({ step }) => step === "table_page_height_calibrated").detail.swipeHeightPx,
+      753
+    );
+  }
+});
+
+test("contribution and activity color bands choose the correction direction", () => {
+  const definition = { region: { left: 1220, top: 270, right: 1900, bottom: 1000 } };
+  const pagination = {
+    rowHeightPx: 66,
+    rowResidualMaxPx: 18,
+    rowsPerPage: 11,
+    from: { x: 1550, y: 980 }
+  };
+  const down = tableRowAlignmentAdjustment(
+    [
+      { kind: "light", start: 285, end: 295, length: 10 },
+      { kind: "dark", start: 295, end: 361, length: 66 }
+    ],
+    definition,
+    pagination,
+    1,
+    "dark"
+  );
+  assert.equal(down.direction, "down");
+  assert.equal(down.distance, 56);
+
+  const up = tableRowAlignmentAdjustment(
+    [
+      { kind: "dark", start: 285, end: 295, length: 10 },
+      { kind: "light", start: 295, end: 361, length: 66 }
+    ],
+    definition,
+    pagination,
+    1,
+    "dark"
+  );
+  assert.equal(up.direction, "up");
+  assert.equal(up.distance, 10);
 });
 
 test("contribution completeness accepts a raw full scan with one filtered OCR row", () => {

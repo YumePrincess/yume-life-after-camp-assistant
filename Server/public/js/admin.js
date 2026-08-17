@@ -1331,15 +1331,20 @@
     const allowedDates = new Set(
       Array.from({ length: 7 }, (_, index) => datePlusDays(firstDate, index))
     );
-    config.fixedByDate = Object.fromEntries(
-      Object.entries(config.fixedByDate || {}).filter(([date]) =>
-        allowedDates.has(date)
-      )
-    );
+    config.fixedByDate ||= {};
     for (const date of allowedDates) {
       config.fixedByDate[date] ||= [];
     }
     if (!state.technologyDate) state.technologyDate = firstDate;
+    if (state.technologyDate < firstDate) state.technologyDate = firstDate;
+    config.fixedByDate[state.technologyDate] ||= [];
+    const dateInput = byId("technology-fixed-date");
+    if (dateInput) {
+      dateInput.min = firstDate;
+      if (document.activeElement !== dateInput) {
+        dateInput.value = state.technologyDate;
+      }
+    }
     Array.from({ length: 7 }, (_, index) => {
       const date = datePlusDays(firstDate, index);
       const weekday = new Intl.DateTimeFormat(localeTag(), {
@@ -3053,6 +3058,14 @@
   });
   byId("technology-category-filter").addEventListener("change", (event) => {
     state.technologyCategory = event.target.value || "all";
+    renderTechnologyEditor();
+  });
+  byId("technology-fixed-date")?.addEventListener("change", (event) => {
+    const value = String(event.target.value || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+    state.technologyDate = value;
+    state.technologyDraft.fixedByDate ||= {};
+    state.technologyDraft.fixedByDate[value] ||= [];
     renderTechnologyEditor();
   });
   for (const [id, lane] of [

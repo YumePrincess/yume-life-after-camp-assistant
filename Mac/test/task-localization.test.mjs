@@ -121,4 +121,36 @@ test("safe count templates translate without translating OCR fields", () => {
     ),
     "Page 18 is incomplete; asking the Qwen local vision assistant to reread it; names currently recognized: 成员1、成员2"
   );
+  assert.equal(
+    localizeTaskEvent(
+      "member_details_ai_recovery_attempt",
+      "第 2 页疑似将带颜色码的“启航”职位识别为名字，正在调用 Qwen 本地视觉辅助模型重读当前页；当前已读到：#B XXX、#YXXX",
+      "en"
+    ),
+    "Page 2 may have read a color-coded sailing title as a name; asking the Qwen local vision assistant to reread it; names currently recognized: #B XXX、#YXXX"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "table_row_alignment",
+      "member-contribution-2 第 2 页检测到顶部残留色带，按 10px 上移自动修正后再读取 11 行",
+      "en"
+    ),
+    "member-contribution-2 page 2 detected a small residual top color band; moved up 10px before rereading 11 rows"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "table_row_alignment",
+      "member-activity-2 第 2 页检测到顶部色带偏移，按 56px 下移自动修正后再读取 11 行",
+      "en"
+    ),
+    "member-activity-2 page 2 detected a top color-band offset; moved down 56px before rereading 11 rows"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "table_page_height_calibrated",
+      "第 1 页读取 11 行整体高度 748px，增加 5px 后按 753px 翻页",
+      "en"
+    ),
+    "Page 1 measured an overall height of 748px for 11 rows; added 5px and will use 753px for subsequent pages"
+  );
 });
