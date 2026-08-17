@@ -241,7 +241,8 @@ export class Vision {
         imagePath,
         definition,
         label,
-        signal
+        signal,
+        options
       );
     }
     const isContribution =
@@ -257,7 +258,8 @@ export class Vision {
         imagePath,
         definition,
         label,
-        signal
+        signal,
+        options
       );
     }
     const isMemberDetails = [
@@ -492,7 +494,13 @@ export class Vision {
     return breakdown.total;
   }
 
-  async #extractContributionRows(imagePath, definition, label, signal) {
+  async #extractContributionRows(
+    imagePath,
+    definition,
+    label,
+    signal,
+    _options = {}
+  ) {
     const configuredMinimum = Number(definition.ocrMinimumConfidence);
     const memberOcrMinimum = Number.isFinite(configuredMinimum)
       ? Math.max(0.25, Math.min(0.8, configuredMinimum))
@@ -604,7 +612,16 @@ export class Vision {
         cropPath,
         signal
       );
-      const advisedNames = await this.advisor.extractNames(cropPath, signal);
+      let advisedNames = [];
+      try {
+        advisedNames = await this.advisor.extractNames(cropPath, signal);
+      } catch {
+        // Accurate OCR already produced row-aligned values.  The local model
+        // is an enhancement for ambiguous names, not a prerequisite for
+        // recovering a row whose native name OCR was blank; preserve the
+        // accurate pass when the model is stopped, busy, or unavailable.
+        advisedNames = [];
+      }
       const namesByRow = new Map(
         advisedNames.map((item) => [item.row, item.name])
       );
@@ -616,8 +633,7 @@ export class Vision {
             (isPlausibleMemberName(namesByRow.get(index + 1))
               ? namesByRow.get(index + 1)
               : "")
-        }))
-        .filter((row) => row.name);
+        }));
     } finally {
       this.taskPaths.delete(cropPath);
       await rm(cropPath, { force: true });
@@ -892,7 +908,13 @@ export class Vision {
       .filter((row) => row.name);
   }
 
-  async #extractActivityRows(imagePath, definition, label, signal) {
+  async #extractActivityRows(
+    imagePath,
+    definition,
+    label,
+    signal,
+    options = {}
+  ) {
     const configuredMinimum = Number(definition.ocrMinimumConfidence);
     const memberOcrMinimum = Number.isFinite(configuredMinimum)
       ? Math.max(0.25, Math.min(0.8, configuredMinimum))
@@ -903,7 +925,8 @@ export class Vision {
       `${label}-activity-values`,
       signal,
       "accurate",
-      memberOcrMinimum
+      memberOcrMinimum,
+      options.forceActivityRecovery ? 2 : 1
     );
     return parseTable(observations, definition).filter(
       (row) =>

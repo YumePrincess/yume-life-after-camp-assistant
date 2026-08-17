@@ -153,4 +153,12 @@ test("safe count templates translate without translating OCR fields", () => {
     ),
     "Page 1 measured an overall height of 748px for 11 rows; added 5px and will use 753px for subsequent pages"
   );
+  assert.equal(
+    localizeTaskEvent(
+      "activity_boundary_recovered",
+      "第 2 页检测到阈值边界，重读恢复 1 名离线达到 1 天的成员",
+      "en"
+    ),
+    "Page 2 reached the threshold boundary; rereading recovered 1 members offline for at least 1 days"
+  );
 });

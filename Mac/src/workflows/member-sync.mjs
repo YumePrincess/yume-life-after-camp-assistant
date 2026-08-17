@@ -202,6 +202,12 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
 }
 
 export async function captureContribution(context, signal, options = {}) {
+  const rosterExpectedCount = Array.isArray(context.memberRoster)
+    ? context.memberRoster.filter((member) => member?.name).length || null
+    : null;
+  const expectedCount = Number.isFinite(Number(options.expectedCount))
+    ? Math.max(1, Number(options.expectedCount))
+    : rosterExpectedCount;
   await updateWorkflowProgress(
     context,
     options.progressRange?.start,
@@ -236,13 +242,13 @@ export async function captureContribution(context, signal, options = {}) {
     context.config.tables.contribution,
     signal,
     {
-      expectedCount: options.expectedCount,
+      expectedCount,
       progressRange: scanProgressRange
     }
   );
   const minimumRows = Math.max(
     1,
-    Number(options.expectedCount) ||
+    Number(expectedCount) ||
       contributionMinimum(context.config.tables.contribution)
   );
   if (rows.length < minimumRows) {
@@ -260,7 +266,7 @@ export async function captureContribution(context, signal, options = {}) {
       context.config.tables.contribution,
       signal,
       {
-        expectedCount: options.expectedCount,
+        expectedCount,
         progressRange: scanProgressRange
       }
     );
@@ -648,6 +654,15 @@ export async function capturePagedTable(
       Number(definition.pagination.minimumRowsPerPage) ||
       1
   );
+  // A contribution scan may receive the authoritative roster count.  The
+  // final remainder page is allowed to show one row from the previous page
+  // because the game clamps the swipe at the list bottom.  Calculate that
+  // page up front so a repeated visual tail is never treated as additional
+  // pages.  The five-row member-details scanner keeps its own tail rules.
+  const contributionExpectedPageCount =
+    contributionTableMode && expectedCount !== null
+      ? Math.max(1, Math.ceil(expectedCount / memberRowsPerPage))
+      : null;
   // Member pages are allowed at most six in-place reads.  Keep this cap in
   // code as well as in config.example.json so an older external Runtime
   // config containing the former value 3 cannot silently reintroduce the
@@ -757,11 +772,27 @@ export async function capturePagedTable(
         pageDefinition.region &&
         Array.isArray(pageDefinition.columns);
       let attemptRows = canParseNative
-        ? parseTable(attemptFrame.observations, pageDefinition).filter(
-            (row) =>
-              row.name &&
-              !pageDefinition.headerPattern.some((value) => row.name.includes(value))
-          )
+        ? parseTable(attemptFrame.observations, pageDefinition).filter((row) => {
+            const name = String(row.name || "").trim();
+            if (
+              name &&
+              pageDefinition.headerPattern.some((value) => name.includes(value))
+            ) {
+              return false;
+            }
+            // Keep a contribution row whose name OCR was lost as long as its
+            // numeric columns prove that a real row is present.  Dropping it
+            // here made the later recovery pass impossible and shifted every
+            // following name by one row.
+            if (!name && contributionTableMode) {
+              return [
+                "weeklyContribution",
+                "technologyPointsUsed",
+                "materialContribution"
+              ].some((field) => /\d/.test(String(row[field] || "")));
+            }
+            return Boolean(name);
+          })
         : [];
       if (memberDetailsMode) {
         // The member OCR crop deliberately starts at the identity-column
@@ -778,12 +809,14 @@ export async function capturePagedTable(
       const contributionNeedsRecovery =
         label.startsWith("member-contribution") &&
         attemptRows.length > 0 &&
-        attemptRows.some((row) =>
-          [
-            "weeklyContribution",
-            "technologyPointsUsed",
-            "materialContribution"
-          ].some((field) => !/\d/.test(String(row[field] || "")))
+        attemptRows.some(
+          (row) =>
+            !String(row.name || "").trim() ||
+            [
+              "weeklyContribution",
+              "technologyPointsUsed",
+              "materialContribution"
+            ].some((field) => !/\d/.test(String(row[field] || "")))
         );
       const sailingTitleLeak =
         memberDetailsMode &&
@@ -791,12 +824,23 @@ export async function capturePagedTable(
       const shouldRequestMemberAdvisor =
         memberDetailsMode &&
         (attemptRows.length < minimumRowsPerPage || sailingTitleLeak);
+      const activityNeedsRecovery =
+        label.startsWith("member-activity") &&
+        attemptRows.length > 0 &&
+        (attemptRows.length < minimumRowsPerPage ||
+          attemptRows.some(
+            (row) =>
+              !Number.isFinite(
+                normalizeActivity([row])[0]?.inactiveDays
+              )
+          ));
       if (
         (!attemptRows.length ||
           (definition.extractionMode === "hybrid" &&
             attemptRows.length < minimumRowsPerPage) ||
           contributionNeedsRecovery ||
-          shouldRequestMemberAdvisor) &&
+          shouldRequestMemberAdvisor ||
+          activityNeedsRecovery) &&
         typeof vision.extractTableRows === "function"
       ) {
         if (shouldRequestMemberAdvisor) {
@@ -827,6 +871,10 @@ export async function capturePagedTable(
           signal,
           shouldRequestMemberAdvisor
             ? { forceMemberAdvisor: true }
+            : activityNeedsRecovery
+              ? { forceActivityRecovery: true }
+              : contributionNeedsRecovery
+                ? { forceContributionRecovery: true }
             : undefined
         ).catch(async (error) => {
           await report(
@@ -846,7 +894,9 @@ export async function capturePagedTable(
                 : Number(definition.pagination.rowsPerPage) || 5,
               byName
             )
-          : mergeContributionRows(attemptRows, recoveredRows);
+          : label.startsWith("member-activity")
+            ? mergeActivityRecoveryRows(recoveredRows, attemptRows)
+            : mergeContributionRows(attemptRows, recoveredRows);
         if (memberDetailsMode) {
           attemptRows = filterMemberDetailRows(attemptRows);
           if (!fullPageRead) {
@@ -884,6 +934,71 @@ export async function capturePagedTable(
         row.name &&
         !pageDefinition.headerPattern.some((value) => row.name.includes(value))
     );
+    // The activity list is sorted by offline duration. The first row newer
+    // than the configured threshold is a useful end marker, but it is not a
+    // reliable reason to discard the rest of the current page: one OCR pass
+    // can miss a warning row immediately before that marker. Re-read the
+    // same boundary page at a larger OCR scale and merge the candidates
+    // before applying the early-stop filter. This is scoped to activity
+    // pages; contribution and the five-row member-details scanner keep their
+    // existing paging behavior.
+    if (
+      label.startsWith("member-activity") &&
+      page > 0 &&
+      Number.isFinite(Number(options.minimumInactiveDays)) &&
+      frame?.path &&
+      typeof vision.extractTableRows === "function"
+    ) {
+      const initialSelection = selectActivityWarningRows(
+        rows,
+        Number(options.minimumInactiveDays)
+      );
+      if (initialSelection.reachedBoundary) {
+        let mergedRows = rows;
+        let previousWarningCount = initialSelection.rows.length;
+        for (let recoveryAttempt = 1; recoveryAttempt <= 2; recoveryAttempt += 1) {
+          const recoveredRows = await vision.extractTableRows(
+            frame.path,
+            pageDefinition,
+            `${label}-${page + 1}-boundary-recovery-${recoveryAttempt}`,
+            signal,
+            { forceActivityRecovery: true }
+          ).catch(async (error) => {
+            await report(
+              "warning",
+              "activity_boundary_recovery_failed",
+              `第 ${page + 1} 页阈值边界重读失败，保留当前页已识别结果并继续判断结束位置`,
+              { page: page + 1, recoveryAttempt, reason: error.message }
+            );
+            return [];
+          });
+          mergedRows = mergeActivityRecoveryRows(mergedRows, recoveredRows)
+            .slice(0, rowsPerPage);
+          const recoveredSelection = selectActivityWarningRows(
+            mergedRows,
+            Number(options.minimumInactiveDays)
+          );
+          if (recoveredSelection.rows.length > previousWarningCount) {
+            await report(
+              "info",
+              "activity_boundary_recovered",
+              `第 ${page + 1} 页检测到阈值边界，重读恢复 ${recoveredSelection.rows.length - previousWarningCount} 名离线达到 ${options.minimumInactiveDays} 天的成员`,
+              {
+                page: page + 1,
+                recoveryAttempt,
+                beforeWarningRows: previousWarningCount,
+                afterWarningRows: recoveredSelection.rows.length,
+                recoveredNames: recoveredSelection.rows.map((row) => row.name)
+              }
+            );
+            rows = mergedRows;
+            break;
+          }
+          previousWarningCount = recoveredSelection.rows.length;
+          if (!recoveredSelection.reachedBoundary) break;
+        }
+      }
+    }
     if (
       alignedPagedTableMode &&
       page === 0 &&
@@ -1292,17 +1407,29 @@ export async function capturePagedTable(
       );
       break;
     }
+    if (
+      contributionExpectedPageCount !== null &&
+      page + 1 >= contributionExpectedPageCount
+    ) {
+      await report(
+        "info",
+        `${label}_last_page_reached`,
+        `已读取贡献表按 ${expectedCount} 名成员计算的末页第 ${contributionExpectedPageCount} 页；末页允许包含上一页重复行，不再继续读取重复尾页`,
+        {
+          expectedCount,
+          expectedPageCount: contributionExpectedPageCount,
+          recognized: byName.size,
+          page: page + 1
+        }
+      );
+      break;
+    }
     // Member details must be scanned through the actual list end. OCR can
     // temporarily produce a different spelling for a row on a later page;
     // stopping as soon as the header count is reached would skip the tail and
     // make the final reconciliation depend on page order. The final pass
     // below deduplicates and caps the organized roster to the header total.
-    if (
-      !memberDetailsMode &&
-      !contributionTableMode &&
-      expectedCount !== null &&
-      byName.size >= expectedCount
-    ) {
+    if (!memberDetailsMode && expectedCount !== null && byName.size >= expectedCount) {
       await report(
         "info",
         `${label}_expected_count_reached`,
@@ -2595,6 +2722,22 @@ export function selectActivityWarningRows(rows, minimumInactiveDays) {
         normalized.inactiveDays < minimum
     )
   };
+}
+
+export function mergeActivityRecoveryRows(primaryRows, recoveredRows) {
+  const merged = [];
+  const seen = new Set();
+  for (const row of [...(primaryRows || []), ...(recoveredRows || [])]) {
+    const name = String(row?.name || "")
+      .trim()
+      .normalize("NFKC")
+      .toLocaleLowerCase()
+      .replace(/\s+/g, "");
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    merged.push(row);
+  }
+  return merged;
 }
 
 export function reconcilePageRows(previousRows, currentRows) {

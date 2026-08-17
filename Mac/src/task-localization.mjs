@@ -314,6 +314,24 @@ const PATTERN_TRANSLATIONS = [
     }
   },
   {
+    test: /^第 (\d+) 页检测到阈值边界，重读恢复 (\d+) 名离线达到 (\d+) 天的成员$/,
+    values: {
+      "zh-tw": "第 $1 頁偵測到閾值邊界，重讀恢復 $2 名離線達到 $3 天的成員",
+      en: "Page $1 reached the threshold boundary; rereading recovered $2 members offline for at least $3 days",
+      fr: "La page $1 a atteint la limite du seuil ; une nouvelle lecture a récupéré $2 membres absents depuis au moins $3 jours",
+      ja: "$1 ページ目でしきい値境界を検出；再読により $3 日以上オフラインのメンバーを $2 人復元しました"
+    }
+  },
+  {
+    test: /^第 (\d+) 页阈值边界重读失败，保留当前页已识别结果并继续判断结束位置$/,
+    values: {
+      "zh-tw": "第 $1 頁閾值邊界重讀失敗，保留目前頁面已識別結果並繼續判斷結束位置",
+      en: "Threshold-boundary reread failed on page $1; keeping the recognized rows and continuing to determine the end",
+      fr: "La nouvelle lecture de la limite du seuil a échoué à la page $1 ; conservation des lignes reconnues et poursuite de la détermination de la fin",
+      ja: "$1 ページ目のしきい値境界の再読に失敗；認識済みの行を保持して終了位置の判定を続けます"
+    }
+  },
+  {
     test: /^(贡献|斩杀预警)列表行对齐的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动$/,
     values: {
       "zh-tw": "$1 列表行對齊的 MuMu 滑鼠注入遭系統拒絕，已切換 Android 觸控滑動",

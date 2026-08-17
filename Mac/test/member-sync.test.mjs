@@ -8,6 +8,7 @@ import {
   assertContributionComplete,
   containsSailingTitleLeak,
   reconcilePageRows,
+  mergeActivityRecoveryRows,
   selectActivityWarningRows,
   stripStaffColorCodes,
   tableRowAlignmentAdjustment
@@ -318,6 +319,134 @@ test("contribution and activity pages use 11-row calibrated segmented swipes", a
   }
 });
 
+test("contribution pages recover a missing name without shifting later rows", async () => {
+  const recoveryOptions = [];
+  const nativeRows = Array.from({ length: 11 }, (_, index) => ({
+    name: index === 4 ? "" : `原生${index + 1}`,
+    weeklyContribution: "0",
+    technologyPointsUsed: String(index + 1),
+    materialContribution: String(index + 10)
+  }));
+  const nativeObservations = nativeRows.flatMap((row, index) => [
+    ...(row.name
+      ? [{
+          text: row.name,
+          x: 120,
+          y: 290 + index * 66,
+          width: 60,
+          height: 20
+        }]
+      : []),
+    { text: row.weeklyContribution, x: 380, y: 290 + index * 66, width: 20, height: 20 },
+    { text: row.technologyPointsUsed, x: 560, y: 290 + index * 66, width: 40, height: 20 },
+    { text: row.materialContribution, x: 760, y: 290 + index * 66, width: 50, height: 20 }
+  ]);
+  const recoveredRows = nativeRows.map((row, index) => ({
+    ...row,
+    name: `恢复${index + 1}`
+  }));
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture() {
+          return { path: "contribution-missing-name.png", observations: nativeObservations };
+        },
+        async extractTableRows(_path, _definition, _label, _signal, options) {
+          recoveryOptions.push(options);
+          return recoveredRows;
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-contribution",
+    {
+      region: { left: 100, top: 270, right: 900, bottom: 1000 },
+      columns: [
+        { key: "name", left: 0, right: 0.32 },
+        { key: "weeklyContribution", left: 0.32, right: 0.54 },
+        { key: "technologyPointsUsed", left: 0.54, right: 0.76 },
+        { key: "materialContribution", left: 0.76, right: 1 }
+      ],
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        rowsPerPage: 11,
+        minimumRowsPerPage: 11,
+        stopAfterStagnantPages: 1
+      }
+    }
+  );
+
+  assert.equal(rows.length, 11);
+  assert.deepEqual(rows.map((row) => row.name), [
+    "原生1",
+    "原生2",
+    "原生3",
+    "原生4",
+    "恢复5",
+    "原生6",
+    "原生7",
+    "原生8",
+    "原生9",
+    "原生10",
+    "原生11"
+  ]);
+  assert.deepEqual(recoveryOptions, [{ forceContributionRecovery: true }]);
+});
+
+test("contribution scans stop at the roster-derived remainder page", async () => {
+  const swipes = [];
+  const pages = [
+    Array.from({ length: 11 }, (_, index) => ({ name: `成员${index + 1}` })),
+    Array.from({ length: 11 }, (_, index) => ({ name: `成员${index + 12}` })),
+    [
+      { name: "成员22" },
+      ...Array.from({ length: 10 }, (_, index) => ({ name: `成员${index + 12}` }))
+    ]
+  ];
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture() {
+          return { path: "contribution-tail.png", observations: [] };
+        },
+        async extractTableRows(_path, _definition, label) {
+          const page = Number(label.match(/-(\d+)/)?.[1] || 1);
+          return pages[Math.min(page - 1, pages.length - 1)];
+        }
+      },
+      adb: {
+        async mouseSwipe() {
+          swipes.push(true);
+        }
+      },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-contribution",
+    {
+      headerPattern: [],
+      pagination: {
+        maxPages: 6,
+        rowsPerPage: 11,
+        minimumRowsPerPage: 11,
+        stopAfterStagnantPages: 2,
+        pageHeightPx: 730,
+        from: { x: 1550, y: 980 },
+        to: { x: 1550, y: 250 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 23 }
+  );
+
+  assert.equal(rows.length, 22);
+  assert.equal(swipes.length, 2);
+});
+
 test("contribution and activity color bands choose the correction direction", () => {
   const definition = { region: { left: 1220, top: 270, right: 1900, bottom: 1000 } };
   const pagination = {
@@ -534,6 +663,214 @@ test("activity warning scan does not stop while every parsed member remains over
   );
   assert.equal(selection.rows.length, 2);
   assert.equal(selection.reachedBoundary, false);
+});
+
+test("activity boundary reread restores a warning row before stopping", async () => {
+  const recoveryCalls = [];
+  const reports = [];
+  const firstPage = Array.from({ length: 11 }, (_, index) => ({
+    name: `第${index + 1}名`,
+    onlineState: "2天前"
+  }));
+  const secondPageBeforeRecovery = [
+    { name: "第12名", onlineState: "2天前" },
+    { name: "第13名", onlineState: "2天前" },
+    { name: "第14名", onlineState: "2天前" },
+    { name: "第15名", onlineState: "12小时前" }
+  ];
+  const secondPageAfterRecovery = [
+    ...secondPageBeforeRecovery.slice(0, 3),
+    { name: "第16名", onlineState: "2天前" },
+    secondPageBeforeRecovery[3]
+  ];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, _definition, label, _signal, options) {
+        if (options?.forceActivityRecovery) {
+          recoveryCalls.push(label);
+          return secondPageAfterRecovery;
+        }
+        return label.includes("-1") ? firstPage : secondPageBeforeRecovery;
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: { async afterAction() {} },
+    async report(_level, step, message, detail) {
+      reports.push({ step, message, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-activity",
+    {
+      region: { left: 100, top: 200, right: 900, bottom: 900 },
+      columns: [
+        { key: "name", left: 0, right: 0.5 },
+        { key: "onlineState", left: 0.5, right: 1 }
+      ],
+      headerPattern: [],
+      pagination: {
+        maxPages: 3,
+        rowsPerPage: 11,
+        minimumRowsPerPage: 11,
+        stopAfterStagnantPages: 2,
+        from: { x: 800, y: 850 },
+        to: { x: 800, y: 120 },
+        durationMs: 1,
+        pageHeightPx: 730
+      }
+    },
+    undefined,
+    { minimumInactiveDays: 1 }
+  );
+
+  assert.equal(rows.length, 15);
+  assert.deepEqual(rows.map((row) => row.name), [
+    "第1名", "第2名", "第3名", "第4名", "第5名", "第6名", "第7名",
+    "第8名", "第9名", "第10名", "第11名", "第12名", "第13名", "第14名", "第16名"
+  ]);
+  assert.equal(recoveryCalls.length, 1);
+  assert.ok(reports.some(({ step }) => step === "activity_boundary_recovered"));
+  assert.ok(reports.some(({ step }) => step === "activity_threshold_reached"));
+});
+
+test("activity recovery merge keeps the first row data and adds only new names", () => {
+  const merged = mergeActivityRecoveryRows(
+    [
+      { name: "成员一", onlineState: "2天前" },
+      { name: "成员二", onlineState: "12小时前" }
+    ],
+    [
+      { name: "成员一", onlineState: "3天前" },
+      { name: "成员三", onlineState: "2天前" }
+    ]
+  );
+  assert.deepEqual(merged, [
+    { name: "成员一", onlineState: "2天前" },
+    { name: "成员二", onlineState: "12小时前" },
+    { name: "成员三", onlineState: "2天前" }
+  ]);
+});
+
+test("activity pages below eleven rows force a scaled OCR recovery", async () => {
+  const recoveryOptions = [];
+  const definition = {
+    region: { left: 1220, top: 270, right: 1900, bottom: 1000 },
+    columns: [
+      { key: "name", left: 0, right: 0.58 },
+      { key: "onlineState", left: 0.58, right: 1 }
+    ],
+    headerPattern: [],
+    pagination: {
+      maxPages: 1,
+      rowsPerPage: 11,
+      minimumRowsPerPage: 11,
+      stopAfterStagnantPages: 1
+    }
+  };
+  const nativeRows = Array.from({ length: 10 }, (_, index) => [
+    { text: `原生${index}`, x: 1300, y: 290 + index * 66, width: 50, height: 20 },
+    { text: "23小时前", x: 1700, y: 290 + index * 66, width: 80, height: 20 }
+  ]).flat();
+  const recoveredRows = Array.from({ length: 11 }, (_, index) => ({
+    name: `恢复${index + 1}`,
+    onlineState: "23小时前"
+  }));
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture() {
+          return { path: "activity-partial.png", observations: nativeRows };
+        },
+        async extractTableRows(_path, _definition, _label, _signal, options) {
+          recoveryOptions.push(options);
+          return recoveredRows;
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-activity",
+    definition,
+    undefined,
+    {}
+  );
+
+  assert.equal(rows.length, 11);
+  assert.equal(recoveryOptions.length, 1);
+  assert.deepEqual(recoveryOptions[0], { forceActivityRecovery: true });
+  assert.deepEqual(rows.map((row) => row.name), recoveredRows.map((row) => row.name));
+});
+
+test("activity pages with a missing online state force a scaled OCR recovery", async () => {
+  const recoveryOptions = [];
+  const nativeRows = Array.from({ length: 11 }, (_, index) => ({
+    name: `成员${index + 1}`,
+    onlineState: index === 0 ? "" : "1天前"
+  }));
+  const recoveredRows = nativeRows.map((row, index) => ({
+    ...row,
+    onlineState: index === 0 ? "1天前" : row.onlineState
+  }));
+  const nativeObservations = nativeRows.flatMap((row, index) => [
+    {
+      text: row.name,
+      x: 200,
+      y: 290 + index * 66,
+      width: 50,
+      height: 20
+    },
+    ...(row.onlineState
+      ? [{
+          text: row.onlineState,
+          x: 600,
+          y: 290 + index * 66,
+          width: 80,
+          height: 20
+        }]
+      : [])
+  ]);
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture() {
+          return {
+            path: "activity-missing-state.png",
+            observations: nativeObservations
+          };
+        },
+        async extractTableRows(_path, _definition, _label, _signal, options) {
+          recoveryOptions.push(options);
+          return recoveredRows;
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-activity",
+    {
+      region: { left: 100, top: 200, right: 900, bottom: 900 },
+      columns: [
+        { key: "name", left: 0, right: 0.58 },
+        { key: "onlineState", left: 0.58, right: 1 }
+      ],
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        rowsPerPage: 11,
+        minimumRowsPerPage: 11,
+        stopAfterStagnantPages: 1
+      }
+    }
+  );
+
+  assert.equal(rows.length, 11);
+  assert.deepEqual(recoveryOptions, [{ forceActivityRecovery: true }]);
 });
 
 test("member profile pagination reaches the bottom before organizing to the header total", async () => {
