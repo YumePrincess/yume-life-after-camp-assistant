@@ -261,23 +261,73 @@ describe("buildTechnologyPlan", () => {
 });
 
 describe("built-in technology catalog", () => {
-  it("contains the verified 19 agriculture, 16 industry and 18 military items", () => {
+  it("contains the verified 20 agriculture, 16 industry and 18 military items", () => {
     const count = (category: string) =>
       BUILT_IN_TECHNOLOGY_CATALOG.filter(
         (item) => item.category === category
       ).length;
-    expect(BUILT_IN_TECHNOLOGY_CATALOG).toHaveLength(53);
-    expect(count("agriculture")).toBe(19);
+    expect(BUILT_IN_TECHNOLOGY_CATALOG).toHaveLength(54);
+    expect(count("agriculture")).toBe(20);
     expect(count("industry")).toBe(16);
     expect(count("military")).toBe(18);
     expect(
       new Set(BUILT_IN_TECHNOLOGY_CATALOG.map((item) => item.key)).size
-    ).toBe(53);
+    ).toBe(54);
     expect(
       BUILT_IN_TECHNOLOGY_CATALOG.every(
         (item) => item.iconUrl && item.description
       )
     ).toBe(true);
+    expect(
+      BUILT_IN_TECHNOLOGY_CATALOG.find(
+        (item) => item.key === "tech-7c5e9a4d3b2f1e6087ab"
+      )
+    ).toMatchObject({
+      name: "采购优惠",
+      category: "agriculture",
+      lane: "core",
+      enabledForVoting: true,
+      sortOrder: 2
+    });
+    expect(
+      [...BUILT_IN_TECHNOLOGY_CATALOG]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((item) => item.sortOrder)
+    ).toEqual(Array.from({ length: 54 }, (_, index) => index));
+  });
+
+  it("emits the purchase discount OCR label and asset in the Agent plan", () => {
+    const purchaseDiscount = BUILT_IN_TECHNOLOGY_CATALOG.find(
+      (item) => item.key === "tech-7c5e9a4d3b2f1e6087ab"
+    );
+    expect(purchaseDiscount).toBeDefined();
+    const plan = buildTechnologyPlan({
+      targetDate: "2026-08-24",
+      currentCampType: "agriculture",
+      technologyConfig: {
+        catalog: BUILT_IN_TECHNOLOGY_CATALOG,
+        fixedByWeekday: {
+          "1": [],
+          "2": [],
+          "3": [],
+          "4": [],
+          "5": [],
+          "6": [],
+          "7": []
+        },
+        fixedByDate: {},
+        voteLimit: 6,
+        limits: { core: 6, general: 6 }
+      },
+      voteOptions: [{ ...purchaseDiscount!, votes: 1 }]
+    });
+    expect(plan.core).toEqual([
+      expect.objectContaining({
+        key: "tech-7c5e9a4d3b2f1e6087ab",
+        uiLabel: "采购优惠",
+        iconUrl: "/images/technology/tech-7c5e9a4d3b2f1e6087ab.png"
+      })
+    ]);
   });
 
   it("resolves the technology named in full-width or half-width parentheses", () => {

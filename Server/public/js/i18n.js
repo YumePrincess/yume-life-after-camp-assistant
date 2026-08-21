@@ -131,9 +131,9 @@
       "固定科技适用日期": "Fixed-technology day",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "Choose a date, then set its fixed technologies from the catalog. Filters only change what is shown and never alter saved settings.",
-      "目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
-        "The catalog contains 53 verified technologies and bundled icons. On each switch, both rows are cleared, fixed choices are restored first, and votes fill the remaining slots before confirmation. Row 1 is currently Agriculture; both rows allow up to 6.",
-      "53 项科技": "53 technologies",
+      "目录内置 54 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
+        "The catalog contains 54 verified technologies and bundled icons. On each switch, both rows are cleared, fixed choices are restored first, and votes fill the remaining slots before confirmation. Row 1 is currently Agriculture; both rows allow up to 6.",
+      "54 项科技": "54 technologies",
       "科技目录": "Technology catalog",
       "搜索科技": "Search technologies",
       "搜索科技名称或描述": "Search by technology name or description",
@@ -475,9 +475,9 @@
       "固定科技适用日期": "Jour des technologies fixes",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "Choisissez une date, puis définissez ses technologies fixes depuis le catalogue. Les filtres modifient uniquement l’affichage.",
-      "目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
-        "Le catalogue contient 53 technologies vérifiées et leurs icônes. À chaque changement, les deux rangées sont vidées, les choix fixes sont restaurés, puis les votes complètent les places avant confirmation. La première rangée est agricole et chaque rangée accepte jusqu’à 6 choix.",
-      "53 项科技": "53 technologies",
+      "目录内置 54 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
+        "Le catalogue contient 54 technologies vérifiées et leurs icônes. À chaque changement, les deux rangées sont vidées, les choix fixes sont restaurés, puis les votes complètent les places avant confirmation. La première rangée est agricole et chaque rangée accepte jusqu’à 6 choix.",
+      "54 项科技": "54 technologies",
       "科技目录": "Catalogue technologique",
       "搜索科技": "Rechercher des technologies",
       "搜索科技名称或描述": "Rechercher par nom ou description",
@@ -822,9 +822,9 @@
       "固定科技适用日期": "固定技術の曜日",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "日付を選び、一覧からその日の固定技術を設定します。絞り込みは表示だけに作用し、保存済み設定は変更しません。",
-      "目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
-        "一覧には確認済みの53技術と固定アイコンが含まれます。切替時は両行を空にし、固定技術を優先して復元した後、投票結果で残りを補って確定します。現在の1行目は農業で、各行の上限は6件です。",
-      "53 项科技": "53件の技術",
+      "目录内置 54 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
+        "一覧には確認済みの54技術と固定アイコンが含まれます。切替時は両行を空にし、固定技術を優先して復元した後、投票結果で残りを補って確定します。現在の1行目は農業で、各行の上限は6件です。",
+      "54 项科技": "54件の技術",
       "科技目录": "技術一覧",
       "搜索科技": "技術を検索",
       "搜索科技名称或描述": "技術名または説明で検索",
@@ -1162,9 +1162,9 @@
       "固定科技适用日期": "固定科技適用日期",
       "先选择日期，再从目录中设置当日固定科技；筛选只影响当前显示，不会改变已保存配置。":
         "先選擇日期，再從目錄設定當日固定科技；篩選只影響目前顯示，不會變更已儲存設定。",
-      "目录内置 53 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
-        "目錄內建 53 項已核對科技及固定圖示資產。實際切換時會先清空兩行既有科技，再依固定科技優先、投票結果補足的順序重建並點擊完成。目前第一行為農業科技，農業行與其他科技行上限皆為 6。",
-      "53 项科技": "53 項科技",
+      "目录内置 54 项已核对科技和固定图标资产。实际切换时会先清空两行已有科技，再按固定科技优先、投票结果补足的顺序重建并点击完成。当前第一行为农业科技，农业行和其他科技行上限均为 6。":
+        "目錄內建 54 項已核對科技及固定圖示資產。實際切換時會先清空兩行既有科技，再依固定科技優先、投票結果補足的順序重建並點擊完成。目前第一行為農業科技，農業行與其他科技行上限皆為 6。",
+      "54 项科技": "54 項科技",
       "科技目录": "科技目錄",
       "搜索科技": "搜尋科技",
       "搜索科技名称或描述": "搜尋科技名稱或描述",
@@ -2538,7 +2538,7 @@
     en: {
       "定时任务失败重试次数（计划窗口内手动任务也适用）": "Scheduled-task failure retries (also apply to manual tasks in the scheduled window)",
       "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "Manual-task failure retries (0 by default; excludes manual tasks in the scheduled window)",
-      "设置更远日期": "Set a farther date",
+      "设置指定日期": "Set a specific date",
       "配置执行计划": "Configure execution plan",
       "增加一次执行时间": "Add execution time",
       "保存此任务计划": "Save this task plan",
@@ -2556,7 +2556,7 @@
     fr: {
       "定时任务失败重试次数（计划窗口内手动任务也适用）": "Nouvelles tentatives des tâches planifiées (également pour les tâches manuelles dans la fenêtre planifiée)",
       "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "Nouvelles tentatives des tâches manuelles (0 par défaut ; hors tâches manuelles dans la fenêtre planifiée)",
-      "设置更远日期": "Définir une date plus lointaine",
+      "设置指定日期": "Définir une date précise",
       "配置执行计划": "Configurer le plan d’exécution",
       "增加一次执行时间": "Ajouter une heure",
       "保存此任务计划": "Enregistrer ce plan",
@@ -2574,7 +2574,7 @@
     ja: {
       "定时任务失败重试次数（计划窗口内手动任务也适用）": "定期タスクの失敗リトライ回数（予定ウィンドウ内の手動タスクにも適用）",
       "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "手動タスクの失敗リトライ回数（初期値0回、予定ウィンドウ内の手動タスクを除く）",
-      "设置更远日期": "先の日付を設定",
+      "设置指定日期": "指定日を設定",
       "配置执行计划": "実行計画を設定",
       "增加一次执行时间": "実行時刻を追加",
       "保存此任务计划": "この計画を保存",
@@ -2592,7 +2592,7 @@
     "zh-tw": {
       "定时任务失败重试次数（计划窗口内手动任务也适用）": "定時任務失敗重試次數（計畫時段內的手動任務也適用）",
       "手动任务失败重试次数（默认0次；不包含计划窗口内手动任务）": "手動任務失敗重試次數（預設 0 次；不包含計畫時段內的手動任務）",
-      "设置更远日期": "設定更遠日期",
+      "设置指定日期": "設定指定日期",
       "配置执行计划": "設定執行計畫",
       "增加一次执行时间": "增加一次執行時間",
       "保存此任务计划": "儲存此任務計畫",
