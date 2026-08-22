@@ -443,6 +443,93 @@ actor RuntimeService {
         }
         patrol["hardPatrol"] = hardPatrol
 
+        if patrol["campAffairsTexts"] == nil {
+            patrol["campAffairsTexts"] = ["营地事务", "营地事物"]
+            changed = true
+        }
+        if patrol["campAffairsTextRegion"] == nil {
+            patrol["campAffairsTextRegion"] = [
+                "left": 330, "top": 220, "right": 640, "bottom": 1000
+            ]
+            changed = true
+        }
+        if patrol["existingTeamRouteProgressTexts"] == nil {
+            patrol["existingTeamRouteProgressTexts"] = ["巡逻路线进度", "巡逻路线", "巡逻路線進度", "巡逻路線"]
+            changed = true
+        }
+        if patrol["existingTeamTaskProgressTexts"] == nil {
+            patrol["existingTeamTaskProgressTexts"] = ["我的任务进度", "任务进度", "我的任務進度", "任務進度"]
+            changed = true
+        }
+        if patrol["existingTeamRouteRegion"] == nil {
+            patrol["existingTeamRouteRegion"] = [
+                "left": 0, "top": 0, "right": 760, "bottom": 460
+            ]
+            changed = true
+        }
+        if patrol["existingTeamObjectiveRegion"] == nil {
+            patrol["existingTeamObjectiveRegion"] = [
+                "left": 0, "top": 0, "right": 900, "bottom": 120
+            ]
+            changed = true
+        }
+        if patrol["existingTeamPatrolObjectiveTexts"] == nil {
+            patrol["existingTeamPatrolObjectiveTexts"] = [
+                "营地事务>营地巡逻任务", "营地巡逻任务", "营地巡逻"
+            ]
+            changed = true
+        }
+        if patrol["existingTeamBookDefenseObjectiveTexts"] == nil {
+            patrol["existingTeamBookDefenseObjectiveTexts"] = [
+                "营地事务>保卫古籍", "保卫古籍"
+            ]
+            changed = true
+        }
+        if patrol["existingTeamCardRegion"] == nil {
+            patrol["existingTeamCardRegion"] = [
+                "left": 0, "top": 0, "right": 1920, "bottom": 1180
+            ]
+            changed = true
+        }
+        if patrol["existingTeamCardTexts"] == nil {
+            patrol["existingTeamCardTexts"] = [
+                "营地巡逻任务", "保卫古籍", "自动匹配", "暂无队员加入", "调整", "离开队伍"
+            ]
+            changed = true
+        }
+        if patrol["existingTeamStatusTexts"] == nil {
+            patrol["existingTeamStatusTexts"] = ["自动匹配", "暂无队员加入", "调整", "离开队伍"]
+            changed = true
+        }
+        if patrol["existingTeamPanelSettleMs"] == nil {
+            patrol["existingTeamPanelSettleMs"] = 1200
+            changed = true
+        }
+        if patrol["leaveTeamAttempts"] == nil {
+            patrol["leaveTeamAttempts"] = 3
+            changed = true
+        }
+        if patrol["leaveTeamSettleMs"] == nil {
+            patrol["leaveTeamSettleMs"] = 1500
+            changed = true
+        }
+        if patrol["leaveTeamTextRegion"] == nil {
+            patrol["leaveTeamTextRegion"] = [
+                "left": 0, "top": 0, "right": 1920, "bottom": 1200
+            ]
+            changed = true
+        }
+        if patrol["leaveTeamConfirmTexts"] == nil {
+            patrol["leaveTeamConfirmTexts"] = ["确认(F)", "确定(F)", "确认"]
+            changed = true
+        }
+        if patrol["leaveTeamConfirmRegion"] == nil {
+            patrol["leaveTeamConfirmRegion"] = [
+                "left": 760, "top": 420, "right": 1380, "bottom": 850
+            ]
+            changed = true
+        }
+
         var share = patrol["share"] as? [String: Any] ?? [:]
         if let attempts = share["recruitAttempts"] as? NSNumber,
            attempts.intValue < 15 {
@@ -466,6 +553,24 @@ actor RuntimeService {
         }
         if share["recruitOverlayDismissPoint"] == nil {
             share["recruitOverlayDismissPoint"] = ["x": 1800, "y": 900]
+            changed = true
+        }
+        if share["recruitRecoveryRegion"] == nil {
+            share["recruitRecoveryRegion"] = [
+                "left": 0, "top": 900, "right": 850, "bottom": 1200
+            ]
+            changed = true
+        }
+        if share["recruitAiAttempts"] == nil {
+            share["recruitAiAttempts"] = 2
+            changed = true
+        }
+        if share["recruitOverlayControlPoints"] == nil {
+            share["recruitOverlayControlPoints"] = [
+                "close_x": ["x": 1800, "y": 900],
+                "back": ["x": 75, "y": 1120],
+                "collapse": ["x": 1740, "y": 1110]
+            ]
             changed = true
         }
         patrol["share"] = share

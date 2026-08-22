@@ -4,6 +4,7 @@ import {
   closePatrolPanelBeforeExit,
   cleanupPatrolTeamOnFailure,
   createPatrolTeam,
+  ensureExistingPatrolTargetForSharing,
   patrolTeamIsFull,
   removeFirstPatrolMemberOutsideCamp,
   sharePatrolTeam,
@@ -370,13 +371,17 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
         if (label === "patrol-camp-affairs-selected") {
           return {
             path: "category.png",
-            observations: [observation("营地巡逻任务", 700, 360)]
+            observations: [
+              observation("营地事务", 400, 800),
+              observation("营地巡逻任务", 700, 360)
+            ]
           };
         }
         if (label === "patrol-target-selected") {
           return {
             path: "target.png",
             observations: [
+              observation("营地事务", 400, 800),
               observation("营地巡逻任务", 700, 360),
               observation("创建队伍", 1340, 865)
             ]
@@ -495,6 +500,8 @@ test("an existing patrol team is recognized without toggling the flag", async ()
           path: "team.png",
           observations: [
             observation("目标：营地事务>营地巡逻任务", 200, 20),
+            observation("巡逻路线进度 01:31:06", 200, 100),
+            observation("我的任务进度 0/4", 200, 150),
             observation("等待队员加入", 650, 600)
           ]
         };
@@ -511,8 +518,111 @@ test("an existing patrol team is recognized without toggling the flag", async ()
     async report() {}
   };
 
-  await createPatrolTeam(context);
+  assert.equal(await createPatrolTeam(context), "existing-valid-route");
   assert.deepEqual(taps, []);
+});
+
+test("an existing camp patrol route switches its top objective to book defense before sharing", async () => {
+  const flows = [];
+  const reports = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async executeFlow(name) {
+        flows.push(name);
+      }
+    },
+    vision: {
+      async capture(label) {
+        return {
+          path: `${label}.png`,
+          observations: [
+            observation(
+              label.includes("book-defense-confirm")
+                ? "目标：营地事务>保卫古籍"
+                : "目标：营地事务>营地巡逻任务",
+              200,
+              20
+            )
+          ]
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  assert.equal(
+    await ensureExistingPatrolTargetForSharing(context),
+    "switched"
+  );
+  assert.deepEqual(flows, ["switchToBookDefense"]);
+  assert.ok(reports.includes("patrol_existing_route_patrol_objective"));
+  assert.ok(reports.includes("patrol_existing_route_book_defense_confirmed"));
+});
+
+test("an existing team without a patrol route is left before a fresh team is created", async () => {
+  const taps = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    adb: { async key() {} },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return {
+            path: "existing-team.png",
+            observations: [
+              observation("目标：营地事务>营地巡逻任务", 200, 20),
+              observation("等待队员加入", 650, 600),
+              observation("离开队伍", 1500, 1080)
+            ]
+          };
+        }
+        if (label.includes("after-leave")) {
+          return {
+            path: "hud.png",
+            observations: [
+              observation("CtrlQ", 20, 300),
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080)
+            ]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: observationsFor(label)
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  assert.equal(await createPatrolTeam(context), "created");
+  assert.deepEqual(taps, [
+    { x: 1570, y: 1100 },
+    { x: 48, y: 327 },
+    { x: 220, y: 180 },
+    { x: 480, y: 906 },
+    { x: 1419, y: 891 }
+  ]);
 });
 
 test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", async () => {
@@ -616,12 +726,22 @@ test("patrol category fallback reuses the contribution-list ADB mouse swipe", as
           return { path: "scroll.png", observations: [observation("营地事务", 400, 800)] };
         }
         if (label.startsWith("patrol-camp-affairs-scroll-reread")) {
-          return { path: "target.png", observations: [observation("营地巡逻任务", 700, 360)] };
+          return {
+            path: "target.png",
+            observations: [
+              observation("营地事务", 400, 800),
+              observation("营地巡逻任务", 700, 360)
+            ]
+          };
         }
         if (label === "patrol-target-selected") {
           return {
             path: "selected.png",
-            observations: [observation("营地巡逻任务", 700, 360), observation("创建队伍", 1340, 865)]
+            observations: [
+              observation("营地事务", 400, 800),
+              observation("营地巡逻任务", 700, 360),
+              observation("创建队伍", 1340, 865)
+            ]
           };
         }
         return {
@@ -837,6 +957,85 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
   assert.ok(sleeps.includes(3_000));
   assert.ok(reports.includes("patrol_share_camp_channel_verified"));
   assert.ok(reports.includes("patrol_share_success"));
+});
+
+test("patrol share rereads a missed recruit button and clicks its OCR position", async () => {
+  const taps = [];
+  let recovered = false;
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    adb: {},
+    vision: {
+      async capture(label) {
+        if (label === "patrol-share-team-page") {
+          return {
+            path: "team.png",
+            observations: [observation("保卫古籍", 160, 20)]
+          };
+        }
+        if (label.includes("camp-recruit-verify-1")) {
+          return { path: "team.png", observations: [] };
+        }
+        if (label.includes("scene-recruit-verify-1")) {
+          return {
+            path: "team.png",
+            observations: [observation("招募", 300, 1100)]
+          };
+        }
+        if (label.startsWith("patrol-share-camp-channel-menu")) {
+          return {
+            path: "channels.png",
+            observations: [observation("营地频道", 350, 870)]
+          };
+        }
+        if (label.startsWith("patrol-share-scene-channel-menu")) {
+          return {
+            path: "channels.png",
+            observations: [observation("场景频道", 350, 870)]
+          };
+        }
+        if (label.includes("camp-result")) {
+          return {
+            path: "success.png",
+            observations: [observation("成功分享至营地频道", 780, 210)]
+          };
+        }
+        return {
+          path: "success.png",
+          observations: [observation("成功分享至场景频道", 780, 210)]
+        };
+      },
+      async ocrRegion(_path, _region, label) {
+        if (label.includes("camp-recruit-recovery")) {
+          recovered = true;
+          return [observation("招募", 270, 1100)];
+        }
+        return [];
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await sharePatrolTeam(context);
+
+  assert.equal(recovered, true);
+  assert.deepEqual(taps, [
+    { x: 340, y: 1120 },
+    { x: 420, y: 890 },
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 }
+  ]);
 });
 
 test("book-defense patrol share verifies and clicks the fixed camp-channel row", async () => {
@@ -1382,10 +1581,14 @@ function observationsFor(label) {
     ];
   }
   if (label === "patrol-camp-affairs-selected") {
-    return [observation("营地巡逻任务", 700, 360)];
+    return [
+      observation("营地事务", 400, 800),
+      observation("营地巡逻任务", 700, 360)
+    ];
   }
   if (label === "patrol-target-selected") {
     return [
+      observation("营地事务", 400, 800),
       observation("营地巡逻任务", 700, 360),
       observation("创建队伍", 1340, 865)
     ];

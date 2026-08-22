@@ -115,6 +115,12 @@ out
 .nuxt
 dist
 
+# macOS release/build outputs. App and DMG files are local build products;
+# the DMG is uploaded only as a GitHub Release asset, never committed.
+MacApp/dist/
+MacApp/.build/
+MacApp/.portable/
+
 # Gatsby files
 .cache/
 # Comment in the public line in if your project uses Gatsby and not Next.js

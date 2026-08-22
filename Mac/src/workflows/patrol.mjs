@@ -12,6 +12,7 @@ export async function runPatrol(context, command, bundle, signal) {
     const shouldCleanup =
       !signal?.aborted &&
       !context.suppressScheduledRetry &&
+      !context.patrolKeepExistingTeam &&
       context.patrolTeamPhase &&
       context.patrolTeamPhase !== "precreate";
     if (
@@ -62,7 +63,33 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
   await ui.executeFlow("teleportNoticeBoard", {}, signal);
   await updateWorkflowProgress(context, 0.13, "patrol_team_create");
   context.patrolTeamPhase = "creating";
-  await createPatrolTeam(context, signal);
+  const teamMode = await createPatrolTeam(context, signal);
+  if (teamMode === "existing-valid-route") {
+    // A restart can land on a team that already owns a live patrol route.
+    // Reusing it is intentional: leaving it would destroy the route and
+    // create a second team for the same scheduled task.
+    context.patrolExistingValidRoute = true;
+    context.patrolKeepExistingTeam = true;
+    context.patrolTeamPhase = "existing-valid-route";
+    await updateWorkflowProgress(context, 0.46, "patrol_existing_route");
+    await ui.executeFlow("openTeamPanel", {}, signal);
+    await ensureExistingPatrolTargetForSharing(context, signal);
+    await updateWorkflowProgress(context, 0.52, "patrol_existing_route_share");
+    await sharePatrolTeam(context, signal);
+    await report(
+      "info",
+      "patrol_existing_route_reused",
+      "已确认现有队伍持有有效营地巡逻路线；不退出队伍、不创建新队伍，直接分享巡逻队"
+    );
+    await continuePatrolSharesUntilDeadline(
+      context,
+      signal,
+      patrolDeadlineAt,
+      patrol,
+      { progressStart: 0.54 }
+    );
+    return;
+  }
   context.patrolTeamPhase = "created";
   // Team creation can leave the page in 3D mode. The flow only taps the
   // existing 3D-mode control when that label is actually present; an already
@@ -160,8 +187,28 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
     readyAt
   });
   await updateWorkflowProgress(context, 0.76, "patrol_ready");
+  await continuePatrolSharesUntilDeadline(
+    context,
+    signal,
+    patrolDeadlineAt,
+    patrol,
+    { progressStart: 0.76 }
+  );
+}
+
+async function continuePatrolSharesUntilDeadline(
+  context,
+  signal,
+  patrolDeadlineAt,
+  patrol,
+  { progressStart = 0.76 } = {}
+) {
+  const shareIntervalMs = Math.max(
+    1_000,
+    (Number(patrol?.shareIntervalMinutes) || 10) * 60_000
+  );
   const deadlineWindowMs = Math.max(1, patrolDeadlineAt - Date.now());
-  let nextShareAt = Date.now() + patrol.shareIntervalMinutes * 60_000;
+  let nextShareAt = Date.now() + shareIntervalMs;
 
   while (Date.now() < patrolDeadlineAt) {
     const remainingMs = Math.max(0, patrolDeadlineAt - Date.now());
@@ -171,13 +218,13 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
     );
     await updateWorkflowProgress(
       context,
-      0.76 + elapsedFraction * 0.20,
+      progressStart + elapsedFraction * Math.max(0.01, 0.96 - progressStart),
       "patrol_waiting_deadline"
     );
     if (Date.now() >= nextShareAt) {
       await sharePatrolTeam(context, signal);
       await report("info", "patrol_share", "已再次分享到营地频道和场景频道");
-      nextShareAt = Date.now() + patrol.shareIntervalMinutes * 60_000;
+      nextShareAt = Date.now() + shareIntervalMs;
     }
     const deadlineDelay = Math.max(250, patrolDeadlineAt - Date.now());
     const shareDelay = Math.max(0, nextShareAt - Date.now());
@@ -191,6 +238,112 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
   await updateWorkflowProgress(context, 0.97, "patrol_cleanup");
   await report("info", "patrol_done", "已到巡逻任务结束时间");
   await closePatrolPanelBeforeExit(context, signal);
+}
+
+export async function ensureExistingPatrolTargetForSharing(context, signal) {
+  const { config, ui, vision, report } = context;
+  const controls = config?.patrolTeamUi || {};
+  const sleep = context.sleep || delay;
+  const objectiveRegion = controls.existingTeamObjectiveRegion || {
+    left: 0,
+    top: 0,
+    right: 900,
+    bottom: 120
+  };
+  const screen = await capturePatrolScreen(
+    vision,
+    "patrol-existing-route-objective",
+    signal
+  );
+  const patrolObjective = await findAnyPatrolTextWithAccurateRegion(
+    vision,
+    screen,
+    screen.observations,
+    controls.existingTeamPatrolObjectiveTexts || [
+      "营地事务>营地巡逻任务",
+      "营地巡逻任务",
+      "营地巡逻"
+    ],
+    objectiveRegion,
+    "patrol-existing-route-objective-patrol",
+    signal
+  );
+  if (patrolObjective) {
+    await report(
+      "info",
+      "patrol_existing_route_patrol_objective",
+      `已 OCR 确认队伍顶部目标为“${patrolObjective.text}”；按保卫古籍流程修改队伍目标`
+    );
+    await ui.executeFlow("switchToBookDefense", {}, signal);
+    await sleep(
+      Math.max(500, Number(controls.existingTeamPanelSettleMs) || 1_200),
+      signal
+    );
+    const afterSwitch = await capturePatrolScreen(
+      vision,
+      "patrol-existing-route-book-defense-confirm",
+      signal
+    );
+    const bookDefenseObjective = await findAnyPatrolTextWithAccurateRegion(
+      vision,
+      afterSwitch,
+      afterSwitch.observations,
+      controls.existingTeamBookDefenseObjectiveTexts || [
+        "营地事务>保卫古籍",
+        "保卫古籍"
+      ],
+      objectiveRegion,
+      "patrol-existing-route-objective-book-defense",
+      signal
+    );
+    if (!bookDefenseObjective) {
+      throw new Error(
+        "PATROL_EXISTING_ROUTE_BOOK_DEFENSE_UNVERIFIED: 已执行修改队伍目标，但顶部未确认保卫古籍"
+      );
+    }
+    await report(
+      "info",
+      "patrol_existing_route_book_defense_confirmed",
+      `已确认队伍顶部目标已修改为“${bookDefenseObjective.text}”，继续分享巡逻队`
+    );
+    return "switched";
+  }
+
+  const bookDefenseObjective = await findAnyPatrolTextWithAccurateRegion(
+    vision,
+    screen,
+    screen.observations,
+    controls.existingTeamBookDefenseObjectiveTexts || [
+      "营地事务>保卫古籍",
+      "保卫古籍"
+    ],
+    objectiveRegion,
+    "patrol-existing-route-objective-book-defense",
+    signal
+  );
+  if (bookDefenseObjective) {
+    await report(
+      "info",
+      "patrol_existing_route_book_defense_already_set",
+      `已 OCR 确认队伍顶部目标为“${bookDefenseObjective.text}”；不重复修改，继续分享巡逻队`
+    );
+    return "already-book-defense";
+  }
+
+  await patrolAiDiagnose(
+    vision,
+    report,
+    "existing-route-objective",
+    "确认队伍面板顶部目标是“营地事务>营地巡逻任务”还是“保卫古籍”。仅作诊断，不提供坐标，也不改变任务目标。",
+    screen.observations,
+    signal
+  );
+  await report(
+    "warning",
+    "patrol_existing_route_objective_unverified",
+    "队伍面板顶部任务目标未被 OCR 确认；不盲点修改目标，沿用当前目标继续分享"
+  );
+  return "unverified";
 }
 
 export async function cleanupPatrolTeamOnFailure(context, signal, failure) {
@@ -449,14 +602,20 @@ export async function createPatrolTeam(context, signal) {
     "patrol-team-entry",
     signal
   );
-  if (patrolTeamCreated(vision, screen.observations, controls)) {
+  const initialExisting = await resolveExistingPatrolTeam(
+    context,
+    screen,
+    signal
+  );
+  if (initialExisting.mode === "existing-valid-route") {
     await report(
       "info",
-      "patrol_team_already_created",
-      "已确认当前队伍目标为“营地事务>营地巡逻任务”，跳过重复创建"
+      "patrol_existing_route_detected",
+      "已确认当前队伍卡片右侧存在“巡逻路线进度”和“我的任务进度”；复用现有巡逻路线"
     );
-    return;
+    return "existing-valid-route";
   }
+  screen = initialExisting.screen || screen;
 
   let createMenuMatch = findTextInRegion(
     vision,
@@ -537,14 +696,20 @@ export async function createPatrolTeam(context, signal) {
           : `patrol-team-menu-open-${attempt}`,
         signal
       );
-      if (patrolTeamCreated(vision, screen.observations, controls)) {
+      const existing = await resolveExistingPatrolTeam(
+        context,
+        screen,
+        signal
+      );
+      if (existing.mode === "existing-valid-route") {
         await report(
           "info",
-          "patrol_team_already_created",
-          "旗帜入口已打开现有巡逻队，确认目标正确后跳过重复创建"
+          "patrol_existing_route_detected",
+          "点击旗帜后确认现有队伍持有有效营地巡逻路线；不进入创建队伍流程"
         );
-        return;
+        return "existing-valid-route";
       }
+      screen = existing.screen || screen;
       createMenuMatch = await findPatrolTextWithAccurateRegion(
         vision,
         screen,
@@ -589,13 +754,13 @@ export async function createPatrolTeam(context, signal) {
       );
       if (menuOpen || creatorOpen || anyTeamPanel) break;
     }
-    if (patrolTeamCreated(vision, screen.observations, controls)) {
+    if (inspectExistingPatrolTeamState(vision, screen.observations, controls).validRoute) {
       await report(
         "info",
-        "patrol_team_already_created",
-        "旗帜入口已打开现有巡逻队，确认目标正确后跳过重复创建"
+        "patrol_existing_route_detected",
+        "旗帜入口重试后确认现有队伍仍持有有效营地巡逻路线；不进入创建队伍流程"
       );
-      return;
+      return "existing-valid-route";
     }
     const comboAttempts = Math.max(
       1,
@@ -622,14 +787,20 @@ export async function createPatrolTeam(context, signal) {
         `patrol-team-menu-key-fallback-${attempt + 1}`,
         signal
       );
-      if (patrolTeamCreated(vision, screen.observations, controls)) {
+      const existing = await resolveExistingPatrolTeam(
+        context,
+        screen,
+        signal
+      );
+      if (existing.mode === "existing-valid-route") {
         await report(
           "info",
-          "patrol_team_already_created",
-          "Ctrl+Q 已打开现有巡逻队，确认目标正确后跳过重复创建"
+          "patrol_existing_route_detected",
+          "Ctrl+Q 后确认现有队伍持有有效营地巡逻路线；不进入创建队伍流程"
         );
-        return;
+        return "existing-valid-route";
       }
+      screen = existing.screen || screen;
       createMenuMatch = await findPatrolTextWithAccurateRegion(
         vision,
         screen,
@@ -746,36 +917,76 @@ export async function createPatrolTeam(context, signal) {
     "已点击最底部“营地事务”分类卡，等待 5 秒让“营地巡逻任务”列表稳定后再进行 OCR"
   );
   await sleep(campAffairsWaitMs, signal);
-  let patrolTargetMatch = null;
+  screen = await capturePatrolScreen(
+    vision,
+    "patrol-camp-affairs-selected",
+    signal
+  );
+  let selection = await readPatrolCreationSelection(
+    vision,
+    screen,
+    controls,
+    "patrol-camp-affairs-selected",
+    signal
+  );
+  let patrolTargetMatch = selection.patrolTargetMatch;
   const patrolTargetReadAttempts = Math.max(
     1,
     Math.min(5, Number(controls.patrolTargetReadAttempts) || 3)
   );
   for (let attempt = 1; attempt <= patrolTargetReadAttempts; attempt += 1) {
-    screen = await capturePatrolScreen(
-      vision,
-      attempt === 1
-        ? "patrol-camp-affairs-selected"
-        : `patrol-camp-affairs-selected-reread-${attempt}`,
-      signal
-    );
-    patrolTargetMatch = findAnyTextInRegion(
-      vision,
-      screen.observations,
-      controls.patrolTargetTexts || ["营地巡逻任务", "营地巡逻"],
-      controls.patrolTargetRegion
-    );
-    if (patrolTargetMatch) break;
+    if (selection.valid) break;
     if (attempt < patrolTargetReadAttempts) {
       await report(
         "warning",
         "patrol_target_ocr_reread",
-        `“营地事务”已选中但第 ${attempt}/${patrolTargetReadAttempts} 次 OCR 尚未读到“营地巡逻任务”；保持当前页面原地重读，不重复点击分类卡`
+        `第 ${attempt}/${patrolTargetReadAttempts} 次 OCR 未同时确认左侧“营地事务”和右侧“营地巡逻任务”；保持当前页面原地重读`
       );
       await sleep(1_000, signal);
+      screen = await capturePatrolScreen(
+        vision,
+        `patrol-camp-affairs-selected-reread-${attempt + 1}`,
+        signal
+      );
+      selection = await readPatrolCreationSelection(
+        vision,
+        screen,
+        controls,
+        `patrol-camp-affairs-selected-reread-${attempt + 1}`,
+        signal
+      );
+      patrolTargetMatch = selection.patrolTargetMatch;
     }
   }
-  if (!patrolTargetMatch) {
+  if (!selection.valid) {
+    if (selection.campAffairsMatch) {
+      await report(
+        "warning",
+        "patrol_camp_affairs_wrong_target",
+        `已 OCR 看到左侧“${selection.campAffairsMatch.text}”，但右侧不是“营地巡逻任务”；改点该分类后重新读取右侧任务`
+      );
+      await tapPatrolMouse(
+        ui,
+        observationCenter(selection.campAffairsMatch),
+        signal
+      );
+      await sleep(campAffairsWaitMs, signal);
+      screen = await capturePatrolScreen(
+        vision,
+        "patrol-camp-affairs-corrected",
+        signal
+      );
+      selection = await readPatrolCreationSelection(
+        vision,
+        screen,
+        controls,
+        "patrol-camp-affairs-corrected",
+        signal
+      );
+      patrolTargetMatch = selection.patrolTargetMatch;
+    }
+  }
+  if (!selection.valid) {
     const categoryMatch = await scrollToCampAffairsCategory(
       { adb, vision, ui, report, sleep, controls },
       signal
@@ -794,30 +1005,32 @@ export async function createPatrolTeam(context, signal) {
           `patrol-camp-affairs-scroll-reread-${attempt}`,
           signal
         );
-        patrolTargetMatch = findAnyTextInRegion(
+        selection = await readPatrolCreationSelection(
           vision,
-          screen.observations,
-          controls.patrolTargetTexts || ["营地巡逻任务", "营地巡逻"],
-          controls.patrolTargetRegion
+          screen,
+          controls,
+          `patrol-camp-affairs-scroll-reread-${attempt}`,
+          signal
         );
-        if (patrolTargetMatch) break;
+        patrolTargetMatch = selection.patrolTargetMatch;
+        if (selection.valid) break;
         if (attempt < patrolTargetReadAttempts) {
           await sleep(1_000, signal);
         }
       }
     }
   }
-  if (!patrolTargetMatch) {
+  if (!selection.valid) {
     await patrolAiDiagnose(
       vision,
       report,
       "patrol-target",
-      "队伍目标创建页：确认左侧已选营地事务，中央是否清晰显示“营地巡逻任务”。仅在文字确实可见时返回 target_text_visible。",
+      "队伍目标创建页：确认左侧选中“营地事务”，中央右侧清晰显示“营地巡逻任务”。如果左侧底部有滚动列表，确认是否只是分类未滚动到位。仅作诊断。",
       screen.observations,
       signal
     );
     throw new Error(
-      "PATROL_TARGET_NOT_VISIBLE: 点击营地事务分类后未识别到“营地巡逻”"
+      "PATROL_TARGET_SELECTION_NOT_VISIBLE: 未同时确认左侧“营地事务”和右侧“营地巡逻任务”"
     );
   }
 
@@ -832,13 +1045,15 @@ export async function createPatrolTeam(context, signal) {
     "patrol-target-selected",
     signal
   );
+  selection = await readPatrolCreationSelection(
+    vision,
+    screen,
+    controls,
+    "patrol-target-selected",
+    signal
+  );
   if (
-    !findAnyTextInRegion(
-      vision,
-      screen.observations,
-      controls.patrolTargetTexts || ["营地巡逻任务", "营地巡逻"],
-      controls.patrolTargetRegion
-    ) ||
+    !selection.valid ||
     !hasTextInRegion(
       vision,
       screen.observations,
@@ -847,7 +1062,7 @@ export async function createPatrolTeam(context, signal) {
     )
   ) {
     throw new Error(
-      "PATROL_TARGET_SELECTION_UNVERIFIED: 未确认巡逻目标和创建按钮，禁止创建"
+      "PATROL_TARGET_SELECTION_UNVERIFIED: 未同时确认左侧营地事务、右侧营地巡逻任务和创建按钮，禁止创建"
     );
   }
 
@@ -888,6 +1103,259 @@ export async function createPatrolTeam(context, signal) {
     "info",
     "patrol_team_created_verified",
     "已确认巡逻队创建成功，目标为“营地事务>营地巡逻任务”"
+  );
+  return "created";
+}
+
+async function resolveExistingPatrolTeam(context, screen, signal) {
+  const { config, ui, vision, report } = context;
+  const controls = config?.patrolTeamUi || {};
+  let current = screen;
+  let state = inspectExistingPatrolTeamState(
+    vision,
+    current.observations,
+    controls
+  );
+  if (state.validRoute) {
+    return { mode: "existing-valid-route", screen: current };
+  }
+  if (!state.hasTeam) {
+    return { mode: "none", screen: current };
+  }
+
+  if (!state.panel) {
+    await report(
+      "info",
+      "patrol_existing_team_open",
+      "旗帜入口未出现“创建队伍”，但检测到已有队伍卡片；先打开队伍面板再确认巡逻路线"
+    );
+    await ui.executeFlow("openTeamPanel", {}, signal);
+    await (context.sleep || delay)(
+      Math.max(500, Number(controls.existingTeamPanelSettleMs) || 1_200),
+      signal
+    );
+    current = await capturePatrolScreen(
+      vision,
+      "patrol-existing-team-panel",
+      signal
+    );
+    state = inspectExistingPatrolTeamState(
+      vision,
+      current.observations,
+      controls
+    );
+    if (state.validRoute) {
+      return { mode: "existing-valid-route", screen: current };
+    }
+  }
+
+  await report(
+    "warning",
+    "patrol_existing_team_without_route",
+    "已确认存在队伍，但未识别到“巡逻路线进度+我的任务进度”有效路线卡；准备退出队伍并重新创建"
+  );
+  await leaveExistingPatrolTeam(context, current, signal);
+  current = await capturePatrolScreen(
+    vision,
+    "patrol-existing-team-after-leave",
+    signal
+  );
+  return { mode: "existing-invalid-left", screen: current };
+}
+
+function inspectExistingPatrolTeamState(vision, observations, controls) {
+  const routeRegion = controls.existingTeamRouteRegion || {
+    left: 0,
+    top: 0,
+    right: 760,
+    bottom: 460
+  };
+  const cardRegion = controls.existingTeamCardRegion || {
+    left: 0,
+    top: 0,
+    right: 1920,
+    bottom: 1180
+  };
+  const routeProgress = findAnyTextInRegion(
+    vision,
+    observations,
+    controls.existingTeamRouteProgressTexts || [
+      "巡逻路线进度",
+      "巡逻路线",
+      "巡逻路線進度",
+      "巡逻路線"
+    ],
+    routeRegion
+  );
+  const taskProgress = findAnyTextInRegion(
+    vision,
+    observations,
+    controls.existingTeamTaskProgressTexts || [
+      "我的任务进度",
+      "任务进度",
+      "我的任務進度",
+      "任務進度"
+    ],
+    routeRegion
+  );
+  const hasTaskFraction = observations.some((item) => {
+    const text = String(item?.text || "").replace(/\s+/g, "");
+    return /(?:^|[^\d])\d+\/4(?:$|[^\d])/.test(text);
+  });
+  const teamCard = findAnyTextInRegion(
+    vision,
+    observations,
+    controls.existingTeamCardTexts || [
+      "营地巡逻任务",
+      "保卫古籍",
+      "自动匹配",
+      "暂无队员加入",
+      "调整",
+      "离开队伍"
+    ],
+    cardRegion
+  );
+  const teamStatus = findAnyTextInRegion(
+    vision,
+    observations,
+    controls.existingTeamStatusTexts || [
+      "自动匹配",
+      "暂无队员加入",
+      "调整",
+      "离开队伍"
+    ],
+    cardRegion
+  );
+  const hasCardFraction = observationsInRegion(observations, cardRegion).some(
+    (item) => /\d+\s*\/\s*\d+/.test(String(item?.text || ""))
+  );
+  const panel = [
+    "调整",
+    "离开队伍",
+    "等待队员加入",
+    "自动匹配"
+  ].some((text) => hasTextInRegion(vision, observations, text, cardRegion));
+  return {
+    validRoute: Boolean(routeProgress && (taskProgress || hasTaskFraction)),
+    hasTeam: Boolean(
+      routeProgress ||
+        taskProgress ||
+        teamStatus ||
+        panel ||
+        (teamCard && hasCardFraction)
+    ),
+    routeProgress,
+    taskProgress,
+    teamCard,
+    teamStatus,
+    hasCardFraction,
+    panel
+  };
+}
+
+async function leaveExistingPatrolTeam(context, initialScreen, signal) {
+  const { config, ui, vision, report } = context;
+  const controls = config?.patrolTeamUi || {};
+  const sleep = context.sleep || delay;
+  const leaveRegion = controls.leaveTeamTextRegion || {
+    left: 0,
+    top: 0,
+    right: 1920,
+    bottom: 1200
+  };
+  const confirmRegion = controls.leaveTeamConfirmRegion || {
+    left: 760,
+    top: 420,
+    right: 1380,
+    bottom: 850
+  };
+  const maxAttempts = Math.max(
+    1,
+    Math.min(5, Number(controls.leaveTeamAttempts) || 3)
+  );
+  let screen = initialScreen;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const leaveMatch = await findPatrolTextWithAccurateRegion(
+      vision,
+      screen,
+      screen.observations,
+      "离开队伍",
+      leaveRegion,
+      `patrol-existing-team-leave-${attempt}`,
+      signal
+    );
+    if (!leaveMatch) {
+      throw new Error(
+        "PATROL_EXISTING_TEAM_LEAVE_UNVERIFIED: 未 OCR 确认已有队伍面板中的“离开队伍”按钮"
+      );
+    }
+    const leavePoint = observationCenter(leaveMatch);
+    await report(
+      attempt === 1 ? "warning" : "info",
+      "patrol_existing_team_leave_click",
+      `第 ${attempt}/${maxAttempts} 次：已 OCR 确认“离开队伍”，点击文字中心退出已有队伍`,
+      { leavePoint }
+    );
+    await tapPatrolMouse(ui, leavePoint, signal);
+    await sleep(
+      Math.max(500, Number(controls.leaveTeamSettleMs) || 1_500),
+      signal
+    );
+    screen = await capturePatrolScreen(
+      vision,
+      `patrol-existing-team-after-leave-click-${attempt}`,
+      signal
+    );
+    const confirmMatch = findAnyTextInRegion(
+      vision,
+      screen.observations,
+      controls.leaveTeamConfirmTexts || ["确认(F)", "确定(F)", "确认"],
+      confirmRegion
+    );
+    if (confirmMatch) {
+      const confirmPoint = observationCenter(confirmMatch);
+      await report(
+        "warning",
+        "patrol_existing_team_leave_confirm",
+        "已识别退出队伍确认弹窗，点击 OCR 确认按钮完成离队",
+        { confirmPoint }
+      );
+      await tapPatrolMouse(ui, confirmPoint, signal);
+      await sleep(
+        Math.max(500, Number(controls.leaveTeamSettleMs) || 1_500),
+        signal
+      );
+      screen = await capturePatrolScreen(
+        vision,
+        `patrol-existing-team-after-leave-confirm-${attempt}`,
+        signal
+      );
+    }
+    const stillVisible = findTextInRegion(
+      vision,
+      screen.observations,
+      "离开队伍",
+      leaveRegion
+    );
+    if (!stillVisible) {
+      await report(
+        "info",
+        "patrol_existing_team_left",
+        "已确认原有队伍退出成功，继续执行全新巡逻队创建流程"
+      );
+      return;
+    }
+    if (attempt < maxAttempts) {
+      await report(
+        "warning",
+        "patrol_existing_team_leave_retry",
+        `第 ${attempt} 次点击后“离开队伍”仍存在；重新 OCR 确认后重试离队（${attempt + 1}/${maxAttempts}）`
+      );
+      await sleep(500, signal);
+    }
+  }
+  throw new Error(
+    `PATROL_EXISTING_TEAM_LEAVE_FAILED: 连续 ${maxAttempts} 次 OCR 点击后仍未确认退出已有队伍`
   );
 }
 
@@ -948,6 +1416,50 @@ async function scrollToCampAffairsCategory(context, signal) {
     "复用列表上滑后仍未识别到“营地事务”；不会盲点分类卡"
   );
   return null;
+}
+
+async function readPatrolCreationSelection(
+  vision,
+  screen,
+  controls,
+  label,
+  signal
+) {
+  const categoryRegion = controls.campAffairsTextRegion || {
+    left: 330,
+    top: 220,
+    right: 640,
+    bottom: 1_000
+  };
+  const targetRegion = controls.patrolTargetRegion || {
+    left: 650,
+    top: 300,
+    right: 1_180,
+    bottom: 560
+  };
+  const campAffairsMatch = await findAnyPatrolTextWithAccurateRegion(
+    vision,
+    screen,
+    screen.observations,
+    controls.campAffairsTexts || ["营地事务", "营地事物"],
+    categoryRegion,
+    `${label}-camp-affairs`,
+    signal
+  );
+  const patrolTargetMatch = await findAnyPatrolTextWithAccurateRegion(
+    vision,
+    screen,
+    screen.observations,
+    controls.patrolTargetTexts || ["营地巡逻任务", "营地巡逻"],
+    targetRegion,
+    `${label}-patrol-target`,
+    signal
+  );
+  return {
+    campAffairsMatch,
+    patrolTargetMatch,
+    valid: Boolean(campAffairsMatch && patrolTargetMatch)
+  };
 }
 
 async function patrolAiDiagnose(
@@ -1018,6 +1530,30 @@ async function findPatrolTextWithAccurateRegion(
     )
     .catch(() => []);
   return findTextInRegion(vision, regional, text, region);
+}
+
+async function findAnyPatrolTextWithAccurateRegion(
+  vision,
+  screen,
+  observations,
+  texts,
+  region,
+  label,
+  signal
+) {
+  for (const text of texts || []) {
+    const match = await findPatrolTextWithAccurateRegion(
+      vision,
+      screen,
+      observations,
+      text,
+      region,
+      `${label}-${text}`,
+      signal
+    );
+    if (match) return match;
+  }
+  return null;
 }
 
 function findAnyTextInRegion(vision, observations, texts, region) {
@@ -1193,28 +1729,45 @@ async function sharePatrolChannel(context, signal, common, target) {
       `patrol-share-${target.key}-recruit-verify-${attempt}`,
       signal
     );
-    const recruitMatch = findTextInRegion(
-      vision,
-      screen.observations,
-      "招募",
-      recruitTextRegion
+    const recruit = await findRecruitControlForShare(
+      context,
+      screen,
+      {
+        attempt,
+        target,
+        recruitTextRegion,
+        recruitOverlayTexts,
+        recruitOverlayRegion,
+        recruitOverlayDismissPoint
+      },
+      signal
     );
-    if (!recruitMatch) {
+    if (recruit.dismissed) {
+      await sleep(settleMs, signal);
+      continue;
+    }
+    if (!recruit.match) {
       await report(
         "warning",
         "patrol_share_recruit_unverified",
-        `第 ${attempt}/${shareAttempts} 次点击前未在底部招募行 OCR 确认“招募”；不会点击“更换队伍”或任何固定坐标`
+        `第 ${attempt}/${shareAttempts} 次点击前仍未确认“招募”；已完成高精度复读和遮挡诊断，不点击“更换队伍”或任何盲点`
       );
       await sleep(settleMs, signal);
       continue;
     }
+    const recruitMatch = recruit.match;
+    const recruitClickPoint = recruit.recovered
+      ? observationCenter(recruitMatch)
+      : recruitPoint;
     await report(
       "info",
       "patrol_share_recruit_verified",
-      `OCR 已在底部招募行确认“招募”，点击固定招募按钮中心 (${Math.round(recruitPoint.x)},${Math.round(recruitPoint.y)})`,
-      { point: recruitPoint }
+      recruit.recovered
+        ? `高精度 OCR 已补读“招募”按钮位置，点击文字中心 (${Math.round(recruitClickPoint.x)},${Math.round(recruitClickPoint.y)})`
+        : `OCR 已在底部招募行确认“招募”，点击固定招募按钮中心 (${Math.round(recruitClickPoint.x)},${Math.round(recruitClickPoint.y)})`,
+      { point: recruitClickPoint, recovered: recruit.recovered }
     );
-    await tapPatrolHudMouse(ui, adb, recruitPoint, signal, sleep);
+    await tapPatrolHudMouse(ui, adb, recruitClickPoint, signal, sleep);
     // The full-team toast is deterministic but short-lived. Sample once
     // immediately after the recruit tap before waiting for the channel menu;
     // the later menu capture remains the normal-path/backup check.
@@ -1352,6 +1905,156 @@ async function sharePatrolChannel(context, signal, common, target) {
   throw new Error(
     `PATROL_SHARE_UNVERIFIED: ${shareAttempts} 轮点击“${target.text}”后未识别到分享成功，不会虚报分享成功`
   );
+}
+
+async function findRecruitControlForShare(
+  context,
+  screen,
+  {
+    attempt,
+    target,
+    recruitTextRegion,
+    recruitOverlayTexts,
+    recruitOverlayRegion,
+    recruitOverlayDismissPoint
+  },
+  signal
+) {
+  const { config, ui, vision, report } = context;
+  const controls = config?.patrolTeamUi?.share || {};
+  const fastMatch = findTextInRegion(
+    vision,
+    screen.observations,
+    "招募",
+    recruitTextRegion
+  );
+  if (fastMatch) return { match: fastMatch, recovered: false, dismissed: false };
+
+  const recoveryRegion = controls.recruitRecoveryRegion || {
+    left: 0,
+    top: 900,
+    right: 850,
+    bottom: 1200
+  };
+  const accurateMatch = await findAnyPatrolTextWithAccurateRegion(
+    vision,
+    screen,
+    screen.observations,
+    ["招募"],
+    recoveryRegion,
+    `patrol-share-${target.key}-recruit-recovery-${attempt}`,
+    signal
+  );
+  if (accurateMatch) {
+    await report(
+      "info",
+      "patrol_share_recruit_accurate_recovered",
+      `普通 OCR 漏读“招募”后，高精度 OCR 已在扩大区域补读按钮位置；第 ${attempt} 次使用补读位置点击`,
+      { match: accurateMatch, recoveryRegion }
+    );
+    return { match: accurateMatch, recovered: true, dismissed: false };
+  }
+
+  const visibleOverlay = findAnyTextInRegion(
+    vision,
+    screen.observations,
+    recruitOverlayTexts,
+    recruitOverlayRegion
+  );
+  if (visibleOverlay) {
+    await report(
+      "warning",
+      "patrol_share_recruit_overlay_cleared",
+      `招募按钮未读到且检测到邀请弹窗（“${visibleOverlay.text}”）；点击已校准的弹窗外空白点解除遮挡后重试`,
+      { dismissPoint: recruitOverlayDismissPoint, overlayRegion: recruitOverlayRegion }
+    );
+    await tapPatrolMouse(ui, recruitOverlayDismissPoint, signal);
+    return { match: null, recovered: false, dismissed: true };
+  }
+
+  const aiRecoveryAttempts = Math.max(
+    1,
+    Math.min(3, Number(controls.recruitAiAttempts) || 2)
+  );
+  if (!vision?.advisor?.enabled || attempt > aiRecoveryAttempts) {
+    return { match: null, recovered: false, dismissed: false };
+  }
+
+  const minimum = Math.max(
+    0.95,
+    Number(vision.advisor?.config?.minimumActionConfidence) || 0.95
+  );
+  const overlayAdvice =
+    typeof vision.adviseOverlayControlCurrent === "function"
+      ? await vision
+          .adviseOverlayControlCurrent(
+            `patrol-share-${target.key}-recruit-overlay-${attempt}`,
+            { ocrTexts: screen.observations.map((item) => item.text) },
+            signal
+          )
+          .catch(() => null)
+      : null;
+  const controlPoints = controls.recruitOverlayControlPoints || {};
+  const overlayPoint = overlayAdvice
+    ? controlPoints[overlayAdvice.control]
+    : null;
+  if (
+    overlayAdvice &&
+    overlayAdvice.control !== "none" &&
+    Number(overlayAdvice.confidence) >= minimum &&
+    overlayPoint
+  ) {
+    await report(
+      "warning",
+      "patrol_share_recruit_ai_overlay_cleared",
+      `AI 以 ${(Number(overlayAdvice.confidence) * 100).toFixed(0)}% 置信判断有${overlayAdvice.control}遮挡；使用已校准清除点解除干扰后重试招募`,
+      { ...overlayAdvice, point: overlayPoint }
+    );
+    await tapPatrolMouse(ui, overlayPoint, signal);
+    return { match: null, recovered: false, dismissed: true };
+  }
+
+  const pageAdvice =
+    typeof vision.adviseCurrent === "function"
+      ? await vision
+          .adviseCurrent(
+            `patrol-share-${target.key}-recruit-button-${attempt}`,
+            {
+              expectedState: "target_text_visible",
+              taskHint:
+                "确认队伍面板底部左侧是否存在可点击的“招募”按钮；若按钮被邀请卡片、聊天面板或其他弹窗遮挡，返回对应界面状态。此结果只用于决定是否清除已知遮挡，不提供坐标。",
+              ocrTexts: screen.observations.map((item) => item.text)
+            },
+            signal
+          )
+          .catch(() => null)
+      : null;
+  await report(
+    pageAdvice?.state === "target_text_visible" &&
+      Number(pageAdvice.confidence) >= minimum
+      ? "info"
+      : "warning",
+    "patrol_share_recruit_ai_diagnostic",
+    pageAdvice
+      ? `AI 招募按钮诊断：${pageAdvice.state}，置信度 ${(Number(pageAdvice.confidence) * 100).toFixed(0)}%；仍需 OCR 确认按钮位置，不直接盲点`
+      : "招募按钮 AI 诊断不可用；继续按高精度 OCR 重试，不执行盲点",
+    pageAdvice || undefined
+  );
+  if (
+    pageAdvice?.state === "panel" &&
+    Number(pageAdvice.confidence) >= minimum &&
+    recruitOverlayDismissPoint
+  ) {
+    await report(
+      "warning",
+      "patrol_share_recruit_ai_panel_cleared",
+      "AI 高置信判断当前有功能弹窗遮挡；点击已校准的弹窗外空白点解除干扰后重试招募",
+      { point: recruitOverlayDismissPoint, advice: pageAdvice }
+    );
+    await tapPatrolMouse(ui, recruitOverlayDismissPoint, signal);
+    return { match: null, recovered: false, dismissed: true };
+  }
+  return { match: null, recovered: false, dismissed: false };
 }
 
 async function capturePatrolScreen(vision, label, signal) {
