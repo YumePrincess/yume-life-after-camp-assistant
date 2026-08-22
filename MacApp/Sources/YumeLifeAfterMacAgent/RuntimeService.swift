@@ -491,6 +491,28 @@ actor RuntimeService {
             ]
             changed = true
         }
+        if patrol["teamCardColor"] == nil {
+            patrol["teamCardColor"] = [
+                "enabled": true,
+                "taskIconPoints": [["x": 48, "y": 150]],
+                "taskIconBackgroundPoints": [
+                    ["x": 16, "y": 150], ["x": 80, "y": 150]
+                ],
+                "teamFlagIconPoints": [["x": 48, "y": 327]],
+                "teamFlagBackgroundPoints": [
+                    ["x": 16, "y": 327], ["x": 80, "y": 327]
+                ],
+                "probeRadius": 8,
+                "minimumWarmPoints": 1,
+                "redBlueDelta": 0.2,
+                "greenBlueDelta": 0.12,
+                "minimumSaturation": 0.45,
+                "minimumLuminance": 0.42,
+                "minimumForegroundBackgroundLuminanceDelta": 0.12,
+                "minimumForegroundBackgroundChannelDelta": 0.08
+            ]
+            changed = true
+        }
         if patrol["existingTeamCardTexts"] == nil {
             patrol["existingTeamCardTexts"] = [
                 "营地巡逻任务", "保卫古籍", "自动匹配", "暂无队员加入", "调整", "离开队伍"
@@ -498,7 +520,34 @@ actor RuntimeService {
             changed = true
         }
         if patrol["existingTeamStatusTexts"] == nil {
-            patrol["existingTeamStatusTexts"] = ["自动匹配", "暂无队员加入", "调整", "离开队伍"]
+            patrol["existingTeamStatusTexts"] = ["自动匹配", "暂无队员加入", "等待队员加入"]
+            changed = true
+        }
+        if let statuses = patrol["existingTeamStatusTexts"] as? [String],
+           statuses.contains("调整") || statuses.contains("离开队伍") {
+            patrol["existingTeamStatusTexts"] = statuses.filter {
+                $0 != "调整" && $0 != "离开队伍"
+            }
+            changed = true
+        }
+        if patrol["existingTeamMemberStatusTexts"] == nil {
+            patrol["existingTeamMemberStatusTexts"] = ["自动匹配", "暂无队员加入", "等待队员加入"]
+            changed = true
+        }
+        if patrol["teamMemberSlotRegions"] == nil {
+            patrol["teamMemberSlotRegions"] = [
+                ["left": 560, "top": 290, "right": 955, "bottom": 960],
+                ["left": 960, "top": 290, "right": 1355, "bottom": 960],
+                ["left": 1360, "top": 290, "right": 1750, "bottom": 960]
+            ]
+            changed = true
+        }
+        if patrol["teamMemberLocationRegions"] == nil {
+            patrol["teamMemberLocationRegions"] = [
+                ["left": 560, "top": 840, "right": 955, "bottom": 925],
+                ["left": 960, "top": 840, "right": 1355, "bottom": 925],
+                ["left": 1360, "top": 840, "right": 1750, "bottom": 925]
+            ]
             changed = true
         }
         if patrol["existingTeamPanelSettleMs"] == nil {
@@ -586,24 +635,6 @@ actor RuntimeService {
                 changed = true
             }
         }
-        if var openFlow = flows["openTeamPanel"] as? [[String: Any]],
-           openFlow.count > 2,
-           openFlow[2]["op"] as? String == "tapUnlessAnyText" {
-            openFlow[2] = [
-                "op": "tapUntilAnyTexts",
-                "texts": ["调整", "离开队伍"],
-                "minimumTexts": 1,
-                "x": 50,
-                "y": 325,
-                "maxAttempts": 6,
-                "intervalMs": 500,
-                "hud": true,
-                "gameMouse": true,
-                "controlLabel": "队伍卡片旗帜展开"
-            ]
-            flows["openTeamPanel"] = openFlow
-            changed = true
-        }
         if flows["closeTaskGuideOverlay"] == nil {
             flows["closeTaskGuideOverlay"] = [[
                 "op": "closeTaskGuideOverlay",
@@ -617,6 +648,53 @@ actor RuntimeService {
                 "regionOcrScale": 2
             ]]
             changed = true
+        }
+        if var openFlow = flows["openTeamPanel"] as? [[String: Any]] {
+            let overlayMetadata: [String: Any] = [
+                "texts": ["任务", "当前", "导航", "追踪"],
+                "region": ["left": 0, "top": 0, "right": 960, "bottom": 1200],
+                "minimumTexts": 3,
+                "dismissPoint": ["x": 1600, "y": 600],
+                "maxAttempts": 4,
+                "intervalMs": 500,
+                "regionOcrMinimumConfidence": 0.2,
+                "regionOcrScale": 2
+            ]
+            var flowChanged = false
+            if !openFlow.contains(where: { $0["op"] as? String == "closeTaskGuideOverlay" }) {
+                var closeAction = overlayMetadata
+                closeAction["op"] = "closeTaskGuideOverlay"
+                openFlow.insert(closeAction, at: 0)
+                flowChanged = true
+            }
+            if let retryIndex = openFlow.firstIndex(where: {
+                let op = $0["op"] as? String
+                return op == "tapUnlessAnyText" || op == "tapUntilAnyTexts"
+            }) {
+                var retry = openFlow[retryIndex]
+                if retry["op"] as? String != "tapUntilAnyTexts" {
+                    retry["op"] = "tapUntilAnyTexts"
+                    retry["texts"] = ["调整", "离开队伍"]
+                    retry["minimumTexts"] = 1
+                    retry["x"] = 50
+                    retry["y"] = 325
+                    retry["maxAttempts"] = 6
+                    retry["intervalMs"] = 500
+                    retry["hud"] = true
+                    retry["gameMouse"] = true
+                    retry["controlLabel"] = "队伍卡片旗帜展开"
+                    flowChanged = true
+                }
+                if retry["taskGuideOverlay"] == nil {
+                    retry["taskGuideOverlay"] = overlayMetadata
+                    flowChanged = true
+                }
+                openFlow[retryIndex] = retry
+            }
+            if flowChanged {
+                flows["openTeamPanel"] = openFlow
+                changed = true
+            }
         }
         // Beta 86 added a post-creation 3D -> 2D check. Existing installed
         // Runtime/current configs are deliberately preserved across upgrades,

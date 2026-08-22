@@ -1254,6 +1254,21 @@ export class GameUi {
         action,
         signal
       );
+      const taskGuideOverlay = action.taskGuideOverlay;
+      if (
+        taskGuideOverlay &&
+        this.countFlowTexts(screen.observations, taskGuideOverlay) >=
+          Math.max(2, Number(taskGuideOverlay.minimumTexts) || 3)
+      ) {
+        await this.report(
+          "warning",
+          "task_guide_overlay_blocks_retry",
+          "检测到左半屏任务导航遮挡；先点击右半屏安全空白位置关闭，暂不重复点击旗帜"
+        );
+        await this.closeTaskGuideOverlay(taskGuideOverlay, signal);
+        await delay(Math.max(200, Number(action.intervalMs) || 500), signal);
+        continue;
+      }
       const matched = this.countFlowTexts(screen.observations, action);
       if (matched >= minimumTexts && performedTaps >= minimumTapsBeforeSuccess) {
         await this.report(

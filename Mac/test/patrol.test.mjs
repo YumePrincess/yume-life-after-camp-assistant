@@ -522,6 +522,161 @@ test("an existing patrol team is recognized without toggling the flag", async ()
   assert.deepEqual(taps, []);
 });
 
+test("route and task progress alone never masquerade as an existing team", async () => {
+  const taps = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    adb: { async key() {} },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return {
+            path: "route-only.png",
+            observations: [
+              observation("巡逻路线进度 01:31:06", 200, 100),
+              observation("我的任务进度 0/4", 200, 150),
+              observation("目标：营地事务>营地巡逻任务", 200, 20),
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080),
+              observation("CtrlQ", 20, 300)
+            ]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: observationsFor(label)
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await createPatrolTeam(context);
+  assert.deepEqual(taps[0], { x: 48, y: 327 });
+});
+
+test("the selected flag color blocks a second flag click even without OCR card text", async () => {
+  const taps = [];
+  const config = patrolConfig();
+  config.patrolTeamUi.teamCardColor = {
+    enabled: true,
+    taskIconPoints: [{ x: 48, y: 150 }],
+    taskIconBackgroundPoints: [{ x: 16, y: 150 }, { x: 80, y: 150 }],
+    teamFlagIconPoints: [{ x: 48, y: 327 }],
+    teamFlagBackgroundPoints: [{ x: 16, y: 327 }, { x: 80, y: 327 }],
+    minimumSaturation: 0.45,
+    minimumLuminance: 0.42,
+    redBlueDelta: 0.2,
+    greenBlueDelta: 0.12,
+    minimumForegroundBackgroundLuminanceDelta: 0.12,
+    minimumForegroundBackgroundChannelDelta: 0.08
+  };
+  const warm = { meanRed: 0.78, meanGreen: 0.56, meanBlue: 0.28, meanSaturation: 0.62 };
+  const cool = { meanRed: 0.46, meanGreen: 0.42, meanBlue: 0.38, meanSaturation: 0.27 };
+  const context = {
+    config,
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async executeFlow() {}
+    },
+    vision: {
+      async capture(label) {
+        return {
+          path: `${label}.png`,
+          observations: label === "patrol-team-entry"
+            ? [observation("CtrlQ", 20, 300)]
+            : []
+        };
+      },
+      async probe() {
+        return [cool, cool, cool, warm, cool, cool];
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await assert.rejects(
+    createPatrolTeam(context),
+    /PATROL_EXISTING_TEAM_LEAVE_UNVERIFIED/
+  );
+  assert.deepEqual(taps, []);
+});
+
+test("a warm notice-board background cannot authorize an ambiguous flag click", async () => {
+  const taps = [];
+  const config = patrolConfig();
+  config.patrolTeamUi.teamCardColor = {
+    enabled: true,
+    taskIconPoints: [{ x: 48, y: 150 }],
+    taskIconBackgroundPoints: [{ x: 16, y: 150 }, { x: 80, y: 150 }],
+    teamFlagIconPoints: [{ x: 48, y: 327 }],
+    teamFlagBackgroundPoints: [{ x: 16, y: 327 }, { x: 80, y: 327 }],
+    minimumSaturation: 0.45,
+    minimumLuminance: 0.42,
+    redBlueDelta: 0.2,
+    greenBlueDelta: 0.12,
+    minimumForegroundBackgroundLuminanceDelta: 0.12,
+    minimumForegroundBackgroundChannelDelta: 0.08
+  };
+  const context = {
+    config,
+    ui: { async tap(point) { taps.push(point); } },
+    adb: { async key() {} },
+    vision: {
+      async capture(label) {
+        return {
+          path: `${label}.png`,
+          observations: label === "patrol-team-entry"
+            ? [observation("CtrlQ", 20, 300)]
+            : observationsFor(label)
+        };
+      },
+      async probe() {
+        return [
+          { meanRed: 0.78, meanGreen: 0.56, meanBlue: 0.28, meanSaturation: 0.62 },
+          { meanRed: 0.90, meanGreen: 0.80, meanBlue: 0.10, meanSaturation: 0.70 },
+          { meanRed: 0.90, meanGreen: 0.80, meanBlue: 0.10, meanSaturation: 0.70 },
+          { meanRed: 0.46, meanGreen: 0.42, meanBlue: 0.38, meanSaturation: 0.27 },
+          { meanRed: 0.30, meanGreen: 0.28, meanBlue: 0.26, meanSaturation: 0.12 },
+          { meanRed: 0.30, meanGreen: 0.28, meanBlue: 0.26, meanSaturation: 0.12 }
+        ];
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await assert.rejects(
+    createPatrolTeam(context),
+    /PATROL_FLAG_COLOR_UNVERIFIED/
+  );
+  assert.deepEqual(taps, []);
+});
+
 test("an existing camp patrol route switches its top objective to book defense before sharing", async () => {
   const flows = [];
   const reports = [];
@@ -586,6 +741,7 @@ test("an existing team without a patrol route is left before a fresh team is cre
             observations: [
               observation("目标：营地事务>营地巡逻任务", 200, 20),
               observation("等待队员加入", 650, 600),
+              observation("调整", 1450, 300),
               observation("离开队伍", 1500, 1080)
             ]
           };
@@ -651,6 +807,7 @@ test("stale leave OCR after an existing-team exit does not abort fresh creation"
             observations: [
               observation("目标：营地事务>营地巡逻任务", 200, 20),
               observation("等待队员加入", 650, 600),
+              observation("调整", 1450, 300),
               observation("离开队伍", 1500, 1080)
             ]
           };
@@ -697,7 +854,7 @@ test("stale leave OCR after an existing-team exit does not abort fresh creation"
   };
 
   assert.equal(await createPatrolTeam(context), "created");
-  assert.deepEqual(flows, ["closeTaskGuideOverlay"]);
+  assert.deepEqual(flows, []);
   assert.ok(reports.includes("patrol_existing_team_left_stale_text_recovered"));
   assert.deepEqual(taps, [
     { x: 1570, y: 1100 },

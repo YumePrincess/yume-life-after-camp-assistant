@@ -254,6 +254,27 @@
     "flagClickAttempts": 2,
     "flagReadyTexts": ["CtrlQ", "Ctrl Q"],
     "flagReadyRegion": { "left": 0, "top": 260, "right": 130, "bottom": 390 },
+    "teamCardColor": {
+      "enabled": true,
+      "taskIconPoints": [{ "x": 48, "y": 150 }],
+      "taskIconBackgroundPoints": [
+        { "x": 16, "y": 150 },
+        { "x": 80, "y": 150 }
+      ],
+      "teamFlagIconPoints": [{ "x": 48, "y": 327 }],
+      "teamFlagBackgroundPoints": [
+        { "x": 16, "y": 327 },
+        { "x": 80, "y": 327 }
+      ],
+      "probeRadius": 8,
+      "minimumWarmPoints": 1,
+      "redBlueDelta": 0.2,
+      "greenBlueDelta": 0.12,
+      "minimumSaturation": 0.45,
+      "minimumLuminance": 0.42,
+      "minimumForegroundBackgroundLuminanceDelta": 0.12,
+      "minimumForegroundBackgroundChannelDelta": 0.08
+    },
     "teamMenuRegion": { "left": 70, "top": 115, "right": 360, "bottom": 365 },
     "createMenuPoint": { "x": 220, "y": 180 },
     "createMenuClickAttempts": 6,
@@ -289,7 +310,8 @@
     "existingTeamBookDefenseObjectiveTexts": ["营地事务>保卫古籍", "保卫古籍"],
     "existingTeamCardRegion": { "left": 0, "top": 0, "right": 1920, "bottom": 1180 },
     "existingTeamCardTexts": ["营地巡逻任务", "保卫古籍", "自动匹配", "暂无队员加入", "调整", "离开队伍"],
-    "existingTeamStatusTexts": ["自动匹配", "暂无队员加入", "调整", "离开队伍"],
+    "existingTeamStatusTexts": ["自动匹配", "暂无队员加入", "等待队员加入"],
+    "existingTeamMemberStatusTexts": ["自动匹配", "暂无队员加入", "等待队员加入"],
     "existingTeamPanelSettleMs": 1200,
     "leaveTeamAttempts": 3,
     "leaveTeamSettleMs": 1500,
@@ -707,6 +729,17 @@
       { "op": "waitAnyText", "texts": ["限时活动>保卫古籍", "保卫古籍"], "timeoutSeconds": 10 }
     ],
     "openTeamPanel": [
+      {
+        "op": "closeTaskGuideOverlay",
+        "texts": ["任务", "当前", "导航", "追踪"],
+        "region": { "left": 0, "top": 0, "right": 960, "bottom": 1200 },
+        "minimumTexts": 3,
+        "dismissPoint": { "x": 1600, "y": 600 },
+        "maxAttempts": 4,
+        "intervalMs": 500,
+        "regionOcrMinimumConfidence": 0.2,
+        "regionOcrScale": 2
+      },
       { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150, "hud": true },
       { "op": "sleep", "ms": 500 },
       {
@@ -719,7 +752,17 @@
         "intervalMs": 500,
         "hud": true,
         "gameMouse": true,
-        "controlLabel": "队伍卡片旗帜展开"
+        "controlLabel": "队伍卡片旗帜展开",
+        "taskGuideOverlay": {
+          "texts": ["任务", "当前", "导航", "追踪"],
+          "region": { "left": 0, "top": 0, "right": 960, "bottom": 1200 },
+          "minimumTexts": 3,
+          "dismissPoint": { "x": 1600, "y": 600 },
+          "maxAttempts": 4,
+          "intervalMs": 500,
+          "regionOcrMinimumConfidence": 0.2,
+          "regionOcrScale": 2
+        }
       },
       { "op": "sleep", "ms": 300 },
       { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150, "hud": true },

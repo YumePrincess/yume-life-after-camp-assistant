@@ -56,7 +56,8 @@ test("task guide overlay closes by tapping a safe blank point on the right half"
         observation("导航", 120, 200),
         observation("追踪", 120, 260)
       ],
-      []
+      [],
+      [observation("调整", 100, 100)]
     ]
   });
 
@@ -226,6 +227,48 @@ test("a HUD label alone never enables game-mouse detection", async () => {
   });
 
   assert.deepEqual(fixture.taps, []);
+});
+
+test("flag retry closes the task guide overlay before attempting another flag tap", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("任务", 120, 80),
+        observation("当前", 120, 140),
+        observation("导航", 120, 200),
+        observation("追踪", 120, 260)
+      ],
+      [
+        observation("任务", 120, 80),
+        observation("当前", 120, 140),
+        observation("导航", 120, 200),
+        observation("追踪", 120, 260)
+      ],
+      [],
+      [observation("调整", 100, 100)]
+    ]
+  });
+
+  await fixture.ui.tapUntilAnyTexts({
+    texts: ["调整", "离开队伍"],
+    x: 50,
+    y: 325,
+    maxAttempts: 1,
+    intervalMs: 1,
+    taskGuideOverlay: {
+      texts: ["任务", "当前", "导航", "追踪"],
+      region: { left: 0, top: 0, right: 960, bottom: 1200 },
+      minimumTexts: 3,
+      dismissPoint: { x: 1600, y: 600 },
+      maxAttempts: 1,
+      intervalMs: 1
+    }
+  });
+
+  assert.deepEqual(fixture.taps, [{ x: 1600, y: 600 }]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("暂不重复点击旗帜"))
+  );
 });
 
 test("dynamic camp content alone never confirms the camp page", () => {
@@ -1455,7 +1498,10 @@ test("open team panel retries the flag expansion until the team card is visible"
     const config = JSON.parse(
       await readFile(new URL(`../${file}`, import.meta.url), "utf8")
     );
-    assert.deepEqual(config.flows.openTeamPanel[2], {
+    const retry = config.flows.openTeamPanel.find(
+      (action) => action.op === "tapUntilAnyTexts"
+    );
+    assert.deepEqual(retry, {
       op: "tapUntilAnyTexts",
       texts: ["调整", "离开队伍"],
       minimumTexts: 1,
@@ -1465,8 +1511,19 @@ test("open team panel retries the flag expansion until the team card is visible"
       intervalMs: 500,
       hud: true,
       gameMouse: true,
-      controlLabel: "队伍卡片旗帜展开"
+      controlLabel: "队伍卡片旗帜展开",
+      taskGuideOverlay: {
+        texts: ["任务", "当前", "导航", "追踪"],
+        region: { left: 0, top: 0, right: 960, bottom: 1200 },
+        minimumTexts: 3,
+        dismissPoint: { x: 1600, y: 600 },
+        maxAttempts: 4,
+        intervalMs: 500,
+        regionOcrMinimumConfidence: 0.2,
+        regionOcrScale: 2
+      }
     });
+    assert.equal(config.flows.openTeamPanel[0].op, "closeTaskGuideOverlay");
   }
 });
 

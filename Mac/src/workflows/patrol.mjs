@@ -622,6 +622,13 @@ export async function createPatrolTeam(context, signal) {
       screen,
       signal
     );
+  } else {
+    screen = await closePatrolTaskGuideOverlayIfVisible(
+      context,
+      screen,
+      signal,
+      "巡逻旗帜点击前"
+    );
   }
 
   let createMenuMatch = findTextInRegion(
@@ -667,6 +674,7 @@ export async function createPatrolTeam(context, signal) {
         "PATROL_FLAG_NOT_VISIBLE: 未识别到 CtrlQ，且底部频道 HUD 锚点不足，禁止点击游戏世界"
       );
     }
+    await ensurePatrolFlagClickColor(context, screen, signal);
     const flagClickAttempts = Math.max(
       2,
       Math.min(
@@ -703,6 +711,20 @@ export async function createPatrolTeam(context, signal) {
           : `patrol-team-menu-open-${attempt}`,
         signal
       );
+      const screenAfterOverlayClose = await closePatrolTaskGuideOverlayIfVisible(
+        context,
+        screen,
+        signal,
+        "旗帜点击后"
+      );
+      if (screenAfterOverlayClose !== screen) {
+        screen = screenAfterOverlayClose;
+        await report(
+          "warning",
+          "patrol_flag_overlay_blocked",
+          "旗帜点击后出现任务导航遮挡；已先关闭右侧安全空白处的遮挡，不再在遮挡上重复点击旗帜"
+        );
+      }
       const existing = await resolveExistingPatrolTeam(
         context,
         screen,
@@ -800,6 +822,12 @@ export async function createPatrolTeam(context, signal) {
         vision,
         `patrol-team-menu-key-fallback-${attempt + 1}`,
         signal
+      );
+      screen = await closePatrolTaskGuideOverlayIfVisible(
+        context,
+        screen,
+        signal,
+        "Ctrl+Q 入口点击后"
       );
       const existing = await resolveExistingPatrolTeam(
         context,
@@ -1132,10 +1160,10 @@ async function resolveExistingPatrolTeam(context, screen, signal) {
   const { config, ui, vision, report } = context;
   const controls = config?.patrolTeamUi || {};
   let current = screen;
-  let state = inspectExistingPatrolTeamState(
-    vision,
-    current.observations,
-    controls
+  let state = await inspectExistingPatrolTeamStateWithColor(
+    context,
+    current,
+    signal
   );
   if (state.validRoute) {
     return { mode: "existing-valid-route", screen: current };
@@ -1160,10 +1188,10 @@ async function resolveExistingPatrolTeam(context, screen, signal) {
       "patrol-existing-team-panel",
       signal
     );
-    state = inspectExistingPatrolTeamState(
-      vision,
-      current.observations,
-      controls
+    state = await inspectExistingPatrolTeamStateWithColor(
+      context,
+      current,
+      signal
     );
     if (state.validRoute) {
       return { mode: "existing-valid-route", screen: current };
@@ -1184,28 +1212,94 @@ async function resolveExistingPatrolTeam(context, screen, signal) {
   return { mode: "existing-invalid-left", screen: current };
 }
 
+async function inspectExistingPatrolTeamStateWithColor(context, screen, signal) {
+  const { config, vision } = context;
+  const controls = config?.patrolTeamUi || {};
+  const state = inspectExistingPatrolTeamState(
+    vision,
+    screen.observations,
+    controls
+  );
+  const color = await patrolTeamCardColorState(context, screen, signal);
+  if (color.teamCardSelected) {
+    return {
+      ...state,
+      hasTeam: true,
+      cardEvidence: true,
+      colorEvidence: true
+    };
+  }
+  return { ...state, colorEvidence: color };
+}
+
 async function recoverPatrolCreateEntryAfterExistingTeamLeave(
   context,
   initialScreen,
   signal
 ) {
+  return closePatrolTaskGuideOverlayIfVisible(
+    context,
+    initialScreen,
+    signal,
+    "离开无效队伍后"
+  );
+}
+
+async function closePatrolTaskGuideOverlayIfVisible(
+  context,
+  initialScreen,
+  signal,
+  reason
+) {
   const { config, ui, vision, report } = context;
   const sleep = context.sleep || delay;
-  const flow = config?.flows?.closeTaskGuideOverlay;
-  if (typeof ui?.executeFlow === "function" && Array.isArray(flow) && flow.length) {
-    await report(
-      "info",
-      "patrol_existing_team_leave_overlay_close",
-      "离开无效队伍后先关闭左半屏任务导航遮挡，点击右半屏安全空白位置，再恢复旗帜创建入口"
-    );
-    await ui.executeFlow("closeTaskGuideOverlay", {}, signal);
-    await sleep(500, signal);
-  }
-  return capturePatrolScreen(
+  const taskGuideFlow = config?.flows?.closeTaskGuideOverlay;
+  const taskGuideAction = Array.isArray(taskGuideFlow)
+    ? taskGuideFlow.find((action) => action?.op === "closeTaskGuideOverlay")
+    : null;
+  if (!taskGuideAction) return initialScreen;
+  const taskGuideMarkers = taskGuideOverlayMarkerCount(
     vision,
-    "patrol-existing-team-after-leave-recovered",
+    initialScreen.observations,
+    taskGuideAction
+  );
+  if (
+    taskGuideMarkers <
+    Math.max(2, Number(taskGuideAction.minimumTexts) || 3)
+  ) {
+    return initialScreen;
+  }
+  if (typeof ui?.executeFlow !== "function") {
+    throw new Error(
+      "PATROL_TASK_GUIDE_OVERLAY_BLOCKING: 检测到任务导航遮挡，但当前 UI 执行器不支持安全关闭"
+    );
+  }
+  await report(
+    "info",
+    "patrol_task_guide_overlay_close",
+    `${reason}检测到左半屏任务导航遮挡（${taskGuideMarkers} 个特征字），先点击右半屏安全空白位置关闭遮挡`
+  );
+  await ui.executeFlow("closeTaskGuideOverlay", {}, signal);
+  await sleep(500, signal);
+  const recovered = await capturePatrolScreen(
+    vision,
+    "patrol-task-guide-overlay-closed",
     signal
   );
+  const remainingMarkers = taskGuideOverlayMarkerCount(
+    vision,
+    recovered.observations,
+    taskGuideAction
+  );
+  if (
+    remainingMarkers >=
+    Math.max(2, Number(taskGuideAction.minimumTexts) || 3)
+  ) {
+    throw new Error(
+      "PATROL_TASK_GUIDE_OVERLAY_NOT_CLOSED: 关闭任务导航遮挡后仍识别到左半屏遮挡，禁止继续点击旗帜"
+    );
+  }
+  return recovered;
 }
 
 function patrolPostLeaveEntryVisible(vision, observations, controls, config) {
@@ -1244,6 +1338,157 @@ function taskGuideOverlayMarkerCount(vision, observations, action) {
     bottom: 1200
   };
   return texts.filter((text) => hasTextInRegion(vision, observations, text, region)).length;
+}
+
+async function patrolTeamCardColorState(context, screen, signal) {
+  const controls = context.config?.patrolTeamUi || {};
+  const color = controls.teamCardColor;
+  if (!color || color.enabled === false) {
+    return { enabled: false, state: "unconfigured" };
+  }
+  if (!screen?.frame?.path || typeof context.vision?.probe !== "function") {
+    return { enabled: true, state: "unavailable" };
+  }
+  const taskPoints = color.taskIconPoints || [{ x: 48, y: 150 }];
+  const taskBackgroundPoints = color.taskIconBackgroundPoints || [
+    { x: 16, y: 150 },
+    { x: 80, y: 150 }
+  ];
+  const flagPoints = color.teamFlagIconPoints || [{ x: 48, y: 327 }];
+  const flagBackgroundPoints = color.teamFlagBackgroundPoints || [
+    { x: 16, y: 327 },
+    { x: 80, y: 327 }
+  ];
+  const taskOffset = taskPoints.length;
+  const flagOffset = taskOffset + taskBackgroundPoints.length;
+  const points = [
+    ...taskPoints,
+    ...taskBackgroundPoints,
+    ...flagPoints,
+    ...flagBackgroundPoints
+  ];
+  let probes;
+  try {
+    probes = await context.vision.probe(
+      screen.frame.path,
+      points,
+      Math.max(3, Number(color.probeRadius) || 8),
+      signal
+    );
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    await context.report(
+      "warning",
+      "patrol_team_card_color_probe_failed",
+      "队伍卡片色块探测失败；本轮禁止根据不完整色块结果点击旗帜",
+      { reason: error?.message || String(error) }
+    );
+    return { enabled: true, state: "unavailable" };
+  }
+  const taskForeground = probes?.slice(0, taskOffset) || [];
+  const taskBackground = probes?.slice(taskOffset, flagOffset) || [];
+  const flagForeground = probes?.slice(flagOffset, flagOffset + flagPoints.length) || [];
+  const flagBackground = probes?.slice(flagOffset + flagPoints.length) || [];
+  const taskSelected = patrolWarmIconGroup(
+    taskForeground,
+    taskBackground,
+    color
+  );
+  const flagSelected = patrolWarmIconGroup(
+    flagForeground,
+    flagBackground,
+    color
+  );
+  const state =
+    flagSelected && !taskSelected
+      ? "team-card"
+      : taskSelected && !flagSelected
+        ? "task-card"
+        : "ambiguous";
+  return {
+    enabled: true,
+    state,
+    taskSelected,
+    flagSelected,
+    taskCardSelected: state === "task-card",
+    teamCardSelected: state === "team-card"
+  };
+}
+
+function patrolWarmIconGroup(foreground, background, config) {
+  const redBlueDelta = Number.isFinite(Number(config.redBlueDelta))
+    ? Number(config.redBlueDelta)
+    : 0.2;
+  const greenBlueDelta = Number.isFinite(Number(config.greenBlueDelta))
+    ? Number(config.greenBlueDelta)
+    : 0.12;
+  const minimumSaturation = Number.isFinite(Number(config.minimumSaturation))
+    ? Number(config.minimumSaturation)
+    : 0.45;
+  const minimumLuminance = Number.isFinite(Number(config.minimumLuminance))
+    ? Number(config.minimumLuminance)
+    : 0.42;
+  const warm = (probe) => {
+    const red = Number(probe?.meanRed);
+    const green = Number(probe?.meanGreen);
+    const blue = Number(probe?.meanBlue);
+    const saturation = Number(probe?.meanSaturation);
+    const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+    return {
+      red,
+      green,
+      blue,
+      saturation,
+      luminance,
+      valid:
+        [red, green, blue, saturation].every(Number.isFinite) &&
+        red - blue >= redBlueDelta &&
+        green - blue >= greenBlueDelta &&
+        saturation >= minimumSaturation &&
+        luminance >= minimumLuminance
+    };
+  };
+  // Use every finite background sample as the local baseline.  The building
+  // behind the notice board may itself be warm-colored, but it is still a
+  // valid baseline even when it does not meet the foreground icon's yellow
+  // saturation threshold.
+  const backgroundSamples = background
+    .map(warm)
+    .filter((sample) => Number.isFinite(sample.luminance));
+  if (!backgroundSamples.length) return false;
+  const backgroundLuminance = Math.max(...backgroundSamples.map((sample) => sample.luminance));
+  const backgroundRed = Math.max(...backgroundSamples.map((sample) => sample.red));
+  const backgroundGreen = Math.max(...backgroundSamples.map((sample) => sample.green));
+  const minimumLuminanceDelta = Number(config.minimumForegroundBackgroundLuminanceDelta) || 0.12;
+  const minimumChannelDelta = Number(config.minimumForegroundBackgroundChannelDelta) || 0.08;
+  const warmSamples = foreground.map(warm).filter(
+    (sample) =>
+      sample.valid &&
+      (sample.luminance - backgroundLuminance >= minimumLuminanceDelta ||
+        (sample.red - backgroundRed >= minimumChannelDelta &&
+          sample.green - backgroundGreen >= minimumChannelDelta))
+  );
+  return warmSamples.length >= Math.max(1, Number(config.minimumWarmPoints) || 1);
+}
+
+async function ensurePatrolFlagClickColor(context, screen, signal) {
+  const color = await patrolTeamCardColorState(context, screen, signal);
+  if (!color.enabled) return;
+  if (color.teamCardSelected) {
+    throw new Error(
+      "PATROL_FLAG_CLICK_FORBIDDEN_TEAM_CARD: 色块已确认旗帜队伍卡片处于选中状态，禁止再次点击旗帜"
+    );
+  }
+  if (!color.taskCardSelected) {
+    throw new Error(
+      `PATROL_FLAG_COLOR_UNVERIFIED: 未确认默认任务图标黄色且旗帜图标未选中（state=${color.state}），禁止点击旗帜`
+    );
+  }
+  await context.report(
+    "info",
+    "patrol_flag_color_ready",
+    "已通过左侧任务图标/旗帜图标的局部色块对比确认当前仍是默认任务卡片；允许点击旗帜一次"
+  );
 }
 
 function inspectExistingPatrolTeamState(vision, observations, controls) {
@@ -1304,36 +1549,108 @@ function inspectExistingPatrolTeamState(vision, observations, controls) {
     controls.existingTeamStatusTexts || [
       "自动匹配",
       "暂无队员加入",
-      "调整",
-      "离开队伍"
+      "等待队员加入"
     ],
+    cardRegion
+  );
+  const waitingOrMatchStatus = findAnyTextInRegion(
+    vision,
+    observations,
+    controls.existingTeamMemberStatusTexts || [
+      "自动匹配",
+      "暂无队员加入",
+      "等待队员加入"
+    ],
+    cardRegion
+  );
+  const adjustVisible = hasTextInRegion(
+    vision,
+    observations,
+    "调整",
+    cardRegion
+  );
+  const leaveVisible = hasTextInRegion(
+    vision,
+    observations,
+    "离开队伍",
     cardRegion
   );
   const hasCardFraction = observationsInRegion(observations, cardRegion).some(
     (item) => /\d+\s*\/\s*\d+/.test(String(item?.text || ""))
   );
-  const panel = [
-    "调整",
-    "离开队伍",
-    "等待队员加入",
-    "自动匹配"
-  ].some((text) => hasTextInRegion(vision, observations, text, cardRegion));
+  const memberEvidence = patrolTeamMemberCardEvidence(
+    observations,
+    controls
+  );
+  // A route fraction or a generic word such as “调整” can come from an
+  // unrelated task/guide overlay. Require a team-specific status, both team
+  // panel controls, or a name+location pair inside a calibrated member card
+  // before treating the screen as an existing team.
+  const panel = Boolean(adjustVisible && leaveVisible);
+  const cardEvidence = Boolean(waitingOrMatchStatus || panel || memberEvidence);
   return {
-    validRoute: Boolean(routeProgress && (taskProgress || hasTaskFraction)),
-    hasTeam: Boolean(
-      routeProgress ||
-        taskProgress ||
-        teamStatus ||
-        panel ||
-        (teamCard && hasCardFraction)
+    validRoute: Boolean(
+      cardEvidence && routeProgress && (taskProgress || hasTaskFraction)
     ),
+    hasTeam: cardEvidence,
     routeProgress,
     taskProgress,
     teamCard,
     teamStatus,
     hasCardFraction,
-    panel
+    panel,
+    memberEvidence,
+    cardEvidence
   };
+}
+
+function patrolTeamMemberCardEvidence(observations, controls) {
+  const slotRegions = controls.teamMemberSlotRegions || [];
+  const locationRegions = controls.teamMemberLocationRegions || [];
+  if (!slotRegions.length || !locationRegions.length) return false;
+  return slotRegions.some((slotRegion, index) => {
+    const locationRegion = locationRegions[index];
+    if (!locationRegion) return false;
+    const memberTexts = observationsInRegion(observations, slotRegion).filter(
+      (item) => isLikelyPatrolMemberText(item?.text, controls)
+    );
+    const locationTexts = observationsInRegion(
+      observations,
+      locationRegion
+    ).filter((item) => isLikelyPatrolMemberText(item?.text, controls));
+    return memberTexts.length > 0 && locationTexts.length > 0;
+  });
+}
+
+function isLikelyPatrolMemberText(value, controls) {
+  const text = String(value || "").replace(/\s+/g, "").trim();
+  if (!text || text.length > 24 || /^\d+(?:\/\d+)?$/.test(text)) return false;
+  const excluded = new Set(
+    controls.existingTeamMemberEvidenceExcludedTexts || [
+      "营地巡逻任务",
+      "保卫古籍",
+      "巡逻路线进度",
+      "我的任务进度",
+      "自动匹配",
+      "暂无队员加入",
+      "等待队员加入",
+      "调整",
+      "离开队伍",
+      "综合",
+      "世界",
+      "场景",
+      "营地",
+      "任务",
+      "当前",
+      "导航",
+      "追踪"
+    ]
+  );
+  if (excluded.has(text)) return false;
+  if (/^(?:Ctrl\s*Tab|Tab|Enter|Space|Alt|F|J|G|C|B|Z)$/i.test(text)) {
+    return false;
+  }
+  return /[\p{L}\p{Script=Han}]/u.test(text);
 }
 
 async function leaveExistingPatrolTeam(context, initialScreen, signal) {
@@ -1414,34 +1731,12 @@ async function leaveExistingPatrolTeam(context, initialScreen, signal) {
         signal
       );
     }
-    const taskGuideFlow = config?.flows?.closeTaskGuideOverlay;
-    const taskGuideAction = Array.isArray(taskGuideFlow)
-      ? taskGuideFlow.find((action) => action?.op === "closeTaskGuideOverlay")
-      : null;
-    const taskGuideMarkers = taskGuideOverlayMarkerCount(
-      vision,
-      screen.observations,
-      taskGuideAction
+    screen = await closePatrolTaskGuideOverlayIfVisible(
+      context,
+      screen,
+      signal,
+      "离队校验画面"
     );
-    if (
-      taskGuideAction &&
-      typeof ui?.executeFlow === "function" &&
-      taskGuideMarkers >=
-        Math.max(2, Number(taskGuideAction.minimumTexts) || 3)
-    ) {
-      await report(
-        "info",
-        "patrol_existing_team_leave_task_guide_overlay",
-        `离队校验画面仍有左半屏任务导航遮挡（${taskGuideMarkers} 个特征字），先点击右半屏安全空白位置关闭遮挡`
-      );
-      await ui.executeFlow("closeTaskGuideOverlay", {}, signal);
-      await sleep(500, signal);
-      screen = await capturePatrolScreen(
-        vision,
-        `patrol-existing-team-after-leave-overlay-close-${attempt}`,
-        signal
-      );
-    }
     const stillVisible = findTextInRegion(
       vision,
       screen.observations,
