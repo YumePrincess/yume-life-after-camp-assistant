@@ -616,6 +616,13 @@ export async function createPatrolTeam(context, signal) {
     return "existing-valid-route";
   }
   screen = initialExisting.screen || screen;
+  if (initialExisting.mode === "existing-invalid-left") {
+    screen = await recoverPatrolCreateEntryAfterExistingTeamLeave(
+      context,
+      screen,
+      signal
+    );
+  }
 
   let createMenuMatch = findTextInRegion(
     vision,
@@ -710,6 +717,13 @@ export async function createPatrolTeam(context, signal) {
         return "existing-valid-route";
       }
       screen = existing.screen || screen;
+      if (existing.mode === "existing-invalid-left") {
+        screen = await recoverPatrolCreateEntryAfterExistingTeamLeave(
+          context,
+          screen,
+          signal
+        );
+      }
       createMenuMatch = await findPatrolTextWithAccurateRegion(
         vision,
         screen,
@@ -801,6 +815,13 @@ export async function createPatrolTeam(context, signal) {
         return "existing-valid-route";
       }
       screen = existing.screen || screen;
+      if (existing.mode === "existing-invalid-left") {
+        screen = await recoverPatrolCreateEntryAfterExistingTeamLeave(
+          context,
+          screen,
+          signal
+        );
+      }
       createMenuMatch = await findPatrolTextWithAccurateRegion(
         vision,
         screen,
@@ -1163,6 +1184,68 @@ async function resolveExistingPatrolTeam(context, screen, signal) {
   return { mode: "existing-invalid-left", screen: current };
 }
 
+async function recoverPatrolCreateEntryAfterExistingTeamLeave(
+  context,
+  initialScreen,
+  signal
+) {
+  const { config, ui, vision, report } = context;
+  const sleep = context.sleep || delay;
+  const flow = config?.flows?.closeTaskGuideOverlay;
+  if (typeof ui?.executeFlow === "function" && Array.isArray(flow) && flow.length) {
+    await report(
+      "info",
+      "patrol_existing_team_leave_overlay_close",
+      "离开无效队伍后先关闭左半屏任务导航遮挡，点击右半屏安全空白位置，再恢复旗帜创建入口"
+    );
+    await ui.executeFlow("closeTaskGuideOverlay", {}, signal);
+    await sleep(500, signal);
+  }
+  return capturePatrolScreen(
+    vision,
+    "patrol-existing-team-after-leave-recovered",
+    signal
+  );
+}
+
+function patrolPostLeaveEntryVisible(vision, observations, controls, config) {
+  const createMenu = hasTextInRegion(
+    vision,
+    observations,
+    "创建队伍",
+    controls.teamMenuRegion
+  );
+  const creator = patrolCreatorOpen(vision, observations, controls);
+  const flagReady = (controls.flagReadyTexts || ["CtrlQ", "Ctrl Q"]).some(
+    (text) => hasTextInRegion(vision, observations, text, controls.flagReadyRegion)
+  );
+  const channelConfig = config?.postLoginPromotions;
+  const channelReadyCount = (channelConfig?.channelReadyTexts || []).filter(
+    (text) =>
+      hasTextInRegion(
+        vision,
+        observations,
+        text,
+        channelConfig.channelReadyRegion
+      )
+  ).length;
+  const channelReady =
+    channelReadyCount >=
+    Math.max(2, Number(channelConfig?.channelReadyMinimumTexts) || 2);
+  return createMenu || creator || flagReady || channelReady;
+}
+
+function taskGuideOverlayMarkerCount(vision, observations, action) {
+  const texts = action?.texts || ["任务", "当前", "导航", "追踪"];
+  const region = action?.region || {
+    left: 0,
+    top: 0,
+    right: 960,
+    bottom: 1200
+  };
+  return texts.filter((text) => hasTextInRegion(vision, observations, text, region)).length;
+}
+
 function inspectExistingPatrolTeamState(vision, observations, controls) {
   const routeRegion = controls.existingTeamRouteRegion || {
     left: 0,
@@ -1331,17 +1414,55 @@ async function leaveExistingPatrolTeam(context, initialScreen, signal) {
         signal
       );
     }
+    const taskGuideFlow = config?.flows?.closeTaskGuideOverlay;
+    const taskGuideAction = Array.isArray(taskGuideFlow)
+      ? taskGuideFlow.find((action) => action?.op === "closeTaskGuideOverlay")
+      : null;
+    const taskGuideMarkers = taskGuideOverlayMarkerCount(
+      vision,
+      screen.observations,
+      taskGuideAction
+    );
+    if (
+      taskGuideAction &&
+      typeof ui?.executeFlow === "function" &&
+      taskGuideMarkers >=
+        Math.max(2, Number(taskGuideAction.minimumTexts) || 3)
+    ) {
+      await report(
+        "info",
+        "patrol_existing_team_leave_task_guide_overlay",
+        `离队校验画面仍有左半屏任务导航遮挡（${taskGuideMarkers} 个特征字），先点击右半屏安全空白位置关闭遮挡`
+      );
+      await ui.executeFlow("closeTaskGuideOverlay", {}, signal);
+      await sleep(500, signal);
+      screen = await capturePatrolScreen(
+        vision,
+        `patrol-existing-team-after-leave-overlay-close-${attempt}`,
+        signal
+      );
+    }
     const stillVisible = findTextInRegion(
       vision,
       screen.observations,
       "离开队伍",
       leaveRegion
     );
-    if (!stillVisible) {
+    const postLeaveEntryVisible = patrolPostLeaveEntryVisible(
+      vision,
+      screen.observations,
+      controls,
+      config
+    );
+    if (!stillVisible || postLeaveEntryVisible) {
       await report(
         "info",
-        "patrol_existing_team_left",
-        "已确认原有队伍退出成功，继续执行全新巡逻队创建流程"
+        postLeaveEntryVisible && stillVisible
+          ? "patrol_existing_team_left_stale_text_recovered"
+          : "patrol_existing_team_left",
+        postLeaveEntryVisible && stillVisible
+          ? "离队后仍有残留“离开队伍”OCR，但已确认 HUD/创建入口恢复；按离队成功处理并继续全新巡逻队创建流程"
+          : "已确认原有队伍退出成功，继续执行全新巡逻队创建流程"
       );
       return;
     }

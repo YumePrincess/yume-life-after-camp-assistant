@@ -625,6 +625,89 @@ test("an existing team without a patrol route is left before a fresh team is cre
   ]);
 });
 
+test("stale leave OCR after an existing-team exit does not abort fresh creation", async () => {
+  const taps = [];
+  const flows = [];
+  const reports = [];
+  const context = {
+    config: {
+      ...patrolConfig(),
+      flows: { closeTaskGuideOverlay: [{ op: "closeTaskGuideOverlay" }] }
+    },
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async executeFlow(name) {
+        flows.push(name);
+      }
+    },
+    adb: { async key() {} },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return {
+            path: "existing-team-stale.png",
+            observations: [
+              observation("目标：营地事务>营地巡逻任务", 200, 20),
+              observation("等待队员加入", 650, 600),
+              observation("离开队伍", 1500, 1080)
+            ]
+          };
+        }
+        if (
+          label === "patrol-existing-team-after-leave-click-1" ||
+          label === "patrol-existing-team-after-leave"
+        ) {
+          return {
+            path: "hud-with-stale-leave.png",
+            observations: [
+              observation("离开队伍", 1500, 1080),
+              observation("CtrlQ", 20, 300),
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080)
+            ]
+          };
+        }
+        if (label === "patrol-existing-team-after-leave-recovered") {
+          return {
+            path: "hud-recovered.png",
+            observations: [
+              observation("CtrlQ", 20, 300),
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080)
+            ]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: observationsFor(label)
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  assert.equal(await createPatrolTeam(context), "created");
+  assert.deepEqual(flows, ["closeTaskGuideOverlay"]);
+  assert.ok(reports.includes("patrol_existing_team_left_stale_text_recovered"));
+  assert.deepEqual(taps, [
+    { x: 1570, y: 1100 },
+    { x: 48, y: 327 },
+    { x: 220, y: 180 },
+    { x: 480, y: 906 },
+    { x: 1419, y: 891 }
+  ]);
+});
+
 test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", async () => {
   const taps = [];
   const combinations = [];

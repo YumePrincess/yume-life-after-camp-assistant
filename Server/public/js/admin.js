@@ -2057,7 +2057,7 @@
   async function runTask(taskKey, button, routineId) {
     button.disabled = true;
     try {
-      await request("/api/admin/run", {
+      const result = await request("/api/admin/run", {
         method: "POST",
         body: JSON.stringify({
           taskKey,
@@ -2065,10 +2065,13 @@
           ...(routineId ? { routineId } : {})
         })
       });
-      byId("save-state").textContent = window.MrzhI18n.format(
-        "{task}已入队",
-        { task: taskName(taskKey) }
-      );
+      byId("save-state").textContent = result.queuedBehindActiveRun
+        ? window.MrzhI18n.format(
+            "当前 Agent 已有任务正在运行或排队；手工任务已入队，等待上一个任务结束后执行"
+          )
+        : window.MrzhI18n.format("{task}已入队", {
+            task: taskName(taskKey)
+          });
       await refresh(false);
     } catch (error) {
       byId("save-state").textContent = error.message;

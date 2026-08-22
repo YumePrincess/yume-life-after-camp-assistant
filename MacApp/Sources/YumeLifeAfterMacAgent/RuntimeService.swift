@@ -604,6 +604,20 @@ actor RuntimeService {
             flows["openTeamPanel"] = openFlow
             changed = true
         }
+        if flows["closeTaskGuideOverlay"] == nil {
+            flows["closeTaskGuideOverlay"] = [[
+                "op": "closeTaskGuideOverlay",
+                "texts": ["任务", "当前", "导航", "追踪"],
+                "region": ["left": 0, "top": 0, "right": 960, "bottom": 1200],
+                "minimumTexts": 3,
+                "dismissPoint": ["x": 1600, "y": 600],
+                "maxAttempts": 4,
+                "intervalMs": 500,
+                "regionOcrMinimumConfidence": 0.2,
+                "regionOcrScale": 2
+            ]]
+            changed = true
+        }
         // Beta 86 added a post-creation 3D -> 2D check. Existing installed
         // Runtime/current configs are deliberately preserved across upgrades,
         // so older configs do not contain this newly introduced flow. Add it

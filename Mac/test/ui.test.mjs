@@ -47,6 +47,46 @@ test("a panel touch tap never inspects the HUD game-mouse icon", async () => {
   assert.deepEqual(fixture.taps, []);
 });
 
+test("task guide overlay closes by tapping a safe blank point on the right half", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("任务", 120, 80),
+        observation("当前", 120, 140),
+        observation("导航", 120, 200),
+        observation("追踪", 120, 260)
+      ],
+      []
+    ]
+  });
+
+  await fixture.ui.closeTaskGuideOverlay({
+    texts: ["任务", "当前", "导航", "追踪"],
+    region: { left: 0, top: 0, right: 960, bottom: 1200 },
+    minimumTexts: 3,
+    dismissPoint: { x: 1600, y: 600 },
+    maxAttempts: 2,
+    intervalMs: 1
+  });
+
+  assert.deepEqual(fixture.taps, [{ x: 1600, y: 600 }]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("右半屏安全空白位置"))
+  );
+});
+
+test("task guide overlay rejects a close point inside the left overlay region", async () => {
+  const fixture = createUi();
+
+  await assert.rejects(
+    fixture.ui.closeTaskGuideOverlay({
+      region: { left: 0, top: 0, right: 960, bottom: 1200 },
+      dismissPoint: { x: 500, y: 600 }
+    }),
+    /TASK_GUIDE_OVERLAY_DISMISS_POINT_UNSAFE/
+  );
+});
+
 test("HUD initialization taps CtrlF and sends keyevent 70 without toggling C", async () => {
   const fixture = createUi();
   const events = [];

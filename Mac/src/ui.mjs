@@ -1295,6 +1295,78 @@ export class GameUi {
     );
   }
 
+  async closeTaskGuideOverlay(action, signal) {
+    const texts = action.texts || ["任务", "当前", "导航", "追踪"];
+    const region = action.region || {
+      left: 0,
+      top: 0,
+      right: 960,
+      bottom: 1200
+    };
+    const minimumTexts = Math.max(
+      2,
+      Math.min(texts.length, Number(action.minimumTexts) || 3)
+    );
+    const attempts = Math.max(
+      1,
+      Math.min(6, Number(action.maxAttempts) || 4)
+    );
+    const dismissPoint = action.dismissPoint || { x: 1600, y: 600 };
+    if (
+      !Number.isFinite(Number(dismissPoint.x)) ||
+      !Number.isFinite(Number(dismissPoint.y)) ||
+      Number(dismissPoint.x) < Number(region.right) ||
+      Number(dismissPoint.x) < 0 ||
+      Number(dismissPoint.x) > 1920 ||
+      Number(dismissPoint.y) < 0 ||
+      Number(dismissPoint.y) > 1200
+    ) {
+      throw new Error(
+        "TASK_GUIDE_OVERLAY_DISMISS_POINT_UNSAFE: 任务导航遮挡关闭点必须位于右半屏幕的安全范围"
+      );
+    }
+
+    for (let attempt = 0; attempt <= attempts; attempt += 1) {
+      const screen = await this.captureFlowObservations(
+        `task-guide-overlay-${attempt + 1}`,
+        { ...action, region },
+        signal
+      );
+      const matched = this.countFlowTexts(screen.observations, {
+        ...action,
+        region,
+        texts
+      });
+      if (matched < minimumTexts) {
+        await this.report(
+          "info",
+          "task_guide_overlay_not_present",
+          `左半屏任务导航遮挡未出现或已关闭（识别到 ${matched}/${minimumTexts} 个特征字）`
+        );
+        return screen;
+      }
+      if (attempt >= attempts) break;
+      await this.report(
+        "info",
+        "task_guide_overlay_close_attempt",
+        `识别到左半屏任务导航遮挡（${matched}/${texts.length} 个特征字），点击右半屏安全空白位置 (${Math.round(Number(dismissPoint.x))},${Math.round(Number(dismissPoint.y))})，第 ${attempt + 1}/${attempts} 次`
+      );
+      await this.tapAction(
+        {
+          x: Number(dismissPoint.x),
+          y: Number(dismissPoint.y),
+          hud: true,
+          gameMouse: false
+        },
+        signal
+      );
+      await delay(Math.max(200, Number(action.intervalMs) || 500), signal);
+    }
+    throw new Error(
+      `TASK_GUIDE_OVERLAY_CLOSE_UNVERIFIED: 点击右半屏安全空白位置 ${attempts} 次后仍识别到左半屏任务导航遮挡`
+    );
+  }
+
   async teleportWithFallback(action, signal) {
     let result = await this.attemptTeleport(action, action.target, signal);
     if (result.state === "success") {
@@ -3094,6 +3166,9 @@ export class GameUi {
           break;
         case "tapUntilAnyTexts":
           await this.tapUntilAnyTexts(action, signal);
+          break;
+        case "closeTaskGuideOverlay":
+          await this.closeTaskGuideOverlay(action, signal);
           break;
         case "clickIfText":
           await this.clickIfText(action.text, action, signal);

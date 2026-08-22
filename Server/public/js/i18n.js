@@ -356,7 +356,9 @@
       "编号 {id}": "ID {id}",
       "有效期 {date}": "Expires {date}",
       "最近使用 {date}": "Last used {date}",
-      "{task}已入队": "{task} queued"
+      "{task}已入队": "{task} queued",
+      "当前 Agent 已有任务正在运行或排队；手工任务已入队，等待上一个任务结束后执行":
+        "The Agent already has a running or queued task; the manual task was queued and will wait for the previous task to finish"
     },
     fr: {
       "查看多台本地执行器、选择唯一启用设备，并按需启动任务。":
@@ -704,7 +706,9 @@
       "编号 {id}": "ID {id}",
       "有效期 {date}": "Expire le {date}",
       "最近使用 {date}": "Dernière utilisation {date}",
-      "{task}已入队": "{task} mis en file"
+      "{task}已入队": "{task} mis en file",
+      "当前 Agent 已有任务正在运行或排队；手工任务已入队，等待上一个任务结束后执行":
+        "L’Agent exécute déjà une tâche ou en a une en file ; la tâche manuelle est ajoutée et attend la fin de la précédente"
     },
     ja: {
       "查看多台本地执行器、选择唯一启用设备，并按需启动任务。":
@@ -1044,7 +1048,9 @@
       "编号 {id}": "ID {id}",
       "有效期 {date}": "有効期限 {date}",
       "最近使用 {date}": "最終使用 {date}",
-      "{task}已入队": "{task}をキューに追加しました"
+      "{task}已入队": "{task}をキューに追加しました",
+      "当前 Agent 已有任务正在运行或排队；手工任务已入队，等待上一个任务结束后执行":
+        "Agent に実行中またはキュー待ちのタスクがあります。手動タスクをキューに追加し、前のタスクの終了を待ちます"
     },
     "zh-tw": {
       "查看多台本地执行器、选择唯一启用设备，并按需启动任务。":
@@ -1378,7 +1384,9 @@
       "编号 {id}": "編號 {id}",
       "有效期 {date}": "有效期 {date}",
       "最近使用 {date}": "最近使用 {date}",
-      "{task}已入队": "{task}已排入佇列"
+      "{task}已入队": "{task}已排入佇列",
+      "当前 Agent 已有任务正在运行或排队；手工任务已入队，等待上一个任务结束后执行":
+        "目前 Agent 已有任務正在執行或排隊；手動任務已加入佇列，等待上一個任務結束後執行"
     }
   };
 

@@ -1379,13 +1379,6 @@ async function handleAdminApi(
     }
     const bundle = await getConfigBundle(env);
     const activeRun = await findActiveRunForAgent(env, bundle.campConfig.agentId);
-    if (activeRun) {
-      return problem(
-        "当前 Agent 已有任务正在运行或排队；手工任务不会重复入队",
-        409,
-        "agent_busy"
-      );
-    }
     const result = await enqueueTask(env, {
       bundle,
       taskKey: taskKeyValue,
@@ -1395,7 +1388,16 @@ async function handleAdminApi(
         locale: normalizeLocale(body.locale)
       }
     });
-    return json(result, 201);
+    return json(
+      {
+        ...result,
+        queuedBehindActiveRun: Boolean(activeRun),
+        queueMessage: activeRun
+          ? "当前 Agent 已有任务正在运行或排队；手工任务已入队，等待上一个任务结束后执行"
+          : "管理员手工任务已入队"
+      },
+      201
+    );
   }
   if (path === "/api/admin/interrupt" && method === "POST") {
     const body = await readJsonObject(request, 16_000);
