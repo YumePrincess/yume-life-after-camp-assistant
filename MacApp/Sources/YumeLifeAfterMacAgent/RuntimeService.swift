@@ -513,6 +513,14 @@ actor RuntimeService {
             ]
             changed = true
         }
+        if patrol["flagClickSettleMs"] == nil {
+            patrol["flagClickSettleMs"] = 2000
+            changed = true
+        }
+        if patrol["flagClickColorReadRetries"] == nil {
+            patrol["flagClickColorReadRetries"] = 6
+            changed = true
+        }
         if patrol["existingTeamCardTexts"] == nil {
             patrol["existingTeamCardTexts"] = [
                 "营地巡逻任务", "保卫古籍", "自动匹配", "暂无队员加入", "调整", "离开队伍"
@@ -660,6 +668,20 @@ actor RuntimeService {
                 "regionOcrMinimumConfidence": 0.2,
                 "regionOcrScale": 2
             ]
+            var guardedPanelAction: [String: Any] = [
+                "op": "openTeamPanelGuarded",
+                "cardPoint": ["x": 350, "y": 150],
+                "requiredCardTexts": ["自动匹配"],
+                "memberStateTexts": ["暂无队员加入", "等待队员加入"],
+                "panelTexts": ["调整", "离开队伍"],
+                "minimumPanelTexts": 2,
+                "panelRegion": ["left": 0, "top": 0, "right": 1920, "bottom": 1180],
+                "cardRegion": ["left": 0, "top": 0, "right": 1920, "bottom": 1180],
+                "memberNameRegion": ["left": 0, "top": 120, "right": 620, "bottom": 520],
+                "settleMs": 500,
+                "hud": true
+            ]
+            guardedPanelAction["taskGuideOverlay"] = overlayMetadata
             var flowChanged = false
             if !openFlow.contains(where: { $0["op"] as? String == "closeTaskGuideOverlay" }) {
                 var closeAction = overlayMetadata
@@ -667,29 +689,62 @@ actor RuntimeService {
                 openFlow.insert(closeAction, at: 0)
                 flowChanged = true
             }
-            if let retryIndex = openFlow.firstIndex(where: {
-                let op = $0["op"] as? String
-                return op == "tapUnlessAnyText" || op == "tapUntilAnyTexts"
-            }) {
-                var retry = openFlow[retryIndex]
-                if retry["op"] as? String != "tapUntilAnyTexts" {
-                    retry["op"] = "tapUntilAnyTexts"
-                    retry["texts"] = ["调整", "离开队伍"]
-                    retry["minimumTexts"] = 1
-                    retry["x"] = 50
-                    retry["y"] = 325
-                    retry["maxAttempts"] = 6
-                    retry["intervalMs"] = 500
-                    retry["hud"] = true
-                    retry["gameMouse"] = true
-                    retry["controlLabel"] = "队伍卡片旗帜展开"
-                    flowChanged = true
+            let hasGuardedPanelAction = openFlow.contains {
+                $0["op"] as? String == "openTeamPanelGuarded"
+            }
+            let guardedPanelActionNeedsMemberRegion = openFlow.contains { action in
+                action["op"] as? String == "openTeamPanelGuarded" &&
+                    action["memberNameRegion"] == nil
+            }
+            let guardedPanelActionNeedsRequiredCardText = openFlow.contains { action in
+                guard action["op"] as? String == "openTeamPanelGuarded" else { return false }
+                guard let requiredCardTexts = action["requiredCardTexts"] as? [String] else {
+                    return true
                 }
-                if retry["taskGuideOverlay"] == nil {
-                    retry["taskGuideOverlay"] = overlayMetadata
-                    flowChanged = true
+                return requiredCardTexts != ["自动匹配"]
+            }
+            let hasLegacyFlagRetry = openFlow.contains { action in
+                guard action["op"] as? String == "tapUntilAnyTexts" else { return false }
+                let controlLabel = action["controlLabel"] as? String
+                let x = (action["x"] as? NSNumber)?.intValue
+                let y = (action["y"] as? NSNumber)?.intValue
+                return controlLabel == "队伍卡片旗帜展开" || (x == 50 && y == 325)
+            }
+            let hasLegacyCardTap = openFlow.contains { action in
+                guard action["op"] as? String == "tapUnlessAnyText" else { return false }
+                let x = (action["x"] as? NSNumber)?.intValue
+                let y = (action["y"] as? NSNumber)?.intValue
+                return x == 350 && y == 150
+            }
+            if !hasGuardedPanelAction || guardedPanelActionNeedsMemberRegion || guardedPanelActionNeedsRequiredCardText || hasLegacyFlagRetry || hasLegacyCardTap {
+                var rebuilt: [[String: Any]] = []
+                var insertedGuard = false
+                for action in openFlow {
+                    let op = action["op"] as? String
+                    let x = (action["x"] as? NSNumber)?.intValue
+                    let y = (action["y"] as? NSNumber)?.intValue
+                    let isLegacyFlag = op == "tapUntilAnyTexts" && (
+                        action["controlLabel"] as? String == "队伍卡片旗帜展开" ||
+                        (x == 50 && y == 325)
+                    )
+                    let isLegacyCardTap = op == "tapUnlessAnyText" && x == 350 && y == 150
+                    if op == "openTeamPanelGuarded" || isLegacyFlag || isLegacyCardTap {
+                        if !insertedGuard {
+                            rebuilt.append(guardedPanelAction)
+                            insertedGuard = true
+                        }
+                        continue
+                    }
+                    rebuilt.append(action)
                 }
-                openFlow[retryIndex] = retry
+                if !insertedGuard {
+                    let insertionIndex = rebuilt.firstIndex {
+                        $0["op"] as? String == "closeTaskGuideOverlay"
+                    }.map { $0 + 1 } ?? 0
+                    rebuilt.insert(guardedPanelAction, at: insertionIndex)
+                }
+                openFlow = rebuilt
+                flowChanged = true
             }
             if flowChanged {
                 flows["openTeamPanel"] = openFlow

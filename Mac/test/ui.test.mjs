@@ -271,6 +271,131 @@ test("flag retry closes the task guide overlay before attempting another flag ta
   );
 });
 
+test("guarded team-panel opening clicks the team card once and never the flag retry point", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("自动匹配", 350, 180),
+        observation("暂无队员加入", 350, 220)
+      ],
+      [
+        observation("调整", 350, 150),
+        observation("离开队伍", 350, 220)
+      ]
+    ]
+  });
+
+  await fixture.ui.openTeamPanelGuarded({
+    cardPoint: { x: 350, y: 150 },
+    requiredCardTexts: ["自动匹配"],
+    memberStateTexts: ["暂无队员加入", "等待队员加入"],
+    panelTexts: ["调整", "离开队伍"],
+    minimumPanelTexts: 2,
+    settleMs: 1
+  });
+
+  assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
+  assert.equal(
+    fixture.taps.some((point) => point.x === 50 && point.y === 325),
+    false
+  );
+});
+
+test("a concrete player name in the calibrated card region is valid team evidence", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("自动匹配", 240, 180),
+        observation("玩家甲", 240, 260)
+      ],
+      [
+        observation("调整", 350, 150),
+        observation("离开队伍", 350, 220)
+      ]
+    ]
+  });
+
+  await fixture.ui.openTeamPanelGuarded({
+    cardPoint: { x: 350, y: 150 },
+    requiredCardTexts: ["自动匹配"],
+    memberStateTexts: ["暂无队员加入", "等待队员加入"],
+    memberNameRegion: { left: 0, top: 120, right: 620, bottom: 520 },
+    panelTexts: ["调整", "离开队伍"],
+    minimumPanelTexts: 2,
+    settleMs: 1
+  });
+
+  assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
+});
+
+test("automatic matching alone confirms a team card", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("自动匹配", 240, 180)],
+      [
+        observation("调整", 350, 150),
+        observation("离开队伍", 350, 220)
+      ]
+    ]
+  });
+
+  await fixture.ui.openTeamPanelGuarded({
+    cardPoint: { x: 350, y: 150 },
+    requiredCardTexts: ["自动匹配"],
+    memberStateTexts: ["暂无队员加入", "等待队员加入"],
+    panelTexts: ["调整", "离开队伍"],
+    minimumPanelTexts: 2,
+    settleMs: 1
+  });
+  assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
+});
+
+test("a member state without automatic matching never confirms a team card", async () => {
+  const fixture = createUi({
+    fastFrames: [[observation("暂无队员加入", 240, 220)]]
+  });
+
+  await assert.rejects(
+    fixture.ui.openTeamPanelGuarded({
+      cardPoint: { x: 350, y: 150 },
+      requiredCardTexts: ["自动匹配"],
+      memberStateTexts: ["暂无队员加入", "等待队员加入"],
+      panelTexts: ["调整", "离开队伍"],
+      minimumPanelTexts: 2,
+      settleMs: 1
+    }),
+    /PATROL_TEAM_CARD_NOT_VERIFIED/
+  );
+  assert.deepEqual(fixture.taps, []);
+});
+
+test("member evidence is optional when automatic matching is present", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [
+        observation("自动匹配", 240, 180),
+        observation("暂无队员加入", 240, 220),
+        observation("玩家甲", 240, 260)
+      ],
+      [
+        observation("调整", 350, 150),
+        observation("离开队伍", 350, 220)
+      ]
+    ]
+  });
+
+  await fixture.ui.openTeamPanelGuarded({
+    cardPoint: { x: 350, y: 150 },
+    requiredCardTexts: ["自动匹配"],
+    memberStateTexts: ["暂无队员加入", "等待队员加入"],
+    memberNameRegion: { left: 0, top: 120, right: 620, bottom: 520 },
+    panelTexts: ["调整", "离开队伍"],
+    minimumPanelTexts: 2,
+    settleMs: 1
+  });
+  assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
+});
+
 test("dynamic camp content alone never confirms the camp page", () => {
   const ui = createUi().ui;
   assert.equal(
@@ -1493,25 +1618,26 @@ test("hard patrol flow clicks the difficult-row accept button and confirms it", 
   }
 });
 
-test("open team panel retries the flag expansion until the team card is visible", async () => {
+test("open team panel requires a verified card click and never configures a flag retry", async () => {
   for (const file of ["config.json", "config.example.json"]) {
     const config = JSON.parse(
       await readFile(new URL(`../${file}`, import.meta.url), "utf8")
     );
-    const retry = config.flows.openTeamPanel.find(
-      (action) => action.op === "tapUntilAnyTexts"
+    const guarded = config.flows.openTeamPanel.find(
+      (action) => action.op === "openTeamPanelGuarded"
     );
-    assert.deepEqual(retry, {
-      op: "tapUntilAnyTexts",
-      texts: ["调整", "离开队伍"],
-      minimumTexts: 1,
-      x: 50,
-      y: 325,
-      maxAttempts: 6,
-      intervalMs: 500,
+    assert.deepEqual(guarded, {
+      op: "openTeamPanelGuarded",
+      cardPoint: { x: 350, y: 150 },
+      requiredCardTexts: ["自动匹配"],
+      memberStateTexts: ["暂无队员加入", "等待队员加入"],
+      panelTexts: ["调整", "离开队伍"],
+      minimumPanelTexts: 2,
+      panelRegion: { left: 0, top: 0, right: 1920, bottom: 1180 },
+      cardRegion: { left: 0, top: 0, right: 1920, bottom: 1180 },
+      memberNameRegion: { left: 0, top: 120, right: 620, bottom: 520 },
+      settleMs: 500,
       hud: true,
-      gameMouse: true,
-      controlLabel: "队伍卡片旗帜展开",
       taskGuideOverlay: {
         texts: ["任务", "当前", "导航", "追踪"],
         region: { left: 0, top: 0, right: 960, bottom: 1200 },
@@ -1524,6 +1650,12 @@ test("open team panel retries the flag expansion until the team card is visible"
       }
     });
     assert.equal(config.flows.openTeamPanel[0].op, "closeTaskGuideOverlay");
+    assert.equal(
+      config.flows.openTeamPanel.some(
+        (action) => action.x === 50 && action.y === 325
+      ),
+      false
+    );
   }
 });
 

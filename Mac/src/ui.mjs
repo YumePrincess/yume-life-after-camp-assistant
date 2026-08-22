@@ -739,6 +739,177 @@ export class GameUi {
     return { frame, skipped: false };
   }
 
+  async openTeamPanelGuarded(action, signal) {
+    const panelTexts = action.panelTexts || ["调整", "离开队伍"];
+    const requiredCardTexts = action.requiredCardTexts || ["自动匹配"];
+    const memberStateTexts = action.memberStateTexts || [
+      "暂无队员加入",
+      "等待队员加入"
+    ];
+    const panelRegion = action.panelRegion || {
+      left: 0,
+      top: 0,
+      right: 1920,
+      bottom: 1180
+    };
+    const cardRegion = action.cardRegion || panelRegion;
+    const memberNameRegion = action.memberNameRegion || {
+      left: 0,
+      top: 120,
+      right: 620,
+      bottom: 520
+    };
+    const minimumPanelTexts = Math.max(
+      2,
+      Math.min(panelTexts.length, Number(action.minimumPanelTexts) || 2)
+    );
+    const taskGuideOverlay = action.taskGuideOverlay;
+    const capture = (label) =>
+      this.captureFlowObservations(label, {
+        ...action,
+        region: panelRegion
+      }, signal);
+    let screen = await capture("open-team-panel-guard-1");
+    if (
+      taskGuideOverlay &&
+      this.countFlowTexts(screen.observations, taskGuideOverlay) >=
+        Math.max(2, Number(taskGuideOverlay.minimumTexts) || 3)
+    ) {
+      await this.report(
+        "warning",
+        "task_guide_overlay_blocks_team_panel",
+        "检测到左半屏任务导航遮挡；先关闭遮挡，再判断队伍卡片，不点击旗帜"
+      );
+      await this.closeTaskGuideOverlay(taskGuideOverlay, signal);
+      screen = await capture("open-team-panel-guard-after-overlay");
+    }
+
+    const panelMatches = this.countFlowTexts(screen.observations, {
+      texts: panelTexts,
+      region: panelRegion
+    });
+    if (panelMatches >= minimumPanelTexts) {
+      await this.report(
+        "info",
+        "patrol_team_panel_already_open",
+        `已确认队伍面板已打开（${panelMatches}/${minimumPanelTexts} 个面板控件），不再点击旗帜`
+      );
+      return screen;
+    }
+
+    const requiredCardMatches = this.countFlowTexts(screen.observations, {
+      texts: requiredCardTexts,
+      region: cardRegion
+    });
+    const memberStateMatches = this.countFlowTexts(screen.observations, {
+      texts: memberStateTexts,
+      region: cardRegion
+    });
+    const memberNameEvidence = this.findPatrolMemberNameEvidence(
+      screen.observations,
+      memberNameRegion,
+      action.memberNameExcludedTexts
+    );
+    if (requiredCardMatches === 0) {
+      throw new Error(
+        "PATROL_TEAM_CARD_NOT_VERIFIED: 队伍卡片区域未识别到自动匹配，禁止点击旗帜或重复打开"
+      );
+    }
+
+    const cardPoint = action.cardPoint || { x: 350, y: 150 };
+    const memberEvidence =
+      memberStateMatches > 0
+        ? "暂无队员加入/等待队员加入"
+        : memberNameEvidence.length > 0
+          ? `玩家名称 ${memberNameEvidence.join("、")}`
+          : "成员信息未识别（不影响自动匹配判定）";
+    await this.report(
+      "info",
+      "patrol_team_card_click",
+      `已确认队伍卡片证据（自动匹配；${memberEvidence}），点击队伍卡片主体 (${cardPoint.x},${cardPoint.y})；不点击旗帜`
+    );
+    await this.tapAction(
+      {
+        x: Number(cardPoint.x),
+        y: Number(cardPoint.y),
+        hud: action.hud !== false,
+        gameMouse: false
+      },
+      signal
+    );
+    await delay(Math.max(200, Number(action.settleMs) || 500), signal);
+    screen = await capture("open-team-panel-guard-after-card");
+    const openedPanelMatches = this.countFlowTexts(screen.observations, {
+      texts: panelTexts,
+      region: panelRegion
+    });
+    if (openedPanelMatches < minimumPanelTexts) {
+      throw new Error(
+        `PATROL_TEAM_PANEL_OPEN_UNVERIFIED: 点击队伍卡片主体后仅识别到 ${openedPanelMatches}/${minimumPanelTexts} 个面板控件；禁止改点旗帜`
+      );
+    }
+    await this.report(
+      "info",
+      "patrol_team_panel_open_verified",
+      `已确认队伍卡片主体点击成功并打开队伍面板（${openedPanelMatches}/${minimumPanelTexts} 个面板控件）`
+    );
+    return screen;
+  }
+
+  findPatrolMemberNameEvidence(observations, region, excludedTexts = []) {
+    const excluded = new Set([
+      "营地巡逻任务",
+      "保卫古籍",
+      "自动匹配",
+      "暂无队员加入",
+      "等待队员加入",
+      "调整",
+      "离开队伍",
+      "招募",
+      "综合",
+      "世界",
+      "场景",
+      "营地",
+      "队伍",
+      "任务",
+      "当前",
+      "导航",
+      "追踪",
+      "查看玩法",
+      "营地公告板",
+      "公告板",
+      "保安官",
+      ...excludedTexts
+    ]);
+    const observationsInRegion = (observations || []).filter((item) => {
+      const x = Number(item?.x) + Number(item?.width || 0) / 2;
+      const y = Number(item?.y) + Number(item?.height || 0) / 2;
+      return (
+        x >= region.left &&
+        x <= region.right &&
+        y >= region.top &&
+        y <= region.bottom
+      );
+    });
+    return [...new Set(
+      observationsInRegion
+        .map((item) => String(item?.text || "").replace(/\s+/g, "").trim())
+        .filter((text) => {
+          if (!text || excluded.has(text) || text.length < 2 || text.length > 24) {
+            return false;
+          }
+          if (/\d+\s*\/\s*\d+|^(?:Ctrl|Tab|Enter|Space|Alt|F|J|G|C|B|Z)$/i.test(text)) {
+            return false;
+          }
+          if (/[<>:：|｜]/.test(text)) return false;
+          if (/(?:任务|队伍|巡逻|路线|进度|目标|当前|导航|追踪|频道|公告|营地|世界|场景|玩法|使用|功能|手册)/.test(text)) {
+            return false;
+          }
+          return /[\p{L}\p{Script=Han}]/u.test(text);
+        })
+    )];
+  }
+
   async findConditionalText(texts, label, options, signal) {
     const frame = await this.vision.capture(label, signal);
     let found = texts
@@ -1353,10 +1524,13 @@ export class GameUi {
         texts
       });
       if (matched < minimumTexts) {
+        const matchedTexts = texts.filter((text) =>
+          this.findInRegion(screen.observations, text, region)
+        );
         await this.report(
           "info",
           "task_guide_overlay_not_present",
-          `左半屏任务导航遮挡未出现或已关闭（识别到 ${matched}/${minimumTexts} 个特征字）`
+          `左半屏任务导航遮挡未出现或已关闭（识别到 ${matched}/${minimumTexts} 个特征字；匹配：${matchedTexts.join("、") || "无"}）`
         );
         return screen;
       }
@@ -3172,6 +3346,9 @@ export class GameUi {
           break;
         case "tapUnlessAnyText":
           await this.tapUnlessAnyText(action.texts, action, signal);
+          break;
+        case "openTeamPanelGuarded":
+          await this.openTeamPanelGuarded(action, signal);
           break;
         case "tapUntilNoneTexts":
           await this.tapUntilNoneTexts(action, signal);

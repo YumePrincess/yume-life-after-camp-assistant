@@ -252,6 +252,8 @@
   "patrolTeamUi": {
     "flagButton": { "x": 48, "y": 327 },
     "flagClickAttempts": 2,
+    "flagClickSettleMs": 2000,
+    "flagClickColorReadRetries": 6,
     "flagReadyTexts": ["CtrlQ", "Ctrl Q"],
     "flagReadyRegion": { "left": 0, "top": 260, "right": 130, "bottom": 390 },
     "teamCardColor": {
@@ -740,19 +742,18 @@
         "regionOcrMinimumConfidence": 0.2,
         "regionOcrScale": 2
       },
-      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150, "hud": true },
-      { "op": "sleep", "ms": 500 },
       {
-        "op": "tapUntilAnyTexts",
-        "texts": ["调整", "离开队伍"],
-        "minimumTexts": 1,
-        "x": 50,
-        "y": 325,
-        "maxAttempts": 6,
-        "intervalMs": 500,
+        "op": "openTeamPanelGuarded",
+        "cardPoint": { "x": 350, "y": 150 },
+        "requiredCardTexts": ["自动匹配"],
+        "memberStateTexts": ["暂无队员加入", "等待队员加入"],
+        "panelTexts": ["调整", "离开队伍"],
+        "minimumPanelTexts": 2,
+        "panelRegion": { "left": 0, "top": 0, "right": 1920, "bottom": 1180 },
+        "cardRegion": { "left": 0, "top": 0, "right": 1920, "bottom": 1180 },
+        "memberNameRegion": { "left": 0, "top": 120, "right": 620, "bottom": 520 },
+        "settleMs": 500,
         "hud": true,
-        "gameMouse": true,
-        "controlLabel": "队伍卡片旗帜展开",
         "taskGuideOverlay": {
           "texts": ["任务", "当前", "导航", "追踪"],
           "region": { "left": 0, "top": 0, "right": 960, "bottom": 1200 },
@@ -764,9 +765,6 @@
           "regionOcrScale": 2
         }
       },
-      { "op": "sleep", "ms": 300 },
-      { "op": "tapUnlessAnyText", "texts": ["调整", "离开队伍"], "x": 350, "y": 150, "hud": true },
-      { "op": "waitAnyText", "texts": ["调整", "离开队伍"], "timeoutSeconds": 10 },
       { "op": "tapIfAnyText", "texts": ["3D模式"], "x": 1655, "y": 55, "hud": true },
       { "op": "sleep", "ms": 500 }
     ],

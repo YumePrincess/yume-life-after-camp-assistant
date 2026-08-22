@@ -584,6 +584,10 @@ export async function createPatrolTeam(context, signal) {
     throw new Error("PATROL_TEAM_UI_NOT_CONFIGURED");
   }
   const settleMs = Math.max(800, Number(controls.stepSettleMs) || 1_200);
+  const flagClickSettleMs = Math.max(
+    2_000,
+    Number(controls.flagClickSettleMs) || 2_000
+  );
   const createMenuWaitMs = Math.max(
     5_000,
     Number(controls.createMenuWaitMs) || 5_000
@@ -596,6 +600,10 @@ export async function createPatrolTeam(context, signal) {
     5_000,
     Number(controls.campAffairsWaitMs) || 5_000
   );
+  const flagClickColorReadRetries = Math.max(
+    6,
+    Number(controls.flagClickColorReadRetries) || 6
+  );
   const sleep = context.sleep || delay;
   let screen = await capturePatrolScreen(
     vision,
@@ -605,7 +613,8 @@ export async function createPatrolTeam(context, signal) {
   const initialExisting = await resolveExistingPatrolTeam(
     context,
     screen,
-    signal
+    signal,
+    { beforeFlagExpansion: true }
   );
   if (initialExisting.mode === "existing-valid-route") {
     await report(
@@ -687,10 +696,10 @@ export async function createPatrolTeam(context, signal) {
       attempt <= flagClickAttempts;
       attempt += 1
     ) {
-      if (attempt >= 3 && typeof ui.recheckGameMouseForRetry === "function") {
+      if (attempt > 1 && typeof ui.recheckGameMouseForRetry === "function") {
         await ui.recheckGameMouseForRetry(
           signal,
-          `巡逻旗帜同一步连续点击失败 ${attempt - 1} 次，重试第 ${attempt} 次`
+          `巡逻旗帜点击后色块未确认黄色，重新释放游戏鼠标后重试第 ${attempt} 次`
         );
       }
       await report(
@@ -703,7 +712,7 @@ export async function createPatrolTeam(context, signal) {
           : `旗帜点击后仍未出现队伍菜单；第 ${attempt} 次点击前仅因前两次失败才重检游戏鼠标状态 (${controls.flagButton.x},${controls.flagButton.y})`
       );
       await tapPatrolMouse(ui, controls.flagButton, signal, { gameMouse: true });
-      await sleep(settleMs, signal);
+      await sleep(flagClickSettleMs, signal);
       screen = await capturePatrolScreen(
         vision,
         attempt === 1
@@ -723,6 +732,38 @@ export async function createPatrolTeam(context, signal) {
           "warning",
           "patrol_flag_overlay_blocked",
           "旗帜点击后出现任务导航遮挡；已先关闭右侧安全空白处的遮挡，不再在遮挡上重复点击旗帜"
+        );
+      }
+      const flagColorAfterClick = await verifyPatrolFlagSelectionAfterClick(
+        context,
+        screen,
+        signal,
+        {
+          clickAttempt: attempt,
+          colorReadRetries: flagClickColorReadRetries,
+          settleMs: flagClickSettleMs
+        }
+      );
+      screen = flagColorAfterClick.screen || screen;
+      if (
+        flagColorAfterClick.enabled &&
+        !flagColorAfterClick.teamCardSelected
+      ) {
+        await report(
+          "warning",
+          "patrol_flag_click_color_unverified",
+          `第 ${attempt}/${flagClickAttempts} 次点击后未确认队伍旗帜图标变为黄色（state=${flagColorAfterClick.state}; 任务图标=${flagColorAfterClick.taskCardSelected ? "黄色" : "非黄色"}; 队伍旗帜图标=${flagColorAfterClick.teamCardSelected ? "黄色/已选中" : "非黄色/未选中"}）；禁止进入队伍判断`
+        );
+        if (attempt < flagClickAttempts) {
+          await report(
+            "warning",
+            "patrol_flag_click_color_retry",
+            "疑似游戏鼠标释放失败；下一次点击前重新执行游戏鼠标释放流程"
+          );
+          continue;
+        }
+        throw new Error(
+          "PATROL_FLAG_CLICK_NOT_VERIFIED: 点击旗帜后未确认队伍旗帜图标变为黄色，已停止后续队伍判断"
         );
       }
       const existing = await resolveExistingPatrolTeam(
@@ -1156,7 +1197,78 @@ export async function createPatrolTeam(context, signal) {
   return "created";
 }
 
-async function resolveExistingPatrolTeam(context, screen, signal) {
+async function verifyPatrolFlagSelectionAfterClick(
+  context,
+  initialScreen,
+  signal,
+  { clickAttempt, colorReadRetries, settleMs }
+) {
+  const { vision, report } = context;
+  const sleep = context.sleep || delay;
+  const totalReads = 1 + Math.max(6, Number(colorReadRetries) || 6);
+  let screen = initialScreen;
+  let color = null;
+  for (let readAttempt = 1; readAttempt <= totalReads; readAttempt += 1) {
+    if (readAttempt > 1) {
+      await sleep(Math.max(2_000, Number(settleMs) || 2_000), signal);
+      try {
+        screen = await capturePatrolScreen(
+          vision,
+          `patrol-flag-color-reread-${clickAttempt}-${readAttempt}`,
+          signal
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        color = {
+          enabled: true,
+          state: "read-error",
+          taskCardSelected: false,
+          teamCardSelected: false
+        };
+        await report(
+          "warning",
+          "patrol_flag_color_read_retry",
+          `旗帜点击后第 ${readAttempt}/${totalReads} 次色块读取失败，将等待 2 秒后重读（${error?.message || String(error)}）`
+        );
+        continue;
+      }
+    }
+    color = await patrolTeamCardColorState(context, screen, signal);
+    if (!color.enabled || color.teamCardSelected) {
+      if (color.enabled) {
+        await report(
+          "info",
+          "patrol_flag_click_color_verified",
+          `第 ${clickAttempt} 次旗帜点击后已确认队伍旗帜图标为黄色（第 ${readAttempt}/${totalReads} 次读取）`
+        );
+      }
+      return { ...color, screen };
+    }
+    if (readAttempt < totalReads) {
+      await report(
+        "warning",
+        "patrol_flag_color_read_retry",
+        `旗帜点击后第 ${readAttempt}/${totalReads} 次未确认队伍旗帜图标为黄色（state=${color.state}）；等待 2 秒后重读`
+      );
+    }
+  }
+  return {
+    ...(color || {
+      enabled: true,
+      state: "unavailable",
+      taskCardSelected: false,
+      teamCardSelected: false
+    }),
+    screen
+  };
+}
+
+async function resolveExistingPatrolTeam(
+  context,
+  screen,
+  signal,
+  { beforeFlagExpansion = false } = {}
+) {
   const { config, ui, vision, report } = context;
   const controls = config?.patrolTeamUi || {};
   let current = screen;
@@ -1165,6 +1277,26 @@ async function resolveExistingPatrolTeam(context, screen, signal) {
     current,
     signal
   );
+  // The first screen after teleport is still the normal HUD. Its task list
+  // can contain generic words such as “自动匹配” or stale progress text, but
+  // it has not yet shown the flag's team-card menu. Never classify that HUD as
+  // an existing team before the flag is expanded. A genuinely open team
+  // panel, or a calibrated yellow flag icon, is the only pre-expansion
+  // exception.
+  if (
+    beforeFlagExpansion &&
+    !state.panel &&
+    !state.colorEvidence?.teamCardSelected
+  ) {
+    if (state.hasTeam) {
+      await report(
+        "info",
+        "patrol_existing_team_preflag_ignored",
+        "旗帜队伍卡片尚未展开；忽略当前 HUD 的队伍候选文字，先点击旗帜再确认是否已有队伍"
+      );
+    }
+    return { mode: "none", screen: current };
+  }
   if (state.validRoute) {
     return { mode: "existing-valid-route", screen: current };
   }
@@ -1224,9 +1356,7 @@ async function inspectExistingPatrolTeamStateWithColor(context, screen, signal) 
   if (color.teamCardSelected) {
     return {
       ...state,
-      hasTeam: true,
-      cardEvidence: true,
-      colorEvidence: true
+      colorEvidence: color
     };
   }
   return { ...state, colorEvidence: color };
@@ -1474,20 +1604,22 @@ function patrolWarmIconGroup(foreground, background, config) {
 async function ensurePatrolFlagClickColor(context, screen, signal) {
   const color = await patrolTeamCardColorState(context, screen, signal);
   if (!color.enabled) return;
+  const colorSummary =
+    `state=${color.state}; 任务图标=${color.taskCardSelected ? "黄色" : "非黄色"}; 队伍旗帜图标=${color.teamCardSelected ? "黄色/已选中" : "非黄色/未选中"}`;
   if (color.teamCardSelected) {
     throw new Error(
-      "PATROL_FLAG_CLICK_FORBIDDEN_TEAM_CARD: 色块已确认旗帜队伍卡片处于选中状态，禁止再次点击旗帜"
+      `PATROL_FLAG_CLICK_FORBIDDEN_TEAM_CARD: 色块已确认队伍旗帜图标处于黄色选中状态，禁止再次点击旗帜（${colorSummary}）`
     );
   }
   if (!color.taskCardSelected) {
     throw new Error(
-      `PATROL_FLAG_COLOR_UNVERIFIED: 未确认默认任务图标黄色且旗帜图标未选中（state=${color.state}），禁止点击旗帜`
+      `PATROL_FLAG_COLOR_UNVERIFIED: 未确认任务图标黄色且队伍旗帜图标未选中，禁止点击旗帜（${colorSummary}）`
     );
   }
   await context.report(
     "info",
     "patrol_flag_color_ready",
-    "已通过左侧任务图标/旗帜图标的局部色块对比确认当前仍是默认任务卡片；允许点击旗帜一次"
+    `已通过左侧任务图标与队伍旗帜图标的局部色块对比确认当前是默认任务卡片；允许点击队伍旗帜一次（${colorSummary}）`
   );
 }
 
