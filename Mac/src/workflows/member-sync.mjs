@@ -7,7 +7,12 @@ import {
   isStaffSeatPlaceholder,
   parseTable
 } from "../table-parser.mjs";
-import { isPlausibleMemberName } from "../member-name.mjs";
+import {
+  isMemberAvatarArtifact,
+  isMemberIdentityBadge,
+  isMemberProfessionArtifact,
+  isPlausibleMemberName
+} from "../member-name.mjs";
 import { delay } from "../process.mjs";
 import {
   progressForRange,
@@ -2281,20 +2286,13 @@ function memberFullPageDefinition(definition) {
   };
 }
 
-function isMemberAvatarArtifact(value) {
-  const text = String(value || "")
-    .trim()
-    .normalize("NFKC")
-    .replace(/\s+/g, "");
-  // The avatar artwork carries a printed 2025/20251-style year marker.  It
-  // is outside the identity column in the calibrated crop, but this guard is
-  // also required for legacy/plugin OCR providers that still return it.
-  return /^2025\d*$/u.test(text);
-}
-
 function filterMemberDetailRows(rows) {
   return (rows || []).filter(
-    (row) => row?.name && !isMemberAvatarArtifact(row.name)
+    (row) =>
+      row?.name &&
+      !isMemberAvatarArtifact(row.name) &&
+      !isMemberIdentityBadge(row.name) &&
+      !isMemberProfessionArtifact(row.name, row.profession)
   );
 }
 

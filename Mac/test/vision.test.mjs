@@ -8,6 +8,11 @@ import {
   safeSipsCropRegion
 } from "../src/vision.mjs";
 import { Vision } from "../src/vision.mjs";
+import {
+  isMemberAvatarArtifact,
+  isMemberIdentityBadge,
+  isMemberProfessionArtifact
+} from "../src/member-name.mjs";
 
 test("game-mouse icon detection uses two pixel probes and OCR only as a conservative fallback", async () => {
   const vision = new Vision({
@@ -246,6 +251,37 @@ test("member identity keeps the first OCR line as the player name", () => {
   assert.equal(isPlausibleMemberName("青在✨"), true);
   assert.equal(isPlausibleMemberName("✨"), true);
   assert.equal(isPlausibleMemberName("#"), true);
+});
+
+test("member identity keeps pure symbol names and drops trailing identity badges", () => {
+  assert.deepEqual(
+    inferMemberIdentity([
+      { text: "-😊-", x: 100, y: 300, width: 80, height: 24 },
+      { text: "启航", x: 230, y: 300, width: 48, height: 24 },
+      { text: "回归", x: 280, y: 300, width: 48, height: 24 }
+    ]),
+    { name: "-😊-", campTitle: "" }
+  );
+  assert.equal(isMemberIdentityBadge("先行者"), true);
+  assert.equal(isMemberIdentityBadge("R"), true);
+  assert.equal(isPlausibleMemberName("✨"), true);
+});
+
+test("avatar year OCR variants are rejected before profile normalization", () => {
+  for (const value of ["2025", "20251", "D025", "O025", "2O25"]) {
+    assert.equal(isMemberAvatarArtifact(value), true, value);
+    assert.equal(isPlausibleMemberName(value), false, value);
+  }
+  assert.equal(isMemberAvatarArtifact("-😊-"), false);
+});
+
+test("member profession text cannot replace a missing symbol-only name", () => {
+  assert.equal(
+    isMemberProfessionArtifact("特级步枪兵王", "特级步枪兵王"),
+    true
+  );
+  assert.equal(isMemberProfessionArtifact("-😊-", "特级步枪兵王"), false);
+  assert.equal(isPlausibleMemberName("-😊-"), true);
 });
 
 test("macOS 27 bottom-edge crops shift inward instead of silently returning the full frame", () => {

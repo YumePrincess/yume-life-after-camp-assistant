@@ -3,7 +3,12 @@ import { resolve } from "node:path";
 import { MAC_ROOT } from "./config.mjs";
 import { runFile } from "./process.mjs";
 import { LocalVisionAdvisor } from "./local-vision-advisor.mjs";
-import { isPlausibleMemberName } from "./member-name.mjs";
+import {
+  isMemberAvatarArtifact,
+  isMemberIdentityBadge,
+  isMemberProfessionArtifact,
+  isPlausibleMemberName
+} from "./member-name.mjs";
 import { isStaffSeatPlaceholder, parseTable } from "./table-parser.mjs";
 
 export { isPlausibleMemberName } from "./member-name.mjs";
@@ -748,6 +753,10 @@ export class Vision {
         lower,
         anchor,
         items,
+        profession: firstColumnText(
+          items,
+          columnBounds.get("profession")
+        ),
         identity: inferMemberIdentity(
           itemsInColumn(items, columnBounds.get("identity")),
           {
@@ -806,10 +815,61 @@ export class Vision {
         ];
       }
     }
+    if (this.advisor.enabled) {
+      const identityBounds = columnBounds.get("identity");
+      const rowsNeedingNameRecovery = rowData.filter(
+        (row) =>
+          !isPlausibleMemberName(row.identity.name) ||
+          isMemberAvatarArtifact(row.identity.name) ||
+          isMemberProfessionArtifact(row.identity.name, row.profession)
+      );
+      if (rowsNeedingNameRecovery.length) {
+        await Promise.all(
+          rowsNeedingNameRecovery.map(async (row, recoveryIndex) => {
+            const rowCropPath = resolve(
+              this.snapshotDir,
+              `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-identity-ai-${recoveryIndex + 1}.png`
+            );
+            this.taskPaths.add(rowCropPath);
+            try {
+              const rowRegion = {
+                left: identityBounds.left,
+                top: Math.max(region.top, row.upper - 14),
+                right: identityBounds.right,
+                bottom: Math.min(region.bottom, row.lower + 14)
+              };
+              await this.#cropImage(
+                imagePath,
+                rowRegion,
+                rowCropPath,
+                signal
+              );
+              const candidate = await this.advisor.extractMemberName(
+                rowCropPath,
+                signal
+              );
+              const name = cleanMemberName(candidate, row.profession);
+              if (name) {
+                row.identity = { name, campTitle: "" };
+              }
+            } catch {
+              // The page-level advisor recovery below remains available when
+              // a single-row crop cannot be read or the local model is busy.
+            } finally {
+              this.taskPaths.delete(rowCropPath);
+              await rm(rowCropPath, { force: true });
+            }
+          })
+        );
+      }
+    }
     const nativeNameCounts = new Map();
     for (const row of rowData) {
       const key = comparableVisionName(
-        isPlausibleMemberName(row.identity.name) ? row.identity.name : ""
+        isPlausibleMemberName(row.identity.name) &&
+          !isMemberAvatarArtifact(row.identity.name)
+          ? row.identity.name
+          : ""
       );
       if (key) nativeNameCounts.set(key, (nativeNameCounts.get(key) || 0) + 1);
     }
@@ -821,6 +881,11 @@ export class Vision {
         rowData.some(
           (row) =>
             !isPlausibleMemberName(row.identity.name) ||
+            isMemberAvatarArtifact(row.identity.name) ||
+            isMemberProfessionArtifact(
+              row.identity.name,
+              row.profession
+            ) ||
             nativeNameCounts.get(comparableVisionName(row.identity.name)) > 1
         ))
     ) {
@@ -860,7 +925,8 @@ export class Vision {
       const advised = await this.advisor.extractMemberDetails(
         cropPath,
         advisorRowCount,
-        signal
+        signal,
+        { symbolAware: true }
       );
         advisedByRow = new Map(advised.map((item) => [item.row, item]));
       } finally {
@@ -869,14 +935,17 @@ export class Vision {
       }
     }
     return rowData
-      .map(({ items, identity }, index) => {
+      .map(({ items, identity, profession }, index) => {
         const ai = advisedByRow.get(index + 1) || {};
-        const nativeName = isPlausibleMemberName(identity.name)
-          ? identity.name
-          : "";
+        const nativeName =
+          isPlausibleMemberName(identity.name) &&
+          !isMemberAvatarArtifact(identity.name) &&
+          !isMemberProfessionArtifact(identity.name, profession)
+            ? identity.name
+            : "";
         const nativeNameDuplicated =
           nativeNameCounts.get(comparableVisionName(nativeName)) > 1;
-        const advisedName = cleanMemberName(ai.name);
+        const advisedName = cleanMemberName(ai.name, profession);
         return {
           name:
             (
@@ -892,7 +961,7 @@ export class Vision {
           // is allowed to promote that line to a role field.
           campTitle: null,
           profession:
-            firstColumnText(items, columnBounds.get("profession")),
+            profession,
           weeklyContribution:
             firstColumnText(items, columnBounds.get("weeklyContribution")) ||
             "0",
@@ -1546,7 +1615,8 @@ export function inferMemberIdentity(items, options = {}) {
         return left.y - right.y;
       }
       return 0;
-    });
+    })
+    .filter(({ text }) => !isMemberIdentityBadge(text));
   if (!values.length) return { name: "", campTitle: "" };
   const first = values[0].text;
   const firstLineBelowName =
@@ -1574,14 +1644,18 @@ export function inferMemberIdentity(items, options = {}) {
 }
 
 function isLikelyMemberTitle(value) {
-  return /^(?:#|市长|营地助手|公职人员|职位|title\b)/i.test(
+  return /^(?:#\s*[BDGKOPRUWY](?:\s|#|$)|市长|营地助手|公职人员|职位|title\b)/i.test(
     String(value || "").trim()
   );
 }
 
-function cleanMemberName(value) {
+function cleanMemberName(value, profession = "") {
   const text = cleanModelText(value);
-  return isPlausibleMemberName(text) && !isLikelyMemberTitle(text)
+  return isPlausibleMemberName(text) &&
+    !isMemberAvatarArtifact(text) &&
+    !isMemberIdentityBadge(text) &&
+    !isMemberProfessionArtifact(text, profession) &&
+    !isLikelyMemberTitle(text)
     ? text
     : "";
 }

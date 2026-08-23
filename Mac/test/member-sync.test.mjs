@@ -1568,6 +1568,66 @@ test("member profiles keep names that differ by decorative symbols", async () =>
   assert.equal(rows[0].name, "#愿✨");
 });
 
+test("member profile recovery preserves pure symbol names and ignores badge/year OCR", async () => {
+  const recoveryLabels = [];
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture(label) {
+          return { path: `${label}.png`, observations: [] };
+        },
+        async extractTableRows(_path, _definition, label) {
+          if (label.includes("page-recovery")) {
+            recoveryLabels.push(label);
+            return [
+              { name: "-😊-" },
+              { name: "✨" },
+              { name: "成员三" },
+              { name: "成员四" },
+              { name: "成员五" }
+            ];
+          }
+          return [
+            { name: "D025" },
+            { name: "启航" },
+            { name: "成员三" },
+            { name: "成员四" },
+            { name: "成员五" }
+          ];
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        stopAfterStagnantPages: 1,
+        from: { x: 1, y: 2 },
+        to: { x: 1, y: 1 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 5 }
+  );
+
+  assert.deepEqual(rows.map((row) => row.name), [
+    "-😊-",
+    "✨",
+    "成员三",
+    "成员四",
+    "成员五"
+  ]);
+  assert.equal(recoveryLabels.length, 1);
+});
+
 test("member scans discard avatar year text and collapse exact duplicate rows", async () => {
   const recoveryLabels = [];
   const context = {

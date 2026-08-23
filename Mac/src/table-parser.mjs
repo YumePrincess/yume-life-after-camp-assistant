@@ -1,4 +1,9 @@
-import { isPlausibleMemberName } from "./member-name.mjs";
+import {
+  isMemberAvatarArtifact,
+  isMemberIdentityBadge,
+  isMemberProfessionArtifact,
+  isPlausibleMemberName
+} from "./member-name.mjs";
 
 export function parseTable(observations, definition) {
   const region = definition.region;
@@ -172,7 +177,12 @@ export function normalizeProfiles(rows) {
   return rows
     .map((row) => {
       const name = clean(row.name);
-      if (!name) return null;
+      if (
+        !name ||
+        isMemberAvatarArtifact(name) ||
+        isMemberIdentityBadge(name) ||
+        isMemberProfessionArtifact(name, row.profession)
+      ) return null;
       return {
         name,
         profession: clean(row.profession) || null,

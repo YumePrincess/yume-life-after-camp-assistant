@@ -151,7 +151,7 @@ export class LocalVisionAdvisor {
     const prompt = [
       "读取《明日之后》营地贡献表当前可见的所有成员行。",
       "图片已经只裁剪到表格区域。逐行读取，不能臆造看不清的行。",
-      "四列从左到右是：玩家姓名、一周贡献、使用科技点、贡献物资。",
+      "四列从左到右是：玩家姓名、一周贡献、使用科技点、贡献物资。玩家姓名可能完全由emoji或符号组成，例如 -😊-、✨、★，必须保留，不得因缺少汉字、字母或数字而丢弃。",
       "贡献物资可能是超出单元格宽度的8位或更长数字；必须保留最左侧首位并读取完整数字。",
       "所有数值只保留十进制整数；逗号、空格等分隔符去掉。",
       "忽略表头、按钮和说明文字。看不到任何真实成员行时返回空rows，严禁输出字段名、示例值或占位数据。",
@@ -191,7 +191,7 @@ export class LocalVisionAdvisor {
     if (!this.enabled || this.config.transport !== "http") return [];
     const prompt = [
       "读取《明日之后》营地贡献表姓名列中当前可见的所有成员姓名。",
-      "从上到下编号，第一条可见成员行为1。保留姓名中的字母、数字和可辨认装饰符号。",
+      "从上到下编号，第一条可见成员行为1。玩家姓名可能完全由emoji或符号组成，例如 -😊-、✨、★；这些都是有效姓名，必须逐字符保留，不能因为没有汉字、字母或数字而留空。",
       "必须为每一条可见行返回一个行号；看不清姓名时name为空字符串，不能跳过该行，不能把后续姓名提前。",
       "忽略表头、头像和其他列，不要读取任何贡献数值。",
       "只返回一次单行JSON对象且不要Markdown。顶层唯一字段names，数组每项只有row整数和name字符串。"
@@ -224,15 +224,22 @@ export class LocalVisionAdvisor {
       );
   }
 
-  async extractMemberDetails(imagePath, rowCount, signal) {
+  async extractMemberDetails(imagePath, rowCount, signal, options = {}) {
     if (!this.enabled || this.config.transport !== "http") return [];
     const count = Math.max(1, Number.parseInt(rowCount, 10) || 1);
     const prompt = [
-      "读取《明日之后》营地“成员-基础信息”表当前完整可见的成员行。",
+      options.singleRow
+        ? "这是从成员资料表裁出的单独一行；只读取这一个可见行，绝不能把其他行的姓名前移到这一行。"
+        : "读取《明日之后》营地“成员-基础信息”表当前完整可见的成员行。",
       `右侧“在线/离线”列明确标出了 ${count} 条完整成员行；profiles 必须恰好返回 ${count} 项，row 从1连续到${count}，绝不能漏行或把后一行前移。`,
       "成员清单只读取每行最上面的第一行玩家姓名name。下面较小的职位/Title行完全忽略，campTitle必须返回空字符串；绝不能把第二行职位当成玩家姓名。",
       "另外读取同一行的职业profession和最右侧同居人roommateName；没有文字或看不清时填空字符串，不能猜测。",
-      "保留姓名中的字母、数字和可辨认装饰符号。忽略表头、头像、周贡献、庄园等级、在线状态与所在场景。",
+      options.symbolAware === false
+        ? "保留姓名中的字母、数字和可辨认装饰符号。"
+        : "玩家姓名可能完全由符号或emoji组成，例如 -😊-、✨、★、※；这些都是有效name，必须逐字符保留，不能因为没有汉字、字母或数字而留空。保留姓名中的字母、数字、emoji、标点和可辨认装饰符号。",
+      "头像卡片上印刷的2025、20251，以及OCR可能误读出的D025、O025、2O25等年份样式不是玩家姓名；遇到这些只忽略头像字样，继续读取同一行身份栏的真实姓名。只有身份栏确实没有任何姓名字形时才返回空name。",
+      "如果name与同一行profession完全相同，说明把职业误当成了姓名；此时name必须为空字符串，不能复制“特级步枪兵王”等职业文本。",
+      "忽略表头、头像、周贡献、庄园等级、在线状态与所在场景。",
       "只返回一次单行JSON对象且不要Markdown。顶层唯一字段profiles；每项只有row整数、name、campTitle、profession、roommateName字符串，campTitle固定为空字符串。"
     ].join("\n");
     const parsed = await requestHttp(
@@ -241,7 +248,7 @@ export class LocalVisionAdvisor {
       prompt,
       {
         maxTokens: 768,
-        resizeShape: [480, 1280]
+        resizeShape: options.singleRow ? [256, 960] : [480, 1280]
       },
       signal
     );
@@ -259,6 +266,24 @@ export class LocalVisionAdvisor {
         roommateName: String(item?.roommateName || "").trim()
       }))
       .filter((item) => Number.isInteger(item.row) && item.row > 0);
+  }
+
+  async extractMemberName(imagePath, signal) {
+    if (!this.enabled || this.config.transport !== "http") return "";
+    const prompt = [
+      "读取这张《明日之后》营地成员表单行姓名栏裁剪图中的唯一玩家姓名。",
+      "图中只有姓名栏，不要读取头像、职业、等级或其他列；不要用职业或其他行的姓名替代当前姓名。",
+      "姓名可能完全由emoji或符号组成，例如 -😊-、✨、★、※；必须逐字符保留，包括两侧的短横线、标点和装饰符号。看不清时返回空字符串，不要猜测。",
+      '只返回一行JSON：{"name":""}，不要Markdown。'
+    ].join("\n");
+    const parsed = await requestHttp(
+      this.config,
+      imagePath,
+      prompt,
+      { maxTokens: 128, resizeShape: [256, 480] },
+      signal
+    );
+    return String(parsed?.name || "").trim();
   }
 
   async extractStaff(imagePath, signal) {
