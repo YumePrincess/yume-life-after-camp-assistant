@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  captureContribution,
   capturePagedTable,
   alignContributionRowsToRoster,
   dedupeStaffAssignments,
+  dedupeContributionRows,
   assertContributionComplete,
   containsSailingTitleLeak,
   reconcilePageRows,
@@ -396,7 +398,7 @@ test("contribution pages recover a missing name without shifting later rows", as
   assert.deepEqual(recoveryOptions, [{ forceContributionRecovery: true }]);
 });
 
-test("contribution scans stop at the roster-derived remainder page", async () => {
+test("contribution scans continue past the roster count and retain raw page overlap", async () => {
   const swipes = [];
   const pages = [
     Array.from({ length: 11 }, (_, index) => ({ name: `成员${index + 1}` })),
@@ -443,8 +445,107 @@ test("contribution scans stop at the roster-derived remainder page", async () =>
     { expectedCount: 23 }
   );
 
-  assert.equal(rows.length, 22);
-  assert.equal(swipes.length, 2);
+  assert.equal(rows.length, 44);
+  assert.equal(rows.filter((row) => row.name === "成员22").length, 3);
+  assert.equal(rows.filter((row) => row.name === "成员12").length, 3);
+  assert.equal(swipes.length, 3);
+});
+
+test("contribution rows are deduplicated only after the complete scan", () => {
+  const rows = dedupeContributionRows([
+    {
+      name: "成员一",
+      weeklyContribution: "1",
+      technologyPointsUsed: "",
+      materialContribution: "3"
+    },
+    {
+      name: "成员一",
+      weeklyContribution: "1",
+      technologyPointsUsed: "2",
+      materialContribution: "3"
+    },
+    {
+      name: "成员二",
+      weeklyContribution: "4",
+      technologyPointsUsed: "5",
+      materialContribution: "6"
+    }
+  ]);
+
+  assert.deepEqual(rows, [
+    {
+      name: "成员一",
+      weeklyContribution: "1",
+      technologyPointsUsed: "2",
+      materialContribution: "3"
+    },
+    {
+      name: "成员二",
+      weeklyContribution: "4",
+      technologyPointsUsed: "5",
+      materialContribution: "6"
+    }
+  ]);
+});
+
+test("contribution count mismatch does not reopen the page for an Agent retry", async () => {
+  const flows = [];
+  const reports = [];
+  const rows = await captureContribution(
+    {
+      config: {
+        tables: {
+          contribution: {
+            region: { left: 100, top: 270, right: 900, bottom: 1000 },
+            columns: [
+              { key: "name", left: 0, right: 0.32 },
+              { key: "weeklyContribution", left: 0.32, right: 0.54 },
+              { key: "technologyPointsUsed", left: 0.54, right: 0.76 },
+              { key: "materialContribution", left: 0.76, right: 1 }
+            ],
+            headerPattern: [],
+            pagination: {
+              maxPages: 1,
+              rowsPerPage: 11,
+              minimumRowsPerPage: 1,
+              stopAfterStagnantPages: 1
+            }
+          }
+        }
+      },
+      ui: {
+        async executeFlow(name) {
+          flows.push(name);
+        },
+        async afterAction() {}
+      },
+      vision: {
+        async capture() {
+          return { path: "contribution-count-mismatch.png", observations: [] };
+        },
+        async extractTableRows() {
+          return [{
+            name: "成员一",
+            weeklyContribution: "1",
+            technologyPointsUsed: "2",
+            materialContribution: "3"
+          }];
+        }
+      },
+      async sleep() {},
+      async report(_level, step) {
+        reports.push(step);
+      }
+    },
+    undefined,
+    { expectedCount: 2 }
+  );
+
+  assert.equal(rows.length, 1);
+  assert.equal(flows.filter((name) => name === "openContribution").length, 1);
+  assert.ok(reports.includes("contribution_count_mismatch_no_retry"));
+  assert.ok(!reports.includes("contribution_empty_retry"));
 });
 
 test("contribution and activity color bands choose the correction direction", () => {

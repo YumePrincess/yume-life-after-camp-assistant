@@ -766,6 +766,36 @@ export async function createPatrolTeam(context, signal) {
           "PATROL_FLAG_CLICK_NOT_VERIFIED: 点击旗帜后未确认队伍旗帜图标变为黄色，已停止后续队伍判断"
         );
       }
+      // The expanded flag menu has two mutually exclusive entry states:
+      // a no-team menu exposes “创建队伍”, while an existing team exposes
+      // the team-card evidence such as “自动匹配”.  Check the create entry
+      // first.  Otherwise stale/generic “自动匹配” OCR can make the no-team
+      // menu look like an existing team and incorrectly open the team panel.
+      createMenuMatch = await findPatrolTextWithAccurateRegion(
+        vision,
+        screen,
+        screen.observations,
+        "创建队伍",
+        controls.teamMenuRegion,
+        `patrol-team-menu-open-${attempt}-create-entry-priority`,
+        signal
+      );
+      menuOpen = Boolean(createMenuMatch);
+      creatorOpen = patrolCreatorOpen(
+        vision,
+        screen.observations,
+        controls
+      );
+      if (menuOpen || creatorOpen) {
+        await report(
+          "info",
+          "patrol_create_entry_verified_after_flag",
+          menuOpen
+            ? "旗帜展开后已优先确认左侧“创建队伍”入口；判定为无有效队伍，继续标准创建流程"
+            : "旗帜展开后已确认队伍目标创建页已打开，继续标准创建流程"
+        );
+        break;
+      }
       const existing = await resolveExistingPatrolTeam(
         context,
         screen,
@@ -831,7 +861,11 @@ export async function createPatrolTeam(context, signal) {
       );
       if (menuOpen || creatorOpen || anyTeamPanel) break;
     }
-    if (inspectExistingPatrolTeamState(vision, screen.observations, controls).validRoute) {
+    if (
+      !menuOpen &&
+      !creatorOpen &&
+      inspectExistingPatrolTeamState(vision, screen.observations, controls).validRoute
+    ) {
       await report(
         "info",
         "patrol_existing_route_detected",
@@ -870,6 +904,31 @@ export async function createPatrolTeam(context, signal) {
         signal,
         "Ctrl+Q 入口点击后"
       );
+      createMenuMatch = await findPatrolTextWithAccurateRegion(
+        vision,
+        screen,
+        screen.observations,
+        "创建队伍",
+        controls.teamMenuRegion,
+        `patrol-team-menu-key-fallback-${attempt + 1}-create-entry-priority`,
+        signal
+      );
+      menuOpen = Boolean(createMenuMatch);
+      creatorOpen = patrolCreatorOpen(
+        vision,
+        screen.observations,
+        controls
+      );
+      if (menuOpen || creatorOpen) {
+        await report(
+          "info",
+          "patrol_create_entry_verified_after_key_fallback",
+          menuOpen
+            ? "Ctrl+Q 后已优先确认左侧“创建队伍”入口；继续标准创建流程"
+            : "Ctrl+Q 后已确认队伍目标创建页已打开，继续标准创建流程"
+        );
+        break;
+      }
       const existing = await resolveExistingPatrolTeam(
         context,
         screen,

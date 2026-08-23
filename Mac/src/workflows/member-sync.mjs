@@ -72,13 +72,13 @@ export async function runContributionSync(context, command, _bundle, signal) {
   }
   const expectedMemberCount = memberRoster.length;
   await updateWorkflowProgress(context, 0.04, "contribution_prepare");
-  const rawRows = await captureContribution(context, signal, {
+  const capturedRows = await captureContribution(context, signal, {
     expectedCount: expectedMemberCount,
     progressRange: { start: 0.08, end: 0.72, step: "contribution_scan" }
   });
-  const alignedRows = alignContributionRowsToRoster(rawRows, memberRoster);
+  const alignedRows = alignContributionRowsToRoster(capturedRows, memberRoster);
   const rows = normalizeContribution(alignedRows);
-  const locallyFiltered = Math.max(0, rawRows.length - rows.length);
+  const locallyFiltered = Math.max(0, capturedRows.length - rows.length);
   await updateWorkflowProgress(context, 0.78, "contribution_validate");
   await updateWorkflowProgress(context, 0.86, "contribution_snapshot");
   const result = await context.api.snapshot(
@@ -95,21 +95,21 @@ export async function runContributionSync(context, command, _bundle, signal) {
       "CONTRIBUTION_MASTER_LIST_UNMATCHED: 贡献数据未能匹配成员资料主名单，已保留上一份贡献数据"
     );
   }
-  const incomplete = matched < expectedMemberCount;
+  const countMismatch = matched !== expectedMemberCount;
   await updateWorkflowProgress(context, 0.97, "contribution_complete");
   await context.report(
-    ignored || locallyFiltered || incomplete ? "warning" : "info",
+    ignored || locallyFiltered || countMismatch ? "warning" : "info",
     "contribution_done",
-    `贡献页识别 ${rawRows.length} 行，OCR 清洗后保留 ${rows.length} 行；按成员资料主名单 ${expectedMemberCount} 名成员去重匹配，最终更新 ${matched} 名，忽略 ${ignored + locallyFiltered} 行；不会新增成员`,
+    `贡献页完整扫描后按玩家名称去重得到 ${capturedRows.length} 行，按成员资料主名单 ${expectedMemberCount} 名成员匹配后更新 ${matched} 名，忽略 ${ignored + locallyFiltered} 行；不会新增成员，人数不一致交由 Workers 端处理`,
     {
-      recognized: rawRows.length,
+      recognized: capturedRows.length,
       normalized: rows.length,
       locallyFiltered,
       expectedMemberCount,
       matched,
       ignored: ignored + locallyFiltered,
       ambiguous: Number(result?.ambiguous) || 0,
-      incomplete
+      countMismatch
     }
   );
 }
@@ -246,32 +246,24 @@ export async function captureContribution(context, signal, options = {}) {
       progressRange: scanProgressRange
     }
   );
-  const minimumRows = Math.max(
-    1,
-    Number(expectedCount) ||
-      contributionMinimum(context.config.tables.contribution)
-  );
-  if (rows.length < minimumRows) {
+  const deduplicatedRows = dedupeContributionRows(rows);
+  if (
+    expectedCount !== null &&
+    deduplicatedRows.length !== expectedCount
+  ) {
     await context.report(
       "warning",
-      "contribution_empty_retry",
-      `贡献表首次仅识别 ${rows.length}/${minimumRows} 名成员，点击左下角返回并重新进入贡献页；不关闭游戏或容器`
-    );
-    await context.ui.tap({ x: 80, y: 1080 }, signal);
-    await context.ui.executeFlow("openContribution", {}, signal);
-    await settleTableBeforeFirstScan(context, "contribution-retry", signal);
-    rows = await capturePagedTable(
-      context,
-      "member-contribution-retry",
-      context.config.tables.contribution,
-      signal,
+      "contribution_count_mismatch_no_retry",
+      `贡献表完整扫描后按玩家名称去重得到 ${deduplicatedRows.length}/${expectedCount} 名成员；人数不一致不在 Agent 端重试，交由 Workers 端处理`,
       {
+        recognized: deduplicatedRows.length,
         expectedCount,
-        progressRange: scanProgressRange
+        direction:
+          deduplicatedRows.length < expectedCount ? "under" : "over"
       }
     );
   }
-  return rows;
+  return deduplicatedRows;
 }
 
 export function assertContributionComplete(rows, definition, rawRows = rows) {
@@ -285,6 +277,20 @@ export function assertContributionComplete(rows, definition, rawRows = rows) {
 
 function contributionMinimum(definition) {
   return Math.max(1, Number(definition?.minimumCompleteRows) || 1);
+}
+
+export function dedupeContributionRows(rows) {
+  const byName = new Map();
+  for (const row of rows || []) {
+    const key = contributionNameKey(row?.name);
+    if (!key) continue;
+    const previous = byName.get(key);
+    byName.set(
+      key,
+      previous ? mergeContributionRecord(previous, row) : { ...row }
+    );
+  }
+  return [...byName.values()];
 }
 
 async function captureActivity(
@@ -621,6 +627,8 @@ export async function capturePagedTable(
 ) {
   const { vision, adb, ui, report } = context;
   const byName = new Map();
+  const contributionRows = [];
+  const contributionNames = new Set();
   const memberDetailsMode = label === "member-details";
   const contributionTableMode = label.startsWith("member-contribution");
   const alignedPagedTableMode =
@@ -654,15 +662,6 @@ export async function capturePagedTable(
       Number(definition.pagination.minimumRowsPerPage) ||
       1
   );
-  // A contribution scan may receive the authoritative roster count.  The
-  // final remainder page is allowed to show one row from the previous page
-  // because the game clamps the swipe at the list bottom.  Calculate that
-  // page up front so a repeated visual tail is never treated as additional
-  // pages.  The five-row member-details scanner keeps its own tail rules.
-  const contributionExpectedPageCount =
-    contributionTableMode && expectedCount !== null
-      ? Math.max(1, Math.ceil(expectedCount / memberRowsPerPage))
-      : null;
   // Member pages are allowed at most six in-place reads.  Keep this cap in
   // code as well as in config.example.json so an older external Runtime
   // config containing the former value 3 cannot silently reintroduce the
@@ -886,14 +885,17 @@ export async function capturePagedTable(
           return [];
         });
         attemptRows = memberDetailsMode
-          ? mergeMemberRecoveryCandidates(
-              filterMemberDetailRows(recoveredRows),
-              filterMemberDetailRows(attemptRows),
-              fullPageRead
+          ? (() => {
+              // Keep the advisor's raw row sequence until the page-level
+              // cleanup below.  Deduplicating here hides the collision signal
+              // needed to recover a valid tail row, and can move that
+              // recovery to a later page, changing the roster order.
+              const recoveredMemberRows = filterMemberDetailRows(recoveredRows);
+              const visibleRows = fullPageRead
                 ? Number(pageDefinition.pagination.fullPageRows) || 7
-                : Number(definition.pagination.rowsPerPage) || 5,
-              byName
-            )
+                : Number(definition.pagination.rowsPerPage) || 5;
+              return recoveredMemberRows.slice(0, Math.max(1, visibleRows));
+            })()
           : label.startsWith("member-activity")
             ? mergeActivityRecoveryRows(recoveredRows, attemptRows)
             : mergeContributionRows(attemptRows, recoveredRows);
@@ -1254,38 +1256,55 @@ export async function capturePagedTable(
     const fingerprint = rows.map((row) => row.name).join("|");
     let added = 0;
     let rejectedAfterExpectedCount = 0;
-    for (const row of rows) {
-      const baseRowKey = memberDetailsMode
-        ? memberProfileNameKey(row.name)
-        : row.name;
-      const rowKey = baseRowKey;
-      if (!rowKey) continue;
-      const current = byName.get(rowKey) || {};
-      if (
-        !byName.has(rowKey) &&
-        !memberDetailsMode &&
-        !contributionTableMode &&
-        expectedCount !== null &&
-        byName.size >= expectedCount
-      ) {
-        rejectedAfterExpectedCount += 1;
-        continue;
+    if (contributionTableMode) {
+      // Contribution pages are retained as raw page output.  Overlap and
+      // duplicate names are deliberately preserved until the complete scan
+      // finishes; only then does captureContribution deduplicate by name.
+      for (const row of rows) {
+        contributionRows.push({ ...row });
+        const rowKey = contributionNameKey(row.name);
+        if (rowKey && !contributionNames.has(rowKey)) {
+          contributionNames.add(rowKey);
+          added += 1;
+        }
       }
-      if (!byName.has(rowKey)) added += 1;
-      const storedRow = memberDetailsMode && hasFullPageDefinition
-        ? {
-            ...row,
-            __memberPage: page + 1,
-            __memberTail: fullPageRead
-          }
-        : row;
-      byName.set(
-        rowKey,
-        memberDetailsMode
-          ? mergeMemberProfileRows(current, storedRow)
-          : { ...current, ...row }
-      );
+    } else {
+      for (const row of rows) {
+        const baseRowKey = memberDetailsMode
+          ? memberProfileNameKey(row.name)
+          : row.name;
+        const rowKey = baseRowKey;
+        if (!rowKey) continue;
+        const current = byName.get(rowKey) || {};
+        if (
+          !byName.has(rowKey) &&
+          !memberDetailsMode &&
+          !contributionTableMode &&
+          expectedCount !== null &&
+          byName.size >= expectedCount
+        ) {
+          rejectedAfterExpectedCount += 1;
+          continue;
+        }
+        if (!byName.has(rowKey)) added += 1;
+        const storedRow = memberDetailsMode && hasFullPageDefinition
+          ? {
+              ...row,
+              __memberPage: page + 1,
+              __memberTail: fullPageRead
+            }
+          : row;
+        byName.set(
+          rowKey,
+          memberDetailsMode
+            ? mergeMemberProfileRows(current, storedRow)
+            : { ...current, ...row }
+        );
+      }
     }
+    const accumulatedRows = contributionTableMode
+      ? contributionRows.length
+      : byName.size;
     const elapsedMs = Date.now() - pageStartedAt;
     const finalPlayerNames = memberDetailsMode
       ? rows
@@ -1297,11 +1316,13 @@ export async function capturePagedTable(
       `${label}_page`,
       memberDetailsMode
         ? `第 ${page + 1} 页识别 ${rows.length} 行，最终玩家：${finalPlayerNames.join("、") || "无"}，累计 ${byName.size} 名成员（耗时 ${elapsedMs}ms）`
-        : `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${byName.size} 名成员（耗时 ${elapsedMs}ms）`,
+        : `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${accumulatedRows} 行（耗时 ${elapsedMs}ms）`,
       {
         screenshot: frame.path,
         expectedCount,
         rejectedAfterExpectedCount,
+        accumulatedRows,
+        uniqueNames: contributionTableMode ? contributionNames.size : byName.size,
         elapsedMs,
         ...(memberDetailsMode ? { finalPlayerNames } : {})
       }
@@ -1407,29 +1428,17 @@ export async function capturePagedTable(
       );
       break;
     }
-    if (
-      contributionExpectedPageCount !== null &&
-      page + 1 >= contributionExpectedPageCount
-    ) {
-      await report(
-        "info",
-        `${label}_last_page_reached`,
-        `已读取贡献表按 ${expectedCount} 名成员计算的末页第 ${contributionExpectedPageCount} 页；末页允许包含上一页重复行，不再继续读取重复尾页`,
-        {
-          expectedCount,
-          expectedPageCount: contributionExpectedPageCount,
-          recognized: byName.size,
-          page: page + 1
-        }
-      );
-      break;
-    }
     // Member details must be scanned through the actual list end. OCR can
     // temporarily produce a different spelling for a row on a later page;
     // stopping as soon as the header count is reached would skip the tail and
     // make the final reconciliation depend on page order. The final pass
     // below deduplicates and caps the organized roster to the header total.
-    if (!memberDetailsMode && expectedCount !== null && byName.size >= expectedCount) {
+    if (
+      !memberDetailsMode &&
+      !contributionTableMode &&
+      expectedCount !== null &&
+      byName.size >= expectedCount
+    ) {
       await report(
         "info",
         `${label}_expected_count_reached`,
@@ -1577,7 +1586,7 @@ export async function capturePagedTable(
     }
     page += 1;
   }
-  const rows = [...byName.values()];
+  const rows = contributionTableMode ? contributionRows : [...byName.values()];
   if (memberDetailsMode) {
     const reconciled = reconcileMemberDetailRows(rows, expectedCount);
     const scanStoppedOnIncompletePage =

@@ -411,6 +411,71 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
   assert.deepEqual(taps[0], { x: 48, y: 327 });
 });
 
+test("no-team flag menu prioritizes create entry over stale auto-match text", async () => {
+  const taps = [];
+  const flows = [];
+  const reports = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async executeFlow(name) {
+        flows.push(name);
+      }
+    },
+    adb: {
+      async key() {},
+      async keyCombination() {}
+    },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return {
+            path: "hud.png",
+            observations: [
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080)
+            ]
+          };
+        }
+        if (label === "patrol-team-menu-open") {
+          return {
+            path: "menu.png",
+            observations: [
+              observation("创建队伍", 120, 160),
+              observation("自动匹配", 220, 220)
+            ]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: observationsFor(label)
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await createPatrolTeam(context);
+
+  assert.deepEqual(taps.slice(0, 2), [
+    { x: 48, y: 327 },
+    { x: 220, y: 180 }
+  ]);
+  assert.ok(!flows.includes("openTeamPanel"));
+  assert.ok(reports.includes("patrol_create_entry_verified_after_flag"));
+});
+
 test("patrol create-menu retries the same ADB click without toggling mouse state", async () => {
   let mouseTapCount = 0;
   const config = patrolConfig();
