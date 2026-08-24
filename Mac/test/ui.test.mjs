@@ -350,6 +350,27 @@ test("automatic matching alone confirms a team card", async () => {
   assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
 });
 
+test("cancel matching also confirms an existing team card", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("取消匹配", 240, 180)],
+      [
+        observation("调整", 350, 150),
+        observation("离开队伍", 350, 220)
+      ]
+    ]
+  });
+
+  await fixture.ui.openTeamPanelGuarded({
+    cardPoint: { x: 350, y: 150 },
+    memberStateTexts: ["暂无队员加入", "等待队员加入"],
+    panelTexts: ["调整", "离开队伍"],
+    minimumPanelTexts: 2,
+    settleMs: 1
+  });
+  assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
+});
+
 test("a member state without automatic matching never confirms a team card", async () => {
   const fixture = createUi({
     fastFrames: [[observation("暂无队员加入", 240, 220)]]
@@ -1185,7 +1206,7 @@ test("destination approach uses only five held-W rounds and never drags the joys
     approachIntervalMs: 250,
     approachFallbackKey: "KEYCODE_W",
     approachFallbackMaxRounds: 5,
-    approachFallbackHoldMs: 900,
+    approachFallbackHoldMs: 800,
     approachFallbackIntervalMs: 250,
     readyTexts: ["营地巡逻"],
     readyRegion: { left: 1180, top: 300, right: 1920, bottom: 1050 }
@@ -1197,7 +1218,7 @@ test("destination approach uses only five held-W rounds and never drags the joys
   assert.deepEqual(fixture.keys, Array.from({ length: 5 }, () => "KEYCODE_W"));
   assert.deepEqual(
     fixture.holds,
-    Array.from({ length: 5 }, () => ({ code: "KEYCODE_W", durationMs: 900 }))
+    Array.from({ length: 5 }, () => ({ code: "KEYCODE_W", durationMs: 800 }))
   );
 });
 
@@ -1629,7 +1650,7 @@ test("open team panel requires a verified card click and never configures a flag
     assert.deepEqual(guarded, {
       op: "openTeamPanelGuarded",
       cardPoint: { x: 350, y: 150 },
-      requiredCardTexts: ["自动匹配"],
+      requiredCardTexts: ["自动匹配", "取消匹配"],
       memberStateTexts: ["暂无队员加入", "等待队员加入"],
       panelTexts: ["调整", "离开队伍"],
       minimumPanelTexts: 2,
@@ -1836,7 +1857,7 @@ test("city-hall data tasks use the same held-W approach fallback as patrol", asy
     const [teleport] = config.flows.teleportCityHall;
     assert.equal(teleport.target.approachFallbackKey, "KEYCODE_W");
     assert.equal(teleport.target.approachFallbackMaxRounds, 5);
-    assert.equal(teleport.target.approachFallbackHoldMs, 900);
+    assert.equal(teleport.target.approachFallbackHoldMs, 800);
     assert.equal(teleport.target.approachFallbackIntervalMs, 2000);
     assert.equal(teleport.fallback.name, "中心出入口");
   }

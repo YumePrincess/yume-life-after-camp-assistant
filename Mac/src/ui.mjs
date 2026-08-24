@@ -741,7 +741,13 @@ export class GameUi {
 
   async openTeamPanelGuarded(action, signal) {
     const panelTexts = action.panelTexts || ["调整", "离开队伍"];
-    const requiredCardTexts = action.requiredCardTexts || ["自动匹配"];
+    // Matching can already be running when the card is opened. In that state
+    // the control changes from “自动匹配” to “取消匹配”; both are equivalent
+    // team-card evidence and are mutually exclusive in the live UI.
+    const requiredCardTexts = action.requiredCardTexts || [
+      "自动匹配",
+      "取消匹配"
+    ];
     const memberStateTexts = action.memberStateTexts || [
       "暂无队员加入",
       "等待队员加入"
@@ -801,6 +807,9 @@ export class GameUi {
       texts: requiredCardTexts,
       region: cardRegion
     });
+    const matchedCardText = requiredCardTexts.find((text) =>
+      this.findInRegion(screen.observations, text, cardRegion)
+    );
     const memberStateMatches = this.countFlowTexts(screen.observations, {
       texts: memberStateTexts,
       region: cardRegion
@@ -812,7 +821,7 @@ export class GameUi {
     );
     if (requiredCardMatches === 0) {
       throw new Error(
-        "PATROL_TEAM_CARD_NOT_VERIFIED: 队伍卡片区域未识别到自动匹配，禁止点击旗帜或重复打开"
+        "PATROL_TEAM_CARD_NOT_VERIFIED: 队伍卡片区域未识别到自动匹配/取消匹配，禁止点击旗帜或重复打开"
       );
     }
 
@@ -826,7 +835,7 @@ export class GameUi {
     await this.report(
       "info",
       "patrol_team_card_click",
-      `已确认队伍卡片证据（自动匹配；${memberEvidence}），点击队伍卡片主体 (${cardPoint.x},${cardPoint.y})；不点击旗帜`
+      `已确认队伍卡片证据（${matchedCardText || "自动/取消匹配"}；${memberEvidence}），点击队伍卡片主体 (${cardPoint.x},${cardPoint.y})；不点击旗帜`
     );
     await this.tapAction(
       {
@@ -861,6 +870,7 @@ export class GameUi {
       "营地巡逻任务",
       "保卫古籍",
       "自动匹配",
+      "取消匹配",
       "暂无队员加入",
       "等待队员加入",
       "调整",

@@ -899,6 +899,7 @@ export async function createPatrolTeam(context, signal) {
         controls.focusAcquiredTexts || [
           "创建队伍",
           "自动匹配",
+          "取消匹配",
           "暂无队员加入",
           "调整",
           "离开队伍"
@@ -1357,10 +1358,11 @@ async function verifyPatrolFlagSelectionAfterClick(
       vision,
       screen,
       screen.observations,
-      controls.flagTeamCardVerificationTexts || [
-        "创建队伍",
-        "加入队伍",
-        "自动匹配"
+    controls.flagTeamCardVerificationTexts || [
+      "创建队伍",
+      "加入队伍",
+      "自动匹配",
+      "取消匹配"
       ],
       controls.flagTeamCardVerificationRegion || controls.teamMenuRegion || {
         left: 70,
@@ -1373,7 +1375,8 @@ async function verifyPatrolFlagSelectionAfterClick(
     );
     if (textEvidence) {
       const text = String(textEvidence.text || "");
-      const existingTeam = text.includes("自动匹配");
+      const existingTeam =
+        text.includes("自动匹配") || text.includes("取消匹配");
       await report(
         "info",
         "patrol_flag_click_text_verified",
@@ -1816,6 +1819,7 @@ function inspectExistingPatrolTeamState(vision, observations, controls) {
       "营地巡逻任务",
       "保卫古籍",
       "自动匹配",
+      "取消匹配",
       "暂无队员加入",
       "调整",
       "离开队伍"
@@ -1827,6 +1831,7 @@ function inspectExistingPatrolTeamState(vision, observations, controls) {
     observations,
     controls.existingTeamStatusTexts || [
       "自动匹配",
+      "取消匹配",
       "暂无队员加入",
       "等待队员加入"
     ],
@@ -1844,6 +1849,7 @@ function inspectExistingPatrolTeamState(vision, observations, controls) {
     observations,
     controls.existingTeamMemberStatusTexts || [
       "自动匹配",
+      "取消匹配",
       "暂无队员加入",
       "等待队员加入"
     ],
@@ -2091,6 +2097,7 @@ function isLikelyPatrolMemberText(value, controls) {
       "巡逻路线进度",
       "我的任务进度",
       "自动匹配",
+      "取消匹配",
       "暂无队员加入",
       "等待队员加入",
       "调整",
