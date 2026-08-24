@@ -282,13 +282,12 @@
     "flagTeamCardVerificationRegion": { "left": 70, "top": 100, "right": 900, "bottom": 650 },
     "createMenuPoint": { "x": 220, "y": 180 },
     "createMenuClickAttempts": 6,
-    "createMenuWaitMs": 5000,
-    "patrolTargetWaitMs": 5000,
+    "createMenuWaitMs": 2000,
+    "patrolTargetWaitMs": 2000,
     "creatorTitleRegion": { "left": 350, "top": 235, "right": 1565, "bottom": 325 },
-    "campAffairsPoint": { "x": 480, "y": 906 },
     "campAffairsTexts": ["营地事务", "营地事物"],
     "campAffairsTextRegion": { "left": 330, "top": 220, "right": 640, "bottom": 1000 },
-    "campAffairsWaitMs": 5000,
+    "campAffairsWaitMs": 2000,
     "patrolTargetReadAttempts": 3,
     "campAffairsFallback": {
       "texts": ["营地事务", "营地事物"],
@@ -596,7 +595,6 @@
         "op": "teleportWithFallback",
         "mapButton": { "x": 1782, "y": 128 },
         "mapKey": "KEYCODE_M",
-        "mapButtonFallbackDelayMs": 3000,
         "mapKeyRetryAttempts": 3,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapModeText": "标志查看",
@@ -789,6 +787,43 @@
       { "op": "tapIfAnyText", "texts": ["3D模式"], "x": 1655, "y": 55, "hud": true },
       { "op": "sleep", "ms": 500 }
     ],
+    "openPatrolTeamPanelAfterAccept": [
+      {
+        "op": "closeTaskGuideOverlay",
+        "texts": ["任务", "当前", "导航", "追踪"],
+        "region": { "left": 0, "top": 0, "right": 960, "bottom": 1200 },
+        "minimumTexts": 3,
+        "dismissPoint": { "x": 1600, "y": 600 },
+        "maxAttempts": 4,
+        "intervalMs": 500,
+        "regionOcrMinimumConfidence": 0.2,
+        "regionOcrScale": 2
+      },
+      {
+        "op": "openTeamPanelGuarded",
+        "cardPoint": { "x": 350, "y": 150 },
+        "allowKnownTeamCard": true,
+        "requiredCardTexts": ["自动匹配", "取消匹配"],
+        "memberStateTexts": ["暂无队员加入", "等待队员加入"],
+        "panelTexts": ["调整", "离开队伍"],
+        "minimumPanelTexts": 2,
+        "panelRegion": { "left": 0, "top": 0, "right": 1920, "bottom": 1180 },
+        "cardRegion": { "left": 0, "top": 0, "right": 1920, "bottom": 1180 },
+        "memberNameRegion": { "left": 0, "top": 120, "right": 620, "bottom": 520 },
+        "settleMs": 500,
+        "hud": true,
+        "taskGuideOverlay": {
+          "texts": ["任务", "当前", "导航", "追踪"],
+          "region": { "left": 0, "top": 0, "right": 960, "bottom": 1200 },
+          "minimumTexts": 3,
+          "dismissPoint": { "x": 1600, "y": 600 },
+          "maxAttempts": 4,
+          "intervalMs": 500,
+          "regionOcrMinimumConfidence": 0.2,
+          "regionOcrScale": 2
+        }
+      }
+    ],
     "closeTaskGuideOverlay": [
       {
         "op": "closeTaskGuideOverlay",
@@ -857,7 +892,6 @@
         "op": "teleportWithFallback",
         "mapButton": { "x": 1782, "y": 128 },
         "mapKey": "KEYCODE_M",
-        "mapButtonFallbackDelayMs": 3000,
         "mapKeyRetryAttempts": 3,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapModeText": "标志查看",
@@ -912,7 +946,6 @@
         "op": "teleportWithFallback",
         "mapButton": { "x": 1782, "y": 128 },
         "mapKey": "KEYCODE_M",
-        "mapButtonFallbackDelayMs": 3000,
         "mapKeyRetryAttempts": 3,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapModeText": "标志查看",

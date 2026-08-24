@@ -371,23 +371,49 @@ test("cancel matching also confirms an existing team card", async () => {
   assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
 });
 
-test("a member state without automatic matching never confirms a team card", async () => {
+test("a member state without automatic matching is auxiliary team evidence", async () => {
   const fixture = createUi({
-    fastFrames: [[observation("暂无队员加入", 240, 220)]]
+    fastFrames: [
+      [observation("暂无队员加入", 240, 220)],
+      [
+        observation("调整", 350, 150),
+        observation("离开队伍", 350, 220)
+      ]
+    ]
   });
 
-  await assert.rejects(
-    fixture.ui.openTeamPanelGuarded({
-      cardPoint: { x: 350, y: 150 },
-      requiredCardTexts: ["自动匹配"],
-      memberStateTexts: ["暂无队员加入", "等待队员加入"],
-      panelTexts: ["调整", "离开队伍"],
-      minimumPanelTexts: 2,
-      settleMs: 1
-    }),
-    /PATROL_TEAM_CARD_NOT_VERIFIED/
-  );
-  assert.deepEqual(fixture.taps, []);
+  await fixture.ui.openTeamPanelGuarded({
+    cardPoint: { x: 350, y: 150 },
+    requiredCardTexts: ["自动匹配"],
+    memberStateTexts: ["暂无队员加入", "等待队员加入"],
+    panelTexts: ["调整", "离开队伍"],
+    minimumPanelTexts: 2,
+    settleMs: 1
+  });
+  assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
+});
+
+test("a concrete player name is auxiliary team evidence when matching text is unreadable", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("玩家甲", 240, 260)],
+      [
+        observation("调整", 350, 150),
+        observation("离开队伍", 350, 220)
+      ]
+    ]
+  });
+
+  await fixture.ui.openTeamPanelGuarded({
+    cardPoint: { x: 350, y: 150 },
+    requiredCardTexts: ["自动匹配", "取消匹配"],
+    memberStateTexts: ["暂无队员加入", "等待队员加入"],
+    memberNameRegion: { left: 0, top: 120, right: 620, bottom: 520 },
+    panelTexts: ["调整", "离开队伍"],
+    minimumPanelTexts: 2,
+    settleMs: 1
+  });
+  assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
 });
 
 test("member evidence is optional when automatic matching is present", async () => {
@@ -831,7 +857,7 @@ test("M is the primary map action and still requires map OCR", async () => {
   assert.deepEqual(fixture.focusPoints, [{ x: 1780, y: 120 }]);
 });
 
-test("map click fallback uses the calibrated minimap center, never the camera button", async () => {
+test("map opening never falls back to a calibrated mouse click after M", async () => {
   const fixture = createUi({
     fastFrames: [
       [observation("背包", 120, 900)],
@@ -850,10 +876,10 @@ test("map click fallback uses the calibrated minimap center, never the camera bu
   });
 
   assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
-  assert.deepEqual(fixture.taps, [{ x: 1782, y: 128 }]);
+  assert.deepEqual(fixture.taps, []);
   assert.ok(
-    fixture.messages.some((message) =>
-      message.includes("右上角圆盘中心")
+    !fixture.messages.some((message) =>
+      message.includes("map_open_button_fallback")
     )
   );
 });
@@ -911,6 +937,7 @@ test("map opening retries M after the OCR verification window", async () => {
     /MAP_DID_NOT_OPEN/
   );
   assert.deepEqual(fixture.keys, ["KEYCODE_M", "KEYCODE_M"]);
+  assert.deepEqual(fixture.taps, []);
   assert.deepEqual(fixture.focusPoints, [
     { x: 1780, y: 120 },
     { x: 1780, y: 120 }
@@ -1677,6 +1704,11 @@ test("open team panel requires a verified card click and never configures a flag
       ),
       false
     );
+    const postAccept = config.flows.openPatrolTeamPanelAfterAccept.find(
+      (action) => action.op === "openTeamPanelGuarded"
+    );
+    assert.equal(postAccept.allowKnownTeamCard, true);
+    assert.deepEqual(postAccept.requiredCardTexts, ["自动匹配", "取消匹配"]);
   }
 });
 

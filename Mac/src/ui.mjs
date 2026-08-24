@@ -819,9 +819,16 @@ export class GameUi {
       memberNameRegion,
       action.memberNameExcludedTexts
     );
-    if (requiredCardMatches === 0) {
+    const knownTeamAfterPatrolAccept = action.allowKnownTeamCard === true;
+    const auxiliaryTeamEvidence =
+      memberStateMatches > 0 || memberNameEvidence.length > 0;
+    if (
+      requiredCardMatches === 0 &&
+      !auxiliaryTeamEvidence &&
+      !knownTeamAfterPatrolAccept
+    ) {
       throw new Error(
-        "PATROL_TEAM_CARD_NOT_VERIFIED: 队伍卡片区域未识别到自动匹配/取消匹配，禁止点击旗帜或重复打开"
+        `PATROL_TEAM_CARD_NOT_VERIFIED: 队伍卡片区域未识别到${requiredCardTexts.join("/")}，且未识别到暂无队员加入/等待队员加入或玩家名称，禁止点击旗帜或重复打开`
       );
     }
 
@@ -831,11 +838,18 @@ export class GameUi {
         ? "暂无队员加入/等待队员加入"
         : memberNameEvidence.length > 0
           ? `玩家名称 ${memberNameEvidence.join("、")}`
-          : "成员信息未识别（不影响自动匹配判定）";
+          : "成员信息未识别";
+    const cardEvidence = matchedCardText
+      ? `自动/取消匹配：${matchedCardText}`
+      : `辅助队伍信息：${memberEvidence}`;
     await this.report(
       "info",
-      "patrol_team_card_click",
-      `已确认队伍卡片证据（${matchedCardText || "自动/取消匹配"}；${memberEvidence}），点击队伍卡片主体 (${cardPoint.x},${cardPoint.y})；不点击旗帜`
+      knownTeamAfterPatrolAccept && requiredCardMatches === 0
+        ? "patrol_known_team_card_click"
+        : "patrol_team_card_click",
+      knownTeamAfterPatrolAccept && requiredCardMatches === 0
+        ? `已知本轮刚创建并成功接取巡逻路线；未将临时 OCR 缺字误判为无队伍，直接点击队伍卡片主体 (${cardPoint.x},${cardPoint.y})；不点击旗帜`
+        : `已确认队伍卡片证据（${cardEvidence}），点击队伍卡片主体 (${cardPoint.x},${cardPoint.y})；不点击旗帜`
     );
     await this.tapAction(
       {
@@ -1988,6 +2002,9 @@ export class GameUi {
     const mapButton = Object.hasOwn(action, "mapButton")
       ? action.mapButton
       : { x: 1782, y: 128 };
+    // Map opening is deliberately keyboard-only.  The old calibrated mouse
+    // fallback could land on the camera/minimap area when the emulator window
+    // moved, so never open the map by clicking a coordinate.
     const mapKey = action.mapKey || "KEYCODE_M";
     const timeoutMs = Math.max(
       1,
@@ -2012,30 +2029,11 @@ export class GameUi {
       }
       await this.sendGameKey(mapKey, signal);
     };
-    if (mapKey) {
-      await sendMapKey();
-    } else {
-      await this.report(
-        "info",
-        "map_open_button",
-        "未配置地图快捷键，正在点击校准后的右上角圆盘中心",
-        { point: mapButton }
-      );
-      await this.hudTap(mapButton, signal);
-    }
+    await sendMapKey();
     let deadline = Date.now() + timeoutMs;
     let advisorChecked = false;
     let modelMapCandidate = false;
     let accurateCheckedAt = 0;
-    let mapButtonFallbackSent = !mapButton || !mapKey;
-    const configuredFallbackDelayMs = Number(action.mapButtonFallbackDelayMs);
-    const mapButtonFallbackDelayMs = Math.max(
-      0,
-      Number.isFinite(configuredFallbackDelayMs)
-        ? configuredFallbackDelayMs
-        : 4_000
-    );
-    const mapButtonFallbackAt = Date.now() + mapButtonFallbackDelayMs;
     do {
       await delay(action.mapOpenPollMs || 500, signal);
       const verification = await this.vision.captureTransient(
@@ -2109,19 +2107,6 @@ export class GameUi {
               modelMapCandidate
           }
         );
-      }
-      if (
-        !mapButtonFallbackSent &&
-        Date.now() >= mapButtonFallbackAt
-      ) {
-        mapButtonFallbackSent = true;
-        await this.report(
-          "warning",
-          "map_open_button_fallback",
-          "M 键及高精度 OCR 均未确认地图，正在点击校准后的右上角圆盘中心；该点与相机按钮保持安全距离",
-          { point: mapButton }
-        );
-        await this.hudTap(mapButton, signal);
       }
       if (
         Date.now() >= deadline &&

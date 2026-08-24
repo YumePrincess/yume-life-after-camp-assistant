@@ -313,6 +313,9 @@ test("patrol team creation follows only region-verified live-device steps", asyn
     adb: {
       async key() {
         throw new Error("voice prompt was not present");
+      },
+      async mouseSwipe() {
+        reports.push("patrol_camp_affairs_swipe");
       }
     },
     vision: {
@@ -346,10 +349,12 @@ test("patrol team creation follows only region-verified live-device steps", asyn
   assert.deepEqual(taps, [
     { x: 48, y: 327 },
     { x: 220, y: 180 },
-    { x: 480, y: 906 },
+    { x: 470, y: 820 },
     { x: 1419, y: 891 }
   ]);
-  assert.ok(sleeps.filter((ms) => ms === 5_000).length >= 2);
+  assert.ok(sleeps.filter((ms) => ms === 2_000).length >= 2);
+  assert.ok(reports.includes("patrol_camp_affairs_swipe"));
+  assert.ok(reports.includes("patrol_camp_affairs_scroll_selected"));
   assert.ok(reports.includes("patrol_flag_click"));
   assert.ok(reports.includes("patrol_team_created_verified"));
 });
@@ -363,7 +368,7 @@ test("patrol creation refuses a world click when the flag anchor is absent", asy
         taps.push(point);
       }
     },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture() {
         return { path: "unknown.png", observations: [] };
@@ -392,7 +397,7 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
         taps.push(point);
       }
     },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label === "patrol-team-entry") {
@@ -426,6 +431,12 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
               observation("营地事务", 400, 800),
               observation("营地巡逻任务", 700, 360)
             ]
+          };
+        }
+        if (label.startsWith("patrol-camp-affairs-scroll-")) {
+          return {
+            path: "category-after-scroll.png",
+            observations: [observation("营地事务", 400, 800)]
           };
         }
         if (label === "patrol-target-selected") {
@@ -477,7 +488,7 @@ test("no-team flag menu prioritizes create entry over stale auto-match text", as
       }
     },
     adb: {
-      async key() {},
+      async key() {}, async mouseSwipe() {},
       async keyCombination() {}
     },
     vision: {
@@ -575,7 +586,7 @@ test("patrol flag click is attempted through the shared ADB clicker", async () =
   const context = {
     config,
     ui: { async tap(point) { taps.push(point); } },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return {
@@ -611,7 +622,7 @@ test("existing teams use the leave probe and cancel a valid-route confirmation",
         taps.push(point);
       }
     },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label.includes("patrol-leave-cancelled")) {
@@ -677,7 +688,7 @@ test("valid-route confirmation retries cancel up to three times before sharing",
         taps.push(point);
       }
     },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label.includes("patrol-leave-cancelled")) {
@@ -750,7 +761,7 @@ test("route and task progress alone never masquerade as an existing team", async
         taps.push(point);
       }
     },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label === "patrol-team-entry") {
@@ -880,7 +891,7 @@ test("only a yellow task icon with a non-yellow team flag permits the flag click
   const context = {
     config,
     ui: { async tap(point) { taps.push(point); } },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return { path: `${label}.png`, observations: observationsFor(label) };
@@ -937,7 +948,7 @@ test("a failed flag click is re-released and retried until the flag turns yellow
         rechecks.push(reason);
       }
     },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return {
@@ -996,7 +1007,7 @@ test("an ambiguous initial color may click once but still requires post-click ve
   const context = {
     config,
     ui: { async tap(point) { taps.push(point); } },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return {
@@ -1064,7 +1075,7 @@ test("post-click team-card OCR accepts a yellow flag when color sampling is unre
   const context = {
     config,
     ui: { async tap(point) { taps.push(point); } },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return {
@@ -1149,7 +1160,7 @@ test("an existing team without a patrol route is left before a fresh team is cre
         taps.push(point);
       }
     },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label === "patrol-team-entry") {
@@ -1193,7 +1204,7 @@ test("an existing team without a patrol route is left before a fresh team is cre
     { x: 1570, y: 1100 },
     { x: 48, y: 327 },
     { x: 220, y: 180 },
-    { x: 480, y: 906 },
+    { x: 470, y: 820 },
     { x: 1419, y: 891 }
   ]);
 });
@@ -1215,7 +1226,7 @@ test("post-exit OCR is not used as a second state decision before fresh creation
         flows.push(name);
       }
     },
-    adb: { async key() {} },
+    adb: { async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label === "patrol-team-entry") {
@@ -1277,7 +1288,7 @@ test("post-exit OCR is not used as a second state decision before fresh creation
     { x: 1570, y: 1100 },
     { x: 48, y: 327 },
     { x: 220, y: 180 },
-    { x: 480, y: 906 },
+    { x: 470, y: 820 },
     { x: 1419, y: 891 }
   ]);
 });
@@ -1296,7 +1307,7 @@ test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", a
       async keyCombination(codes) {
         combinations.push(codes);
       },
-      async key() {}
+      async key() {}, async mouseSwipe() {}
     },
     vision: {
       async capture(label) {
@@ -1344,7 +1355,7 @@ test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", a
     { x: 48, y: 327 },
     { x: 48, y: 327 },
     { x: 220, y: 180 },
-    { x: 480, y: 906 },
+    { x: 470, y: 820 },
     { x: 1419, y: 891 }
   ]);
 });
@@ -1377,10 +1388,19 @@ test("patrol category fallback reuses the contribution-list ADB mouse swipe", as
           };
         }
         if (label.startsWith("patrol-camp-affairs-selected")) {
-          return { path: "miss.png", observations: [] };
+          return {
+            path: "selected-after-scroll.png",
+            observations: [
+              observation("营地事务", 400, 800),
+              observation("营地巡逻任务", 700, 360)
+            ]
+          };
         }
         if (label === "patrol-camp-affairs-scroll-1") {
-          return { path: "scroll.png", observations: [observation("营地事务", 400, 800)] };
+          return { path: "scroll-1.png", observations: [] };
+        }
+        if (label === "patrol-camp-affairs-scroll-2") {
+          return { path: "scroll-2.png", observations: [observation("营地事务", 400, 800)] };
         }
         if (label.startsWith("patrol-camp-affairs-scroll-reread")) {
           return {
@@ -1420,15 +1440,21 @@ test("patrol category fallback reuses the contribution-list ADB mouse swipe", as
 
   await createPatrolTeam(context);
 
-  assert.deepEqual(swipes, [{
-    from: { x: 480, y: 820 },
-    to: { x: 480, y: 510 },
-    durationMs: 500
-  }]);
+  assert.deepEqual(swipes, [
+    {
+      from: { x: 480, y: 820 },
+      to: { x: 480, y: 510 },
+      durationMs: 500
+    },
+    {
+      from: { x: 480, y: 820 },
+      to: { x: 480, y: 510 },
+      durationMs: 500
+    }
+  ]);
   assert.deepEqual(taps, [
     { x: 48, y: 327 },
     { x: 220, y: 180 },
-    { x: 480, y: 906 },
     { x: 470, y: 820 },
     { x: 1419, y: 891 }
   ]);
@@ -1444,7 +1470,8 @@ test("Ctrl+Q fallback is sent one at a time until the second recognition succeed
       async keyCombination(codes) {
         combinations.push(codes);
       },
-      async key() {}
+      async key() {},
+      async mouseSwipe() {}
     },
     vision: {
       async capture(label) {
@@ -1502,7 +1529,7 @@ test("Ctrl+Q fallback stops after six recognition attempts", async () => {
       async keyCombination(codes) {
         combinations.push(codes);
       },
-      async key() {}
+      async key() {}, async mouseSwipe() {}
     },
     vision: {
       async capture(label) {
@@ -2301,6 +2328,9 @@ function observationsFor(label) {
       observation("营地事务", 400, 800),
       observation("营地巡逻任务", 700, 360)
     ];
+  }
+  if (label.startsWith("patrol-camp-affairs-scroll-")) {
+    return [observation("营地事务", 400, 800)];
   }
   if (label === "patrol-target-selected") {
     return [

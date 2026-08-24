@@ -200,7 +200,13 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
   await updateWorkflowProgress(context, 0.60, "patrol_route_accepted");
   await ui.executeFlow("exitPatrolPages", {}, signal);
   await updateWorkflowProgress(context, 0.66, "patrol_team_reopen");
-  await ui.executeFlow("openTeamPanel", {}, signal);
+  // This branch just created the team and successfully accepted the patrol
+  // route.  The post-accept HUD can temporarily hide the usual
+  // “自动匹配/取消匹配” card text behind the route result overlay, so use
+  // the known-team panel entry instead of treating that transient OCR miss
+  // as proof that the team disappeared.  The dedicated flow only clicks the
+  // team card; it never clicks the flag entry.
+  await ui.executeFlow("openPatrolTeamPanelAfterAccept", {}, signal);
   await updateWorkflowProgress(context, 0.70, "patrol_switch_target");
   await ui.executeFlow("switchToBookDefense", {}, signal);
   await updateWorkflowProgress(context, 0.74, "patrol_final_share");
@@ -621,16 +627,16 @@ export async function createPatrolTeam(context, signal) {
     Number(controls.flagClickSettleMs) || 2_000
   );
   const createMenuWaitMs = Math.max(
-    5_000,
-    Number(controls.createMenuWaitMs) || 5_000
+    2_000,
+    Number(controls.createMenuWaitMs) || 2_000
   );
   const patrolTargetWaitMs = Math.max(
-    5_000,
-    Number(controls.patrolTargetWaitMs) || 5_000
+    2_000,
+    Number(controls.patrolTargetWaitMs) || 2_000
   );
   const campAffairsWaitMs = Math.max(
-    5_000,
-    Number(controls.campAffairsWaitMs) || 5_000
+    2_000,
+    Number(controls.campAffairsWaitMs) || 2_000
   );
   const flagClickColorReadRetries = Math.max(
     6,
@@ -1113,11 +1119,28 @@ export async function createPatrolTeam(context, signal) {
     }
   }
 
-  await tapPatrolMouse(ui, controls.campAffairsPoint, signal);
+  // The bottom row is often covered by newly added activities. Always move
+  // the left category list first, then OCR the revealed “营地事务/营地事物”
+  // row and click its recognized center. Never use the old fixed bottom
+  // coordinate as the primary action.
+  const initialCampAffairsMatch = await scrollToCampAffairsCategory(
+    { adb, vision, ui, report, sleep, controls },
+    signal
+  );
+  if (!initialCampAffairsMatch) {
+    throw new Error(
+      "PATROL_CAMP_AFFAIRS_NOT_VISIBLE: 左侧目标列表下滑后仍未 OCR 识别到营地事务/营地事物"
+    );
+  }
+  await tapPatrolMouse(
+    ui,
+    observationCenter(initialCampAffairsMatch),
+    signal
+  );
   await report(
     "info",
-    "patrol_camp_affairs_selected_wait",
-    "已点击最底部“营地事务”分类卡，等待 5 秒让“营地巡逻任务”列表稳定后再进行 OCR"
+    "patrol_camp_affairs_scroll_selected",
+    `已固定先滑动左侧目标列表，并按 OCR 文字中心选中“${initialCampAffairsMatch.text}”；等待 2 秒后重读巡逻目标`
   );
   await sleep(campAffairsWaitMs, signal);
   screen = await capturePatrolScreen(
@@ -1240,7 +1263,7 @@ export async function createPatrolTeam(context, signal) {
   await report(
     "info",
     "patrol_target_selected_wait",
-    `已确认“${patrolTargetMatch.text}”已随“营地事务”自动选中，等待 5 秒使创建按钮稳定后再继续`
+    `已确认“${patrolTargetMatch.text}”已随“营地事务”自动选中，等待 2 秒使创建按钮稳定后再继续`
   );
   await sleep(patrolTargetWaitMs, signal);
   screen = await capturePatrolScreen(
@@ -2418,7 +2441,7 @@ async function scrollToCampAffairsCategory(context, signal) {
     await report(
       "warning",
       "patrol_camp_affairs_scroll_fallback",
-      `中央巡逻目标 OCR 未命中；第 ${attempt}/${maxSwipes} 次复用贡献/斩杀列表的 ADB 鼠标上滑方式查找“营地事务”`
+      `固定先滑动左侧目标列表；第 ${attempt}/${maxSwipes} 次使用 ADB 鼠标上滑查找“营地事务/营地事物”`
     );
     await adb.mouseSwipe(
       fallback.from,
