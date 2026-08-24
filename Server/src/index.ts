@@ -28,7 +28,9 @@ import {
   createCommand,
   deleteAgentHeartbeat,
   expireUnclaimedRuns,
+  finalizeAgentCancellations,
   findActiveRunForAgent,
+  finalizeExpiredCancellations,
   getConfigBundle,
   getHeartbeat,
   getRun,
@@ -47,6 +49,7 @@ import {
   removeCurrentMembers,
   registerAgentDevice,
   reconcileTerminalRunCommands,
+  reconcileStaleCommands,
   updateActivitySnapshot,
   updateContributionSnapshot,
   updateMemberProfiles,
@@ -1512,13 +1515,23 @@ async function handleAgentApi(
         locale: normalizeLocale(body.locale)
       }
     });
+    await reconcileStaleCommands(env);
+    await finalizeAgentCancellations(env, {
+      agentId,
+      activeRunId,
+    });
     const activeRun = activeRunId ? await getRun(env, activeRunId) : null;
     const bundle = await getConfigBundle(env);
+    const activeRunMissing = Boolean(activeRunId && !activeRun);
     return json({
       ok: true,
       enabled: bundle.campConfig.agentId === agentId,
       activeAgentId: bundle.campConfig.agentId || null,
-      cancelRequested: activeRun?.cancel_requested === 1
+      // A manually removed run must abort the local workflow just like an
+      // explicit cancellation. Otherwise the Agent can keep executing a
+      // command whose command_queue.run_id has already been nulled by D1.
+      cancelRequested: activeRunMissing || activeRun?.cancel_requested === 1,
+      activeRunMissing
     });
   }
   if (path === "/api/agent/next-command" && method === "POST") {
@@ -1527,6 +1540,12 @@ async function handleAgentApi(
     const agentId = boundedText(body.agentId, "agentId", 80);
     const enabled = Boolean(bundle.campConfig.agentId) &&
       bundle.campConfig.agentId === agentId;
+    await reconcileStaleCommands(env);
+    await finalizeAgentCancellations(env, {
+      agentId,
+      activeRunId: null
+    });
+    await finalizeExpiredCancellations(env);
     await expireUnclaimedRuns(
       env,
       bundle.automationConfig.agentPolling.claimTimeoutMinutes
@@ -1538,8 +1557,15 @@ async function handleAgentApi(
         })
       : null;
     let commandPayload: Record<string, unknown> | null = null;
-    if (command?.type === "run_task") {
+    if (command) {
       const payload = safeParseJson(command.payload_json, {}) as Record<string, unknown>;
+      commandPayload = {
+        ...payload,
+        ...(command.run_id ? { runId: command.run_id } : {})
+      };
+    }
+    if (command?.type === "run_task") {
+      const payload = commandPayload ?? {};
       const payloadDetail = payload.detail && typeof payload.detail === "object" && !Array.isArray(payload.detail)
         ? payload.detail as Record<string, unknown>
         : {};
@@ -1599,6 +1625,9 @@ async function handleAgentApi(
     const agentId = boundedText(body.agentId, "agentId", 80);
     const runId = typeof body.runId === "string" ? body.runId : null;
     const bundle = await getConfigBundle(env);
+    if (bundle.campConfig.agentId !== agentId) {
+      return problem("Agent is not enabled for this deployment", 403, "agent_disabled");
+    }
     const plugins = await effectiveWorkerPlugins(env);
     const enabledTaskKeys = new Set(
       plugins.filter((plugin) => plugin.enabled).flatMap((plugin) =>
@@ -1629,18 +1658,27 @@ async function handleAgentApi(
         weeklyContribution: Number(member.weekly_contribution) || 0
       }))
       .filter((member) => member.name);
+    const run = runId ? await getRun(env, runId) : null;
+    if (runId && !run) {
+      return problem("Run no longer exists", 410, "run_deleted");
+    }
     return json({
       configBundle,
       plugins,
       memberRoster,
       heartbeat: await getHeartbeat(env, agentId),
       enabled: bundle.campConfig.agentId === agentId,
-      run: runId ? await getRun(env, runId) : null
+      run
     });
   }
   if (path === "/api/agent/run-update" && method === "POST") {
     const body = await readJsonObject(request, 128_000);
+    if (typeof body.runId !== "string" || !body.runId.trim()) {
+      return problem("runId is required", 400, "invalid_run_id");
+    }
     const runId = boundedText(body.runId, "runId", 80);
+    const previousRun = await getRun(env, runId);
+    if (!previousRun) return problem("Run not found", 404, "run_not_found");
     const stateValue = typeof body.state === "string" ? body.state : undefined;
     const state = isRunState(stateValue) ? stateValue : undefined;
     const run = await updateRun(env, {
@@ -1657,7 +1695,7 @@ async function handleAgentApi(
       detail: body.detail
     });
     if (!run) return problem("Run not found", 404, "run_not_found");
-    if (body.event && typeof body.event === "object") {
+    if (!TERMINAL_RUN_STATES.has(previousRun.state) && body.event && typeof body.event === "object") {
       const event = body.event as Record<string, unknown>;
       await appendRunEvent(env, {
         runId,

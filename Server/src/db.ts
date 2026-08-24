@@ -22,6 +22,19 @@ function isoNow(): string {
   return new Date().toISOString();
 }
 
+const TERMINAL_RUN_STATES = [
+  "interrupted",
+  "succeeded",
+  "partially_succeeded",
+  "failed",
+  "timed_out",
+  "skipped"
+] as const;
+
+function isTerminalRunState(state: string): boolean {
+  return (TERMINAL_RUN_STATES as readonly string[]).includes(state);
+}
+
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
   try {
@@ -1437,18 +1450,32 @@ export async function updateRun(
 ): Promise<TaskRun | null> {
   const current = await getRun(env, input.runId);
   if (!current) return null;
-  const state = input.state ?? current.state;
+  // A terminal state is authoritative. An old Agent can still finish an
+  // in-flight request after cancellation, a restart, or a network partition;
+  // allowing that request to move the run back to `running`/`succeeded` would
+  // recreate the ghost-task race this state machine is meant to prevent.
+  if (isTerminalRunState(current.state)) return current;
+
+  const requestedState = input.state ?? current.state;
+  const cancellationRequested = current.cancel_requested === 1;
+  const forcedInterrupted =
+    cancellationRequested &&
+    isTerminalRunState(requestedState) &&
+    requestedState !== "interrupted";
+  const state = forcedInterrupted
+    ? "interrupted"
+    : cancellationRequested && requestedState !== "interrupted"
+      ? current.state
+      : requestedState;
   const now = isoNow();
   const startedAt =
     current.started_at ?? (state === "running" || state === "claimed" ? now : null);
-  const terminal = [
-    "interrupted",
-    "succeeded",
-    "partially_succeeded",
-    "failed",
-    "timed_out",
-    "skipped"
-  ].includes(state);
+  const terminal = isTerminalRunState(state);
+  const cancellationMessage = forcedInterrupted
+    ? "任务已由管理员中断"
+    : current.state === "cancelling" && cancellationRequested
+      ? current.message
+      : undefined;
   return env.DB.prepare(
     `UPDATE task_runs SET
        state = ?,
@@ -1464,7 +1491,7 @@ export async function updateRun(
   )
     .bind(
       state,
-      input.message ?? current.message,
+      cancellationMessage ?? input.message ?? current.message,
       input.currentStep === undefined ? current.current_step : input.currentStep,
       input.progress === undefined
         ? current.progress
@@ -1499,6 +1526,179 @@ export async function requestRunCancellation(env: Env, runId: string): Promise<b
     ).bind(now, runId)
   ]);
   return (runResult?.meta.changes ?? 0) > 0;
+}
+
+/**
+ * A task row can be removed manually from D1 while its command row survives
+ * because the legacy foreign key uses ON DELETE SET NULL. Such a command is
+ * not executable: its payload is historical data, not a new task lease.
+ * Repair it before every Agent claim so old databases cannot run ghost tasks.
+ */
+export async function reconcileStaleCommands(
+  env: Env,
+  now = new Date()
+): Promise<number> {
+  const finishedAt = now.toISOString();
+  const result = await env.DB.prepare(
+    `UPDATE command_queue SET
+       state = 'cancelled',
+       message = '关联任务已不存在或已结束，命令已取消',
+       finished_at = ?,
+       lease_expires_at = NULL
+     WHERE state IN ('queued', 'claimed')
+       AND (
+         run_id IS NULL
+         OR NOT EXISTS (
+           SELECT 1 FROM task_runs
+           WHERE task_runs.id = command_queue.run_id
+         )
+         OR EXISTS (
+           SELECT 1 FROM task_runs
+           WHERE task_runs.id = command_queue.run_id
+             AND task_runs.state IN ('interrupted', 'succeeded', 'partially_succeeded', 'failed', 'timed_out', 'skipped')
+         )
+       )`
+  )
+    .bind(finishedAt)
+    .run();
+  return result.meta.changes ?? 0;
+}
+
+/**
+ * When a restarted Agent reports itself idle, no local workflow can still be
+ * executing the cancelled run. Finalize that run and cancel both its old run
+ * command and any pending interrupt command. This is deliberately keyed by
+ * the reported activeRunId so a healthy in-flight task is never finalized by
+ * its own heartbeat.
+ */
+export async function finalizeAgentCancellations(
+  env: Env,
+  input: {
+    agentId: string;
+    activeRunId: string | null;
+    now?: Date;
+  }
+): Promise<string[]> {
+  const now = (input.now ?? new Date()).toISOString();
+  const candidates = await env.DB.prepare(
+    `SELECT task_runs.id
+     FROM task_runs
+     WHERE task_runs.state = 'cancelling'
+       AND task_runs.cancel_requested = 1
+       AND (? IS NULL OR task_runs.id <> ?)
+       AND EXISTS (
+         SELECT 1 FROM command_queue
+         WHERE command_queue.run_id = task_runs.id
+           AND command_queue.agent_id = ?
+           AND command_queue.type = 'run_task'
+           AND command_queue.state IN ('queued', 'claimed', 'cancelled')
+       )
+     ORDER BY task_runs.created_at ASC
+     LIMIT 200`
+  )
+    .bind(input.activeRunId, input.activeRunId, input.agentId)
+    .all<{ id: string }>();
+  const ids = candidates.results.map((row) => row.id).filter(Boolean);
+  if (!ids.length) return [];
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const commandMessage = "Agent 已重启或离线，未收到中断确认；任务已由服务端终止";
+  const runMessage = "Agent 已重启或离线，任务未收到中断结果；已由服务端终止";
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE command_queue SET
+         state = 'cancelled',
+         message = ?,
+         finished_at = ?,
+         lease_expires_at = NULL
+       WHERE agent_id = ?
+         AND run_id IN (${placeholders})
+         AND state IN ('queued', 'claimed')`
+    ).bind(commandMessage, now, input.agentId, ...ids),
+    env.DB.prepare(
+      `UPDATE task_runs SET
+         state = 'interrupted',
+         message = ?,
+         current_step = NULL,
+         finished_at = ?,
+         updated_at = ?
+       WHERE id IN (${placeholders})
+         AND state = 'cancelling'
+         AND cancel_requested = 1
+         AND (? IS NULL OR id <> ?)
+       RETURNING id`
+    ).bind(runMessage, now, now, ...ids, input.activeRunId, input.activeRunId)
+  ]);
+  const finalized = results[1]?.results as Array<{ id?: string }> | undefined;
+  return (finalized ?? []).map((row) => row.id).filter((id): id is string => Boolean(id));
+}
+
+/**
+ * Cron-side safety net for a dead Agent that never gets a chance to send its
+ * restart heartbeat. An expired run-command lease proves that no current
+ * Agent owns the execution anymore.
+ */
+export async function finalizeExpiredCancellations(
+  env: Env,
+  now = new Date()
+): Promise<string[]> {
+  const cutoff = now.toISOString();
+  const candidates = await env.DB.prepare(
+    `SELECT task_runs.id
+     FROM task_runs
+     WHERE task_runs.state = 'cancelling'
+       AND task_runs.cancel_requested = 1
+       AND EXISTS (
+         SELECT 1 FROM command_queue
+         WHERE command_queue.run_id = task_runs.id
+           AND command_queue.type = 'run_task'
+           AND (
+             command_queue.state = 'cancelled'
+             OR (
+               command_queue.state = 'claimed'
+               AND (
+                 command_queue.lease_expires_at IS NULL
+                 OR command_queue.lease_expires_at <= ?
+               )
+             )
+           )
+       )
+     ORDER BY task_runs.created_at ASC
+     LIMIT 200`
+  )
+    .bind(cutoff)
+    .all<{ id: string }>();
+  const ids = candidates.results.map((row) => row.id).filter(Boolean);
+  if (!ids.length) return [];
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const finishedAt = now.toISOString();
+  const message = "中断命令租约已失效，任务已由服务端终止";
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE command_queue SET
+         state = 'cancelled',
+         message = ?,
+         finished_at = ?,
+         lease_expires_at = NULL
+       WHERE run_id IN (${placeholders})
+         AND state IN ('queued', 'claimed')`
+    ).bind(message, finishedAt, ...ids),
+    env.DB.prepare(
+      `UPDATE task_runs SET
+         state = 'interrupted',
+         message = ?,
+         current_step = NULL,
+         finished_at = ?,
+         updated_at = ?
+         WHERE id IN (${placeholders})
+           AND state = 'cancelling'
+           AND cancel_requested = 1
+         RETURNING id`
+    ).bind(message, finishedAt, finishedAt, ...ids)
+  ]);
+  const finalized = results[1]?.results as Array<{ id?: string }> | undefined;
+  return (finalized ?? []).map((row) => row.id).filter((id): id is string => Boolean(id));
 }
 
 export async function suppressScheduledRetry(
@@ -1605,6 +1805,19 @@ export async function claimNextCommand(
            )
            ${allowedClause}
            AND (
+             type = 'interrupt_task'
+             OR (
+               type = 'run_task'
+               AND run_id IS NOT NULL
+               AND EXISTS (
+                 SELECT 1 FROM task_runs AS target_run
+                 WHERE target_run.id = command_queue.run_id
+                   AND target_run.state IN ('queued', 'claimed', 'running')
+                   AND target_run.cancel_requested = 0
+               )
+             )
+           )
+           AND (
              ? = 1
              OR NOT EXISTS (
                SELECT 1
@@ -1658,12 +1871,21 @@ export async function completeCommand(
     : null;
   const completedRun = command?.run_id ? await getRun(env, command.run_id) : null;
   const now = isoNow();
+  const cancellationRequested = completedRun?.cancel_requested === 1;
   const terminalRunState =
-    input.state === "completed"
-      ? "succeeded"
-      : input.state === "cancelled"
-        ? "interrupted"
+    command?.type === "interrupt_task" ||
+    input.state === "cancelled" ||
+    cancellationRequested
+      ? "interrupted"
+      : input.state === "completed"
+        ? "succeeded"
         : "failed";
+  const terminalRunMessage =
+    command?.type === "interrupt_task" ||
+    input.state === "cancelled" ||
+    cancellationRequested
+      ? "任务已由管理员中断"
+      : input.message;
   const [commandResult] = await env.DB.batch([
     env.DB.prepare(
       `UPDATE command_queue SET
@@ -1682,24 +1904,28 @@ export async function completeCommand(
          FROM command_queue
          WHERE id = ?
            AND lease_token = ?
-           AND type = 'run_task'
+           AND (
+             type = 'run_task'
+             OR (type = 'interrupt_task' AND ? IN ('completed', 'cancelled'))
+           )
            AND state = ?
        )
          AND state IN ('queued', 'claimed', 'running', 'cancelling')`
     ).bind(
       terminalRunState,
-      input.message,
+      terminalRunMessage,
       now,
       now,
       input.commandId,
       input.leaseToken,
+      input.state,
       input.state
     )
   ]);
   const completed = (commandResult?.meta.changes ?? 0) > 0;
   if (
     completed &&
-    input.state === "failed" &&
+    terminalRunState === "failed" &&
     command?.type === "run_task" &&
     completedRun &&
     (completedRun.trigger_mode === "scheduled" ||

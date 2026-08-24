@@ -108,7 +108,29 @@ do {
         await api.completeCommand(command, "cancelled", "目标任务当前未在本 Agent 运行");
       }
     } else if (command?.type === "run_task" && !active) {
-      startCommand(command);
+      const payloadRunId = command.payload?.runId;
+      if (
+        typeof command.runId !== "string" ||
+        !command.runId ||
+        (payloadRunId !== undefined && payloadRunId !== command.runId)
+      ) {
+        console.error(
+          JSON.stringify({
+            event: "orphan_command_rejected",
+            commandId: command.id,
+            runId: command.runId || null,
+            payloadRunId: payloadRunId || null,
+            reason: "run_task command has no matching persisted run"
+          })
+        );
+        await api.completeCommand(
+          command,
+          "cancelled",
+          "命令未关联有效任务，已拒绝执行"
+        );
+      } else {
+        startCommand(command);
+      }
       // The command was claimed during an idle poll. Poll again immediately
       // so the server can switch us to its active interval and deliver an
       // interrupt without waiting for the (possibly five-minute) idle delay.
@@ -341,7 +363,8 @@ async function executeCommand(command, signal) {
       : [];
     context.runtimeAutomation = bootstrap.configBundle.automationConfig;
     ui.setRuntimeAutomation(bootstrap.configBundle.automationConfig);
-    if (bootstrap.run?.cancel_requested) throw new Error("任务在开始前已被中断");
+    if (!bootstrap.run) throw new Error("任务记录不存在，拒绝执行孤立命令");
+    if (bootstrap.run.cancel_requested) throw new Error("任务在开始前已被中断");
     await updateRunSafely({
       state: "running",
       message: localizeTaskEvent(

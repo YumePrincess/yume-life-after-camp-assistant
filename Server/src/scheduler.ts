@@ -2,6 +2,7 @@ import {
   appendRunEvent,
   createCommand,
   expireUnclaimedRuns,
+  finalizeExpiredCancellations,
   findActiveRunForAgent,
   getConfigBundle,
   listQueueGuardRuns,
@@ -47,6 +48,7 @@ export async function runScheduler(
     bundle.automationConfig.agentPolling.claimTimeoutMinutes,
     now
   );
+  await finalizeExpiredCancellations(env, now);
   await enforceQueueProtection(env, bundle.campConfig.agentId, now);
   const enabledTaskKeys = new Set(
     (await effectiveWorkerPlugins(env))

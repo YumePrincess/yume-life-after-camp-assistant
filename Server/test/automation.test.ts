@@ -211,6 +211,41 @@ describe("five-task automation configuration", () => {
     expect(config.agentPolling.claimTimeoutMinutes).toBe(90);
   });
 
+  it("preserves the execution policy values used by the Mac Agent", () => {
+    const config = validateAutomationConfig({
+      timezone: "Asia/Shanghai",
+      schedulerGraceMinutes: 5,
+      agentPolling: { activeSeconds: 2, idleSeconds: 30, windows: [] },
+      gameWatchdog: {
+        enabled: true,
+        healthCheckSeconds: 15,
+        actionTimeoutSeconds: 180,
+        frozenScreenSeconds: 180,
+        maxRestarts: 3,
+        restartCooldownSeconds: 30
+      },
+      tasks: {
+        patrol: {
+          enabled: true,
+          time: "19:20",
+          teamReadyTime: "19:30",
+          shareIntervalMinutes: 10,
+          chatPollSeconds: 5,
+          deadline: "21:25"
+        }
+      }
+    });
+
+    expect(config.gameWatchdog).toEqual({
+      enabled: true,
+      healthCheckSeconds: 15,
+      actionTimeoutSeconds: 180,
+      frozenScreenSeconds: 180,
+      maxRestarts: 3,
+      restartCooldownSeconds: 30
+    });
+  });
+
   it("supports multiple daytime executions for non-technology, non-patrol tasks", () => {
     const config = validateAutomationConfig({
       timezone: "Asia/Shanghai",

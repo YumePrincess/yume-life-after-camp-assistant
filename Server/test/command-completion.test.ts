@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   completeCommand,
+  finalizeAgentCancellations,
   mergeRunDetail,
+  reconcileStaleCommands,
   reconcileTerminalRunCommands,
-  scheduledRetryAttempt
+  scheduledRetryAttempt,
+  updateRun
 } from "../src/db";
 
 describe("scheduled retry accounting", () => {
@@ -170,6 +173,57 @@ describe("completeCommand", () => {
     );
     expect(statements[1]?.values[0]).toBe("succeeded");
   });
+
+  it("keeps a cancellation authoritative when a late run command reports failure", async () => {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const command = {
+      id: "command-late",
+      run_id: "run-cancelled",
+      agent_id: "agent-1",
+      type: "run_task"
+    };
+    const run = {
+      id: "run-cancelled",
+      cancel_requested: 1,
+      trigger_mode: "manual",
+      detail_json: "{}"
+    };
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          return {
+            async first() {
+              return null;
+            },
+            bind(...values: unknown[]) {
+              statements.push({ sql, values });
+              return {
+                async first() {
+                  if (sql.includes("FROM command_queue")) return command;
+                  if (sql.includes("FROM task_runs")) return run;
+                  return null;
+                }
+              };
+            }
+          };
+        },
+        async batch() {
+          return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+        }
+      }
+    } as unknown as Env;
+
+    await expect(
+      completeCommand(env, {
+        commandId: command.id,
+        leaseToken: "lease-late",
+        state: "failed",
+        message: "网络错误"
+      })
+    ).resolves.toBe(true);
+    expect(statements[3]?.values[0]).toBe("interrupted");
+    expect(statements[3]?.values[1]).toBe("任务已由管理员中断");
+  });
 });
 
 function assertNoScheduledRetryInsert(
@@ -208,5 +262,109 @@ describe("reconcileTerminalRunCommands", () => {
     expect(statement?.sql).toContain("state IN ('queued', 'claimed', 'running', 'cancelling')");
     expect(statement?.sql).not.toContain("DELETE");
     expect(statement?.sql).not.toContain("INSERT");
+  });
+});
+
+describe("ghost-command and cancellation recovery", () => {
+  it("cancels commands whose task row was manually removed or already finished", async () => {
+    let statement: { sql: string; values: unknown[] } | undefined;
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          return {
+            bind(...values: unknown[]) {
+              statement = { sql, values };
+              return {
+                async run() {
+                  return { meta: { changes: 2 } };
+                }
+              };
+            }
+          };
+        }
+      }
+    } as unknown as Env;
+
+    expect(await reconcileStaleCommands(env, new Date("2026-08-24T18:00:00.000Z"))).toBe(2);
+    expect(statement?.sql).toContain("run_id IS NULL");
+    expect(statement?.sql).toContain("关联任务已不存在或已结束");
+    expect(statement?.sql).toContain("lease_expires_at = NULL");
+  });
+
+  it("finalizes a cancelling run when a restarted Agent reports no active run", async () => {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          return {
+            bind(...values: unknown[]) {
+              const statement = { sql, values };
+              statements.push(statement);
+              return {
+                async all() {
+                  return sql.includes("SELECT task_runs.id")
+                    ? { results: [{ id: "run-cancelling" }] }
+                    : { results: [] };
+                }
+              };
+            }
+          };
+        },
+        async batch() {
+          return [
+            { meta: { changes: 2 } },
+            { results: [{ id: "run-cancelling" }] }
+          ];
+        }
+      }
+    } as unknown as Env;
+
+    await expect(
+      finalizeAgentCancellations(env, {
+        agentId: "mac-agent",
+        activeRunId: null,
+        now: new Date("2026-08-24T18:00:00.000Z")
+      })
+    ).resolves.toEqual(["run-cancelling"]);
+    expect(statements.some(({ sql }) => sql.includes("state = 'interrupted'"))).toBe(true);
+    expect(statements.some(({ sql }) => sql.includes("state IN ('queued', 'claimed')"))).toBe(true);
+  });
+
+  it("does not let a late Agent update a terminal run", async () => {
+    const terminalRun = {
+      id: "run-terminal",
+      state: "interrupted",
+      cancel_requested: 1,
+      message: "任务已由管理员中断"
+    };
+    let updateIssued = false;
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          if (sql.startsWith("SELECT * FROM task_runs")) {
+            return {
+              bind() {
+                return { async first() { return terminalRun; } };
+              }
+            };
+          }
+          updateIssued = true;
+          return {
+            bind() {
+              return { async first() { return terminalRun; } };
+            }
+          };
+        }
+      }
+    } as unknown as Env;
+
+    await expect(
+      updateRun(env, {
+        runId: "run-terminal",
+        state: "succeeded",
+        message: "旧 Agent 晚到的成功结果"
+      })
+    ).resolves.toEqual(terminalRun);
+    expect(updateIssued).toBe(false);
   });
 });
