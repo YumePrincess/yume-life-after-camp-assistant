@@ -244,6 +244,24 @@ final class AppModel: ObservableObject {
         selection = .logs
     }
 
+    func cancelCurrentTask() async {
+        guard health?.activeRunId != nil else {
+            statusMessage = text("No active task")
+            return
+        }
+        guard !debugToken.isEmpty else {
+            alertMessage = text("The local debug token is required to cancel a task.")
+            return
+        }
+        do {
+            try await runtime.abort(debugToken: debugToken)
+            statusMessage = text("Cancellation requested")
+            await refreshStatusAndLogs(loadLogs: true)
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
     func showAllLogs() {
         logRunIdFilter = nil
         logPage = 0

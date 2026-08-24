@@ -25,6 +25,10 @@
 "Installed plugins" = "Extensions installées";
 "Available updates" = "Mises à jour";
 "Current task" = "Tâche actuelle";
+"Cancel task" = "Annuler la tâche";
+"Cancellation requested" = "Annulation demandée";
+"No active task" = "Aucune tâche active";
+"The local debug token is required to cancel a task." = "Le jeton de débogage local est requis pour annuler une tâche.";
 "None" = "Aucune";
 "Runtime logs" = "Journaux d’exécution";
 "The latest Agent output refreshes automatically." = "La dernière sortie de l’Agent est actualisée automatiquement.";

@@ -972,7 +972,7 @@ test("a failed flag click is re-released and retried until the flag turns yellow
   assert.ok(sleeps.filter((ms) => ms === 2000).length >= 2);
 });
 
-test("a warm notice-board background cannot authorize an ambiguous flag click", async () => {
+test("an ambiguous initial color may click once but still requires post-click verification", async () => {
   const taps = [];
   const config = patrolConfig();
   config.patrolTeamUi.teamCardColor = {
@@ -1023,9 +1023,12 @@ test("a warm notice-board background cannot authorize an ambiguous flag click", 
 
   await assert.rejects(
     createPatrolTeam(context),
-    /PATROL_FLAG_COLOR_UNVERIFIED/
+    /PATROL_FLAG_CLICK_NOT_VERIFIED/
   );
-  assert.deepEqual(taps, []);
+  assert.deepEqual(taps, [
+    { x: 48, y: 327 },
+    { x: 48, y: 327 }
+  ]);
 });
 
 test("an existing camp patrol route switches its top objective to book defense before sharing", async () => {

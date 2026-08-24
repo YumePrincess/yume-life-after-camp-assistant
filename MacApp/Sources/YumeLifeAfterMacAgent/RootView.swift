@@ -433,6 +433,12 @@ struct LogsView: View {
                     Button(model.text("Current task")) { model.openCurrentTaskLogs() }
                         .buttonStyle(GlassButtonStyle())
                 }
+                if model.health?.activeRunId != nil {
+                    Button(model.text("Cancel task")) {
+                        Task { await model.cancelCurrentTask() }
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                }
                 if model.logRunIdFilter != nil {
                     Button(model.text("All logs")) { model.showAllLogs() }
                         .buttonStyle(GlassButtonStyle())

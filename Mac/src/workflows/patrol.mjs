@@ -706,7 +706,9 @@ export async function createPatrolTeam(context, signal) {
         "PATROL_FLAG_NOT_VISIBLE: 未识别到 CtrlQ，且底部频道 HUD 锚点不足，禁止点击游戏世界"
       );
     }
-    await ensurePatrolFlagClickColor(context, screen, signal);
+    await ensurePatrolFlagClickColor(context, screen, signal, {
+      allowAmbiguousDefault: true
+    });
     const flagClickAttempts = Math.max(
       2,
       Math.min(
@@ -1721,7 +1723,12 @@ function patrolWarmIconGroup(foreground, background, config) {
   return warmSamples.length >= Math.max(1, Number(config.minimumWarmPoints) || 1);
 }
 
-async function ensurePatrolFlagClickColor(context, screen, signal) {
+async function ensurePatrolFlagClickColor(
+  context,
+  screen,
+  signal,
+  { allowAmbiguousDefault = false } = {}
+) {
   const color = await patrolTeamCardColorState(context, screen, signal);
   if (!color.enabled) return;
   const colorSummary =
@@ -1732,6 +1739,18 @@ async function ensurePatrolFlagClickColor(context, screen, signal) {
     );
   }
   if (!color.taskCardSelected) {
+    if (
+      allowAmbiguousDefault &&
+      ["ambiguous", "unavailable"].includes(color.state) &&
+      !color.teamCardSelected
+    ) {
+      await context.report(
+        "warning",
+        "patrol_flag_color_ambiguous_fallback",
+        `未能从点击前色块确认默认任务图标为黄色，但也未检测到队伍旗帜黄色选中证据；允许首次点击旗帜一次，点击后严格校验队伍旗帜颜色（${colorSummary}）`
+      );
+      return;
+    }
     throw new Error(
       `PATROL_FLAG_COLOR_UNVERIFIED: 未确认任务图标黄色且队伍旗帜图标未选中，禁止点击旗帜（${colorSummary}）`
     );

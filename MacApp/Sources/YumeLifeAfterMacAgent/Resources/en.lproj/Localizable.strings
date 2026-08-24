@@ -34,6 +34,10 @@
 "Installed plugins" = "Installed plugins";
 "Available updates" = "Available updates";
 "Current task" = "Current task";
+"Cancel task" = "Cancel task";
+"Cancellation requested" = "Cancellation requested";
+"No active task" = "No active task";
+"The local debug token is required to cancel a task." = "The local debug token is required to cancel a task.";
 "None" = "None";
 "Runtime logs" = "Runtime logs";
 "The latest Agent output refreshes automatically." = "The latest Agent output refreshes automatically.";

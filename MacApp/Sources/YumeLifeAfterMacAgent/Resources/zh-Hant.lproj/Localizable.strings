@@ -25,6 +25,10 @@
 "Installed plugins" = "已安裝外掛";
 "Available updates" = "可用更新";
 "Current task" = "目前任務";
+"Cancel task" = "取消任務";
+"Cancellation requested" = "已請求取消任務";
+"No active task" = "目前沒有執行中的任務";
+"The local debug token is required to cancel a task." = "取消任務需要本機偵錯權杖。";
 "None" = "無";
 "Runtime logs" = "執行記錄";
 "The latest Agent output refreshes automatically." = "自動重新整理 Agent 的最新輸出。";

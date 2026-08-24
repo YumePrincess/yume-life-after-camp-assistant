@@ -25,6 +25,10 @@
 "Installed plugins" = "インストール済み";
 "Available updates" = "利用可能な更新";
 "Current task" = "現在のタスク";
+"Cancel task" = "タスクをキャンセル";
+"Cancellation requested" = "キャンセルを要求しました";
+"No active task" = "実行中のタスクはありません";
+"The local debug token is required to cancel a task." = "タスクをキャンセルするにはローカルデバッグトークンが必要です。";
 "None" = "なし";
 "Runtime logs" = "実行ログ";
 "The latest Agent output refreshes automatically." = "Agent の最新出力を自動更新します。";
