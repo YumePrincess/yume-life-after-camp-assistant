@@ -87,7 +87,16 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
     context.patrolKeepExistingTeam = true;
     context.patrolTeamPhase = "existing-valid-route";
     await updateWorkflowProgress(context, 0.46, "patrol_existing_route");
-    await ui.executeFlow("openTeamPanel", {}, signal);
+    if (context.patrolExistingValidRoutePanelOpen) {
+      await report(
+        "info",
+        "patrol_existing_route_panel_already_open",
+        "已从退出确认框识别到有效巡逻队伍；已点击取消保留队伍面板，直接进入招募分享流程"
+      );
+      context.patrolExistingValidRoutePanelOpen = false;
+    } else {
+      await ui.executeFlow("openTeamPanel", {}, signal);
+    }
     await ensureExistingPatrolTargetForSharing(context, signal);
     await updateWorkflowProgress(context, 0.52, "patrol_existing_route_share");
     await sharePatrolTeam(context, signal);
@@ -706,90 +715,109 @@ export async function createPatrolTeam(context, signal) {
         "PATROL_FLAG_NOT_VISIBLE: 未识别到 CtrlQ，且底部频道 HUD 锚点不足，禁止点击游戏世界"
       );
     }
-    await ensurePatrolFlagClickColor(context, screen, signal, {
-      allowAmbiguousDefault: true
-    });
     const flagClickAttempts = Math.max(
       2,
-      Math.min(
-        7,
-        Number(controls.flagClickAttempts) || 2
-      )
+      Math.min(6, Number(controls.flagClickAttempts) || 6)
     );
     for (
       let attempt = 1;
       attempt <= flagClickAttempts;
       attempt += 1
     ) {
-      if (attempt > 1 && typeof ui.recheckGameMouseForRetry === "function") {
-        await ui.recheckGameMouseForRetry(
-          signal,
-          `巡逻旗帜点击后色块未确认黄色，重新释放游戏鼠标后重试第 ${attempt} 次`
-        );
-      }
-      await report(
-        "info",
-        attempt === 1
-          ? "patrol_flag_click"
-          : "patrol_flag_mouse_focus_retry",
-        attempt === 1
-          ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点；沿用 HUD 后状态直接执行 ADB 触屏点击 (${controls.flagButton.x},${controls.flagButton.y})`
-          : `旗帜点击后仍未出现队伍菜单；第 ${attempt} 次点击前仅因前两次失败才重检游戏鼠标状态 (${controls.flagButton.x},${controls.flagButton.y})`
-      );
-      await tapPatrolMouse(ui, controls.flagButton, signal, { gameMouse: true });
-      await sleep(flagClickSettleMs, signal);
-      screen = await capturePatrolScreen(
-        vision,
-        attempt === 1
-          ? "patrol-team-menu-open"
-          : `patrol-team-menu-open-${attempt}`,
-        signal
-      );
-      const screenAfterOverlayClose = await closePatrolTaskGuideOverlayIfVisible(
+      const preFlagColor = await ensurePatrolFlagClickColor(
         context,
         screen,
         signal,
-        "旗帜点击后"
+        { allowAmbiguousDefault: true }
       );
-      if (screenAfterOverlayClose !== screen) {
-        screen = screenAfterOverlayClose;
-        await report(
-          "warning",
-          "patrol_flag_overlay_blocked",
-          "旗帜点击后出现任务导航遮挡；已先关闭右侧安全空白处的遮挡，不再在遮挡上重复点击旗帜"
-        );
-      }
-      const flagColorAfterClick = await verifyPatrolFlagSelectionAfterClick(
-        context,
-        screen,
-        signal,
-        {
-          clickAttempt: attempt,
-          colorReadRetries: flagClickColorReadRetries,
-          settleMs: flagClickSettleMs
-        }
-      );
-      screen = flagColorAfterClick.screen || screen;
+      const flagAlreadySelected = Boolean(preFlagColor?.teamCardSelected);
       if (
-        flagColorAfterClick.enabled &&
-        !flagColorAfterClick.teamCardSelected
+        attempt >= 3 &&
+        !flagAlreadySelected
       ) {
+        const retryReason = `巡逻旗帜点击后色块未确认黄色，第 ${attempt} 次点击前尝试通过 key70 释放游戏鼠标`;
+        if (typeof ui.recheckGameMouseForRetry === "function") {
+          await ui.recheckGameMouseForRetry(signal, retryReason);
+        } else if (typeof ui.sendGameKey === "function") {
+          await report("warning", "patrol_flag_mouse_key70_retry", retryReason);
+          await ui.sendGameKey(70, signal);
+        } else if (typeof adb?.key === "function") {
+          await report("warning", "patrol_flag_mouse_key70_retry", retryReason);
+          await adb.key(70, signal);
+        }
+      }
+      if (flagAlreadySelected) {
         await report(
-          "warning",
-          "patrol_flag_click_color_unverified",
-          `第 ${attempt}/${flagClickAttempts} 次点击后未确认队伍旗帜图标变为黄色（state=${flagColorAfterClick.state}; 任务图标=${flagColorAfterClick.taskCardSelected ? "黄色" : "非黄色"}; 队伍旗帜图标=${flagColorAfterClick.teamCardSelected ? "黄色/已选中" : "非黄色/未选中"}）；禁止进入队伍判断`
+          "info",
+          "patrol_flag_already_selected",
+          "点击旗帜前已确认队伍旗帜色块为黄色；判定已处于创建队伍/队伍卡片，不重复点击旗帜，直接读取当前入口"
         );
-        if (attempt < flagClickAttempts) {
+      } else {
+        await report(
+          "info",
+          attempt === 1
+            ? "patrol_flag_click"
+            : "patrol_flag_mouse_focus_retry",
+          attempt === 1
+            ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点；沿用 HUD 后状态直接执行 ADB 触屏点击 (${controls.flagButton.x},${controls.flagButton.y})`
+            : `旗帜点击后仍未出现队伍菜单；第 ${attempt} 次点击前仅因前两次失败才重检游戏鼠标状态 (${controls.flagButton.x},${controls.flagButton.y})`
+        );
+        await tapPatrolMouse(ui, controls.flagButton, signal, { gameMouse: true });
+        await sleep(flagClickSettleMs, signal);
+        screen = await capturePatrolScreen(
+          vision,
+          attempt === 1
+            ? "patrol-team-menu-open"
+            : `patrol-team-menu-open-${attempt}`,
+          signal
+        );
+        const screenAfterOverlayClose = await closePatrolTaskGuideOverlayIfVisible(
+          context,
+          screen,
+          signal,
+          "旗帜点击后"
+        );
+        if (screenAfterOverlayClose !== screen) {
+          screen = screenAfterOverlayClose;
           await report(
             "warning",
-            "patrol_flag_click_color_retry",
-            "疑似游戏鼠标释放失败；下一次点击前重新执行游戏鼠标释放流程"
+            "patrol_flag_overlay_blocked",
+            "旗帜点击后出现任务导航遮挡；已先关闭右侧安全空白处的遮挡，不再在遮挡上重复点击旗帜"
           );
-          continue;
         }
-        throw new Error(
-          "PATROL_FLAG_CLICK_NOT_VERIFIED: 点击旗帜后未确认队伍旗帜图标变为黄色，已停止后续队伍判断"
+        const flagColorAfterClick = await verifyPatrolFlagSelectionAfterClick(
+          context,
+          screen,
+          signal,
+          {
+            clickAttempt: attempt,
+            colorReadRetries: flagClickColorReadRetries,
+            settleMs: flagClickSettleMs
+          }
         );
+        screen = flagColorAfterClick.screen || screen;
+        if (
+          flagColorAfterClick.enabled &&
+          !flagColorAfterClick.teamCardSelected &&
+          !flagColorAfterClick.teamCardTextVerified
+        ) {
+          await report(
+            "warning",
+            "patrol_flag_click_color_unverified",
+            `第 ${attempt}/${flagClickAttempts} 次点击后未确认队伍旗帜图标变为黄色（state=${flagColorAfterClick.state}; 任务图标=${flagColorAfterClick.taskCardSelected ? "黄色" : "非黄色"}; 队伍旗帜图标=${flagColorAfterClick.teamCardSelected ? "黄色/已选中" : "非黄色/未选中"}）；禁止进入队伍判断`
+          );
+          if (attempt < flagClickAttempts) {
+            await report(
+              "warning",
+              "patrol_flag_click_color_retry",
+              "疑似游戏鼠标释放失败；下一次点击前重新执行游戏鼠标释放流程"
+            );
+            continue;
+          }
+          throw new Error(
+            "PATROL_FLAG_CLICK_NOT_VERIFIED: 点击旗帜后未确认队伍旗帜图标变为黄色，已停止后续队伍判断"
+          );
+        }
       }
       // The expanded flag menu has two mutually exclusive entry states:
       // a no-team menu exposes “创建队伍”, while an existing team exposes
@@ -1287,7 +1315,8 @@ async function verifyPatrolFlagSelectionAfterClick(
   signal,
   { clickAttempt, colorReadRetries, settleMs }
 ) {
-  const { vision, report } = context;
+  const { config, vision, report } = context;
+  const controls = config?.patrolTeamUi || {};
   const sleep = context.sleep || delay;
   const totalReads = 1 + Math.max(6, Number(colorReadRetries) || 6);
   let screen = initialScreen;
@@ -1317,6 +1346,56 @@ async function verifyPatrolFlagSelectionAfterClick(
         continue;
       }
     }
+
+    // The flag icon can remain visually yellow while the sampled pixels are
+    // changed by the notice-board background, post-processing, or a delayed
+    // mouse release. The expanded team card has stronger semantic evidence:
+    // a no-team card exposes “创建队伍/加入队伍”, while an existing team card
+    // exposes “自动匹配”. Check OCR before trusting the color result, and use
+    // an accurate regional reread when fast OCR missed it.
+    const textEvidence = await findAnyPatrolTextWithAccurateRegion(
+      vision,
+      screen,
+      screen.observations,
+      controls.flagTeamCardVerificationTexts || [
+        "创建队伍",
+        "加入队伍",
+        "自动匹配"
+      ],
+      controls.flagTeamCardVerificationRegion || controls.teamMenuRegion || {
+        left: 70,
+        top: 100,
+        right: 900,
+        bottom: 650
+      },
+      `patrol-flag-team-card-text-${clickAttempt}-${readAttempt}`,
+      signal
+    );
+    if (textEvidence) {
+      const text = String(textEvidence.text || "");
+      const existingTeam = text.includes("自动匹配");
+      await report(
+        "info",
+        "patrol_flag_click_text_verified",
+        `第 ${clickAttempt} 次旗帜点击后 OCR 已确认队伍卡片关键词“${text}”（${existingTeam ? "已有队伍卡片" : "无队伍创建/加入卡片"}）；忽略不稳定色块结果，继续读取队伍入口`,
+        {
+          clickAttempt,
+          readAttempt,
+          text,
+          evidence: existingTeam ? "existing-team" : "create-entry"
+        }
+      );
+      return {
+        enabled: true,
+        state: "team-card-text",
+        taskCardSelected: false,
+        teamCardSelected: false,
+        teamCardTextVerified: true,
+        teamCardText: text,
+        screen
+      };
+    }
+
     color = await patrolTeamCardColorState(context, screen, signal);
     if (!color.enabled || color.teamCardSelected) {
       if (color.enabled) {
@@ -1381,28 +1460,6 @@ async function resolveExistingPatrolTeam(
     }
     return { mode: "none", screen: current };
   }
-  if (!beforeFlagExpansion && state.danceEvidence) {
-    const danceScan = await scanExistingPatrolDancePages(
-      context,
-      current,
-      signal
-    );
-    if (danceScan?.validRoute) {
-      return {
-        mode: "existing-valid-route",
-        screen: danceScan.screen || current
-      };
-    }
-    current = danceScan?.screen || current;
-    state = await inspectExistingPatrolTeamStateWithColor(
-      context,
-      current,
-      signal
-    );
-  }
-  if (state.validRoute) {
-    return { mode: "existing-valid-route", screen: current };
-  }
   if (!state.hasTeam) {
     return { mode: "none", screen: current };
   }
@@ -1411,7 +1468,7 @@ async function resolveExistingPatrolTeam(
     await report(
       "info",
       "patrol_existing_team_open",
-      "旗帜入口未出现“创建队伍”，但检测到已有队伍卡片；先打开队伍面板再确认巡逻路线"
+      "旗帜入口未出现“创建队伍”，但检测到已有队伍卡片；先打开队伍面板，再通过离队确认框区分有效/无效巡逻队伍"
     );
     await ui.executeFlow("openTeamPanel", {}, signal);
     await (context.sleep || delay)(
@@ -1423,47 +1480,21 @@ async function resolveExistingPatrolTeam(
       "patrol-existing-team-panel",
       signal
     );
-    state = await inspectExistingPatrolTeamStateWithColor(
-      context,
-      current,
-      signal
-    );
-    if (state.danceEvidence) {
-      const danceScan = await scanExistingPatrolDancePages(
-        context,
-        current,
-        signal
-      );
-      if (danceScan?.validRoute) {
-        return {
-          mode: "existing-valid-route",
-          screen: danceScan.screen || current
-        };
-      }
-      current = danceScan?.screen || current;
-      state = await inspectExistingPatrolTeamStateWithColor(
-        context,
-        current,
-        signal
-      );
-    }
-    if (state.validRoute) {
-      return { mode: "existing-valid-route", screen: current };
-    }
   }
 
   await report(
     "warning",
-    "patrol_existing_team_without_route",
-    "已确认存在队伍，但未识别到“巡逻路线进度+我的任务进度”有效路线卡；准备退出队伍并重新创建"
+    "patrol_existing_team_leave_probe",
+    "已确认存在队伍；不再通过舞会或巡逻进度卡片判断有效性，进入队伍面板执行离队探测：出现巡逻任务放弃确认框则点击取消并保留队伍，否则确认回到创建入口后重新创建"
   );
-  await leaveExistingPatrolTeam(context, current, signal);
-  current = await capturePatrolScreen(
-    vision,
-    "patrol-existing-team-after-leave",
-    signal
-  );
-  return { mode: "existing-invalid-left", screen: current };
+  const leaveResult = await leaveExistingPatrolTeam(context, current, signal);
+  if (leaveResult?.mode === "existing-valid-route") {
+    return leaveResult;
+  }
+  return {
+    mode: "existing-invalid-left",
+    screen: leaveResult?.screen || current
+  };
 }
 
 async function inspectExistingPatrolTeamStateWithColor(context, screen, signal) {
@@ -1552,33 +1583,6 @@ async function closePatrolTaskGuideOverlayIfVisible(
     );
   }
   return recovered;
-}
-
-function patrolPostLeaveEntryVisible(vision, observations, controls, config) {
-  const createMenu = hasTextInRegion(
-    vision,
-    observations,
-    "创建队伍",
-    controls.teamMenuRegion
-  );
-  const creator = patrolCreatorOpen(vision, observations, controls);
-  const flagReady = (controls.flagReadyTexts || ["CtrlQ", "Ctrl Q"]).some(
-    (text) => hasTextInRegion(vision, observations, text, controls.flagReadyRegion)
-  );
-  const channelConfig = config?.postLoginPromotions;
-  const channelReadyCount = (channelConfig?.channelReadyTexts || []).filter(
-    (text) =>
-      hasTextInRegion(
-        vision,
-        observations,
-        text,
-        channelConfig.channelReadyRegion
-      )
-  ).length;
-  const channelReady =
-    channelReadyCount >=
-    Math.max(2, Number(channelConfig?.channelReadyMinimumTexts) || 2);
-  return createMenu || creator || flagReady || channelReady;
 }
 
 function taskGuideOverlayMarkerCount(vision, observations, action) {
@@ -1730,13 +1734,16 @@ async function ensurePatrolFlagClickColor(
   { allowAmbiguousDefault = false } = {}
 ) {
   const color = await patrolTeamCardColorState(context, screen, signal);
-  if (!color.enabled) return;
+  if (!color.enabled) return color;
   const colorSummary =
     `state=${color.state}; 任务图标=${color.taskCardSelected ? "黄色" : "非黄色"}; 队伍旗帜图标=${color.teamCardSelected ? "黄色/已选中" : "非黄色/未选中"}`;
   if (color.teamCardSelected) {
-    throw new Error(
-      `PATROL_FLAG_CLICK_FORBIDDEN_TEAM_CARD: 色块已确认队伍旗帜图标处于黄色选中状态，禁止再次点击旗帜（${colorSummary}）`
+    await context.report(
+      "info",
+      "patrol_flag_already_selected",
+      `点击旗帜前已确认队伍旗帜图标处于黄色选中状态；禁止再次点击旗帜，直接读取当前创建队伍/队伍卡片（${colorSummary}）`
     );
+    return color;
   }
   if (!color.taskCardSelected) {
     if (
@@ -1749,7 +1756,7 @@ async function ensurePatrolFlagClickColor(
         "patrol_flag_color_ambiguous_fallback",
         `未能从点击前色块确认默认任务图标为黄色，但也未检测到队伍旗帜黄色选中证据；允许首次点击旗帜一次，点击后严格校验队伍旗帜颜色（${colorSummary}）`
       );
-      return;
+      return color;
     }
     throw new Error(
       `PATROL_FLAG_COLOR_UNVERIFIED: 未确认任务图标黄色且队伍旗帜图标未选中，禁止点击旗帜（${colorSummary}）`
@@ -1760,6 +1767,7 @@ async function ensurePatrolFlagClickColor(
     "patrol_flag_color_ready",
     `已通过左侧任务图标与队伍旗帜图标的局部色块对比确认当前是默认任务卡片；允许点击队伍旗帜一次（${colorSummary}）`
   );
+  return color;
 }
 
 function inspectExistingPatrolTeamState(vision, observations, controls) {
@@ -1888,8 +1896,8 @@ function detectPatrolDancePaging(vision, observations, controls) {
   const region = controls.existingTeamDanceRegion || {
     left: 0,
     top: 0,
-    right: 760,
-    bottom: 260
+    right: 920,
+    bottom: 320
   };
   const previousRegion = controls.existingTeamDancePreviousRegion || {
     left: region.left,
@@ -1903,37 +1911,81 @@ function detectPatrolDancePaging(vision, observations, controls) {
     right: region.right,
     bottom: region.bottom
   };
+  const previousTexts = controls.existingTeamDancePreviousTexts || [
+    "<",
+    "＜",
+    "‹",
+    "〈",
+    "上一页",
+    "前一页"
+  ];
+  const nextTexts = controls.existingTeamDanceNextTexts || [
+    ">",
+    "＞",
+    "›",
+    "〉",
+    "》",
+    "下一页",
+    "后页"
+  ];
   const previous = findAnyTextInRegion(
     vision,
     observations,
-    controls.existingTeamDancePreviousTexts || [
-      "<",
-      "‹",
-      "〈",
-      "上一页",
-      "前一页"
-    ],
+    previousTexts,
     previousRegion
   );
   const next = findAnyTextInRegion(
     vision,
     observations,
-    controls.existingTeamDanceNextTexts || [
-      ">",
-      "›",
-      "〉",
-      "下一页",
-      "后页"
-    ],
+    nextTexts,
     nextRegion
   );
-  return {
-    previous,
-    next,
-    bothPresent: Boolean(previous && next),
-    pageTurn: next || previous || null,
-    pageTurnDirection: next ? "next" : previous ? "previous" : null
+  // The gold right chevron can be rendered just outside the old 760px
+  // route-text crop. If the calibrated subregion misses it, reread the
+  // complete header and classify the arrows by horizontal side. Resolve the
+  // right arrow first so a valid dance team is never sent to the leave branch
+  // merely because the left arrow OCR was easier to read.
+  const fullRegion = {
+    left: Math.min(region.left, 0),
+    top: region.top,
+    right: Math.max(region.right, 920),
+    bottom: region.bottom
   };
+  const resolvedNext =
+    next ||
+    findPatrolDanceArrow(vision, observations, nextTexts, fullRegion, "next");
+  const resolvedPrevious =
+    previous ||
+    findPatrolDanceArrow(
+      vision,
+      observations,
+      previousTexts,
+      fullRegion,
+      "previous"
+    );
+  return {
+    previous: resolvedPrevious,
+    next: resolvedNext,
+    bothPresent: Boolean(resolvedPrevious && resolvedNext),
+    pageTurn: resolvedNext || resolvedPrevious || null,
+    pageTurnDirection: resolvedNext ? "next" : resolvedPrevious ? "previous" : null
+  };
+}
+
+function findPatrolDanceArrow(vision, observations, texts, region, side) {
+  const bounded = observationsInRegion(observations, region);
+  const midpoint = region.left + (region.right - region.left) / 2;
+  const candidates = bounded.filter((item) => {
+    const x = Number(item?.x) + Number(item?.width || 0) / 2;
+    return side === "next" ? x >= midpoint : x < midpoint;
+  });
+  for (const text of texts || []) {
+    const match =
+      vision.find(candidates, text, "exact") ||
+      vision.find(candidates, text, "includes");
+    if (match) return match;
+  }
+  return null;
 }
 
 async function scanExistingPatrolDancePages(context, initialScreen, signal) {
@@ -2113,59 +2165,45 @@ async function leaveExistingPatrolTeam(context, initialScreen, signal) {
       `patrol-existing-team-after-leave-click-${attempt}`,
       signal
     );
-    screen = (
-      await confirmPatrolLeaveDialog(
-        context,
-        screen,
-        signal,
-        `已有无效队伍离队第 ${attempt} 次`
-      )
-    ).screen;
-    screen = await closePatrolTaskGuideOverlayIfVisible(
+    const leaveConfirmation = await confirmPatrolLeaveDialog(
       context,
       screen,
       signal,
-      "离队校验画面"
+      `已有队伍离队探测第 ${attempt} 次`,
+      { action: "cancel" }
     );
-    const stillVisible = findTextInRegion(
-      vision,
-      screen.observations,
-      "离开队伍",
-      leaveRegion
-    );
-    const postLeaveEntryVisible = patrolPostLeaveEntryVisible(
-      vision,
-      screen.observations,
-      controls,
-      config
-    );
-    if (!stillVisible || postLeaveEntryVisible) {
+    if (leaveConfirmation.validRoute) {
+      context.patrolExistingValidRoutePanelOpen = true;
       await report(
         "info",
-        postLeaveEntryVisible && stillVisible
-          ? "patrol_existing_team_left_stale_text_recovered"
-          : "patrol_existing_team_left",
-        postLeaveEntryVisible && stillVisible
-          ? "离队后仍有残留“离开队伍”OCR，但已确认 HUD/创建入口恢复；按离队成功处理并继续全新巡逻队创建流程"
-          : "已确认原有队伍退出成功，继续执行全新巡逻队创建流程"
+        "patrol_existing_valid_route_leave_cancelled",
+        "点击“离开队伍”后出现巡逻任务放弃确认框；判定为有效巡逻队伍，已点击“取消(Esc)”保留队伍，继续招募分享"
       );
-      return;
+      return {
+        mode: "existing-valid-route",
+        screen: leaveConfirmation.screen
+      };
     }
-    if (attempt < maxAttempts) {
-      await report(
-        "warning",
-        "patrol_existing_team_leave_retry",
-        `第 ${attempt} 次点击后“离开队伍”仍存在；重新 OCR 确认后重试离队（${attempt + 1}/${maxAttempts}）`
-      );
-      await sleep(500, signal);
-    }
+    screen = leaveConfirmation.screen;
+    await report(
+      "info",
+      "patrol_existing_team_left",
+      "点击“离开队伍”后未出现巡逻任务放弃确认框；按无队伍状态继续复用“点击旗帜→识别创建队伍”的标准流程，不额外判断退出后的页面效果"
+    );
+    return { mode: "existing-invalid-left", screen };
   }
   throw new Error(
     `PATROL_EXISTING_TEAM_LEAVE_FAILED: 连续 ${maxAttempts} 次 OCR 点击后仍未确认退出已有队伍`
   );
 }
 
-async function confirmPatrolLeaveDialog(context, screen, signal, reason) {
+async function confirmPatrolLeaveDialog(
+  context,
+  screen,
+  signal,
+  reason,
+  { action = "confirm" } = {}
+) {
   const { config, ui, adb, vision, report } = context;
   const controls = config?.patrolTeamUi || {};
   const confirmRegion = controls.leaveTeamConfirmRegion || {
@@ -2174,27 +2212,131 @@ async function confirmPatrolLeaveDialog(context, screen, signal, reason) {
     right: 1380,
     bottom: 850
   };
-  const confirmMatch = findAnyTextInRegion(
-    vision,
-    screen.observations,
-    controls.leaveTeamConfirmTexts || ["确认(F)", "确定(F)", "确认"],
-    confirmRegion
+  const settleMs = Math.max(
+    2_000,
+    Number(controls.leaveTeamSettleMs) || 2_000
   );
-  const dialogMatch = findAnyTextInRegion(
-    vision,
-    screen.observations,
-    controls.leaveTeamDialogTexts || [
-      "退出队伍",
-      "离开队伍",
-      "是否退出",
-      "是否离开",
-      "确认离开"
-    ],
-    confirmRegion
-  );
-  if (!confirmMatch && !dialogMatch) {
-    return { screen, present: false, confirmed: false };
+  const findMatches = (currentScreen) => {
+    const observations = currentScreen?.observations || [];
+    return {
+      confirmMatch: findAnyTextInRegion(
+        vision,
+        observations,
+        controls.leaveTeamConfirmTexts || ["确认(F)", "确定(F)", "确认"],
+        confirmRegion
+      ),
+      cancelMatch: findAnyTextInRegion(
+        vision,
+        observations,
+        controls.leaveTeamCancelTexts || ["取消(Esc)", "取消", "Cancel", "Esc"],
+        confirmRegion
+      ),
+      dialogMatch: findAnyTextInRegion(
+        vision,
+        observations,
+        controls.leaveTeamDialogTexts || [
+          "退出队伍",
+          "离开队伍",
+          "是否退出",
+          "是否离开",
+          "确认离开",
+          "巡逻任务尚未完成",
+          "视为放弃任务",
+          "放弃任务",
+          "是否退出队伍"
+        ],
+        confirmRegion
+      )
+    };
+  };
+  const initialMatches = findMatches(screen);
+  if (
+    !initialMatches.confirmMatch &&
+    !initialMatches.cancelMatch &&
+    !initialMatches.dialogMatch
+  ) {
+    return { screen, present: false, confirmed: false, validRoute: false };
   }
+
+  if (action === "cancel") {
+    const maxCancelAttempts = Math.max(
+      1,
+      Math.min(3, Number(controls.leaveTeamCancelAttempts) || 3)
+    );
+    let current = screen;
+    for (let attempt = 1; attempt <= maxCancelAttempts; attempt += 1) {
+      const matches = findMatches(current);
+      if (!matches.confirmMatch && !matches.cancelMatch && !matches.dialogMatch) {
+        return {
+          screen: current,
+          present: true,
+          confirmed: false,
+          cancelled: true,
+          validRoute: true
+        };
+      }
+      if (matches.cancelMatch) {
+        const cancelPoint = observationCenter(matches.cancelMatch);
+        await report(
+          "warning",
+          "patrol_leave_confirmation_cancelled",
+          `${reason}检测到巡逻任务放弃确认框；第 ${attempt}/${maxCancelAttempts} 次 OCR 确认“${matches.cancelMatch.text}”，点击取消保留有效巡逻队伍并继续招募分享`,
+          { cancelPoint, dialogText: matches.dialogMatch?.text || null }
+        );
+        await tapPatrolMouse(ui, cancelPoint, signal);
+      } else if (typeof ui?.sendGameKey === "function") {
+        const keyCode = Number(controls.leaveTeamCancelKeyCode) || 111;
+        await report(
+          "warning",
+          "patrol_leave_confirmation_cancel_key_fallback",
+          `${reason}检测到巡逻任务放弃确认框但 OCR 未读出取消按钮；第 ${attempt}/${maxCancelAttempts} 次发送 Esc/键码 ${keyCode} 取消离队并保留有效巡逻队伍`,
+          { dialogText: matches.dialogMatch?.text || null, keyCode }
+        );
+        await ui.sendGameKey(keyCode, signal);
+      } else if (typeof adb?.key === "function") {
+        const keyCode = Number(controls.leaveTeamCancelKeyCode) || 111;
+        await report(
+          "warning",
+          "patrol_leave_confirmation_cancel_key_fallback",
+          `${reason}检测到巡逻任务放弃确认框但 OCR 未读出取消按钮；第 ${attempt}/${maxCancelAttempts} 次通过 ADB 发送 Esc/键码 ${keyCode} 取消离队并保留有效巡逻队伍`,
+          { dialogText: matches.dialogMatch?.text || null, keyCode }
+        );
+        await adb.key(keyCode, signal);
+      } else {
+        throw new Error(
+          "PATROL_LEAVE_CANCEL_UNVERIFIED: 已识别有效巡逻队伍退出确认框，但当前执行器没有 OCR 点击或 Esc 键取消能力"
+        );
+      }
+      await (context.sleep || delay)(settleMs, signal);
+      current = await capturePatrolScreen(
+        vision,
+        `patrol-leave-cancelled-${String(reason).replace(/\s+/g, "-")}-${attempt}`,
+        signal
+      );
+      const remaining = findMatches(current);
+      if (!remaining.confirmMatch && !remaining.cancelMatch && !remaining.dialogMatch) {
+        return {
+          screen: current,
+          present: true,
+          confirmed: false,
+          cancelled: true,
+          validRoute: true
+        };
+      }
+      if (attempt < maxCancelAttempts) {
+        await report(
+          "warning",
+          "patrol_leave_confirmation_cancel_retry",
+          `${reason}点击取消或发送 Esc 后确认框仍存在；等待后重试关闭（${attempt + 1}/${maxCancelAttempts}）`
+        );
+      }
+    }
+    throw new Error(
+      `PATROL_LEAVE_CANCEL_FAILED: 有效巡逻队伍退出确认框连续 ${maxCancelAttempts} 次取消后仍未关闭`
+    );
+  }
+
+  const { confirmMatch, dialogMatch } = initialMatches;
   if (confirmMatch) {
     const confirmPoint = observationCenter(confirmMatch);
     await report(
@@ -2227,10 +2369,7 @@ async function confirmPatrolLeaveDialog(context, screen, signal, reason) {
       "PATROL_LEAVE_CONFIRM_UNVERIFIED: 已识别退出队伍确认框，但当前执行器没有 OCR 点击或 F 键确认能力"
     );
   }
-  await (context.sleep || delay)(
-    Math.max(2_000, Number(controls.leaveTeamSettleMs) || 2_000),
-    signal
-  );
+  await (context.sleep || delay)(settleMs, signal);
   return {
     screen: await capturePatrolScreen(
       vision,
@@ -2238,7 +2377,8 @@ async function confirmPatrolLeaveDialog(context, screen, signal, reason) {
       signal
     ),
     present: true,
-    confirmed: true
+    confirmed: true,
+    validRoute: false
   };
 }
 

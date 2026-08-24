@@ -600,8 +600,10 @@ test("patrol flag click is attempted through the shared ADB clicker", async () =
   assert.deepEqual(taps[0], { x: 48, y: 327 });
 });
 
-test("an existing patrol team is recognized without toggling the flag", async () => {
+test("existing teams use the leave probe and cancel a valid-route confirmation", async () => {
   const taps = [];
+  const reports = [];
+  let cancelCapture = false;
   const context = {
     config: patrolConfig(),
     ui: {
@@ -611,14 +613,33 @@ test("an existing patrol team is recognized without toggling the flag", async ()
     },
     adb: { async key() {} },
     vision: {
-      async capture() {
+      async capture(label) {
+        if (label.includes("patrol-leave-cancelled")) {
+          cancelCapture = true;
+          return {
+            path: "team-after-cancel.png",
+            observations: [
+              observation("自动匹配", 180, 180),
+              observation("招募", 350, 1100),
+              observation("离开队伍", 1500, 1080)
+            ]
+          };
+        }
+        if (label.includes("after-leave-click")) {
+          return {
+            path: "leave-confirm.png",
+            observations: [
+              observation("巡逻任务尚未完成，现在退出队伍视为放弃任务，是否退出？", 800, 520),
+              observation("取消(Esc)", 800, 700),
+              observation("确定(F)", 1080, 700)
+            ]
+          };
+        }
         return {
-          path: "team.png",
+          path: "team-panel.png",
           observations: [
             observation("目标：营地事务>营地巡逻任务", 200, 20),
-            observation("巡逻路线进度 01:31:06", 200, 100),
-            observation("我的任务进度 0/4", 200, 150),
-            observation("等待队员加入", 650, 600),
+            observation("自动匹配", 650, 600),
             observation("调整", 1450, 300),
             observation("离开队伍", 1500, 1080)
           ]
@@ -626,22 +647,29 @@ test("an existing patrol team is recognized without toggling the flag", async ()
       },
       find(observations, query, mode) {
         return observations.find((item) =>
-          mode === "exact"
-            ? item.text === query
-            : item.text.includes(query)
+          mode === "exact" ? item.text === query : item.text.includes(query)
         );
       }
     },
     async sleep() {},
-    async report() {}
+    async report(_level, step) {
+      reports.push(step);
+    }
   };
 
   assert.equal(await createPatrolTeam(context), "existing-valid-route");
-  assert.deepEqual(taps, []);
+  assert.equal(cancelCapture, true);
+  assert.deepEqual(taps, [
+    { x: 1570, y: 1100 },
+    { x: 870, y: 720 }
+  ]);
+  assert.ok(reports.includes("patrol_existing_valid_route_leave_cancelled"));
 });
 
-test("dance-status team cards scan both paging arrows before accepting a patrol route", async () => {
+test("valid-route confirmation retries cancel up to three times before sharing", async () => {
   const taps = [];
+  const reports = [];
+  let cancelReads = 0;
   const context = {
     config: patrolConfig(),
     ui: {
@@ -652,108 +680,65 @@ test("dance-status team cards scan both paging arrows before accepting a patrol 
     adb: { async key() {} },
     vision: {
       async capture(label) {
-        if (label === "patrol-team-entry") {
-          return { path: `${label}.png`, observations: [observation("CtrlQ", 20, 300)] };
-        }
-        if (label === "patrol-team-menu-open") {
+        if (label.includes("patrol-leave-cancelled")) {
+          cancelReads += 1;
+          if (cancelReads < 3) {
+            return {
+              path: `leave-confirm-${cancelReads}.png`,
+              observations: [
+                observation("巡逻任务尚未完成，现在退出队伍视为放弃任务，是否退出？", 800, 520),
+                observation("取消(Esc)", 800, 700),
+                observation("确定(F)", 1080, 700)
+              ]
+            };
+          }
           return {
-            path: `${label}.png`,
+            path: "team-after-third-cancel.png",
             observations: [
               observation("自动匹配", 180, 180),
-              observation("舞会期间", 180, 220),
-              observation("<", 20, 220),
-              observation(">", 650, 220)
+              observation("招募", 350, 1100),
+              observation("离开队伍", 1500, 1080)
+            ]
+          };
+        }
+        if (label.includes("after-leave-click")) {
+          return {
+            path: "leave-confirm-initial.png",
+            observations: [
+              observation("巡逻任务尚未完成，现在退出队伍视为放弃任务，是否退出？", 800, 520),
+              observation("取消(Esc)", 800, 700),
+              observation("确定(F)", 1080, 700)
             ]
           };
         }
         return {
-          path: `${label}.png`,
+          path: "team-panel.png",
           observations: [
-            observation("自动匹配", 180, 180),
-            observation("巡逻路线进度", 180, 220),
-            observation("我的任务进度", 180, 260),
-            observation("<", 20, 220),
-            observation(">", 650, 220)
+            observation("自动匹配", 650, 600),
+            observation("调整", 1450, 300),
+            observation("离开队伍", 1500, 1080)
           ]
         };
       },
-      async captureAccurateTransient() {
-        return { path: null, observations: [] };
-      },
       find(observations, query, mode) {
         return observations.find((item) =>
           mode === "exact" ? item.text === query : item.text.includes(query)
         );
       }
     },
-    async report() {},
-    async sleep() {}
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
   };
 
   assert.equal(await createPatrolTeam(context), "existing-valid-route");
-  assert.deepEqual(taps, [
-    { x: 48, y: 327 },
-    { x: 720, y: 240 }
-  ]);
-});
-
-test("dance-status cards use the left arrow only when the right arrow is absent", async () => {
-  const taps = [];
-  let page = 0;
-  const context = {
-    config: patrolConfig(),
-    ui: {
-      async tap(point) {
-        taps.push(point);
-        page += 1;
-      }
-    },
-    adb: { async key() {} },
-    vision: {
-      async capture(label) {
-        if (label === "patrol-team-entry") {
-          return { path: `${label}.png`, observations: [observation("CtrlQ", 20, 300)] };
-        }
-        if (label === "patrol-team-menu-open") {
-          return {
-            path: `${label}.png`,
-            observations: [
-              observation("自动匹配", 180, 180),
-              observation("舞会期间", 180, 220),
-              observation("<", 20, 220)
-            ]
-          };
-        }
-        return {
-          path: `${label}.png`,
-          observations: page > 0
-            ? [
-                observation("自动匹配", 180, 180),
-                observation("巡逻路线进度", 180, 220),
-                observation("我的任务进度", 180, 260),
-                observation("<", 20, 220)
-              ]
-            : [observation("自动匹配", 180, 180), observation("舞会期间", 180, 220), observation("<", 20, 220)]
-        };
-      },
-      async captureAccurateTransient() {
-        return { path: null, observations: [] };
-      },
-      find(observations, query, mode) {
-        return observations.find((item) =>
-          mode === "exact" ? item.text === query : item.text.includes(query)
-        );
-      }
-    },
-    async report() {},
-    async sleep() {}
-  };
-
-  assert.equal(await createPatrolTeam(context), "existing-valid-route");
-  assert.deepEqual(taps, [
-    { x: 48, y: 327 },
-    { x: 90, y: 240 }
-  ]);
+  assert.equal(cancelReads, 3);
+  assert.equal(taps.length, 4);
+  assert.equal(
+    reports.filter((step) => step === "patrol_leave_confirmation_cancel_retry").length,
+    2
+  );
 });
 
 test("route and task progress alone never masquerade as an existing team", async () => {
@@ -801,7 +786,7 @@ test("route and task progress alone never masquerade as an existing team", async
   assert.deepEqual(taps[0], { x: 48, y: 327 });
 });
 
-test("the selected flag color blocks a second flag click before OCR card text", async () => {
+test("a yellow flag is treated as an already-open team card before any flag click", async () => {
   const taps = [];
   const config = patrolConfig();
   config.patrolTeamUi.teamCardColor = {
@@ -831,9 +816,26 @@ test("the selected flag color blocks a second flag click before OCR card text", 
       async capture(label) {
         return {
           path: `${label}.png`,
-          observations: label === "patrol-team-entry"
-            ? [observation("CtrlQ", 20, 300)]
-            : []
+          observations:
+            label === "patrol-team-entry"
+              ? [observation("CtrlQ", 20, 300), observation("自动匹配", 180, 180)]
+              : label === "patrol-existing-team-panel"
+                ? [
+                    observation("自动匹配", 180, 180),
+                    observation("调整", 1450, 300),
+                    observation("离开队伍", 1500, 1080)
+                  ]
+                : label.includes("after-leave-click")
+                  ? [
+                      observation("巡逻任务尚未完成，现在退出队伍视为放弃任务，是否退出？", 800, 520),
+                      observation("取消(Esc)", 800, 700),
+                      observation("确定(F)", 1080, 700)
+                    ]
+                  : [
+                      observation("自动匹配", 180, 180),
+                      observation("招募", 350, 1100),
+                      observation("离开队伍", 1500, 1080)
+                    ]
         };
       },
       async probe() {
@@ -849,11 +851,11 @@ test("the selected flag color blocks a second flag click before OCR card text", 
     async report() {}
   };
 
-  await assert.rejects(
-    createPatrolTeam(context),
-    /PATROL_FLAG_CLICK_FORBIDDEN_TEAM_CARD/
-  );
-  assert.deepEqual(taps, []);
+  assert.equal(await createPatrolTeam(context), "existing-valid-route");
+  assert.deepEqual(taps, [
+    { x: 1570, y: 1100 },
+    { x: 870, y: 720 }
+  ]);
 });
 
 test("only a yellow task icon with a non-yellow team flag permits the flag click", async () => {
@@ -908,6 +910,7 @@ test("a failed flag click is re-released and retried until the flag turns yellow
   const rechecks = [];
   const sleeps = [];
   const config = patrolConfig();
+  config.patrolTeamUi.flagClickAttempts = 2;
   config.patrolTeamUi.teamCardColor = {
     enabled: true,
     taskIconPoints: [{ x: 48, y: 150 }],
@@ -939,14 +942,16 @@ test("a failed flag click is re-released and retried until the flag turns yellow
       async capture(label) {
         return {
           path: `${label}.png`,
-          observations: label.startsWith("patrol-team-menu-open")
-            ? [observation("创建队伍", 120, 160)]
-            : observationsFor(label)
+          observations: label === "patrol-team-menu-open"
+            ? [observation("入口尚未展开", 120, 160)]
+            : label.startsWith("patrol-team-menu-open-")
+              ? [observation("创建队伍", 120, 160)]
+              : observationsFor(label)
         };
       },
       async probe() {
         probeCalls += 1;
-        if (probeCalls <= 9) {
+        if (probeCalls <= 10) {
           return [warm, cool, cool, cool, cool, cool];
         }
         return [cool, cool, cool, warm, cool, cool];
@@ -968,7 +973,7 @@ test("a failed flag click is re-released and retried until the flag turns yellow
     { x: 48, y: 327 },
     { x: 48, y: 327 }
   ]);
-  assert.equal(rechecks.length, 1);
+  assert.equal(rechecks.length, 0);
   assert.ok(sleeps.filter((ms) => ms === 2000).length >= 2);
 });
 
@@ -998,6 +1003,8 @@ test("an ambiguous initial color may click once but still requires post-click ve
           path: `${label}.png`,
           observations: label === "patrol-team-entry"
             ? [observation("CtrlQ", 20, 300)]
+            : label.startsWith("patrol-team-menu-open")
+              ? [observation("入口尚未展开", 120, 160)]
             : observationsFor(label)
         };
       },
@@ -1029,6 +1036,62 @@ test("an ambiguous initial color may click once but still requires post-click ve
     { x: 48, y: 327 },
     { x: 48, y: 327 }
   ]);
+});
+
+test("post-click team-card OCR accepts a yellow flag when color sampling is unreliable", async () => {
+  const taps = [];
+  const reports = [];
+  const config = patrolConfig();
+  config.patrolTeamUi.teamCardColor = {
+    enabled: true,
+    taskIconPoints: [{ x: 48, y: 150 }],
+    taskIconBackgroundPoints: [{ x: 16, y: 150 }, { x: 80, y: 150 }],
+    teamFlagIconPoints: [{ x: 48, y: 327 }],
+    teamFlagBackgroundPoints: [{ x: 16, y: 327 }, { x: 80, y: 327 }],
+    minimumSaturation: 0.45,
+    minimumLuminance: 0.42,
+    redBlueDelta: 0.2,
+    greenBlueDelta: 0.12,
+    minimumForegroundBackgroundLuminanceDelta: 0.12,
+    minimumForegroundBackgroundChannelDelta: 0.08
+  };
+  const cool = {
+    meanRed: 0.46,
+    meanGreen: 0.42,
+    meanBlue: 0.38,
+    meanSaturation: 0.27
+  };
+  const context = {
+    config,
+    ui: { async tap(point) { taps.push(point); } },
+    adb: { async key() {} },
+    vision: {
+      async capture(label) {
+        return {
+          path: `${label}.png`,
+          observations: label === "patrol-team-menu-open"
+            ? [observation("创建队伍", 120, 160)]
+            : observationsFor(label)
+        };
+      },
+      async probe() {
+        return [cool, cool, cool, cool, cool, cool];
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step) { reports.push(step); }
+  };
+
+  await createPatrolTeam(context);
+
+  assert.deepEqual(taps[0], { x: 48, y: 327 });
+  assert.ok(reports.includes("patrol_flag_click_text_verified"));
+  assert.equal(reports.includes("patrol_flag_click_color_unverified"), false);
 });
 
 test("an existing camp patrol route switches its top objective to book defense before sharing", async () => {
@@ -1135,7 +1198,7 @@ test("an existing team without a patrol route is left before a fresh team is cre
   ]);
 });
 
-test("stale leave OCR after an existing-team exit does not abort fresh creation", async () => {
+test("post-exit OCR is not used as a second state decision before fresh creation", async () => {
   const taps = [];
   const flows = [];
   const reports = [];
@@ -1209,7 +1272,7 @@ test("stale leave OCR after an existing-team exit does not abort fresh creation"
 
   assert.equal(await createPatrolTeam(context), "created");
   assert.deepEqual(flows, []);
-  assert.ok(reports.includes("patrol_existing_team_left_stale_text_recovered"));
+  assert.ok(reports.includes("patrol_existing_team_left"));
   assert.deepEqual(taps, [
     { x: 1570, y: 1100 },
     { x: 48, y: 327 },
