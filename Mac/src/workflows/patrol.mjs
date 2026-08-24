@@ -6,6 +6,21 @@ export async function runPatrol(context, command, bundle, signal) {
   try {
     return await runPatrolWorkflow(context, command, bundle, signal);
   } catch (error) {
+    await context.report(
+      "error",
+      "patrol_failure_reason",
+      `巡逻任务失败：${String(error?.message || error || "未知错误")}`,
+      {
+        errorName: String(error?.name || "Error"),
+        errorMessage: String(error?.message || error || "未知错误"),
+        errorStack: String(error?.stack || "").slice(0, 8_000),
+        teamPhase: context.patrolTeamPhase || null,
+        existingValidRoute: context.patrolExistingValidRoute === true,
+        keepExistingTeam: context.patrolKeepExistingTeam === true,
+        failureCleanupDone: context.patrolFailureCleanupDone === true,
+        suppressScheduledRetry: context.suppressScheduledRetry === true
+      }
+    ).catch(() => undefined);
     const deadlineExceeded =
       Number.isFinite(context.patrolDeadlineAt) &&
       Date.now() >= context.patrolDeadlineAt;
@@ -203,6 +218,7 @@ async function continuePatrolSharesUntilDeadline(
   patrol,
   { progressStart = 0.76 } = {}
 ) {
+  const { report } = context;
   const shareIntervalMs = Math.max(
     1_000,
     (Number(patrol?.shareIntervalMinutes) || 10) * 60_000
@@ -422,11 +438,18 @@ export async function cleanupPatrolTeamOnFailure(context, signal, failure) {
   );
   await tapPatrolMouse(ui, leavePoint, signal);
   await sleep(1_500, signal);
-  const after = await capturePatrolScreen(
+  let after = await capturePatrolScreen(
     vision,
     "patrol-failure-team-after-leave",
     signal
   );
+  const leaveConfirmation = await confirmPatrolLeaveDialog(
+    context,
+    after,
+    signal,
+    "巡逻失败清理"
+  );
+  after = leaveConfirmation.screen;
   const stillVisible = findTextInRegion(
     vision,
     after.observations,
@@ -1356,6 +1379,25 @@ async function resolveExistingPatrolTeam(
     }
     return { mode: "none", screen: current };
   }
+  if (!beforeFlagExpansion && state.danceEvidence) {
+    const danceScan = await scanExistingPatrolDancePages(
+      context,
+      current,
+      signal
+    );
+    if (danceScan?.validRoute) {
+      return {
+        mode: "existing-valid-route",
+        screen: danceScan.screen || current
+      };
+    }
+    current = danceScan?.screen || current;
+    state = await inspectExistingPatrolTeamStateWithColor(
+      context,
+      current,
+      signal
+    );
+  }
   if (state.validRoute) {
     return { mode: "existing-valid-route", screen: current };
   }
@@ -1384,6 +1426,25 @@ async function resolveExistingPatrolTeam(
       current,
       signal
     );
+    if (state.danceEvidence) {
+      const danceScan = await scanExistingPatrolDancePages(
+        context,
+        current,
+        signal
+      );
+      if (danceScan?.validRoute) {
+        return {
+          mode: "existing-valid-route",
+          screen: danceScan.screen || current
+        };
+      }
+      current = danceScan?.screen || current;
+      state = await inspectExistingPatrolTeamStateWithColor(
+        context,
+        current,
+        signal
+      );
+    }
     if (state.validRoute) {
       return { mode: "existing-valid-route", screen: current };
     }
@@ -1744,6 +1805,13 @@ function inspectExistingPatrolTeamState(vision, observations, controls) {
     ],
     cardRegion
   );
+  const danceEvidence = findAnyTextInRegion(
+    vision,
+    observations,
+    controls.existingTeamDanceTexts || ["舞会期间", "舞会中", "已获取奖励"],
+    controls.existingTeamDanceRegion || routeRegion
+  );
+  const dancePaging = detectPatrolDancePaging(vision, observations, controls);
   const waitingOrMatchStatus = findAnyTextInRegion(
     vision,
     observations,
@@ -1791,8 +1859,137 @@ function inspectExistingPatrolTeamState(vision, observations, controls) {
     hasCardFraction,
     panel,
     memberEvidence,
-    cardEvidence
+    cardEvidence,
+    danceEvidence,
+    dancePaging
   };
+}
+
+function detectPatrolDancePaging(vision, observations, controls) {
+  const region = controls.existingTeamDanceRegion || {
+    left: 0,
+    top: 0,
+    right: 760,
+    bottom: 260
+  };
+  const previousRegion = controls.existingTeamDancePreviousRegion || {
+    left: region.left,
+    top: region.top,
+    right: region.left + Math.max(120, (region.right - region.left) * 0.25),
+    bottom: region.bottom
+  };
+  const nextRegion = controls.existingTeamDanceNextRegion || {
+    left: region.right - Math.max(120, (region.right - region.left) * 0.25),
+    top: region.top,
+    right: region.right,
+    bottom: region.bottom
+  };
+  const previous = findAnyTextInRegion(
+    vision,
+    observations,
+    controls.existingTeamDancePreviousTexts || [
+      "<",
+      "‹",
+      "〈",
+      "上一页",
+      "前一页"
+    ],
+    previousRegion
+  );
+  const next = findAnyTextInRegion(
+    vision,
+    observations,
+    controls.existingTeamDanceNextTexts || [
+      ">",
+      "›",
+      "〉",
+      "下一页",
+      "后页"
+    ],
+    nextRegion
+  );
+  return {
+    previous,
+    next,
+    bothPresent: Boolean(previous && next),
+    pageTurn: next || previous || null,
+    pageTurnDirection: next ? "next" : previous ? "previous" : null
+  };
+}
+
+async function scanExistingPatrolDancePages(context, initialScreen, signal) {
+  const { config, ui, vision, report } = context;
+  const controls = config?.patrolTeamUi || {};
+  const maxPages = Math.max(
+    1,
+    Math.min(8, Number(controls.existingTeamDanceMaxPages) || 6)
+  );
+  const sleep = context.sleep || delay;
+  const settleMs = Math.max(
+    2_000,
+    Number(controls.existingTeamDancePageSettleMs) || 2_000
+  );
+  let screen = initialScreen;
+  for (let page = 1; page <= maxPages; page += 1) {
+    const state = inspectExistingPatrolTeamState(
+      vision,
+      screen.observations,
+      controls
+    );
+    if (state.validRoute) {
+      await report(
+        "info",
+        "patrol_existing_dance_route_verified",
+        `已在“舞会期间”队伍卡第 ${page} 页确认“巡逻路线进度”和任务进度；判定为有效巡逻队伍`,
+        { page, maxPages }
+      );
+      return { validRoute: true, screen, page };
+    }
+    if (!state.danceEvidence) {
+      return { validRoute: false, screen, page };
+    }
+    if (!state.dancePaging?.pageTurn) {
+      await report(
+        "warning",
+        "patrol_existing_dance_without_paging",
+        `识别到“${state.danceEvidence.text}”但“舞会期间”行未识别到可用翻页按钮；按无有效巡逻路线处理，不盲点翻页`,
+        {
+          page,
+          previous: state.dancePaging?.previous?.text || null,
+          next: state.dancePaging?.next?.text || null
+        }
+      );
+      return { validRoute: false, screen, page };
+    }
+    if (page >= maxPages) break;
+    const pageTurn = state.dancePaging.pageTurn;
+    const pageTurnPoint = observationCenter(pageTurn);
+    await report(
+      "info",
+      "patrol_existing_dance_page_turn",
+      `第 ${page}/${maxPages} 页看到“${state.danceEvidence.text}”；优先点击${state.dancePaging.pageTurnDirection === "next" ? "右侧“>”" : "左侧“<”"}翻页 (${Math.round(pageTurnPoint.x)},${Math.round(pageTurnPoint.y)}) 后等待 ${settleMs}ms 重读`,
+      {
+        page,
+        maxPages,
+        direction: state.dancePaging.pageTurnDirection,
+        pageTurnPoint
+      }
+    );
+    await tapPatrolMouse(ui, pageTurnPoint, signal);
+    await sleep(settleMs, signal);
+    screen = await capturePatrolScreen(
+      vision,
+      `patrol-existing-dance-page-${page + 1}`,
+      signal
+    );
+  }
+  await report(
+    "warning",
+    "patrol_existing_dance_route_unverified",
+    `已逐页扫描“舞会期间”队伍卡 ${maxPages} 页，仍未识别到“巡逻路线进度”与任务进度；按无有效巡逻路线处理`,
+    { maxPages }
+  );
+  return { validRoute: false, screen };
 }
 
 function patrolTeamMemberCardEvidence(observations, controls) {
@@ -1897,31 +2094,14 @@ async function leaveExistingPatrolTeam(context, initialScreen, signal) {
       `patrol-existing-team-after-leave-click-${attempt}`,
       signal
     );
-    const confirmMatch = findAnyTextInRegion(
-      vision,
-      screen.observations,
-      controls.leaveTeamConfirmTexts || ["确认(F)", "确定(F)", "确认"],
-      confirmRegion
-    );
-    if (confirmMatch) {
-      const confirmPoint = observationCenter(confirmMatch);
-      await report(
-        "warning",
-        "patrol_existing_team_leave_confirm",
-        "已识别退出队伍确认弹窗，点击 OCR 确认按钮完成离队",
-        { confirmPoint }
-      );
-      await tapPatrolMouse(ui, confirmPoint, signal);
-      await sleep(
-        Math.max(500, Number(controls.leaveTeamSettleMs) || 1_500),
-        signal
-      );
-      screen = await capturePatrolScreen(
-        vision,
-        `patrol-existing-team-after-leave-confirm-${attempt}`,
-        signal
-      );
-    }
+    screen = (
+      await confirmPatrolLeaveDialog(
+        context,
+        screen,
+        signal,
+        `已有无效队伍离队第 ${attempt} 次`
+      )
+    ).screen;
     screen = await closePatrolTaskGuideOverlayIfVisible(
       context,
       screen,
@@ -1964,6 +2144,83 @@ async function leaveExistingPatrolTeam(context, initialScreen, signal) {
   throw new Error(
     `PATROL_EXISTING_TEAM_LEAVE_FAILED: 连续 ${maxAttempts} 次 OCR 点击后仍未确认退出已有队伍`
   );
+}
+
+async function confirmPatrolLeaveDialog(context, screen, signal, reason) {
+  const { config, ui, adb, vision, report } = context;
+  const controls = config?.patrolTeamUi || {};
+  const confirmRegion = controls.leaveTeamConfirmRegion || {
+    left: 760,
+    top: 420,
+    right: 1380,
+    bottom: 850
+  };
+  const confirmMatch = findAnyTextInRegion(
+    vision,
+    screen.observations,
+    controls.leaveTeamConfirmTexts || ["确认(F)", "确定(F)", "确认"],
+    confirmRegion
+  );
+  const dialogMatch = findAnyTextInRegion(
+    vision,
+    screen.observations,
+    controls.leaveTeamDialogTexts || [
+      "退出队伍",
+      "离开队伍",
+      "是否退出",
+      "是否离开",
+      "确认离开"
+    ],
+    confirmRegion
+  );
+  if (!confirmMatch && !dialogMatch) {
+    return { screen, present: false, confirmed: false };
+  }
+  if (confirmMatch) {
+    const confirmPoint = observationCenter(confirmMatch);
+    await report(
+      "warning",
+      "patrol_leave_confirmation_detected",
+      `${reason}检测到退出队伍确认框，已 OCR 确认“${confirmMatch.text}”，点击确认后才判定离队`,
+      { confirmPoint, dialogText: dialogMatch?.text || null }
+    );
+    await tapPatrolMouse(ui, confirmPoint, signal);
+  } else if (typeof ui?.sendGameKey === "function") {
+    const keyCode = Number(controls.leaveTeamConfirmKeyCode) || 70;
+    await report(
+      "warning",
+      "patrol_leave_confirmation_key_fallback",
+      `${reason}检测到退出队伍确认框但 OCR 未读出按钮文字；已确认弹窗关键词，发送 F/键码 ${keyCode} 完成确认`,
+      { dialogText: dialogMatch?.text || null, keyCode }
+    );
+    await ui.sendGameKey(keyCode, signal);
+  } else if (typeof adb?.key === "function") {
+    const keyCode = Number(controls.leaveTeamConfirmKeyCode) || 70;
+    await report(
+      "warning",
+      "patrol_leave_confirmation_key_fallback",
+      `${reason}检测到退出队伍确认框但 OCR 未读出按钮文字；已通过 ADB 发送确认键码 ${keyCode}`,
+      { dialogText: dialogMatch?.text || null, keyCode }
+    );
+    await adb.key(keyCode, signal);
+  } else {
+    throw new Error(
+      "PATROL_LEAVE_CONFIRM_UNVERIFIED: 已识别退出队伍确认框，但当前执行器没有 OCR 点击或 F 键确认能力"
+    );
+  }
+  await (context.sleep || delay)(
+    Math.max(2_000, Number(controls.leaveTeamSettleMs) || 2_000),
+    signal
+  );
+  return {
+    screen: await capturePatrolScreen(
+      vision,
+      `patrol-leave-confirmed-${String(reason).replace(/\s+/g, "-")}`,
+      signal
+    ),
+    present: true,
+    confirmed: true
+  };
 }
 
 function patrolCreatorOpen(vision, observations, controls) {
@@ -2260,7 +2517,9 @@ export async function sharePatrolTeam(context, signal) {
       await report(
         "info",
         "patrol_share_skipped_no_target",
-        `连续 ${result.noTargetMenuAttempts} 次点击“招募”均未弹出分享目标选项；当前队伍可能已满员，本次${target.text}分享跳过，不计为任务失败`
+        result.skipReason === "recruit-recovery-exhausted"
+          ? `招募过程中连续 ${result.recruitRecoveryAttempts} 次检测到阻塞弹窗/错误任务界面，已达到 6 次重试上限；本次${target.text}招募跳过，下一次分享间隔继续尝试`
+          : `连续 ${result.noTargetMenuAttempts} 次点击“招募”均未弹出分享目标选项；当前队伍可能已满员，本次${target.text}分享跳过，不计为任务失败`
       );
       return;
     }
@@ -2321,6 +2580,11 @@ async function sharePatrolChannel(context, signal, common, target) {
   };
   let channelMenuVisible = false;
   let noTargetMenuAttempts = 0;
+  let recruitRecoveryAttempts = 0;
+  const maxRecruitRecoveryAttempts = Math.max(
+    6,
+    Math.min(6, Number(controls.recruitRecoveryAttempts) || 6)
+  );
   for (let attempt = 1; attempt <= shareAttempts; attempt += 1) {
     await report(
       "info",
@@ -2389,6 +2653,25 @@ async function sharePatrolChannel(context, signal, common, target) {
       fullTeamTexts,
       fullTeamRegion
     );
+    const immediateInterruption = await handlePatrolRecruitInterruption(
+      context,
+      immediateFullTeamScreen,
+      { attempt, target },
+      signal
+    );
+    if (immediateInterruption) {
+      recruitRecoveryAttempts += 1;
+      if (recruitRecoveryAttempts >= maxRecruitRecoveryAttempts) {
+        return {
+          skipped: true,
+          noTargetMenuAttempts,
+          skipReason: "recruit-recovery-exhausted",
+          recruitRecoveryAttempts
+        };
+      }
+      await sleep(settleMs, signal);
+      continue;
+    }
     if (immediateFullTeamMatch) {
       await report(
         "info",
@@ -2414,6 +2697,25 @@ async function sharePatrolChannel(context, signal, common, target) {
       fullTeamTexts,
       fullTeamRegion
     );
+    const menuInterruption = await handlePatrolRecruitInterruption(
+      context,
+      menuScreen,
+      { attempt, target },
+      signal
+    );
+    if (menuInterruption) {
+      recruitRecoveryAttempts += 1;
+      if (recruitRecoveryAttempts >= maxRecruitRecoveryAttempts) {
+        return {
+          skipped: true,
+          noTargetMenuAttempts,
+          skipReason: "recruit-recovery-exhausted",
+          recruitRecoveryAttempts
+        };
+      }
+      await sleep(settleMs, signal);
+      continue;
+    }
     if (fullTeamMatch) {
       await report(
         "info",
@@ -2512,6 +2814,112 @@ async function sharePatrolChannel(context, signal, common, target) {
   throw new Error(
     `PATROL_SHARE_UNVERIFIED: ${shareAttempts} 轮点击“${target.text}”后未识别到分享成功，不会虚报分享成功`
   );
+}
+
+async function handlePatrolRecruitInterruption(
+  context,
+  screen,
+  { attempt, target },
+  signal
+) {
+  const { config, ui, adb, vision, report } = context;
+  const controls = config?.patrolTeamUi?.share || {};
+  const captainRegion = controls.recruitCaptainTransferRegion || {
+    left: 500,
+    top: 300,
+    right: 1450,
+    bottom: 850
+  };
+  const captainMatch = findAnyTextInRegion(
+    vision,
+    screen.observations,
+    controls.recruitCaptainTransferTexts || [
+      "由于你长时间挂机",
+      "被选为新队长",
+      "新队长"
+    ],
+    captainRegion
+  );
+  if (captainMatch) {
+    const confirmRegion = controls.leaveTeamConfirmRegion || {
+      left: 760,
+      top: 420,
+      right: 1380,
+      bottom: 850
+    };
+    const confirmMatch = findAnyTextInRegion(
+      vision,
+      screen.observations,
+      ["确定(F)", "确认(F)", "确定", "确认"],
+      confirmRegion
+    );
+    if (confirmMatch) {
+      const confirmPoint = observationCenter(confirmMatch);
+      await report(
+        "warning",
+        "patrol_share_captain_transfer_confirm",
+        `第 ${attempt}/${context.config?.patrolTeamUi?.share?.recruitAttempts || 10} 次招募检测到“${captainMatch.text}”队长转移弹窗；OCR 确认“${confirmMatch.text}”，点击确定后重试${target.text}招募`,
+        { confirmPoint, captainText: captainMatch.text }
+      );
+      await tapPatrolMouse(ui, confirmPoint, signal);
+    } else if (typeof ui?.sendGameKey === "function") {
+      const keyCode = 70;
+      await report(
+        "warning",
+        "patrol_share_captain_transfer_key",
+        `第 ${attempt} 次招募检测到队长转移弹窗“${captainMatch.text}”，未读出确认按钮；发送 F 键关闭后重试${target.text}招募`,
+        { keyCode, captainText: captainMatch.text }
+      );
+      await ui.sendGameKey(keyCode, signal);
+    } else if (typeof adb?.key === "function") {
+      await report(
+        "warning",
+        "patrol_share_captain_transfer_key",
+        `第 ${attempt} 次招募检测到队长转移弹窗“${captainMatch.text}”，未读出确认按钮；通过 ADB 发送 F 键后重试${target.text}招募`,
+        { keyCode: 70, captainText: captainMatch.text }
+      );
+      await adb.key(70, signal);
+    } else {
+      throw new Error(
+        "PATROL_RECRUIT_CAPTAIN_TRANSFER_UNVERIFIED: 检测到挂机换队长弹窗，但没有 OCR 确认按钮或 F 键能力"
+      );
+    }
+    await (context.sleep || delay)(2_000, signal);
+    return "captain-transfer";
+  }
+
+  const taskMenuRegion = controls.recruitTaskMenuRegion || {
+    left: 150,
+    top: 80,
+    right: 1850,
+    bottom: 1050
+  };
+  const taskMenuMatch = findAnyTextInRegion(
+    vision,
+    screen.observations,
+    controls.recruitTaskMenuTexts || [
+      "联盟行动",
+      "地图事务",
+      "地图事物",
+      "不明生物",
+      "特训战场"
+    ],
+    taskMenuRegion
+  );
+  if (!taskMenuMatch) return null;
+  const closePoint = controls.recruitTaskMenuClosePoint || {
+    x: 1800,
+    y: 80
+  };
+  await report(
+    "warning",
+    "patrol_share_recruit_task_menu_close",
+    `第 ${attempt} 次点击“招募”误打开任务界面（识别到“${taskMenuMatch.text}”）；点击右上角 X (${Math.round(closePoint.x)},${Math.round(closePoint.y)}) 关闭后重试${target.text}招募`,
+    { closePoint, taskMenuText: taskMenuMatch.text }
+  );
+  await tapPatrolMouse(ui, closePoint, signal);
+  await (context.sleep || delay)(2_000, signal);
+  return "task-menu";
 }
 
 async function findRecruitControlForShare(

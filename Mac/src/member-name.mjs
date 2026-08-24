@@ -36,6 +36,18 @@ export function isMemberProfessionArtifact(value, profession) {
   return Boolean(name && role && name === role);
 }
 
+export function isMemberSymbolOnlyName(value) {
+  const text = String(value || "")
+    .trim()
+    .normalize("NFKC")
+    .replace(/\s+/g, "");
+  return Boolean(
+    text &&
+    !/[\u3400-\u9fff\p{L}\p{N}]/u.test(text) &&
+    /[\p{S}\p{P}\p{M}]/u.test(text)
+  );
+}
+
 export function isPlausibleMemberName(value) {
   const text = String(value || "").trim();
   if (!text || text.length > 24) return false;

@@ -248,6 +248,57 @@ test("patrol failures leave an existing team through the OCR-confirmed red butto
   assert.ok(reports.includes("patrol_failure_team_left"));
 });
 
+test("patrol failure cleanup confirms the leave-team dialog before verifying exit", async () => {
+  const taps = [];
+  let captures = 0;
+  const context = {
+    patrolTeamPhase: "created",
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    vision: {
+      async capture() {
+        captures += 1;
+        return {
+          path: "failure-team-confirm.png",
+          observations:
+            captures === 1
+              ? [observation("离开队伍", 1500, 1080)]
+              : captures === 2
+                ? [
+                    observation("离开队伍", 1500, 1080),
+                    observation("确定(F)", 980, 620)
+                  ]
+                : []
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report() {},
+    async sleep() {}
+  };
+
+  assert.equal(
+    await cleanupPatrolTeamOnFailure(
+      context,
+      undefined,
+      new Error("route not verified")
+    ),
+    true
+  );
+  assert.deepEqual(taps, [
+    { x: 1570, y: 1100 },
+    { x: 1050, y: 640 }
+  ]);
+});
+
 test("patrol team creation follows only region-verified live-device steps", async () => {
   const taps = [];
   const reports = [];
@@ -587,6 +638,122 @@ test("an existing patrol team is recognized without toggling the flag", async ()
 
   assert.equal(await createPatrolTeam(context), "existing-valid-route");
   assert.deepEqual(taps, []);
+});
+
+test("dance-status team cards scan both paging arrows before accepting a patrol route", async () => {
+  const taps = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    adb: { async key() {} },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return { path: `${label}.png`, observations: [observation("CtrlQ", 20, 300)] };
+        }
+        if (label === "patrol-team-menu-open") {
+          return {
+            path: `${label}.png`,
+            observations: [
+              observation("自动匹配", 180, 180),
+              observation("舞会期间", 180, 220),
+              observation("<", 20, 220),
+              observation(">", 650, 220)
+            ]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: [
+            observation("自动匹配", 180, 180),
+            observation("巡逻路线进度", 180, 220),
+            observation("我的任务进度", 180, 260),
+            observation("<", 20, 220),
+            observation(">", 650, 220)
+          ]
+        };
+      },
+      async captureAccurateTransient() {
+        return { path: null, observations: [] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report() {},
+    async sleep() {}
+  };
+
+  assert.equal(await createPatrolTeam(context), "existing-valid-route");
+  assert.deepEqual(taps, [
+    { x: 48, y: 327 },
+    { x: 720, y: 240 }
+  ]);
+});
+
+test("dance-status cards use the left arrow only when the right arrow is absent", async () => {
+  const taps = [];
+  let page = 0;
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+        page += 1;
+      }
+    },
+    adb: { async key() {} },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return { path: `${label}.png`, observations: [observation("CtrlQ", 20, 300)] };
+        }
+        if (label === "patrol-team-menu-open") {
+          return {
+            path: `${label}.png`,
+            observations: [
+              observation("自动匹配", 180, 180),
+              observation("舞会期间", 180, 220),
+              observation("<", 20, 220)
+            ]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: page > 0
+            ? [
+                observation("自动匹配", 180, 180),
+                observation("巡逻路线进度", 180, 220),
+                observation("我的任务进度", 180, 260),
+                observation("<", 20, 220)
+              ]
+            : [observation("自动匹配", 180, 180), observation("舞会期间", 180, 220), observation("<", 20, 220)]
+        };
+      },
+      async captureAccurateTransient() {
+        return { path: null, observations: [] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report() {},
+    async sleep() {}
+  };
+
+  assert.equal(await createPatrolTeam(context), "existing-valid-route");
+  assert.deepEqual(taps, [
+    { x: 48, y: 327 },
+    { x: 90, y: 240 }
+  ]);
 });
 
 test("route and task progress alone never masquerade as an existing team", async () => {
@@ -1606,6 +1773,65 @@ test("patrol share closes the invite card and retries recruit", async () => {
   assert.deepEqual(taps, [
     { x: 343, y: 1128 },
     { x: 1450, y: 920 },
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 },
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 }
+  ]);
+});
+
+test("patrol share closes an accidental task menu and retries recruit", async () => {
+  const taps = [];
+  let campMenus = 0;
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    adb: {},
+    vision: {
+      async capture(label) {
+        if (label === "patrol-share-team-page" || label.includes("-recruit-verify-")) {
+          return { path: "team.png", observations: [observation("招募", 300, 1100)] };
+        }
+        if (label.includes("-full-team-immediate-")) {
+          return { path: "toast.png", observations: [] };
+        }
+        if (label.startsWith("patrol-share-camp-channel-menu")) {
+          campMenus += 1;
+          return {
+            path: "camp.png",
+            observations:
+              campMenus === 1
+                ? [observation("联盟行动", 500, 300)]
+                : [observation("营地频道", 350, 870)]
+          };
+        }
+        if (label.startsWith("patrol-share-scene-channel-menu")) {
+          return { path: "scene.png", observations: [observation("场景频道", 350, 870)] };
+        }
+        if (label.includes("-camp-result-")) {
+          return { path: "camp-result.png", observations: [observation("分享成功", 780, 210)] };
+        }
+        return { path: "scene-result.png", observations: [observation("分享成功", 780, 210)] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  context.config.patrolTeamUi.share.recruitTaskMenuClosePoint = { x: 1800, y: 80 };
+  await sharePatrolTeam(context);
+  assert.deepEqual(taps, [
+    { x: 343, y: 1128 },
+    { x: 1800, y: 80 },
     { x: 343, y: 1128 },
     { x: 420, y: 890 },
     { x: 343, y: 1128 },

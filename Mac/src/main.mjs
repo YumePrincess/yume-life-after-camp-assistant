@@ -448,7 +448,36 @@ async function executeCommand(command, signal) {
   } catch (error) {
     const interrupted = signal.aborted;
     terminalState = interrupted ? "interrupted" : "failed";
-    const terminalSourceMessage = interrupted ? "任务已由管理员中断" : error.message;
+    const failureReason = interrupted
+      ? "任务已由管理员中断"
+      : String(error?.message || error || "未知错误");
+    const failureDetail = interrupted
+      ? { interrupted: true }
+      : {
+          errorName: String(error?.name || "Error"),
+          errorMessage: failureReason,
+          errorStack: String(error?.stack || "").slice(0, 8_000),
+          taskKey,
+          workflowPhase: context.patrolTeamPhase || null,
+          patrolDeadlineAt: context.patrolDeadlineAt || null,
+          patrolExistingValidRoute: context.patrolExistingValidRoute === true,
+          patrolKeepExistingTeam: context.patrolKeepExistingTeam === true,
+          patrolFailureCleanupDone: context.patrolFailureCleanupDone === true,
+          suppressScheduledRetry: context.suppressScheduledRetry === true,
+          suppressScheduledRetryReason:
+            context.suppressScheduledRetryReason || null
+        };
+    if (!interrupted) {
+      console.error(
+        JSON.stringify({
+          event: "task_failure_detailed",
+          runId: command.runId,
+          commandId: command.id,
+          ...failureDetail
+        })
+      );
+    }
+    const terminalSourceMessage = failureReason;
     const terminalMessages = localizedTaskEventMessages("finished", terminalSourceMessage);
     terminalMessage = terminalMessages[taskLocale];
     const terminalDetail = context.suppressScheduledRetry
@@ -464,6 +493,7 @@ async function executeCommand(command, signal) {
       currentStep: null,
       detail: {
         ...(terminalDetail || {}),
+        ...failureDetail,
         locale: taskLocale,
         localizedMessages: terminalMessages
       },
@@ -473,6 +503,7 @@ async function executeCommand(command, signal) {
         message: terminalMessage,
         detail: {
           ...(terminalDetail || {}),
+          ...failureDetail,
           locale: taskLocale,
           localizedMessages: terminalMessages
         }

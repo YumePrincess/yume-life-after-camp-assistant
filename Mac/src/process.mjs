@@ -33,14 +33,23 @@ export async function runFile(file, args = [], options = {}) {
 export function delay(ms, signal) {
   if (signal?.aborted) return Promise.reject(signal.reason || new Error("Interrupted"));
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason || new Error("Interrupted"));
-      },
-      { once: true }
-    );
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      if (timer !== null) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const onAbort = () =>
+      finish(reject, signal.reason || new Error("Interrupted"));
+    timer = setTimeout(() => finish(resolve), ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    // Abort can happen between the initial check and listener registration.
+    if (signal?.aborted) onAbort();
   });
 }

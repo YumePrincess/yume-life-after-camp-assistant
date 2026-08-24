@@ -7,6 +7,7 @@ import {
   isMemberAvatarArtifact,
   isMemberIdentityBadge,
   isMemberProfessionArtifact,
+  isMemberSymbolOnlyName,
   isPlausibleMemberName
 } from "./member-name.mjs";
 import { isStaffSeatPlaceholder, parseTable } from "./table-parser.mjs";
@@ -821,7 +822,9 @@ export class Vision {
         (row) =>
           !isPlausibleMemberName(row.identity.name) ||
           isMemberAvatarArtifact(row.identity.name) ||
-          isMemberProfessionArtifact(row.identity.name, row.profession)
+          isMemberProfessionArtifact(row.identity.name, row.profession) ||
+          (isMemberSymbolOnlyName(row.identity.name) &&
+            String(row.profession || "").trim())
       );
       if (rowsNeedingNameRecovery.length) {
         await Promise.all(

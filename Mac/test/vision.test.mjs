@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { writeFile } from "node:fs/promises";
 import {
   inferMemberIdentity,
   isPlausibleMemberName,
@@ -11,7 +12,8 @@ import { Vision } from "../src/vision.mjs";
 import {
   isMemberAvatarArtifact,
   isMemberIdentityBadge,
-  isMemberProfessionArtifact
+  isMemberProfessionArtifact,
+  isMemberSymbolOnlyName
 } from "../src/member-name.mjs";
 
 test("game-mouse icon detection uses two pixel probes and OCR only as a conservative fallback", async () => {
@@ -282,6 +284,62 @@ test("member profession text cannot replace a missing symbol-only name", () => {
   );
   assert.equal(isMemberProfessionArtifact("-😊-", "特级步枪兵王"), false);
   assert.equal(isPlausibleMemberName("-😊-"), true);
+  assert.equal(isMemberSymbolOnlyName("-😊-"), true);
+  assert.equal(isMemberSymbolOnlyName("-😊·"), true);
+  assert.equal(isMemberSymbolOnlyName("特级步枪兵王"), false);
+});
+
+test("member row recovery preserves a pure-symbol name at every visible row position", async () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ],
+    pagination: { rowsPerPage: 5, rowHeightPx: 95 }
+  };
+  const imagePath = "/private/tmp/member-symbol-position.png";
+  await writeFile(
+    imagePath,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  for (const missingIndex of [0, 1, 2, 3, 4]) {
+    const vision = new Vision({
+      adb: { screenWidth: 1920, screenHeight: 1200 },
+      vision: {},
+      localVisionModel: { enabled: true, transport: "http" }
+    }, {});
+    vision.advisor.extractMemberName = async () => "-😊·";
+    vision.ocrRegion = async (_path, region) => {
+      if (region.left < 700 && region.right > 700) {
+        return Array.from({ length: 5 }, (_, index) => {
+          const y = 315 + index * 95;
+          return [
+            { text: index === missingIndex ? "" : `成员${index + 1}`, x: 320, y, width: 70, height: 24 },
+            { text: "特级步枪兵王", x: 700, y, width: 180, height: 24 },
+            { text: "在线", x: 1200, y, width: 40, height: 24 }
+          ];
+        }).flat().filter((item) => item.text);
+      }
+      return [];
+    };
+
+    const rows = await vision.extractTableRows(
+      imagePath,
+      definition,
+      `member-symbol-position-${missingIndex + 1}`
+    );
+
+    assert.equal(rows.length, 5, `missing row ${missingIndex + 1}`);
+    assert.equal(rows[missingIndex].name, "-😊·", `missing row ${missingIndex + 1}`);
+  }
 });
 
 test("macOS 27 bottom-edge crops shift inward instead of silently returning the full frame", () => {
