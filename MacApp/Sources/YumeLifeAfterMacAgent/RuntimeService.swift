@@ -171,6 +171,12 @@ actor RuntimeService {
             var object = try JSONSerialization.jsonObject(with: Data(contentsOf: config)) as! [String: Any]
             var server = object["server"] as? [String: Any] ?? [:]
             var changed = false
+            if migrateMissingFlowDefinitions(
+                &object,
+                from: runtime.appending(path: "config.example.json")
+            ) {
+                changed = true
+            }
             if object.removeValue(forKey: "memberKick") != nil {
                 changed = true
             }
@@ -412,6 +418,35 @@ actor RuntimeService {
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: config, options: .atomic)
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path)
+    }
+
+    private func migrateMissingFlowDefinitions(
+        _ object: inout [String: Any],
+        from template: URL
+    ) -> Bool {
+        guard let data = try? Data(contentsOf: template),
+              let decoded = try? JSONSerialization.jsonObject(with: data),
+              let templateObject = decoded as? [String: Any],
+              let templateFlows = templateObject["flows"] as? [String: Any],
+              !templateFlows.isEmpty else {
+            return false
+        }
+
+        var flows = object["flows"] as? [String: Any] ?? [:]
+        var changed = false
+        for (name, definition) in templateFlows {
+            guard flows[name] == nil,
+                  let actions = definition as? [[String: Any]],
+                  !actions.isEmpty else {
+                continue
+            }
+            flows[name] = actions
+            changed = true
+        }
+        if changed {
+            object["flows"] = flows
+        }
+        return changed
     }
 
     private func migratePatrolSettings(_ object: inout [String: Any]) -> Bool {
