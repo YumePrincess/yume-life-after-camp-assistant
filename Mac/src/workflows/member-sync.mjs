@@ -76,11 +76,9 @@ export async function runContributionSync(context, command, _bundle, signal) {
     );
   }
   const expectedMemberCount = memberRoster.length;
-  const scanStats = { scannedNames: [] };
   await updateWorkflowProgress(context, 0.04, "contribution_prepare");
   const capturedRows = await captureContribution(context, signal, {
     expectedCount: expectedMemberCount,
-    scanStats,
     progressRange: { start: 0.08, end: 0.72, step: "contribution_scan" }
   });
   const alignedRows = alignContributionRowsToRoster(capturedRows, memberRoster);
@@ -116,9 +114,7 @@ export async function runContributionSync(context, command, _bundle, signal) {
       matched,
       ignored: ignored + locallyFiltered,
       ambiguous: Number(result?.ambiguous) || 0,
-      countMismatch,
-      scannedNames: scanStats.scannedNames,
-      scannedNameCount: scanStats.scannedNames.length
+      countMismatch
     }
   );
 }
@@ -129,8 +125,7 @@ export async function runInactivitySync(context, command, bundle, signal) {
     Number(bundle?.campConfig?.inactivityWarningDays) || 1
   );
   await updateWorkflowProgress(context, 0.04, "activity_prepare");
-  const scanStats = { scannedNames: [] };
-  const scanOptions = { minimumInactiveDays, scanStats };
+  const scanOptions = { minimumInactiveDays };
   const rows = normalizeActivity(
     await captureActivity(context, true, signal, {
       ...scanOptions,
@@ -167,9 +162,7 @@ export async function runInactivitySync(context, command, bundle, signal) {
       recognized: rows.length,
       matched,
       ignored,
-      ambiguous,
-      scannedNames: scanStats.scannedNames,
-      scannedNameCount: scanStats.scannedNames.length
+      ambiguous
     }
   );
 }
@@ -254,7 +247,6 @@ export async function captureContribution(context, signal, options = {}) {
     context.config.tables.contribution,
     signal,
     {
-      ...options,
       expectedCount,
       progressRange: scanProgressRange
     }
@@ -486,8 +478,7 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
       formalTotal: memberCountBreakdown.formalTotal,
       sailingCurrent: memberCountBreakdown.sailingCurrent,
       sailingTotal: memberCountBreakdown.sailingTotal,
-      total: expectedMembers,
-      localVisionVerified: memberCountBreakdown.localVisionVerified === true
+      total: expectedMembers
     }
   );
   const scanProgressRange = progressRangeSlice(options.progressRange, 0.1);
@@ -645,16 +636,8 @@ export async function capturePagedTable(
   const contributionNames = new Set();
   const memberDetailsMode = label === "member-details";
   const contributionTableMode = label.startsWith("member-contribution");
-  const activityTableMode = label.startsWith("member-activity");
   const alignedPagedTableMode =
-    contributionTableMode || activityTableMode;
-  const localVisionEnabled =
-    context.config?.localVisionModel?.enabled === true ||
-    vision?.advisor?.enabled === true;
-  const localVisionPageRead =
-    localVisionEnabled &&
-    typeof vision.extractTableRows === "function" &&
-    (memberDetailsMode || contributionTableMode || activityTableMode);
+    contributionTableMode || label.startsWith("member-activity");
   if (alignedPagedTableMode) {
     definition = withAlignedPagedTableCalibration(
       definition,
@@ -846,7 +829,7 @@ export async function capturePagedTable(
         memberDetailsMode &&
         (attemptRows.length < minimumRowsPerPage || sailingTitleLeak);
       const activityNeedsRecovery =
-        activityTableMode &&
+        label.startsWith("member-activity") &&
         attemptRows.length > 0 &&
         (attemptRows.length < minimumRowsPerPage ||
           attemptRows.some(
@@ -855,15 +838,13 @@ export async function capturePagedTable(
                 normalizeActivity([row])[0]?.inactiveDays
               )
           ));
-      const shouldRereadWithLocalVision = localVisionPageRead;
       if (
         (!attemptRows.length ||
           (definition.extractionMode === "hybrid" &&
             attemptRows.length < minimumRowsPerPage) ||
           contributionNeedsRecovery ||
           shouldRequestMemberAdvisor ||
-          activityNeedsRecovery ||
-          shouldRereadWithLocalVision) &&
+          activityNeedsRecovery) &&
         typeof vision.extractTableRows === "function"
       ) {
         if (shouldRequestMemberAdvisor) {
@@ -887,70 +868,18 @@ export async function capturePagedTable(
             }
           );
         }
-        if (shouldRereadWithLocalVision) {
-          const tableName = memberDetailsMode
-            ? "成员资料"
-            : contributionTableMode
-              ? "贡献"
-              : "斩杀预警";
-          await report(
-            "info",
-            "local_model_table_reread",
-            `第 ${page + 1} 页调用 Qwen 本地视觉辅助模型重读${tableName}表；当前 OCR 成员：${attemptRows.map((row) => row.name).filter(Boolean).join("、") || "无"}`,
-            {
-              page: page + 1,
-              table: tableName,
-              forceLocalVision: true,
-              nativeNames: attemptRows.map((row) => row.name).filter(Boolean)
-            }
-          );
-        }
         const recoveredRows = await vision.extractTableRows(
           attemptFrame.path,
           pageDefinition,
           attemptLabel,
           signal,
           shouldRequestMemberAdvisor
-            ? {
-                forceMemberAdvisor: true,
-                ...(shouldRereadWithLocalVision
-                  ? { forceLocalVision: true }
-                  : {})
-              }
+            ? { forceMemberAdvisor: true }
             : activityNeedsRecovery
-              ? {
-                  forceActivityRecovery: true,
-                  ...(shouldRereadWithLocalVision
-                    ? { forceLocalVision: true, forceActivityVision: true }
-                    : {})
-                }
-            : contributionNeedsRecovery
-              ? {
-                  forceContributionRecovery: true,
-                  ...(shouldRereadWithLocalVision
-                    ? {
-                        forceLocalVision: true,
-                        forceContributionVision: true
-                      }
-                    : {})
-                }
-              : shouldRereadWithLocalVision
-                ? memberDetailsMode
-                  ? {
-                      forceLocalVision: true,
-                      forceMemberAdvisor: true
-                    }
-                  : contributionTableMode
-                    ? {
-                        forceLocalVision: true,
-                        forceContributionVision: true
-                      }
-                    : {
-                        forceLocalVision: true,
-                        forceActivityVision: true,
-                        forceActivityRecovery: true
-                      }
-                : undefined
+              ? { forceActivityRecovery: true }
+              : contributionNeedsRecovery
+                ? { forceContributionRecovery: true }
+            : undefined
         ).catch(async (error) => {
           await report(
             "warning",
@@ -1076,22 +1005,6 @@ export async function capturePagedTable(
           if (!recoveredSelection.reachedBoundary) break;
         }
       }
-    }
-    const pagePlayerNames = rows
-      .map((row) => String(row?.name || "").trim())
-      .filter(Boolean);
-    appendScanNames(options.scanStats?.scannedNames, pagePlayerNames);
-    if (contributionTableMode || activityTableMode) {
-      await report(
-        "info",
-        `${label}_page_names`,
-        `第 ${page + 1} 页扫描到成员：${pagePlayerNames.join("、") || "无"}`,
-        {
-          page: page + 1,
-          names: pagePlayerNames,
-          count: pagePlayerNames.length
-        }
-      );
     }
     if (
       alignedPagedTableMode &&
@@ -2503,20 +2416,6 @@ function contributionNameKey(value) {
     .normalize("NFKC")
     .toLocaleLowerCase()
     .replace(/\s+/g, "");
-}
-
-function appendScanNames(target, names) {
-  if (!Array.isArray(target)) return;
-  const seen = new Set(
-    target.map((name) => contributionNameKey(name)).filter(Boolean)
-  );
-  for (const name of names || []) {
-    const text = String(name || "").trim();
-    const key = contributionNameKey(text);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    target.push(text);
-  }
 }
 
 function reconcileMemberDetailRows(rows, expectedCount = null) {
