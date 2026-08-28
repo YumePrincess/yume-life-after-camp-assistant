@@ -135,6 +135,62 @@ export class LocalVisionAdvisor {
     );
   }
 
+  async extractMemberCounts(imagePath, signal, { ocrHint = null } = {}) {
+    if (!this.enabled || this.config.transport !== "http") return null;
+    const prompt = [
+      "复核《明日之后》营地成员页顶部人数区域。图片只包含顶部人数栏，请以图像为准，不要猜测。",
+      "读取正式市民formal和启航市民sailing两组分数，每组分别返回current（在线人数）和total（总人数）。current必须小于或等于total。",
+      "启航市民的格式一定是N/A：N为在线人数、A为启航市民总数，N和A都在0到10之间；除了10以外都只有一位数字，不会显示01、02。",
+      "紧挨分数的圆圈i是信息按钮，不是数字：0i、1i、2i分别仍是0、1、2，绝不能拼成01、11、21；10i仍是10，绝不能读成101。",
+      "正式市民总数最多110。不要把两个分数相加到任何一组，不要读取表格行、按钮或其他数字。",
+      ocrHint
+        ? `Apple OCR初读仅供交叉检查，不能照抄：${JSON.stringify(ocrHint)}。`
+        : "",
+      '只返回一行JSON且不要Markdown：{"formalCurrent":0,"formalTotal":0,"sailingCurrent":0,"sailingTotal":0}'
+    ].filter(Boolean).join("\n");
+    const parsed = await requestHttp(
+      this.config,
+      imagePath,
+      prompt,
+      { maxTokens: 128, resizeShape: [128, 640] },
+      signal
+    );
+    const formal = parsed?.formal || parsed?.formalCitizens || {};
+    const sailing = parsed?.sailing || parsed?.sailingCitizens || {};
+    const result = {
+      formalCurrent: strictVisionCount(
+        parsed?.formalCurrent ?? formal.current,
+        110,
+        0
+      ),
+      formalTotal: strictVisionCount(
+        parsed?.formalTotal ?? formal.total,
+        110,
+        1
+      ),
+      sailingCurrent: strictVisionCount(
+        parsed?.sailingCurrent ?? sailing.current,
+        10,
+        0
+      ),
+      sailingTotal: strictVisionCount(
+        parsed?.sailingTotal ?? sailing.total,
+        10,
+        0
+      )
+    };
+    if (
+      Object.values(result).some((value) => value === null) ||
+      result.formalCurrent > result.formalTotal ||
+      result.sailingCurrent > result.sailingTotal
+    ) {
+      throw new Error(
+        `Local vision model returned invalid member counts: ${JSON.stringify(parsed).slice(0, 1200)}`
+      );
+    }
+    return result;
+  }
+
   async extractTable(
     imagePath,
     {
@@ -437,6 +493,20 @@ function tableNumber(value) {
   const digits = String(value ?? "").replace(/[^\d-]/g, "");
   const parsed = Number.parseInt(digits, 10);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function strictVisionCount(value, maximum, minimum) {
+  if (typeof value === "number") {
+    if (maximum <= 10 && value === 101) return 10;
+    return Number.isInteger(value) && value >= minimum && value <= maximum
+      ? value
+      : null;
+  }
+  const text = String(value ?? "").trim();
+  if (!/^(?:0|[1-9]\d*)$/.test(text)) return null;
+  const parsed = Number.parseInt(text, 10);
+  if (maximum <= 10 && parsed === 101) return 10;
+  return parsed >= minimum && parsed <= maximum ? parsed : null;
 }
 
 function focusedRule(expectedState, taskHint) {

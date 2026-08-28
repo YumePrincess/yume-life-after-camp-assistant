@@ -335,6 +335,7 @@ export class Vision {
     let lastError;
     const memberSamples = [];
     const citizenSamples = [];
+    let localHeaderVerificationAttempted = false;
     for (let attempt = 1; attempt <= 6; attempt += 1) {
       // A new frame is essential here. Re-running OCR over the same image only
       // repeats the same bad segmentation and was the reason five consecutive
@@ -464,13 +465,45 @@ export class Vision {
             { minimumCapacity: 0 }
           );
         }
-        if (memberFraction !== null && citizenFraction !== null) {
+        const ocrBreakdown = {
+          formalCurrent: memberFraction?.current ?? null,
+          formalTotal: memberFraction?.capacity ?? null,
+          sailingCurrent: citizenFraction?.current ?? null,
+          sailingTotal: citizenFraction?.capacity ?? null
+        };
+        // OCR is the first pass. When configured, verify the isolated header
+        // once with Qwen before its result controls pagination. This is also
+        // allowed when OCR could not parse one fraction, so a visible 0/0
+        // sailing-citizen value can recover instead of blocking the task.
+        let localBreakdown = null;
+        if (
+          !localHeaderVerificationAttempted &&
+          this.advisor.enabled &&
+          typeof this.advisor.extractMemberCounts === "function"
+        ) {
+          localHeaderVerificationAttempted = true;
+          localBreakdown = await this.#verifyMemberHeaderCounts(
+            frame.path,
+            countRegions.header,
+            attempt,
+            signal,
+            ocrBreakdown
+          );
+        }
+        const breakdown = localBreakdown ||
+          (memberFraction !== null && citizenFraction !== null
+            ? {
+                formalCurrent: memberFraction.current,
+                formalTotal: memberFraction.capacity,
+                sailingCurrent: citizenFraction.current,
+                sailingTotal: citizenFraction.capacity
+              }
+            : null);
+        if (breakdown) {
           return {
-            formalCurrent: memberFraction.current,
-            formalTotal: memberFraction.capacity,
-            sailingCurrent: citizenFraction.current,
-            sailingTotal: citizenFraction.capacity,
-            total: memberFraction.capacity + citizenFraction.capacity
+            ...breakdown,
+            total: breakdown.formalTotal + breakdown.sailingTotal,
+            ...(localBreakdown ? { localVisionVerified: true } : {})
           };
         }
       } catch (error) {
@@ -498,6 +531,38 @@ export class Vision {
   async readMemberExpectedTotal(signal) {
     const breakdown = await this.readMemberExpectedBreakdown(signal);
     return breakdown.total;
+  }
+
+  async #verifyMemberHeaderCounts(
+    imagePath,
+    region,
+    attempt,
+    signal,
+    ocrBreakdown
+  ) {
+    if (
+      !this.advisor.enabled ||
+      typeof this.advisor.extractMemberCounts !== "function"
+    ) {
+      return null;
+    }
+    const cropPath = resolve(
+      this.snapshotDir,
+      `${String(++this.sequence).padStart(4, "0")}-member-count-vision-${attempt}.png`
+    );
+    this.taskPaths.add(cropPath);
+    try {
+      await this.#cropImage(imagePath, region, cropPath, signal);
+      return await this.advisor.extractMemberCounts(cropPath, signal, {
+        ocrHint: ocrBreakdown
+      });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return null;
+    } finally {
+      this.taskPaths.delete(cropPath);
+      await rm(cropPath, { force: true });
+    }
   }
 
   async #extractContributionRows(
@@ -1696,7 +1761,7 @@ export function parsePopulationFraction(
   const minimumCapacity = Number.isFinite(Number(options.minimumCapacity))
     ? Number(options.minimumCapacity)
     : 1;
-  const candidates = parsePopulationCounts(observations).filter(
+  const candidates = parsePopulationCounts(observations, maximumCapacity).filter(
     (item) =>
       item.capacity >= minimumCapacity &&
       item.capacity <= maximumCapacity
@@ -1704,26 +1769,80 @@ export function parsePopulationFraction(
   return candidates[0] ?? null;
 }
 
-function parsePopulationCounts(observations) {
-  const joined = [...(observations || [])]
-    .sort((left, right) => left.x - right.x)
-    .map((item) => String(item.text || ""))
-    .join("")
+function parsePopulationCounts(observations, maximumCapacity = 110) {
+  const sorted = [...(observations || [])]
+    .filter((item) => String(item?.text || "").trim())
+    .sort((left, right) => Number(left?.x || 0) - Number(right?.x || 0));
+  const candidates = [];
+  const addCandidate = (currentDigits, capacityDigits) => {
+    const current = normalizePopulationDigits(currentDigits, maximumCapacity);
+    const capacity = normalizePopulationDigits(capacityDigits, maximumCapacity);
+    if (current === null || capacity === null) return;
+    if (current >= 0 && capacity >= 0 && current <= capacity) {
+      candidates.push({ current, capacity });
+    }
+  };
+
+  for (let index = 0; index < sorted.length; index += 1) {
+    const text = normalizePopulationText(sorted[index]?.text);
+    // Prefer a fraction contained in one OCR token. The adjacent info icon
+    // is deliberately not part of this token and must never become a digit.
+    const complete = text.match(/(\d{1,3})\/(\d{1,3})/);
+    if (complete) {
+      addCandidate(complete[1], complete[2]);
+      continue;
+    }
+
+    const slash = text.indexOf("/");
+    if (slash >= 0) {
+      const leftDigits = text.slice(0, slash).match(/(\d{1,3})$/)?.[1] || "";
+      const rightDigits = text.slice(slash + 1).match(/^(\d{1,3})/)?.[1] || "";
+      if (leftDigits && rightDigits) {
+        addCandidate(leftDigits, rightDigits);
+        continue;
+      }
+      // OCR may split `0/5` into `0/` and `5（`. Only consume the first
+      // digit run from the immediately adjacent token needed to complete the
+      // fraction; standalone `0i`, `1i`, `2i` remain unrelated tokens.
+      if (leftDigits && !rightDigits) {
+        const nextDigits = normalizePopulationText(sorted[index + 1]?.text)
+          .match(/^(\d{1,3})/)?.[1] || "";
+        addCandidate(leftDigits, nextDigits);
+      }
+      continue;
+    }
+
+    // The slash itself may be a separate OCR token: `0` followed by `/0`.
+    // This is the only other cross-token combination permitted.
+    if (/^\d{1,3}$/.test(text)) {
+      const next = normalizePopulationText(sorted[index + 1]?.text);
+      const splitRight = next.match(/^\/(\d{1,3})/)?.[1] || "";
+      if (splitRight) addCandidate(text, splitRight);
+    }
+  }
+  return candidates;
+}
+
+function normalizePopulationText(value) {
+  return String(value || "")
+    .trim()
     .replace(/\s+/g, "")
+    .replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0))
     .replace(/[OoＯｏ]/g, "0")
     .replace(/[／]/g, "/");
-  return [...joined.matchAll(/(\d{1,3})\/(\d{1,3})/g)]
-    .map((match) => ({
-      current: Number.parseInt(match[1], 10),
-      capacity: Number.parseInt(match[2], 10)
-    }))
-    .filter(
-      (item) =>
-        Number.isFinite(item.current) &&
-        Number.isFinite(item.capacity) &&
-        item.current >= 0 &&
-        item.current <= item.capacity
-    );
+}
+
+function normalizePopulationDigits(value, maximumCapacity) {
+  const digits = String(value || "").match(/^\d{1,3}$/)?.[0];
+  if (!digits) return null;
+  const numeric = Number.parseInt(digits, 10);
+  if (!Number.isFinite(numeric)) return null;
+  // A trailing info-button stroke is commonly attached to `10` as `101`.
+  // Only the sailing-citizen range may use this repair; 101 is a valid formal
+  // citizen count and must remain 101 there.
+  if (maximumCapacity <= 10 && numeric === 101) return 10;
+  if (maximumCapacity <= 10 && numeric > 10) return null;
+  return numeric;
 }
 
 function observationsInHorizontalRegion(observations, region) {

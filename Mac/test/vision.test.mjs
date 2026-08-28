@@ -425,6 +425,53 @@ test("accepts zero online citizens and split OCR fragments", () => {
   );
 });
 
+test("sailing population parsing never absorbs the adjacent info icon", () => {
+  assert.deepEqual(
+    parsePopulationFraction(
+      [
+        { text: "0/0", x: 475 },
+        { text: "i", x: 515 },
+        { text: "1", x: 540 }
+      ],
+      10,
+      { minimumCapacity: 0 }
+    ),
+    { current: 0, capacity: 0 }
+  );
+  assert.deepEqual(
+    parsePopulationFraction([{ text: "0/101", x: 475 }], 10, {
+      minimumCapacity: 0
+    }),
+    { current: 0, capacity: 10 }
+  );
+  assert.deepEqual(
+    parsePopulationFraction([{ text: "10/101", x: 475 }], 10, {
+      minimumCapacity: 0
+    }),
+    { current: 10, capacity: 10 }
+  );
+  assert.equal(
+    parsePopulationFraction(
+      [
+        { text: "0i", x: 475 },
+        { text: "1i", x: 500 },
+        { text: "2i", x: 525 }
+      ],
+      10,
+      { minimumCapacity: 0 }
+    ),
+    null
+  );
+  assert.deepEqual(
+    parsePopulationFraction(
+      [{ text: "0/", x: 475 }, { text: "0", x: 500 }, { text: "i", x: 525 }],
+      10,
+      { minimumCapacity: 0 }
+    ),
+    { current: 0, capacity: 0 }
+  );
+});
+
 test("rejects icon-contaminated and impossible counts", () => {
   assert.equal(
     parsePopulationCapacity([{ text: "全部成员89/96", x: 100 }], 10),
