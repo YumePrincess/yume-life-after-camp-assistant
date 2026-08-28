@@ -465,12 +465,29 @@ export class Vision {
           );
         }
         if (memberFraction !== null && citizenFraction !== null) {
-          return {
+          const ocrBreakdown = {
             formalCurrent: memberFraction.current,
             formalTotal: memberFraction.capacity,
             sailingCurrent: citizenFraction.current,
-            sailingTotal: citizenFraction.capacity,
-            total: memberFraction.capacity + citizenFraction.capacity
+            sailingTotal: citizenFraction.capacity
+          };
+          // Count OCR is the first pass, but a valid result must be visually
+          // rechecked before it controls pagination.  The local model only
+          // receives the header crop and its result is accepted after strict
+          // range validation; an unavailable or invalid model falls back to
+          // the already-safe OCR parser above.
+          const localBreakdown = await this.#verifyMemberHeaderCounts(
+            frame.path,
+            countRegions.header,
+            attempt,
+            signal,
+            ocrBreakdown
+          );
+          const breakdown = localBreakdown || ocrBreakdown;
+          return {
+            ...breakdown,
+            total: breakdown.formalTotal + breakdown.sailingTotal,
+            ...(localBreakdown ? { localVisionVerified: true } : {})
           };
         }
       } catch (error) {
@@ -495,6 +512,36 @@ export class Vision {
     );
   }
 
+  async #verifyMemberHeaderCounts(
+    imagePath,
+    region,
+    attempt,
+    signal,
+    ocrBreakdown
+  ) {
+    if (
+      !this.advisor.enabled ||
+      typeof this.advisor.extractMemberCounts !== "function"
+    ) {
+      return null;
+    }
+    try {
+      return await this.#withTemporaryCrop(
+        imagePath,
+        region,
+        `member-count-vision-${attempt}`,
+        signal,
+        (cropPath) =>
+          this.advisor.extractMemberCounts(cropPath, signal, {
+            ocrHint: ocrBreakdown
+          })
+      );
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return null;
+    }
+  }
+
   async readMemberExpectedTotal(signal) {
     const breakdown = await this.readMemberExpectedBreakdown(signal);
     return breakdown.total;
@@ -505,7 +552,7 @@ export class Vision {
     definition,
     label,
     signal,
-    _options = {}
+    options = {}
   ) {
     const configuredMinimum = Number(definition.ocrMinimumConfidence);
     const memberOcrMinimum = Number.isFinite(configuredMinimum)
@@ -593,6 +640,39 @@ export class Vision {
       });
     }
     const region = definition.region;
+    const useFullTableAdvisor =
+      this.advisor.enabled &&
+      (options.forceLocalVision ||
+        options.forceContributionVision ||
+        options.forceContributionRecovery);
+    let advisedRows = [];
+    if (useFullTableAdvisor) {
+      advisedRows = await this.#withTemporaryCrop(
+        imagePath,
+        region,
+        `${label}-vision-table-crop`,
+        signal,
+        (cropPath) =>
+          this.advisor.extractTable(
+            cropPath,
+            {
+              columns: [
+                "name",
+                "weeklyContribution",
+                "technologyPointsUsed",
+                "materialContribution"
+              ]
+            },
+            signal
+          )
+      );
+      rows = mergeVisionRowsByIndex(rows, advisedRows, [
+        "name",
+        "weeklyContribution",
+        "technologyPointsUsed",
+        "materialContribution"
+      ]);
+    }
     const nameColumn = definition.columns.find(
       (column) => column.key === "name"
     );
@@ -619,14 +699,20 @@ export class Vision {
         signal
       );
       let advisedNames = [];
-      try {
-        advisedNames = await this.advisor.extractNames(cropPath, signal);
-      } catch {
+      if (!useFullTableAdvisor) {
+        try {
+          advisedNames = await this.advisor.extractNames(cropPath, signal);
+        } catch {
+          // Accurate OCR already produced row-aligned values.  The local model
+          // is an enhancement for ambiguous names, not a prerequisite for
+          // recovering a row whose native name OCR was blank; preserve the
+          // accurate pass when the model is stopped, busy, or unavailable.
+          advisedNames = [];
+        }
+      } else {
         // Accurate OCR already produced row-aligned values.  The local model
-        // is an enhancement for ambiguous names, not a prerequisite for
-        // recovering a row whose native name OCR was blank; preserve the
-        // accurate pass when the model is stopped, busy, or unavailable.
-        advisedNames = [];
+        // already reread the complete table above, so do not issue a second
+        // name-only request for the same page.
       }
       const namesByRow = new Map(
         advisedNames.map((item) => [item.row, item.name])
@@ -1000,16 +1086,31 @@ export class Vision {
       memberOcrMinimum,
       options.forceActivityRecovery ? 2 : 1
     );
-    return parseTable(observations, definition).filter(
+    let rows = parseTable(observations, definition).filter(
       (row) =>
         isPlausibleMemberName(row.name) &&
-        row.onlineState &&
         !definition.headerPattern.some(
           (value) =>
             row.name.includes(value) ||
             row.onlineState.includes(value)
         )
     );
+    const useActivityAdvisor =
+      this.advisor.enabled &&
+      (options.forceLocalVision ||
+        options.forceActivityVision ||
+        options.forceActivityRecovery);
+    if (useActivityAdvisor) {
+      const advisedRows = await this.#withTemporaryCrop(
+        imagePath,
+        definition.region,
+        `${label}-vision-table-crop`,
+        signal,
+        (cropPath) => this.advisor.extractActivity(cropPath, signal)
+      );
+      rows = mergeVisionActivityRows(rows, advisedRows);
+    }
+    return rows.filter((row) => row.onlineState);
   }
 
   async ocrRegion(
@@ -1149,6 +1250,21 @@ export class Vision {
       );
     }
     return crop;
+  }
+
+  async #withTemporaryCrop(imagePath, region, label, signal, operation) {
+    const cropPath = resolve(
+      this.snapshotDir,
+      `${String(++this.sequence).padStart(4, "0")}-${safe(label)}.png`
+    );
+    this.taskPaths.add(cropPath);
+    try {
+      await this.#cropImage(imagePath, region, cropPath, signal);
+      return await operation(cropPath);
+    } finally {
+      this.taskPaths.delete(cropPath);
+      await rm(cropPath, { force: true });
+    }
   }
 
   async #assertImageDimensions(path, expectedWidth, expectedHeight, signal, label) {
@@ -1682,6 +1798,73 @@ function medianNumber(values) {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
+function mergeVisionRowsByIndex(primaryRows, recoveredRows, fields) {
+  const primary = Array.isArray(primaryRows) ? primaryRows : [];
+  const recovered = Array.isArray(recoveredRows) ? recoveredRows : [];
+  const length = Math.max(primary.length, recovered.length);
+  return Array.from({ length }, (_, index) => {
+    const primaryRow = primary[index] || {};
+    const recoveredRow = recovered[index] || {};
+    const merged = { ...primaryRow };
+    for (const field of fields) {
+      if (
+        !String(merged[field] ?? "").trim() &&
+        String(recoveredRow[field] ?? "").trim()
+      ) {
+        merged[field] = recoveredRow[field];
+      }
+    }
+    return { ...recoveredRow, ...merged };
+  });
+}
+
+function mergeVisionActivityRows(primaryRows, recoveredRows) {
+  const primary = Array.isArray(primaryRows) ? primaryRows : [];
+  const recovered = Array.isArray(recoveredRows) ? recoveredRows : [];
+  if (!recovered.length) return primary;
+  const primaryByName = new Map(
+    primary
+      .map((row) => [visionNameKey(row?.name), row])
+      .filter(([key]) => key)
+  );
+  const usedPrimary = new Set();
+  const merged = recovered
+    .slice()
+    .sort((left, right) => Number(left?.row || 0) - Number(right?.row || 0))
+    .map((row) => {
+      const key = visionNameKey(row?.name);
+      const native = key ? primaryByName.get(key) : null;
+      if (native) usedPrimary.add(native);
+      return native
+        ? {
+            ...row,
+            ...native,
+            name: native.name || row.name,
+            onlineState: native.onlineState || row.onlineState
+          }
+        : { ...row };
+    });
+  // Preserve native rows the model could not read. They are appended only
+  // after all row-numbered model results, so a missing AI row cannot shift the
+  // first eleven visible positions before the outer table merge can inspect it.
+  for (const row of primary) {
+    if (!usedPrimary.has(row) && !merged.some(
+      (candidate) => visionNameKey(candidate?.name) === visionNameKey(row?.name)
+    )) {
+      merged.push(row);
+    }
+  }
+  return merged;
+}
+
+function visionNameKey(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, "");
+}
+
 export function parsePopulationCapacity(observations, maximumCapacity) {
   return parsePopulationFraction(observations, maximumCapacity, {
     minimumCapacity: 1
@@ -1696,7 +1879,7 @@ export function parsePopulationFraction(
   const minimumCapacity = Number.isFinite(Number(options.minimumCapacity))
     ? Number(options.minimumCapacity)
     : 1;
-  const candidates = parsePopulationCounts(observations).filter(
+  const candidates = parsePopulationCounts(observations, maximumCapacity).filter(
     (item) =>
       item.capacity >= minimumCapacity &&
       item.capacity <= maximumCapacity
@@ -1704,26 +1887,91 @@ export function parsePopulationFraction(
   return candidates[0] ?? null;
 }
 
-function parsePopulationCounts(observations) {
-  const joined = [...(observations || [])]
-    .sort((left, right) => left.x - right.x)
-    .map((item) => String(item.text || ""))
-    .join("")
+function parsePopulationCounts(observations, maximumCapacity) {
+  const sorted = [...(observations || [])]
+    .filter((item) => String(item?.text || "").trim())
+    .sort((left, right) => Number(left?.x || 0) - Number(right?.x || 0));
+  const candidates = [];
+  const addCandidate = (currentDigits, capacityDigits) => {
+    const normalizedCurrent = normalizePopulationDigits(currentDigits);
+    const normalizedCapacity = normalizePopulationDigits(
+      capacityDigits,
+      maximumCapacity
+    );
+    if (!normalizedCurrent || !normalizedCapacity) return;
+    const current = Number.parseInt(normalizedCurrent, 10);
+    const capacity = Number.parseInt(normalizedCapacity, 10);
+    if (
+      Number.isFinite(current) &&
+      Number.isFinite(capacity) &&
+      current >= 0 &&
+      current <= capacity
+    ) {
+      candidates.push({ current, capacity });
+    }
+  };
+
+  for (let index = 0; index < sorted.length; index += 1) {
+    const text = normalizePopulationText(sorted[index]?.text);
+    // Prefer a fraction contained in one OCR token. This is important for
+    // the sailing-citizen header: an adjacent info icon can be OCR'd as a
+    // trailing `1`, and joining every token would turn `0/0` into `0/01`.
+    const complete = text.match(/(\d{1,3})\/(\d{1,3})/);
+    if (complete) {
+      addCandidate(complete[1], complete[2]);
+      continue;
+    }
+
+    const slash = text.indexOf("/");
+    if (slash < 0) continue;
+    const leftDigits = text.slice(0, slash).match(/(\d{1,3})$/)?.[1] || "";
+    const rightDigits = text.slice(slash + 1).match(/^(\d{1,3})/)?.[1] || "";
+    if (leftDigits && rightDigits) {
+      addCandidate(leftDigits, rightDigits);
+      continue;
+    }
+
+    // Vision OCR may split `0/5` into `0/` and `5（`. Only consume the first
+    // digit run from the immediately adjacent token needed to complete the
+    // slash fraction; never concatenate standalone numbers such as `0i` or
+    // `1i` into `01`/`11`, and never absorb a later info-button glyph.
+    if (leftDigits && !rightDigits) {
+      const nextDigits = normalizePopulationText(sorted[index + 1]?.text)
+        .match(/^(\d{1,3})/)?.[1] || "";
+      addCandidate(leftDigits, nextDigits);
+      continue;
+    }
+    if (!leftDigits && rightDigits) {
+      const previousDigits = normalizePopulationText(sorted[index - 1]?.text)
+        .match(/(\d{1,3})$/)?.[1] || "";
+      addCandidate(previousDigits, rightDigits);
+    }
+  }
+  return candidates;
+}
+
+function normalizePopulationText(value) {
+  return String(value || "")
     .replace(/\s+/g, "")
     .replace(/[OoＯｏ]/g, "0")
     .replace(/[／]/g, "/");
-  return [...joined.matchAll(/(\d{1,3})\/(\d{1,3})/g)]
-    .map((match) => ({
-      current: Number.parseInt(match[1], 10),
-      capacity: Number.parseInt(match[2], 10)
-    }))
-    .filter(
-      (item) =>
-        Number.isFinite(item.current) &&
-        Number.isFinite(item.capacity) &&
-        item.current >= 0 &&
-        item.current <= item.capacity
-    );
+}
+
+function normalizePopulationDigits(value, maximumCapacity = null) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  // Capacities in this UI are not zero-padded. A value such as `01` is the
+  // characteristic result of OCR merging the valid `0/0` with the adjacent
+  // circled-info icon, so retain the actual zero capacity. The same icon can
+  // turn the valid sailing capacity `10` into `101`; only the sailing region
+  // accepts that exact correction because formal-citizen capacities can be
+  // larger and must not be truncated.
+  if (
+    maximumCapacity !== null &&
+    Number(maximumCapacity) <= 10 &&
+    digits === "101"
+  ) return "10";
+  return /^0\d+$/.test(digits) ? "0" : digits;
 }
 
 function observationsInHorizontalRegion(observations, region) {

@@ -9,6 +9,7 @@ import {
   safeSipsCropRegion
 } from "../src/vision.mjs";
 import { Vision } from "../src/vision.mjs";
+import { LocalVisionAdvisor } from "../src/local-vision-advisor.mjs";
 import {
   isMemberAvatarArtifact,
   isMemberIdentityBadge,
@@ -408,6 +409,62 @@ test("member header total accepts 0/0 sailing citizens without fallback contamin
   assert.equal(await vision.readMemberExpectedTotal(), 93);
 });
 
+test("local member-count reread keeps the info icon out of sailing counts", async () => {
+  const imagePath = "/private/tmp/local-member-count.png";
+  await writeFile(
+    imagePath,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  const originalFetch = globalThis.fetch;
+  let prompt = "";
+  globalThis.fetch = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    prompt = request.messages[0].content[0].text;
+    return {
+      ok: true,
+      async json() {
+        return {
+          choices: [{
+            message: {
+              content: '{"formalCurrent":5,"formalTotal":100,"sailingCurrent":10,"sailingTotal":10}'
+            }
+          }]
+        };
+      }
+    };
+  };
+  try {
+    const advisor = new LocalVisionAdvisor({
+      enabled: true,
+      transport: "http",
+      timeoutSeconds: 1
+    });
+    assert.deepEqual(
+      await advisor.extractMemberCounts(imagePath, undefined, {
+        ocrHint: {
+          formalCurrent: 5,
+          formalTotal: 100,
+          sailingCurrent: 10,
+          sailingTotal: 10
+        }
+      }),
+      {
+        formalCurrent: 5,
+        formalTotal: 100,
+        sailingCurrent: 10,
+        sailingTotal: 10
+      }
+    );
+    assert.match(prompt, /0i、1i、2i/);
+    assert.match(prompt, /10i仍是10/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("accepts zero online citizens and split OCR fragments", () => {
   assert.equal(
     parsePopulationCapacity(
@@ -423,6 +480,50 @@ test("accepts zero online citizens and split OCR fragments", () => {
     parsePopulationCapacity([{ text: "6／10", x: 475 }], 10),
     10
   );
+  assert.deepEqual(
+    parsePopulationFraction(
+      [
+        { text: "0/0", x: 490, width: 42 },
+        { text: "1", x: 545, width: 20 }
+      ],
+      10,
+      { minimumCapacity: 0 }
+    ),
+    { current: 0, capacity: 0 }
+  );
+  assert.deepEqual(
+    parsePopulationFraction(
+      [{ text: "0/01", x: 490, width: 50 }],
+      10,
+      { minimumCapacity: 0 }
+    ),
+    { current: 0, capacity: 0 }
+  );
+  assert.deepEqual(
+    parsePopulationFraction(
+      [{ text: "0/101", x: 490, width: 55 }],
+      10,
+      { minimumCapacity: 0 }
+    ),
+    { current: 0, capacity: 10 }
+  );
+  assert.equal(
+    parsePopulationCapacity([{ text: "0/101", x: 490 }], 110),
+    101
+  );
+  for (const digit of ["0", "1", "2"]) {
+    assert.equal(
+      parsePopulationFraction(
+        [
+          { text: `${digit}i`, x: 490 },
+          { text: "1", x: 530 }
+        ],
+        10,
+        { minimumCapacity: 0 }
+      ),
+      null
+    );
+  }
 });
 
 test("rejects icon-contaminated and impossible counts", () => {

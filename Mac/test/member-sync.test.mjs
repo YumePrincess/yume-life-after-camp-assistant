@@ -321,6 +321,85 @@ test("contribution and activity pages use 11-row calibrated segmented swipes", a
   }
 });
 
+test("enabled local vision rereads every member table page and records scanned names", async () => {
+  for (const label of [
+    "member-details",
+    "member-contribution",
+    "member-activity"
+  ]) {
+    const rereadCalls = [];
+    const nameReports = [];
+    const rowCount = label === "member-details" ? 5 : 11;
+    const context = {
+      config: { localVisionModel: { enabled: true, transport: "http" } },
+      vision: {
+        async capture() {
+          return { path: `${label}.png`, observations: [] };
+        },
+        async extractTableRows(_path, _definition, pageLabel, _signal, options) {
+          rereadCalls.push({ pageLabel, options });
+          const page = Number(pageLabel.match(/-(\d+)/)?.[1] || 1);
+          return Array.from({ length: rowCount }, (_, index) => ({
+            name: `${label}-${page}-${index + 1}`,
+            ...(label === "member-activity"
+              ? { onlineState: "1天前" }
+              : label === "member-contribution"
+                ? {
+                    weeklyContribution: "1",
+                    technologyPointsUsed: "2",
+                    materialContribution: "3"
+                  }
+                : {})
+          }));
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report(_level, step, message, detail) {
+        if (step === `${label}_page_names`) {
+          nameReports.push({ message, detail });
+        }
+      }
+    };
+    await capturePagedTable(
+      context,
+      label,
+      {
+        region: { left: 100, top: 200, right: 900, bottom: 900 },
+        columns: [{ key: "name", left: 0, right: 1 }],
+        headerPattern: [],
+        pagination: {
+          maxPages: 2,
+          rowsPerPage: rowCount,
+          minimumRowsPerPage: rowCount,
+          stopAfterStagnantPages: 2,
+          from: { x: 800, y: 850 },
+          to: { x: 800, y: 120 },
+          durationMs: 1
+        }
+      }
+    );
+
+    assert.equal(rereadCalls.length, 2, label);
+    assert.ok(
+      rereadCalls.every(({ options }) =>
+        label === "member-details"
+          ? options.forceMemberAdvisor === true && options.forceLocalVision === true
+          : label === "member-contribution"
+            ? options.forceContributionVision === true && options.forceLocalVision === true
+            : options.forceActivityVision === true && options.forceLocalVision === true
+      ),
+      label
+    );
+    if (label === "member-details") {
+      assert.equal(nameReports.length, 0, label);
+    } else {
+      assert.equal(nameReports.length, 2, label);
+      assert.equal(nameReports[0].detail.names.length, rowCount, label);
+    }
+  }
+});
+
 test("contribution pages recover a missing name without shifting later rows", async () => {
   const recoveryOptions = [];
   const nativeRows = Array.from({ length: 11 }, (_, index) => ({

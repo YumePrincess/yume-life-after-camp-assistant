@@ -233,6 +233,24 @@ const PATTERN_TRANSLATIONS = [
     }
   },
   {
+    test: /^第 (\d+) 页调用 Qwen 本地视觉辅助模型重读(成员资料|贡献|斩杀预警)表；当前 OCR 成员：(.+)$/,
+    values: {
+      "zh-tw": "第 $1 頁呼叫 Qwen 本機視覺輔助模型重讀$2表；目前 OCR 成員：$3",
+      en: "Page $1 reread the $2 table with the Qwen local vision assistant; OCR names currently recognized: $3",
+      fr: "La page $1 a été relue par l’assistant visuel local Qwen pour la table $2 ; noms actuellement reconnus par OCR : $3",
+      ja: "$1 ページ目で Qwen ローカル視覚アシスタントが$2表を再読；現在 OCR で認識した名前：$3"
+    }
+  },
+  {
+    test: /^第 (\d+) 页扫描到成员：(.+)$/,
+    values: {
+      "zh-tw": "第 $1 頁掃描到成員：$2",
+      en: "Page $1 scanned these members: $2",
+      fr: "Membres scannés à la page $1 : $2",
+      ja: "$1 ページ目でスキャンしたメンバー：$2"
+    }
+  },
+  {
     test: /^成员资料列表已完整翻到底部，扫描 (\d+) 页；全表去重合并后整理为 (\d+)\/(\d+) 名成员$/,
     values: {
       "zh-tw": "成員資料列表已完整翻到底部，掃描 $1 頁；全表去重合併後整理為 $2/$3 名成員",
