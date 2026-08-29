@@ -1,7 +1,56 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { GameUi } from "../src/ui.mjs";
+import {
+  GameUi,
+  TaskRestartRequestedError,
+  findDeathRecoveryEvidence
+} from "../src/ui.mjs";
+
+test("death recovery requires the death notice and OCR-located return-to-camp button", async () => {
+  const deathFrame = [
+    observation("昏迷通知单", 260, 120),
+    observation("回到营地", 1_620, 1_020)
+  ];
+  const fixture = createUi({
+    fastFrames: [deathFrame, [observation("背包", 100, 100), observation("营地", 220, 100)]],
+    accurateFrames: [deathFrame],
+    config: {
+      deathRecovery: {
+        reviveSettleMs: 0,
+        reviveConfirmationTimeoutSeconds: 2,
+        reviveConfirmationPollMs: 10,
+        cooldownSeconds: 8
+      }
+    }
+  });
+  fixture.ui.setTaskActive(true);
+
+  await assert.rejects(
+    fixture.ui.afterAction(),
+    (error) => error instanceof TaskRestartRequestedError
+  );
+
+  assert.deepEqual(fixture.taps, [{ x: 1_630, y: 1_030 }]);
+  assert.ok(fixture.messages.some((message) => message.includes("回到营地复活")));
+  assert.ok(fixture.messages.some((message) => message.includes("从头重新执行原任务")));
+});
+
+test("death recovery never clicks a return button without a death notice", () => {
+  const evidence = findDeathRecoveryEvidence(
+    { find(observations, text) {
+      return observations.find((item) => item.text.includes(text));
+    } },
+    [observation("回到营地", 1_620, 1_020)],
+    {
+      dialogRegion: { left: 0, top: 0, right: 1_920, bottom: 1_200 },
+      buttonRegion: { left: 1_320, top: 820, right: 1_900, bottom: 1_170 },
+      deathTexts: ["昏迷通知单", "昏迷于"],
+      returnToCampTexts: ["回到营地"]
+    }
+  );
+  assert.equal(evidence.detected, false);
+});
 
 test("camp page is recognized by two stable, region-bound anchors", () => {
   const ui = createUi().ui;
@@ -1902,7 +1951,8 @@ function createUi({
   mumu = null,
   overlayAdvice = null,
   generalAdvice = null,
-  minimumActionConfidence = 0.95
+  minimumActionConfidence = 0.95,
+  config = {}
 } = {}) {
   const taps = [];
   const keys = [];
@@ -1979,7 +2029,10 @@ function createUi({
     }
   };
   const ui = new GameUi(
-    { timeouts: { actionDelayMs: 0 } },
+    {
+      timeouts: { actionDelayMs: 0, ...(config.timeouts || {}) },
+      ...config
+    },
     adb,
     vision,
     async (_level, _step, message) => messages.push(message),

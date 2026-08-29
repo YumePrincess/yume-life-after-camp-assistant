@@ -1,6 +1,14 @@
 import { delay } from "./process.mjs";
 import { center } from "./vision.mjs";
 
+export class TaskRestartRequestedError extends Error {
+  constructor(reason = "角色复活后重新执行原任务") {
+    super(`TASK_RESTART_REQUESTED_AFTER_REVIVAL: ${reason}`);
+    this.name = "TaskRestartRequestedError";
+    this.code = "TASK_RESTART_REQUESTED_AFTER_REVIVAL";
+  }
+}
+
 export class GameUi {
   constructor(config, adb, vision, report = async () => {}, mumu = null) {
     this.config = config;
@@ -10,14 +18,219 @@ export class GameUi {
     this.mumu = mumu;
     this.runtimeAutomation = null;
     this.lastConfirmedDestination = null;
+    this.taskActive = false;
+    this.deathRecoveryInFlight = null;
+    this.deathRecoveryCooldownUntil = 0;
+    this.lastDeathAccurateProbeAt = 0;
   }
 
   setRuntimeAutomation(automation) {
     this.runtimeAutomation = automation;
   }
 
+  setTaskActive(active) {
+    this.taskActive = active === true;
+  }
+
   async afterAction(signal) {
     await delay(this.config.timeouts.actionDelayMs, signal);
+    // Login/startup recovery is polled by waitForGameReady. During a task,
+    // this hook provides the low-latency check immediately after every input.
+    // Keeping the startup path out of this hook avoids adding an OCR capture
+    // to every ordinary UI-unit action before a task has begun.
+    if (!this.taskActive) return;
+    const revived = await this.checkForDeathAndRevive(signal);
+    if (revived) {
+      throw new TaskRestartRequestedError();
+    }
+  }
+
+  async checkForDeathAndRevive(signal, { force = false } = {}) {
+    const recovery = {
+      enabled: true,
+      pollSeconds: 3,
+      dialogRegion: {
+        left: 0,
+        top: 0,
+        right: Number(this.config.adb?.screenWidth) || 1920,
+        bottom: Number(this.config.adb?.screenHeight) || 1200
+      },
+      buttonRegion: { left: 1320, top: 820, right: 1900, bottom: 1170 },
+      deathTexts: ["昏迷通知单", "昏迷于"],
+      returnToCampTexts: ["回到营地"],
+      accurateProbeIntervalMs: 1_500,
+      accurateMinimumConfidence: 0.2,
+      accurateScale: 2,
+      reviveSettleMs: 2_000,
+      reviveConfirmationTimeoutSeconds: 12,
+      reviveConfirmationPollMs: 800,
+      reviveReadyTexts: ["背包", "营地", "综合", "世界", "场景"],
+      reviveReadyMinimumTexts: 2,
+      cooldownSeconds: 8,
+      maxTaskRestarts: 2,
+      ...(this.config.deathRecovery || {})
+    };
+    if (recovery.enabled === false) return false;
+    if (!force && Date.now() < this.deathRecoveryCooldownUntil) return false;
+    if (this.deathRecoveryInFlight) return this.deathRecoveryInFlight;
+    this.deathRecoveryInFlight = this.#recoverDeath(recovery, signal).finally(() => {
+      this.deathRecoveryInFlight = null;
+    });
+    return this.deathRecoveryInFlight;
+  }
+
+  async #recoverDeath(recovery, signal) {
+    let frame;
+    try {
+      frame = await this.vision.captureTransient("death-recovery-fast", signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return false;
+    }
+    let evidence = findDeathRecoveryEvidence(
+      this.vision,
+      frame?.observations || [],
+      recovery
+    );
+    // The death notice and the orange button are small/high-contrast elements;
+    // require a second, accurate OCR pass before sending the only state-changing
+    // input. This also catches the full-page death notice when fast OCR returns
+    // an empty or partial result.
+    if (
+      typeof this.vision.captureAccurateTransient === "function" &&
+      (Date.now() >= (this.lastDeathAccurateProbeAt || 0) +
+        Math.max(250, Number(recovery.accurateProbeIntervalMs) || 1_500) ||
+        evidence.hasAnyDeathText ||
+        evidence.hasReturnToCamp)
+    ) {
+      this.lastDeathAccurateProbeAt = Date.now();
+      try {
+        const accurate = await this.vision.captureAccurateTransient(
+          "death-recovery-accurate",
+          signal
+        );
+        // Prefer one coherent accurate frame. Mixing a stale fast frame with a
+        // later accurate frame could combine a death headline from the old
+        // scene with a button from the new scene and create a false click.
+        evidence = findDeathRecoveryEvidence(
+          this.vision,
+          accurate?.observations || [],
+          recovery
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        return false;
+      }
+    }
+    if (!evidence.detected) return false;
+
+    await this.report(
+      "warning",
+      "death_detected",
+      `检测到角色昏迷状态（${evidence.deathTexts.join("、") || "昏迷通知单/昏迷于"}），已确认“${evidence.returnText}”按钮，正在点击回到营地复活`,
+      {
+        deathTexts: evidence.deathTexts,
+        returnText: evidence.returnText,
+        returnPoint: center(evidence.returnMatch),
+        taskActive: this.taskActive
+      }
+    );
+    const returnPoint = center(evidence.returnMatch);
+    if (
+      !Number.isFinite(Number(returnPoint?.x)) ||
+      !Number.isFinite(Number(returnPoint?.y))
+    ) {
+      await this.report(
+        "error",
+        "death_recovery_failed",
+        "已识别昏迷通知，但未取得“回到营地”按钮坐标；为避免误触，未发送点击"
+      );
+      return false;
+    }
+    await this.performAdbTap(
+      { x: Number(returnPoint.x), y: Number(returnPoint.y) },
+      signal
+    );
+    this.deathRecoveryCooldownUntil =
+      Date.now() + Math.max(1, Number(recovery.cooldownSeconds) || 8) * 1000;
+    await delay(Math.max(250, Number(recovery.reviveSettleMs) || 2_000), signal);
+    const confirmed = await this.#confirmDeathDismissed(recovery, signal);
+    if (!confirmed) {
+      await this.report(
+        "error",
+        "death_recovery_failed",
+        "已点击“回到营地”，但在确认时间内未确认昏迷通知消失；暂停当前任务以避免在错误场景继续操作",
+        { confirmationTimeoutSeconds: recovery.reviveConfirmationTimeoutSeconds }
+      );
+      throw new Error("DEATH_REVIVAL_NOT_CONFIRMED");
+    }
+    await this.report(
+      "info",
+      "death_recovered",
+      this.taskActive
+        ? "角色已回到营地并确认复活，将从头重新执行原任务"
+        : "角色已回到营地并确认复活，继续登录/加载流程"
+    );
+    return true;
+  }
+
+  async #confirmDeathDismissed(recovery, signal) {
+    const deadline = Date.now() +
+      Math.max(2, Number(recovery.reviveConfirmationTimeoutSeconds) || 12) * 1000;
+    while (Date.now() < deadline) {
+      const frame = await this.vision.captureTransient(
+        "death-recovery-confirm",
+        signal
+      ).catch((error) => {
+        if (signal?.aborted) throw error;
+        return null;
+      });
+      let observations = frame?.observations || [];
+      let evidence = findDeathRecoveryEvidence(
+        this.vision,
+        observations,
+        recovery
+      );
+      let readyCount = countRecoveryReadyTexts(
+        this.vision,
+        observations,
+        recovery
+      );
+      if (
+        readyCount < Math.max(1, Number(recovery.reviveReadyMinimumTexts) || 2) &&
+        typeof this.vision.captureAccurateTransient === "function" &&
+        Date.now() >=
+          (this.lastDeathAccurateProbeAt || 0) +
+            Math.max(250, Number(recovery.accurateProbeIntervalMs) || 1_500)
+      ) {
+        this.lastDeathAccurateProbeAt = Date.now();
+        const accurate = await this.vision
+          .captureAccurateTransient("death-recovery-confirm-accurate", signal)
+          .catch((error) => {
+            if (signal?.aborted) throw error;
+            return null;
+          });
+        if (accurate?.observations?.length) {
+          observations = accurate.observations;
+          evidence = findDeathRecoveryEvidence(this.vision, observations, recovery);
+          readyCount = countRecoveryReadyTexts(this.vision, observations, recovery);
+        }
+      }
+      if (
+        !evidence.detected &&
+        readyCount >= Math.max(1, Number(recovery.reviveReadyMinimumTexts) || 2)
+      ) {
+        return true;
+      }
+      await delay(
+        Math.min(
+          Math.max(250, Number(recovery.reviveConfirmationPollMs) || 800),
+          Math.max(1, deadline - Date.now())
+        ),
+        signal
+      );
+    }
+    return false;
   }
 
   resetGameMouseState() {
@@ -3385,6 +3598,47 @@ export class GameUi {
       }
     }
   }
+}
+
+function countRecoveryReadyTexts(vision, observations, config = {}) {
+  return (Array.isArray(config.reviveReadyTexts) ? config.reviveReadyTexts : [])
+    .filter((text) => vision.find(observations, text)).length;
+}
+
+export function findDeathRecoveryEvidence(vision, observations, config = {}) {
+  const region = config.dialogRegion;
+  const buttonRegion = config.buttonRegion;
+  const within = (item, bounds) => {
+    if (!bounds) return true;
+    const x = Number(item?.x || 0) + Number(item?.width || 0) / 2;
+    const y = Number(item?.y || 0) + Number(item?.height || 0) / 2;
+    return (
+      x >= Number(bounds.left || 0) &&
+      x <= Number(bounds.right ?? Number.POSITIVE_INFINITY) &&
+      y >= Number(bounds.top || 0) &&
+      y <= Number(bounds.bottom ?? Number.POSITIVE_INFINITY)
+    );
+  };
+  const bounded = (Array.isArray(observations) ? observations : []).filter((item) =>
+    within(item, region)
+  );
+  const buttonBounded = bounded.filter((item) => within(item, buttonRegion));
+  const matchTexts = (items, texts) =>
+    (Array.isArray(texts) ? texts : [])
+      .map((text) => ({ text, match: vision.find(items, text) }))
+      .filter((item) => item.match);
+  const deathMatches = matchTexts(bounded, config.deathTexts);
+  const returnMatches = matchTexts(buttonBounded, config.returnToCampTexts);
+  return {
+    detected: deathMatches.length > 0 && returnMatches.length > 0,
+    hasAnyDeathText: deathMatches.length > 0,
+    hasReturnToCamp: returnMatches.length > 0,
+    deathTexts: deathMatches.map((item) => item.text),
+    returnText: returnMatches[0]?.text || "",
+    returnMatch: returnMatches[0]?.match || null,
+    deathMatches,
+    returnMatches
+  };
 }
 
 function substitute(value, variables) {

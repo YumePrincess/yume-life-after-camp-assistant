@@ -145,6 +145,30 @@ const FIXED_TRANSLATIONS = {
     fr: "L’Agent local a commencé à exécuter la tâche",
     ja: "ローカル Agent がタスクの実行を開始しました"
   },
+  "角色已回到营地并确认复活，将从头重新执行原任务": {
+    "zh-tw": "角色已回到營地並確認復活，將從頭重新執行原任務",
+    en: "The character returned to camp and revived; restarting the original task from the beginning",
+    fr: "Le personnage est retourné au camp et a ressuscité ; reprise de la tâche d’origine depuis le début",
+    ja: "キャラクターがキャンプに戻って復活したため、元のタスクを最初から再実行します"
+  },
+  "角色已回到营地并确认复活，继续登录/加载流程": {
+    "zh-tw": "角色已回到營地並確認復活，繼續登入／載入流程",
+    en: "The character returned to camp and revived; continuing the login/loading flow",
+    fr: "Le personnage est retourné au camp et a ressuscité ; poursuite de la connexion et du chargement",
+    ja: "キャラクターがキャンプに戻って復活したため、ログイン／読み込みを続行します"
+  },
+  "已识别昏迷通知，但未取得“回到营地”按钮坐标；为避免误触，未发送点击": {
+    "zh-tw": "已識別昏迷通知，但未取得「回到營地」按鈕座標；為避免誤觸，未發送點擊",
+    en: "The incapacitation notice was recognized, but the Return to Camp button position was unavailable; no click was sent",
+    fr: "La notification d’inconscience a été reconnue, mais la position du bouton Retour au camp est inconnue ; aucun clic n’a été envoyé",
+    ja: "昏迷通知は認識しましたが、「キャンプに戻る」ボタンの座標を取得できないため、誤操作防止のためクリックしませんでした"
+  },
+  "已点击“回到营地”，但在确认时间内未确认昏迷通知消失；暂停当前任务以避免在错误场景继续操作": {
+    "zh-tw": "已點擊「回到營地」，但在確認時間內未確認昏迷通知消失；暫停目前任務以避免在錯誤場景繼續操作",
+    en: "Return to Camp was clicked, but the incapacitation notice did not clear within the confirmation window; pausing the task to avoid acting in the wrong scene",
+    fr: "Retour au camp a été cliqué, mais la notification ne s’est pas effacée dans le délai de confirmation ; tâche suspendue pour éviter d’agir dans la mauvaise scène",
+    ja: "「キャンプに戻る」をクリックしましたが、確認時間内に昏迷通知が消えなかったため、誤った画面での操作を避けてタスクを停止します"
+  },
   "巡逻队伍已创建并分别分享到营地频道和场景频道": {
     "zh-tw": "巡邏隊伍已建立並分別分享到營地頻道和場景頻道",
     en: "The patrol team was created and shared in both the camp and scene channels",
@@ -196,6 +220,24 @@ const FIXED_TRANSLATIONS = {
 };
 
 const PATTERN_TRANSLATIONS = [
+  {
+    test: /^检测到角色昏迷状态（(.+)），已确认“回到营地”按钮，正在点击回到营地复活$/,
+    values: {
+      "zh-tw": "偵測到角色昏迷狀態（$1），已確認「回到營地」按鈕，正在點擊回到營地復活",
+      en: "The character's incapacitation state was detected ($1); the Return to Camp button was confirmed and will be clicked",
+      fr: "État d’inconscience du personnage détecté ($1) ; le bouton Retour au camp a été confirmé et sera cliqué",
+      ja: "キャラクターの昏迷状態を検出（$1）、「キャンプに戻る」ボタンを確認してクリックします"
+    }
+  },
+  {
+    test: /^角色已复活，正在从头重新执行原任务（第 (\d+)\/(\d+) 次）$/,
+    values: {
+      "zh-tw": "角色已復活，正在從頭重新執行原任務（第 $1/$2 次）",
+      en: "The character revived; restarting the original task from the beginning (attempt $1/$2)",
+      fr: "Le personnage a ressuscité ; reprise de la tâche d’origine depuis le début (tentative $1/$2)",
+      ja: "キャラクターが復活したため、元のタスクを最初から再実行します（$1/$2 回目）"
+    }
+  },
   {
     test: /^核心数据已更新，但收尾未完全完成：(.+)$/,
     values: {

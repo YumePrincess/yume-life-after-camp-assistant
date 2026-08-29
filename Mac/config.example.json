@@ -30,6 +30,25 @@
     "returnToCenterAfterTask": true,
     "returnToCenterTimeoutSeconds": 60
   },
+  "deathRecovery": {
+    "enabled": true,
+    "pollSeconds": 3,
+    "dialogRegion": { "left": 0, "top": 0, "right": 1920, "bottom": 1200 },
+    "buttonRegion": { "left": 1320, "top": 820, "right": 1900, "bottom": 1170 },
+    "deathTexts": ["昏迷通知单", "昏迷于"],
+    "returnToCampTexts": ["回到营地"],
+    "accurateProbeIntervalMs": 1500,
+    "accurateMinimumConfidence": 0.2,
+    "accurateScale": 2,
+    "reviveSettleMs": 2000,
+    "reviveConfirmationTimeoutSeconds": 12,
+    "reviveConfirmationPollMs": 800,
+    "reviveReadyTexts": ["背包", "营地", "综合", "世界", "场景"],
+    "reviveReadyMinimumTexts": 2,
+    "cooldownSeconds": 8,
+    "restartDelaySeconds": 3,
+    "maxTaskRestarts": 2
+  },
   "adb": {
     "binary": "adb",
     "serial": "127.0.0.1:16480",

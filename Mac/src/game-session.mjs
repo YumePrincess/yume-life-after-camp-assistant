@@ -1,4 +1,5 @@
 import { delay } from "./process.mjs";
+import { TaskRestartRequestedError } from "./ui.mjs";
 import { center } from "./vision.mjs";
 
 export async function withGameSession(
@@ -100,6 +101,7 @@ export async function withGameSession(
     startupProtectionDeadline =
       Date.now() + startupProtectionSeconds * 1000;
     let restartCount = 0;
+    let taskRestartCount = 0;
     while (true) {
       try {
         if (!containerReady) {
@@ -112,7 +114,39 @@ export async function withGameSession(
         }
         await startAndEnterGame(context, signal, startupState);
         gameReady = true;
-        await runWithWatchdog(context, work, signal, watchdog);
+        ui.setTaskActive?.(true);
+        let workResult;
+        try {
+          workResult = await runWithWatchdog(context, work, signal, watchdog);
+        } finally {
+          ui.setTaskActive?.(false);
+        }
+        if (workResult?.restartTask === true) {
+          const maxTaskRestarts = Math.max(
+            0,
+            Number(config.deathRecovery?.maxTaskRestarts) || 2
+          );
+          if (taskRestartCount >= maxTaskRestarts) {
+            throw new Error(
+              `DEATH_RECOVERY_RESTART_LIMIT: 角色复活后已重试 ${taskRestartCount} 次，仍无法完成原任务`
+            );
+          }
+          taskRestartCount += 1;
+          await report(
+            "warning",
+            "task_restarted_after_revival",
+            `角色已复活，正在从头重新执行原任务（第 ${taskRestartCount}/${maxTaskRestarts} 次）`,
+            { attempt: taskRestartCount, maxAttempts: maxTaskRestarts }
+          );
+          await delay(
+            Math.max(
+              250,
+              (Number(config.deathRecovery?.restartDelaySeconds) || 3) * 1000
+            ),
+            signal
+          );
+          continue;
+        }
         return cleanupResult;
       } catch (error) {
         if (signal.aborted) throw signal.reason || error;
@@ -646,6 +680,7 @@ export async function waitForGameReady(context, signal) {
     return nextAttempt;
   };
   while (Date.now() < deadline) {
+    await ui.checkForDeathAndRevive?.(signal);
     const loopStartedAt = Date.now();
     let channelProbe = {
       status: "not_needed",
@@ -1835,8 +1870,15 @@ function conciseError(error, limit = 240) {
     : message;
 }
 
-async function runWithWatchdog(context, work, parentSignal, watchdog) {
-  if (!watchdog.enabled) return work();
+export async function runWithWatchdog(context, work, parentSignal, watchdog) {
+  if (!watchdog.enabled) {
+    try {
+      return await work(parentSignal);
+    } catch (error) {
+      if (isTaskRestartRequested(error)) return { restartTask: true };
+      throw error;
+    }
+  }
   const controller = new AbortController();
   const abort = () =>
     controller.abort(parentSignal.reason || new Error("管理员请求中断"));
@@ -1847,6 +1889,14 @@ async function runWithWatchdog(context, work, parentSignal, watchdog) {
   });
   try {
     return await Promise.race([work(controller.signal), monitor]);
+  } catch (error) {
+    if (
+      isTaskRestartRequested(error) ||
+      isTaskRestartRequested(controller.signal.reason)
+    ) {
+      return { restartTask: true };
+    }
+    throw error;
   } finally {
     controller.abort(new Error("看门狗结束"));
     parentSignal.removeEventListener("abort", abort);
@@ -1854,16 +1904,47 @@ async function runWithWatchdog(context, work, parentSignal, watchdog) {
 }
 
 async function monitorGame(context, watchdog, signal) {
+  const healthIntervalMs =
+    Math.max(0.5, Number(watchdog.healthCheckSeconds) || 10) * 1000;
+  const deathIntervalMs =
+    Math.max(
+      0.5,
+      Number(context.config.deathRecovery?.pollSeconds) || 3
+    ) * 1000;
+  let nextHealthCheck = Date.now() + healthIntervalMs;
+  let nextDeathCheck = Date.now() + deathIntervalMs;
   while (!signal.aborted) {
-    await delay(watchdog.healthCheckSeconds * 1000, signal);
-    const deviceState = await context.adb.state();
-    if (deviceState !== "device") {
-      throw new Error(`MUMU_DEVICE_${deviceState.toUpperCase()}`);
+    const waitMs = Math.max(
+      1,
+      Math.min(nextHealthCheck, nextDeathCheck) - Date.now()
+    );
+    await delay(waitMs, signal);
+    if (Date.now() >= nextDeathCheck) {
+      nextDeathCheck = Date.now() + deathIntervalMs;
+      const revived = await context.ui?.checkForDeathAndRevive?.(signal);
+      if (revived) throw new TaskRestartRequestedError();
     }
-    const health = await context.adb.gameHealth();
-    if (!health.running) throw new Error("GAME_PROCESS_EXITED");
-    if (health.anr) throw new Error("GAME_ANR_DETECTED");
+    if (Date.now() >= nextHealthCheck) {
+      nextHealthCheck = Date.now() + healthIntervalMs;
+      const deviceState = await context.adb.state();
+      if (deviceState !== "device") {
+        throw new Error(`MUMU_DEVICE_${deviceState.toUpperCase()}`);
+      }
+      const health = await context.adb.gameHealth();
+      if (!health.running) throw new Error("GAME_PROCESS_EXITED");
+      if (health.anr) throw new Error("GAME_ANR_DETECTED");
+    }
   }
+}
+
+function isTaskRestartRequested(error) {
+  return (
+    error?.code === "TASK_RESTART_REQUESTED_AFTER_REVIVAL" ||
+    error?.name === "TaskRestartRequestedError" ||
+    String(error?.message || error || "").startsWith(
+      "TASK_RESTART_REQUESTED_AFTER_REVIVAL:"
+    )
+  );
 }
 
 export function isRecoverableGameFailure(error, health, deviceState = "device") {

@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isRecoverableGameFailure,
+  runWithWatchdog,
   shouldHoldInitialStartup,
   waitForGameReady
 } from "../src/game-session.mjs";
+import { TaskRestartRequestedError } from "../src/ui.mjs";
 
 test("initial MuMu container startup remains protected for the full configured window", () => {
   assert.equal(shouldHoldInitialStartup(false, 300_000, 299_999), true);
@@ -71,6 +73,18 @@ test("a workflow failure is never upgraded to a MuMu restart", () => {
     ),
     false
   );
+});
+
+test("the watchdog converts a post-revival restart signal into a task retry result", async () => {
+  const result = await runWithWatchdog(
+    { config: { deathRecovery: { pollSeconds: 3 } }, ui: {} },
+    async () => {
+      throw new TaskRestartRequestedError();
+    },
+    new AbortController().signal,
+    { enabled: false }
+  );
+  assert.deepEqual(result, { restartTask: true });
 });
 
 test("zero promotion pages reaches HUD without blindly tapping the map area", async () => {

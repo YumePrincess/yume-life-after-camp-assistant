@@ -408,6 +408,9 @@ actor RuntimeService {
             if migrateExternalModelSettings(&object) {
                 changed = true
             }
+            if migrateDeathRecoverySettings(&object) {
+                changed = true
+            }
             if changed {
                 let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
                 try data.write(to: config, options: .atomic)
@@ -910,6 +913,36 @@ actor RuntimeService {
             changed = true
         }
         object["localVisionModel"] = model
+        return changed
+    }
+
+    private func migrateDeathRecoverySettings(_ object: inout [String: Any]) -> Bool {
+        var recovery = object["deathRecovery"] as? [String: Any] ?? [:]
+        let defaults: [String: Any] = [
+            "enabled": true,
+            "pollSeconds": 3,
+            "dialogRegion": ["left": 0, "top": 0, "right": 1_920, "bottom": 1_200],
+            "buttonRegion": ["left": 1_320, "top": 820, "right": 1_900, "bottom": 1_170],
+            "deathTexts": ["昏迷通知单", "昏迷于"],
+            "returnToCampTexts": ["回到营地"],
+            "accurateProbeIntervalMs": 1_500,
+            "accurateMinimumConfidence": 0.2,
+            "accurateScale": 2,
+            "reviveSettleMs": 2_000,
+            "reviveConfirmationTimeoutSeconds": 12,
+            "reviveConfirmationPollMs": 800,
+            "reviveReadyTexts": ["背包", "营地", "综合", "世界", "场景"],
+            "reviveReadyMinimumTexts": 2,
+            "cooldownSeconds": 8,
+            "restartDelaySeconds": 3,
+            "maxTaskRestarts": 2
+        ]
+        var changed = false
+        for (key, value) in defaults where recovery[key] == nil {
+            recovery[key] = value
+            changed = true
+        }
+        object["deathRecovery"] = recovery
         return changed
     }
 
