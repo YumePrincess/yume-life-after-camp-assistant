@@ -20,6 +20,35 @@ import {
   updateWorkflowProgress
 } from "./progress.mjs";
 
+// Table paging is deliberately accelerated in one place so member, contribution
+// and inactivity scans keep the same calibrated row endpoints while changing
+// only the time spent moving and settling between pages.
+export const TABLE_PAGE_SPEED_FACTOR = 0.6;
+export const TABLE_MOTION_MIN_INTERVAL_MS = 48;
+export const ALIGNED_TABLE_PAGE_STEP_REDUCTION_PX = 1;
+
+function scaledTableSwipeDurationMs(value, fallback = 1_000) {
+  const configured = Number(value);
+  return Math.max(
+    100,
+    Math.round(
+      (Number.isFinite(configured) && configured > 0 ? configured : fallback) *
+        TABLE_PAGE_SPEED_FACTOR
+    )
+  );
+}
+
+function scaledTableSettleMs(value, fallback, minimum = 0) {
+  const configured = Number(value);
+  const base = Number.isFinite(configured) && configured >= 0
+    ? configured
+    : fallback;
+  return Math.max(
+    minimum,
+    Math.round(base * TABLE_PAGE_SPEED_FACTOR)
+  );
+}
+
 export async function runMemberSync(context, command, _bundle, signal) {
   await updateWorkflowProgress(context, 0.04, "member_sync_prepare");
   const contribution = await captureContribution(context, signal, {
@@ -32,7 +61,7 @@ export async function runMemberSync(context, command, _bundle, signal) {
   await updateWorkflowProgress(context, 0.51, "activity_complete");
   await context.ui.executeFlow("closeContribution", {}, signal);
   await updateWorkflowProgress(context, 0.54, "member_panel_prepare");
-  const { details, staff } = await captureProfilesAndStaff(context, signal, {
+  const { details, staff, expectedMembers, memberScanSummary } = await captureProfilesAndStaff(context, signal, {
     progressRange: { start: 0.56, end: 0.82, step: "member_profile_scan" }
   });
   await updateWorkflowProgress(context, 0.86, "member_profile_complete");
@@ -42,13 +71,29 @@ export async function runMemberSync(context, command, _bundle, signal) {
     activity
   );
   if (!members.length) throw new Error("No member rows recognized; snapshot was not uploaded");
+  const normalizedFinalTailMissingAllowed =
+    memberScanSummary.missingAllowed === true &&
+    members.length === expectedMembers - 1;
+  if (members.length !== expectedMembers && !normalizedFinalTailMissingAllowed) {
+    throw new Error(
+      `MEMBER_SYNC_COUNT_MISMATCH: normalized ${members.length}, page header reports ${expectedMembers}; member snapshot was not uploaded`
+    );
+  }
+  const uploadedMemberSummary = {
+    ...memberScanSummary,
+    expectedCount: expectedMembers,
+    recognizedCount: members.length,
+    missingCount: Math.max(0, expectedMembers - members.length),
+    missingAllowed: normalizedFinalTailMissingAllowed
+  };
   await updateWorkflowProgress(context, 0.91, "member_snapshot");
   await context.api.snapshot(
     command.runId,
     "members",
     members,
     new Date().toISOString(),
-    signal
+    signal,
+    { memberSummary: uploadedMemberSummary }
   );
   const staffResult = await context.api.snapshot(
     command.runId,
@@ -62,7 +107,15 @@ export async function runMemberSync(context, command, _bundle, signal) {
   await context.report(
     "info",
     "member_sync_done",
-    `已用最新完整名单替换当前列表：${members.length} 名成员、${staffCount} 项公职`
+    uploadedMemberSummary.missingAllowed
+      ? `已用最新名单替换当前列表：${members.length}/${expectedMembers} 名成员（末页固定底部行重叠，允许缺失 1 人）、${staffCount} 项公职`
+      : `已用最新完整名单替换当前列表：${members.length} 名成员、${staffCount} 项公职`,
+    {
+      expectedCount: expectedMembers,
+      recognizedCount: members.length,
+      missingCount: uploadedMemberSummary.missingCount,
+      missingAllowed: uploadedMemberSummary.missingAllowed
+    }
   );
 }
 
@@ -76,12 +129,20 @@ export async function runContributionSync(context, command, _bundle, signal) {
     );
   }
   const expectedMemberCount = memberRoster.length;
+  const scanStats = { scannedNames: [] };
   await updateWorkflowProgress(context, 0.04, "contribution_prepare");
   const capturedRows = await captureContribution(context, signal, {
     expectedCount: expectedMemberCount,
+    scanStats,
     progressRange: { start: 0.08, end: 0.72, step: "contribution_scan" }
   });
-  const alignedRows = alignContributionRowsToRoster(capturedRows, memberRoster);
+  // Keep unresolved OCR candidates for the Workers reconciliation pass. The
+  // server owns the same authoritative roster and can use the numeric
+  // contribution as a second signal when two decorated players share one
+  // text core; dropping the row here would hide that evidence.
+  const alignedRows = alignContributionRowsToRoster(capturedRows, memberRoster, {
+    preserveUnmatched: true
+  });
   const rows = normalizeContribution(alignedRows);
   const locallyFiltered = Math.max(0, capturedRows.length - rows.length);
   await updateWorkflowProgress(context, 0.78, "contribution_validate");
@@ -114,7 +175,9 @@ export async function runContributionSync(context, command, _bundle, signal) {
       matched,
       ignored: ignored + locallyFiltered,
       ambiguous: Number(result?.ambiguous) || 0,
-      countMismatch
+      countMismatch,
+      scannedNames: scanStats.scannedNames,
+      scannedNameCount: scanStats.scannedNames.length
     }
   );
 }
@@ -124,8 +187,17 @@ export async function runInactivitySync(context, command, bundle, signal) {
     1,
     Number(bundle?.campConfig?.inactivityWarningDays) || 1
   );
+  const memberRoster = Array.isArray(context.memberRoster)
+    ? context.memberRoster.filter((member) => member?.name)
+    : [];
+  const expectedMemberCount = memberRoster.length || null;
   await updateWorkflowProgress(context, 0.04, "activity_prepare");
-  const scanOptions = { minimumInactiveDays };
+  const scanStats = { scannedNames: [] };
+  const scanOptions = {
+    minimumInactiveDays,
+    scanStats,
+    expectedCount: expectedMemberCount
+  };
   const rows = normalizeActivity(
     await captureActivity(context, true, signal, {
       ...scanOptions,
@@ -157,19 +229,21 @@ export async function runInactivitySync(context, command, bundle, signal) {
   await context.report(
     ignored ? "warning" : "info",
     "activity_done",
-    `斩杀页识别 ${rows.length} 行，自身去重后更新 ${matched} 条离线达到 ${minimumInactiveDays} 天的独立预警，忽略 ${ignored} 条重复数据；不会写入或关联成员名单`,
+    `斩杀页识别 ${rows.length} 行，经成员资料主名单规范化后更新 ${matched} 条离线达到 ${minimumInactiveDays} 天的独立预警，忽略 ${ignored} 条重复或无法安全匹配的数据；不会修改成员资料`,
     {
       recognized: rows.length,
       matched,
       ignored,
-      ambiguous
+      ambiguous,
+      scannedNames: scanStats.scannedNames,
+      scannedNameCount: scanStats.scannedNames.length
     }
   );
 }
 
 export async function runMemberProfileSync(context, command, _bundle, signal) {
   await updateWorkflowProgress(context, 0.04, "member_profile_prepare");
-  const { details, staff, expectedMembers } = await captureProfilesAndStaff(
+  const { details, staff, expectedMembers, memberScanSummary } = await captureProfilesAndStaff(
     context,
     signal,
     { progressRange: { start: 0.10, end: 0.78, step: "member_profile_scan" } }
@@ -177,7 +251,10 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
   await updateWorkflowProgress(context, 0.84, "member_profile_validate");
   const profiles = normalizeProfiles(details);
   if (!profiles.length) throw new Error("No profile rows recognized");
-  if (profiles.length !== expectedMembers) {
+  const acceptedFinalTailMissing =
+    memberScanSummary.missingAllowed === true &&
+    profiles.length === expectedMembers - 1;
+  if (profiles.length !== expectedMembers && !acceptedFinalTailMissing) {
     throw new Error(
       `MEMBER_PROFILE_COUNT_MISMATCH: normalized ${profiles.length}, page header reports ${expectedMembers}; profile snapshot was not uploaded`
     );
@@ -187,7 +264,15 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
     "profiles",
     profiles,
     new Date().toISOString(),
-    signal
+    signal,
+    {
+      memberSummary: {
+        ...memberScanSummary,
+        expectedCount: expectedMembers,
+        recognizedCount: profiles.length,
+        missingCount: Math.max(0, expectedMembers - profiles.length)
+      }
+    }
   );
   await updateWorkflowProgress(context, 0.91, "member_profile_staff");
   const staffResult = await context.api.snapshot(
@@ -202,7 +287,15 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
   await context.report(
     "info",
     "profiles_done",
-    `已更新 ${profiles.length} 名成员资料和 ${staffCount} 项最新公职；贡献数值由“更新贡献”任务单独更新`
+    acceptedFinalTailMissing
+      ? `已更新 ${profiles.length}/${expectedMembers} 名成员资料和 ${staffCount} 项最新公职；末页固定底部行重叠，允许缺失 1 人；贡献数值由“更新贡献”任务单独更新`
+      : `已更新 ${profiles.length} 名成员资料和 ${staffCount} 项最新公职；贡献数值由“更新贡献”任务单独更新`,
+    {
+      expectedCount: expectedMembers,
+      recognizedCount: profiles.length,
+      missingCount: Math.max(0, expectedMembers - profiles.length),
+      missingAllowed: acceptedFinalTailMissing
+    }
   );
 }
 
@@ -247,6 +340,7 @@ export async function captureContribution(context, signal, options = {}) {
     context.config.tables.contribution,
     signal,
     {
+      ...options,
       expectedCount,
       progressRange: scanProgressRange
     }
@@ -494,9 +588,17 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
         progressRange: scanProgressRange,
         scanState: state
       }
-    );
+  );
   let details = await scanMemberDetails(scanState);
-  if (details.length < expectedMembers && !scanState.stoppedOnIncompletePage) {
+  const finalTailMissingAllowed =
+    scanState.finalPageMissingAllowed === true &&
+    Number(scanState.finalPageMissingCount) === 1 &&
+    details.length === expectedMembers - 1;
+  if (
+    details.length < expectedMembers &&
+    !scanState.stoppedOnIncompletePage &&
+    !finalTailMissingAllowed
+  ) {
     await context.report(
       "warning",
       "member_details_count_retry",
@@ -506,9 +608,27 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
     scanState = {};
     details = await scanMemberDetails(scanState);
   }
-  if (details.length !== expectedMembers) {
+  const acceptedFinalTailMissing =
+    scanState.finalPageMissingAllowed === true &&
+    Number(scanState.finalPageMissingCount) === 1 &&
+    details.length === expectedMembers - 1;
+  if (details.length !== expectedMembers && !acceptedFinalTailMissing) {
     throw new Error(
       `MEMBER_PROFILE_COUNT_MISMATCH: recognized ${details.length}, page header reports ${expectedMembers}`
+    );
+  }
+  if (acceptedFinalTailMissing) {
+    await context.report(
+      "warning",
+      "member_profile_tail_missing_allowed",
+      `成员资料列表顶部总数为 ${expectedMembers}，实际整理 ${details.length} 名；末页最后一行与固定底部行重叠，允许缺失 1 人并按实际列表上报`,
+      {
+        expectedCount: expectedMembers,
+        recognizedCount: details.length,
+        missingCount: 1,
+        finalPage: scanState.finalPage,
+        positionLocked: true
+      }
     );
   }
   await context.ui.executeFlow("openStaffPanel", {}, signal);
@@ -554,7 +674,37 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
       `STAFF_COUNT_INVALID: recognized ${staff.length}, maximum is mayor 1 + staff 10`
     );
   }
-  return { details, staff, expectedMembers };
+  return {
+    details,
+    staff,
+    expectedMembers,
+    finalTailMissingAllowed: acceptedFinalTailMissing,
+    memberScanSummary: buildMemberScanSummary(
+      expectedMembers,
+      details.length,
+      scanState
+    )
+  };
+}
+
+function buildMemberScanSummary(expectedCount, recognizedCount, scanState = {}) {
+  const expected = Math.max(0, Number(expectedCount) || 0);
+  const recognized = Math.max(0, Number(recognizedCount) || 0);
+  return {
+    expectedCount: expected,
+    recognizedCount: recognized,
+    missingCount: Math.max(0, expected - recognized),
+    missingAllowed:
+      scanState.finalPageMissingAllowed === true &&
+      Number(scanState.finalPageMissingCount) === 1,
+    finalPage: Number.isInteger(Number(scanState.finalPage))
+      ? Number(scanState.finalPage)
+      : null,
+    pages: Number.isInteger(Number(scanState.pages))
+      ? Number(scanState.pages)
+      : null,
+    positionLocked: scanState.finalPagePositionLocked === true
+  };
 }
 
 export function dedupeStaffAssignments(rows) {
@@ -636,8 +786,15 @@ export async function capturePagedTable(
   const contributionNames = new Set();
   const memberDetailsMode = label === "member-details";
   const contributionTableMode = label.startsWith("member-contribution");
-  const alignedPagedTableMode =
-    contributionTableMode || label.startsWith("member-activity");
+  const activityTableMode = label.startsWith("member-activity");
+  const alignedPagedTableMode = contributionTableMode || activityTableMode;
+  const localVisionEnabled =
+    context.config?.localVisionModel?.enabled === true ||
+    context.vision?.advisor?.enabled === true;
+  const localVisionPageRead =
+    localVisionEnabled &&
+    typeof vision.extractTableRows === "function" &&
+    (memberDetailsMode || contributionTableMode || activityTableMode);
   if (alignedPagedTableMode) {
     definition = withAlignedPagedTableCalibration(
       definition,
@@ -651,10 +808,15 @@ export async function capturePagedTable(
   let scannedPages = 0;
   let tailFullPagePending = false;
   let tailFullPageReason = null;
+  let tailCorrectionAttempts = 0;
   const memberPageRetries = new Map();
   let stoppedOnIncompletePage = false;
   let incompletePage = null;
   let incompletePageNames = [];
+  let finalTailMissingCount = 0;
+  let finalTailExpectedRows = null;
+  let finalTailRecognizedRows = null;
+  let finalTailMissingAllowed = false;
   let memberPageHadExactCollision = false;
   const hasFullPageDefinition =
     memberDetailsMode && Boolean(definition.pagination?.fullPageRegion);
@@ -673,16 +835,27 @@ export async function capturePagedTable(
   // premature page-18 stop.
   const maxMemberPageRetries = 6;
   const expectedPageCount =
-    memberDetailsMode && expectedCount !== null
+    (memberDetailsMode || alignedPagedTableMode) && expectedCount !== null
       ? Math.max(1, Math.ceil(expectedCount / memberRowsPerPage))
       : null;
+  const configuredMaxPages = Math.max(
+    1,
+    Number(definition.pagination.maxPages) || 24
+  );
+  // The member header is authoritative for the number of five-row pages.
+  // Keep an independent hard ceiling for stale external configs: 120 members
+  // is the largest supported roster, so the scan cannot exceed 24 pages.
+  const memberPageHardLimit = memberDetailsMode
+    ? Math.min(24, configuredMaxPages)
+    : configuredMaxPages;
   const maxMemberPageCount =
     expectedPageCount === null
       ? null
-      : expectedPageCount + Math.max(
-          0,
-          Number(definition.pagination.maxExtraPagesAfterExpected) || 2
-        );
+      : Math.min(expectedPageCount, memberPageHardLimit);
+  const expectedTailOverlapCount =
+    (memberDetailsMode || alignedPagedTableMode) && expectedCount !== null
+      ? expectedMemberTailOverlapCount(expectedCount, memberRowsPerPage)
+      : null;
   let alignedPageHeightPx = Math.max(
     0,
     Number(definition.pagination.pageHeightPx) || 0
@@ -693,39 +866,84 @@ export async function capturePagedTable(
     memberPageHadExactCollision = false;
     scannedPages = page + 1;
     const scheduledLastPage =
-      memberDetailsMode &&
+      (memberDetailsMode || alignedPagedTableMode) &&
       expectedPageCount !== null &&
       page + 1 === expectedPageCount;
-    // Once the calculated last page is incomplete, the two permitted
-    // continuation pages are tail pages too.  They must use the expanded
-    // full-page crop as-is; applying the normal five-row alignment pass here
-    // can shift the first row and create an artificial partial/duplicate row.
-    const scheduledLastContinuationPage =
-      memberDetailsMode &&
-      expectedPageCount !== null &&
-      page + 1 > expectedPageCount &&
-      page + 1 <= maxMemberPageCount;
     const fullPageRead =
       hasFullPageDefinition &&
-      (tailFullPagePending || scheduledLastPage || scheduledLastContinuationPage);
+      (tailFullPagePending || scheduledLastPage);
+    // The page immediately before the calculated tail has a different stable
+    // viewport: five complete rows are at the top, followed by a clipped next
+    // row and the fixed bottom assistant row. Do not apply the normal first-row
+    // color-band correction here; its down gesture moves the list backwards
+    // and replaces the fifth new member with the previous page's last row.
+    const penultimateFixedGeometry =
+      memberDetailsMode &&
+      hasFullPageDefinition &&
+      expectedPageCount !== null &&
+      page + 2 === expectedPageCount;
     const currentTailReason =
       tailFullPageReason ||
       (scheduledLastPage
         ? "scheduled-last"
-        : scheduledLastContinuationPage
-          ? "scheduled-last-continuation"
-          : null);
+        : null);
     const pageDefinition = fullPageRead
       ? memberFullPageDefinition(definition)
       : definition;
+    if (fullPageRead) {
+      await report(
+        "info",
+        "member_details_tail_fixed_geometry",
+        `第 ${page + 1} 页为预测末页，忽略固定顶部半行，锁定其下方 ${memberRowsPerPage} 个成员槽位读取；末页仅保留计算的 ${Math.max(1, memberRowsPerPage - (expectedTailOverlapCount || 0))} 行新成员`,
+        {
+          page: page + 1,
+          expectedCount,
+          expectedPageCount,
+          fixedTopPartialRows: 1,
+          fixedRowsBelowPartial: memberRowsPerPage,
+          expectedTailOverlapCount,
+          expectedTailNewCount: Math.max(
+            1,
+            memberRowsPerPage - (expectedTailOverlapCount || 0)
+          ),
+          finalPage: scheduledLastPage,
+          positionLocked: true
+        }
+      );
+    } else if (penultimateFixedGeometry) {
+      await report(
+        "info",
+        "member_details_penultimate_fixed_geometry",
+        `第 ${page + 1} 页为预测末页前一页，锁定当前位置读取顶部 ${memberRowsPerPage} 个完整成员槽位，忽略底部半行和固定底部行，不执行行校准滑动`,
+        {
+          page: page + 1,
+          expectedCount,
+          expectedPageCount,
+          fixedTopRows: memberRowsPerPage,
+          ignoredBottomPartialRows: 1,
+          fixedBottomRows: 1,
+          finalPage: false,
+          positionLocked: true
+        }
+      );
+    }
     tailFullPagePending = false;
     tailFullPageReason = null;
     const pageStartedAt = Date.now();
     let frame;
     let rows = [];
+    let tailOverlapKeys = new Set();
+    let observedTailOverlapKeys = new Set();
+    let tailOverlapRowIndexes = new Set();
+    let alignedTailOverlapRowIndexes = new Set();
     let preparedFrame = null;
     let stopAfterIncompletePage = false;
-    if (memberDetailsMode && page > 0 && !fullPageRead) {
+    if (
+      memberDetailsMode &&
+      page > 0 &&
+      !fullPageRead &&
+      !penultimateFixedGeometry
+    ) {
       preparedFrame = await alignMemberDetailsPage(
         context,
         `${label}-${page + 1}`,
@@ -805,9 +1023,9 @@ export async function capturePagedTable(
         // must run before the visible-row slice; otherwise an avatar token
         // can consume one of the five slots and hide the real member below it.
         attemptRows = filterMemberDetailRows(attemptRows);
-        if (!fullPageRead) {
-          const visibleRows = Number(definition.pagination.rowsPerPage) || 5;
-          attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
+          if (!fullPageRead) {
+            const visibleRows = Number(definition.pagination.rowsPerPage) || 5;
+            attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
         }
       }
       const contributionNeedsRecovery =
@@ -829,7 +1047,7 @@ export async function capturePagedTable(
         memberDetailsMode &&
         (attemptRows.length < minimumRowsPerPage || sailingTitleLeak);
       const activityNeedsRecovery =
-        label.startsWith("member-activity") &&
+        activityTableMode &&
         attemptRows.length > 0 &&
         (attemptRows.length < minimumRowsPerPage ||
           attemptRows.some(
@@ -844,7 +1062,8 @@ export async function capturePagedTable(
             attemptRows.length < minimumRowsPerPage) ||
           contributionNeedsRecovery ||
           shouldRequestMemberAdvisor ||
-          activityNeedsRecovery) &&
+          activityNeedsRecovery ||
+          localVisionPageRead) &&
         typeof vision.extractTableRows === "function"
       ) {
         if (shouldRequestMemberAdvisor) {
@@ -868,18 +1087,44 @@ export async function capturePagedTable(
             }
           );
         }
-        const recoveredRows = await vision.extractTableRows(
-          attemptFrame.path,
-          pageDefinition,
-          attemptLabel,
-          signal,
-          shouldRequestMemberAdvisor
+        if (localVisionPageRead) {
+          await report(
+            "info",
+            "local_model_table_reread",
+            `第 ${page + 1} 页调用 Qwen 本地视觉辅助模型重读${memberDetailsMode ? "成员资料" : contributionTableMode ? "贡献" : "斩杀预警"}表；当前 OCR 成员：${attemptRows.map((row) => String(row.name || "").trim()).filter(Boolean).join("、") || "无"}`,
+            {
+              page: page + 1,
+              table: label,
+              recognizedNames: attemptRows
+                .map((row) => String(row.name || "").trim())
+                .filter(Boolean),
+              fixedRowRead: true
+            }
+          );
+        }
+        const nativeRowsBeforeAdvisor = attemptRows;
+        const rereadOptions = localVisionPageRead
+          ? {
+              forceLocalVision: true,
+              ...(memberDetailsMode
+                ? { forceMemberAdvisor: true }
+                : contributionTableMode
+                  ? { forceContributionVision: true }
+                  : { forceActivityVision: true })
+            }
+          : shouldRequestMemberAdvisor
             ? { forceMemberAdvisor: true }
             : activityNeedsRecovery
               ? { forceActivityRecovery: true }
               : contributionNeedsRecovery
                 ? { forceContributionRecovery: true }
-            : undefined
+                : undefined;
+        const recoveredRows = await vision.extractTableRows(
+          attemptFrame.path,
+          pageDefinition,
+          attemptLabel,
+          signal,
+          rereadOptions
         ).catch(async (error) => {
           await report(
             "warning",
@@ -899,6 +1144,19 @@ export async function capturePagedTable(
               const visibleRows = fullPageRead
                 ? Number(pageDefinition.pagination.fullPageRows) || 7
                 : Number(definition.pagination.rowsPerPage) || 5;
+              const nativeMemberRows = filterMemberDetailRows(
+                nativeRowsBeforeAdvisor
+              );
+              // A page-level model response with fewer rows is incomplete,
+              // not a license to erase the native rows. Vision normally
+              // merges by fixed row before returning, but retain this guard
+              // for timeouts, older adapters and test/plugin providers.
+              if (
+                localVisionPageRead &&
+                recoveredMemberRows.length < nativeMemberRows.length
+              ) {
+                return nativeMemberRows.slice(0, Math.max(1, visibleRows));
+              }
               return recoveredMemberRows.slice(0, Math.max(1, visibleRows));
             })()
           : label.startsWith("member-activity")
@@ -1008,6 +1266,50 @@ export async function capturePagedTable(
     }
     if (
       alignedPagedTableMode &&
+      scheduledLastPage &&
+      page > 0 &&
+      expectedTailOverlapCount !== null
+    ) {
+      const expectedTailNewCount = Math.max(
+        1,
+        rowsPerPage - expectedTailOverlapCount
+      );
+      const maxRowsToDiscard = Math.max(
+        0,
+        rows.length - expectedTailNewCount
+      );
+      const discardCount = Math.min(
+        expectedTailOverlapCount,
+        maxRowsToDiscard
+      );
+      alignedTailOverlapRowIndexes = new Set(
+        Array.from({ length: discardCount }, (_, index) => index)
+      );
+      const tailRowsBeforeTrim = rows.slice();
+      rows = rows.filter(
+        (_, index) => !alignedTailOverlapRowIndexes.has(index)
+      );
+      await report(
+        "info",
+        `${label}_tail_overlap_excluded`,
+        `第 ${page + 1} 页按成员资料任务总数 ${expectedCount} 计算为末页，读取后排除顶部 ${expectedTailOverlapCount} 条预期重复行，保留 ${rows.length} 条末页成员`,
+        {
+          page: page + 1,
+          expectedCount,
+          expectedPageCount,
+          expectedTailOverlapCount,
+          expectedTailNewCount,
+          predictedOverlapNames: tailRowsBeforeTrim
+            .slice(0, discardCount)
+            .map((row) => row.name)
+            .filter(Boolean),
+          overlapCount: discardCount,
+          retainedNames: rows.map((row) => row.name).filter(Boolean)
+        }
+      );
+    }
+    if (
+      alignedPagedTableMode &&
       page === 0 &&
       alignedPageHeightPx <= 0 &&
       definition.pagination.measurePageHeightFromRows !== false
@@ -1022,7 +1324,12 @@ export async function capturePagedTable(
           0,
           Number(definition.pagination.pageHeightExtraPx) || 0
         );
-        alignedPageHeightPx = measurement.totalHeightPx + pageHeightExtraPx;
+        alignedPageHeightPx = Math.max(
+          1,
+          measurement.totalHeightPx +
+            pageHeightExtraPx -
+            ALIGNED_TABLE_PAGE_STEP_REDUCTION_PX
+        );
         await report(
           "info",
           "table_page_height_calibrated",
@@ -1059,13 +1366,40 @@ export async function capturePagedTable(
       // Normal pages are deliberately non-overlapping five-row windows. Do
       // not run cross-page aliasing/reconciliation on them: a visually valid
       // row whose OCR name resembles a previous row must remain a candidate.
-      // Only the calculated tail and its continuation pages are allowed to
-      // reconcile OCR variants because those pages are read as one expanded
-      // end-page crop and may legitimately contain a repeated final row.
+      // Only the calculated tail is allowed to reconcile OCR variants because
+      // it is read as one expanded end-page crop and can contain the previous
+      // page's half-visible row.
       const rawRows = filterMemberDetailRows(rows);
+      if (fullPageRead && page > 0) {
+        const previousPageKeys = new Set(
+          previousRows
+            .map((row) => memberProfileNameKey(row?.name))
+            .filter(Boolean)
+        );
+        tailOverlapKeys = new Set(
+          rawRows
+            .slice(0, Math.min(expectedTailOverlapCount || 0, rawRows.length))
+            .map((row) => memberProfileNameKey(row?.name))
+            .filter((key) => key && previousPageKeys.has(key))
+        );
+        tailOverlapRowIndexes = new Set(
+          Array.from(
+            {
+              length: Math.min(
+                expectedTailOverlapCount || 0,
+                rawRows.length
+              )
+            },
+            (_, index) => index
+          )
+        );
+      }
+      // Detect a duplicate before collapsing it. A repeated row can mean a
+      // missed member slot and should still receive row-level recovery.
       memberPageHadExactCollision = hasSuspiciousMemberCollision(
         rawRows,
-        byName
+        byName,
+        tailOverlapKeys
       );
       // Exact OCR duplicates are not separate members.  Collapse them before
       // counting/adding the page, while retaining the collision signal above
@@ -1087,6 +1421,45 @@ export async function capturePagedTable(
           }
         }
       }
+      if (fullPageRead && page > 0) {
+        const previousPageKeys = new Set(
+          previousRows
+            .map((row) => memberProfileNameKey(row?.name))
+            .filter(Boolean)
+        );
+        observedTailOverlapKeys = new Set(
+          rows
+            .map((row) => memberProfileNameKey(row?.name))
+            .filter((key) => key && previousPageKeys.has(key))
+        );
+        if (tailOverlapKeys.size || expectedTailOverlapCount > 0) {
+          await report(
+            "info",
+            "member_details_tail_overlap_excluded",
+            `第 ${page + 1} 页按顶部 ${expectedCount} 名成员计算，末页预期排除 ${expectedTailOverlapCount} 个重复行；实际排除：${rows
+              .filter((_, index) => tailOverlapRowIndexes.has(index))
+              .map((row) => row.name)
+              .join("、") || "无"}`,
+            {
+              page: page + 1,
+              expectedTailOverlapCount,
+              predictedOverlapNames: rows
+                .filter((_, index) => tailOverlapRowIndexes.has(index))
+                .map((row) => row.name),
+              observedOverlapNames: rows
+                .filter((row) =>
+                  observedTailOverlapKeys.has(memberProfileNameKey(row?.name))
+                )
+                .map((row) => row.name),
+              overlapNames: rows
+                .filter((_, index) => tailOverlapRowIndexes.has(index))
+                .map((row) => row.name),
+              overlapCount: tailOverlapRowIndexes.size,
+              observedOverlapCount: observedTailOverlapKeys.size
+            }
+          );
+        }
+      }
     }
     const memberPageNovelty = memberDetailsMode
       ? pageNovelMemberCount(rows, byName)
@@ -1096,9 +1469,9 @@ export async function capturePagedTable(
       frame?.path &&
       (rows.length < minimumRowsPerPage ||
         memberPageHadExactCollision ||
-        hasSuspiciousMemberCollision(rows, byName) ||
+        hasSuspiciousMemberCollision(rows, byName, tailOverlapKeys) ||
         (fullPageRead &&
-          memberPageNovelty < rows.length &&
+          memberPageNovelty < rows.length - tailOverlapKeys.size &&
           rows.length >= memberRowsPerPage) ||
         (expectedCount !== null &&
           byName.size < expectedCount &&
@@ -1188,6 +1561,74 @@ export async function capturePagedTable(
         );
       }
     }
+    if (memberDetailsMode && fullPageRead && scheduledLastPage) {
+      // The game can place the last real member in the same vertical slot as
+      // the sticky bottom assistant row. That is a physical UI defect, not a
+      // reason to invent a placeholder member. Keep every normal page strict,
+      // but allow exactly one absent new row on the calculated final page.
+      finalTailExpectedRows = Math.max(
+        1,
+        memberRowsPerPage - (expectedTailOverlapCount || 0)
+      );
+      const finalTailOverlapRows = rows.filter((row, index) => {
+        const key = memberProfileNameKey(row?.name);
+        return (
+          tailOverlapRowIndexes.has(index) ||
+          (key &&
+            (tailOverlapKeys.has(key) || observedTailOverlapKeys.has(key)))
+        );
+      });
+      finalTailRecognizedRows = Math.max(
+        0,
+        rows.length - finalTailOverlapRows.length
+      );
+      finalTailMissingCount = Math.max(
+        0,
+        finalTailExpectedRows - finalTailRecognizedRows
+      );
+      finalTailMissingAllowed = finalTailMissingCount === 1;
+      if (scanState && typeof scanState === "object") {
+        scanState.finalPage = page + 1;
+        scanState.finalPageExpectedRows = finalTailExpectedRows;
+        scanState.finalPageRecognizedRows = finalTailRecognizedRows;
+        scanState.finalPageMissingCount = finalTailMissingCount;
+        scanState.finalPageMissingAllowed = finalTailMissingAllowed;
+        scanState.finalPagePositionLocked = true;
+      }
+      if (finalTailMissingAllowed) {
+        await report(
+          "warning",
+          "member_details_tail_missing_allowed",
+          `第 ${page + 1} 页末页因最后一行与固定底部行重叠，实际缺失 1 名成员；保留已识别列表，不补造成员，按 ${finalTailRecognizedRows}/${finalTailExpectedRows} 个末页新成员上报`,
+          {
+            page: page + 1,
+            expectedCount,
+            expectedPageCount,
+            expectedTailOverlapCount,
+            expectedTailRows: finalTailExpectedRows,
+            recognizedTailRows: finalTailRecognizedRows,
+            missingCount: finalTailMissingCount,
+            positionLocked: true
+          }
+        );
+      } else if (finalTailMissingCount > 1) {
+        await report(
+          "warning",
+          "member_details_tail_missing_unresolved",
+          `第 ${page + 1} 页末页缺少 ${finalTailMissingCount} 名成员，超过允许的 1 人缺口；不把缺口伪装成完整名单`,
+          {
+            page: page + 1,
+            expectedCount,
+            expectedPageCount,
+            expectedTailOverlapCount,
+            expectedTailRows: finalTailExpectedRows,
+            recognizedTailRows: finalTailRecognizedRows,
+            missingCount: finalTailMissingCount,
+            positionLocked: true
+          }
+        );
+      }
+    }
     if (memberDetailsMode && !fullPageRead && rows.length < memberRowsPerPage) {
       const retryCount = (memberPageRetries.get(page) || 0) + 1;
       if (retryCount <= maxMemberPageRetries) {
@@ -1244,6 +1685,17 @@ export async function capturePagedTable(
       stopAfterIncompletePage = true;
     }
     memberPageRetries.delete(page);
+    const pagePlayerNames = rows
+      .map((row) => String(row?.name || "").trim())
+      .filter(Boolean);
+    if (options.scanStats && Array.isArray(options.scanStats.scannedNames)) {
+      const knownNames = new Set(options.scanStats.scannedNames);
+      for (const name of pagePlayerNames) {
+        if (knownNames.has(name)) continue;
+        knownNames.add(name);
+        options.scanStats.scannedNames.push(name);
+      }
+    }
     options.observedParsedRows =
       (Number(options.observedParsedRows) || 0) + rows.length;
     let reachedActivityBoundary = false;
@@ -1274,12 +1726,22 @@ export async function capturePagedTable(
         }
       }
     } else {
-      for (const row of rows) {
+      for (const [rowIndex, row] of rows.entries()) {
         const baseRowKey = memberDetailsMode
           ? memberProfileNameKey(row.name)
           : row.name;
         const rowKey = baseRowKey;
         if (!rowKey) continue;
+        if (
+          memberDetailsMode &&
+          fullPageRead &&
+          (tailOverlapRowIndexes.has(rowIndex) ||
+            tailOverlapKeys.has(rowKey) ||
+            observedTailOverlapKeys.has(rowKey))
+        ) {
+          rejectedAfterExpectedCount += 1;
+          continue;
+        }
         const current = byName.get(rowKey) || {};
         if (
           !byName.has(rowKey) &&
@@ -1321,13 +1783,15 @@ export async function capturePagedTable(
       `${label}_page`,
       memberDetailsMode
         ? `第 ${page + 1} 页识别 ${rows.length} 行，最终玩家：${finalPlayerNames.join("、") || "无"}，累计 ${byName.size} 名成员（耗时 ${elapsedMs}ms）`
-        : `第 ${page + 1} 页识别 ${rows.length} 行，累计 ${accumulatedRows} 行（耗时 ${elapsedMs}ms）`,
+        : `第 ${page + 1} 页识别 ${rows.length} 行，扫描成员：${pagePlayerNames.join("、") || "无"}，累计 ${accumulatedRows} 行（耗时 ${elapsedMs}ms）`,
       {
         screenshot: frame.path,
         expectedCount,
         rejectedAfterExpectedCount,
         accumulatedRows,
         uniqueNames: contributionTableMode ? contributionNames.size : byName.size,
+        pagePlayerNames,
+        pagePlayerNameCount: pagePlayerNames.length,
         elapsedMs,
         ...(memberDetailsMode ? { finalPlayerNames } : {})
       }
@@ -1344,23 +1808,53 @@ export async function capturePagedTable(
       options.progressRange?.step || `${label}_page`
     );
     if (stopAfterIncompletePage) break;
+    const unexpectedTailOverlapCount =
+      fullPageRead && page > 0
+        ? Math.max(
+            0,
+            observedTailOverlapKeys.size - (expectedTailOverlapCount || 0)
+          )
+        : 0;
+    if (
+      memberDetailsMode &&
+      fullPageRead &&
+      currentTailReason === "scheduled-last" &&
+      expectedCount !== null &&
+      byName.size < expectedCount &&
+      unexpectedTailOverlapCount > 0 &&
+      tailCorrectionAttempts < 2
+    ) {
+      tailCorrectionAttempts += 1;
+      await report(
+        "warning",
+        "member_details_tail_alignment_correction",
+        `第 ${page + 1} 页末页实际多出 ${unexpectedTailOverlapCount} 个上一页重复行，保持固定位置原地重读，不上移、不增加扫描页数`,
+        {
+          page: page + 1,
+          expectedTailOverlapCount,
+          observedOverlapCount: observedTailOverlapKeys.size,
+          unexpectedTailOverlapCount,
+          attempt: tailCorrectionAttempts,
+          positionLocked: true
+        }
+      );
+      tailFullPagePending = true;
+      tailFullPageReason = "tail-correction";
+      continue;
+    }
     const organizedMemberCount =
       memberDetailsMode && expectedCount !== null
         ? reconcileMemberDetailRows([...byName.values()], expectedCount).length
         : null;
     const scheduledTailPage =
       currentTailReason === "scheduled-last" ||
-      currentTailReason === "scheduled-last-continuation";
-    const scheduledLastNeedsContinuation =
-      memberDetailsMode &&
-      scheduledTailPage &&
-      expectedCount !== null &&
-      organizedMemberCount < expectedCount &&
-      page + 1 < maxMemberPageCount;
+      currentTailReason === "tail-correction";
     if (
       memberDetailsMode &&
       fullPageRead &&
-      currentTailReason === "incomplete"
+      currentTailReason === "incomplete" &&
+      !finalTailMissingAllowed &&
+      rows.length < memberRowsPerPage
     ) {
       stoppedOnIncompletePage = true;
       incompletePage = page + 1;
@@ -1387,8 +1881,42 @@ export async function capturePagedTable(
     if (
       memberDetailsMode &&
       fullPageRead &&
+      scheduledLastPage &&
+      finalTailMissingCount > 1
+    ) {
+      stoppedOnIncompletePage = true;
+      incompletePage = page + 1;
+      incompletePageNames = rows
+        .map((row) => String(row?.name || "").trim())
+        .filter(Boolean);
+      if (scanState && typeof scanState === "object") {
+        scanState.stoppedOnIncompletePage = true;
+        scanState.incompletePage = page + 1;
+      }
+      await report(
+        "warning",
+        "member_details_incomplete_stop",
+        `第 ${page + 1} 页末页缺少 ${finalTailMissingCount} 名成员，超过允许的 1 人缺口，已停止翻页；当前整页读取到 ${finalTailRecognizedRows}/${finalTailExpectedRows} 个末页新成员`,
+        {
+          page: page + 1,
+          recognizedRows: rows.length,
+          recognizedNames: incompletePageNames,
+          expectedTailRows: finalTailExpectedRows,
+          recognizedTailRows: finalTailRecognizedRows,
+          missingCount: finalTailMissingCount,
+          maxRetries: maxMemberPageRetries,
+          positionLocked: true
+        }
+      );
+      break;
+    }
+    if (
+      memberDetailsMode &&
+      fullPageRead &&
       (currentTailReason === "stagnant" ||
-        (scheduledTailPage && !scheduledLastNeedsContinuation))
+        scheduledTailPage ||
+        (currentTailReason === "incomplete" &&
+          (rows.length >= memberRowsPerPage || finalTailMissingAllowed)))
     ) {
       await report(
         "info",
@@ -1402,24 +1930,14 @@ export async function capturePagedTable(
           recognized: byName.size,
           organizedMemberCount,
           expectedCount,
-          scheduledLastNeedsContinuation
+          finalPageMissingCount: finalTailMissingCount,
+          finalPageExpectedRows: finalTailExpectedRows,
+          finalPageRecognizedRows: finalTailRecognizedRows,
+          finalPageMissingAllowed: finalTailMissingAllowed,
+          positionLocked: true
         }
       );
       break;
-    }
-    if (scheduledLastNeedsContinuation) {
-      await report(
-        "warning",
-        "member_details_expected_page_incomplete",
-        `预计末页第 ${expectedPageCount} 页整理出 ${organizedMemberCount}/${expectedCount} 名，继续向下补读（最多到第 ${maxMemberPageCount} 页）`,
-        {
-          page: page + 1,
-          expectedPageCount,
-          maxMemberPageCount,
-          organizedMemberCount,
-          expectedCount
-        }
-      );
     }
     if (reachedActivityBoundary) {
       await report(
@@ -1440,7 +1958,7 @@ export async function capturePagedTable(
     // below deduplicates and caps the organized roster to the header total.
     if (
       !memberDetailsMode &&
-      !contributionTableMode &&
+      !alignedPagedTableMode &&
       expectedCount !== null &&
       byName.size >= expectedCount
     ) {
@@ -1453,6 +1971,24 @@ export async function capturePagedTable(
           recognized: byName.size,
           page: page + 1,
           rejectedAfterExpectedCount
+        }
+      );
+      break;
+    }
+    if (alignedPagedTableMode && scheduledLastPage) {
+      await report(
+        "info",
+        `${label}_tail_complete`,
+        `${label.startsWith("member-contribution") ? "贡献" : "斩杀预警"}列表已按成员资料任务总数 ${expectedCount} 扫描到预测末页第 ${expectedPageCount} 页，末页整理后停止继续翻页`,
+        {
+          expectedCount,
+          expectedPageCount,
+          page: page + 1,
+          recognized: contributionTableMode
+            ? contributionNames.size
+            : byName.size,
+          expectedTailOverlapCount,
+          retainedRows: rows.length
         }
       );
       break;
@@ -1474,7 +2010,6 @@ export async function capturePagedTable(
     const repeatedMemberPage =
       memberDetailsMode &&
       page > 0 &&
-      !scheduledLastNeedsContinuation &&
       fullPageRead &&
       (fingerprint === previousFingerprint ||
         (added === 0 && rows.length >= memberRowsPerPage));
@@ -1510,16 +2045,16 @@ export async function capturePagedTable(
     previousRows = rows.map((row) => ({ ...row }));
     const memberPageLimitReached =
       memberDetailsMode &&
-      maxMemberPageCount !== null &&
-      page + 1 >= maxMemberPageCount;
+      (page + 1 >= memberPageHardLimit ||
+        (maxMemberPageCount !== null && page + 1 >= maxMemberPageCount));
     if (memberPageLimitReached || page + 1 >= definition.pagination.maxPages) {
       await report(
         "info",
         `${label}_page_limit_reached`,
         memberPageLimitReached
-          ? `已达到顶部人数计算末页 ${expectedPageCount} 页后的最多补读 ${maxMemberPageCount - expectedPageCount} 页（上限第 ${maxMemberPageCount} 页），不再继续翻页`
+          ? `已达到成员扫描页数上限 ${memberPageHardLimit} 页，不再继续翻页`
           : `已扫描配置上限 ${definition.pagination.maxPages} 页，不再继续翻页`,
-        { expectedPageCount, maxMemberPageCount }
+        { expectedPageCount, maxMemberPageCount: memberPageHardLimit }
       );
       break;
     }
@@ -1543,16 +2078,13 @@ export async function capturePagedTable(
       // can jump past one or more rows. Send the same calibrated drag as
       // small MOVE segments and release immediately at the calibrated
       // endpoint so the next page starts on a row boundary. The calibrated
-      // duration is shortened by 30% to increase speed without changing
+      // duration is shortened by 40% to increase speed without changing
       // either endpoint or the segmented path.
       const usedTouchFallback = await memberAlignmentSwipe(
         adb,
         swipeFrom,
         effectiveAlignedSwipeTo,
-        Math.max(
-          100,
-          Math.round((Number(definition.pagination.durationMs) || 1_000) * 0.7)
-        ),
+        scaledTableSwipeDurationMs(definition.pagination.durationMs),
         signal
       );
       if (usedTouchFallback) {
@@ -1578,12 +2110,20 @@ export async function capturePagedTable(
       label.startsWith("member-contribution") || label.startsWith("member-activity");
     const settleAfterSwipeMs = fixedPageSettle
       ? alignedPagedTableMode
-        ? Math.max(
-            1_000,
-            Math.min(2_000, Number(definition.pagination.settleAfterSwipeMs) || 2_000)
+        ? scaledTableSettleMs(
+            Math.min(
+              2_000,
+              Number(definition.pagination.settleAfterSwipeMs) || 2_000
+            ),
+            2_000,
+            600
           )
-        : Math.max(3_000, Number(definition.pagination.settleAfterSwipeMs) || 3_000)
-      : Math.max(0, Number(definition.pagination.settleAfterSwipeMs) || 0);
+        : scaledTableSettleMs(
+            definition.pagination.settleAfterSwipeMs,
+            3_000,
+            1_800
+          )
+      : scaledTableSettleMs(definition.pagination.settleAfterSwipeMs, 0);
     if (settleAfterSwipeMs > 0) {
       await (context.sleep || delay)(settleAfterSwipeMs, signal);
     } else {
@@ -1594,6 +2134,10 @@ export async function capturePagedTable(
   const rows = contributionTableMode ? contributionRows : [...byName.values()];
   if (memberDetailsMode) {
     const reconciled = reconcileMemberDetailRows(rows, expectedCount);
+    if (scanState && typeof scanState === "object") {
+      scanState.pages = scannedPages;
+      scanState.reconciledRows = reconciled.length;
+    }
     const scanStoppedOnIncompletePage =
       stoppedOnIncompletePage || scanState?.stoppedOnIncompletePage === true;
     const finalStep = scanStoppedOnIncompletePage
@@ -1604,7 +2148,9 @@ export async function capturePagedTable(
         ? `成员资料第 ${incompletePage || scanState?.incompletePage || scannedPages} 页连续重读达到最多 ${maxMemberPageRetries} 次仍不完整，停止当前扫描；整理为 ${reconciled.length}/${expectedCount} 名成员；当前已读到：${incompletePageNames.join("、") || "无"}`
         : `成员资料第 ${incompletePage || scanState?.incompletePage || scannedPages} 页连续重读达到最多 ${maxMemberPageRetries} 次仍不完整，停止当前扫描；整理为 ${reconciled.length} 名成员；当前已读到：${incompletePageNames.join("、") || "无"}`
       : expectedCount !== null
-        ? `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；全表去重合并后整理为 ${reconciled.length}/${expectedCount} 名成员`
+        ? finalTailMissingAllowed
+          ? `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；末页因最后一行与固定底部行重叠允许缺失 1 人，全表整理为 ${reconciled.length}/${expectedCount} 名成员`
+          : `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；全表去重合并后整理为 ${reconciled.length}/${expectedCount} 名成员`
         : `成员资料列表已完整翻到底部，扫描 ${scannedPages} 页；整理结果为 ${reconciled.length} 名成员`;
     await report(
       scanStoppedOnIncompletePage ? "warning" : "info",
@@ -1615,6 +2161,11 @@ export async function capturePagedTable(
         scannedRows: rows.length,
         reconciledRows: reconciled.length,
         expectedCount,
+        finalPageMissingCount: finalTailMissingCount,
+        finalPageExpectedRows: finalTailExpectedRows,
+        finalPageRecognizedRows: finalTailRecognizedRows,
+        finalPageMissingAllowed: finalTailMissingAllowed,
+        positionLocked: finalTailMissingAllowed,
         stoppedAtExpectedCount: false,
         ...(scanStoppedOnIncompletePage
           ? {
@@ -1735,8 +2286,14 @@ function withAlignedPagedTableCalibration(definition, kind) {
       // carry pageHeightPx. Use the validated MuMu target of 730px for those
       // configs; tests/plugins can explicitly set 0 to keep measurement mode.
       pageHeightPx: hasPageHeightOverride
-        ? Math.max(0, Number(sourcePagination.pageHeightPx) || 0)
-        : 730,
+        ? Math.max(
+            0,
+            Number(sourcePagination.pageHeightPx) > 0
+              ? Number(sourcePagination.pageHeightPx) -
+                ALIGNED_TABLE_PAGE_STEP_REDUCTION_PX
+              : 0
+          )
+        : 730 - ALIGNED_TABLE_PAGE_STEP_REDUCTION_PX,
       pageHeightExtraPx: Math.max(
         0,
         Number(sourcePagination.pageHeightExtraPx) ||
@@ -1825,12 +2382,7 @@ async function alignPagedTablePage(
             ? adjustment.anchorY - adjustment.distance
             : adjustment.anchorY + adjustment.distance
       },
-      Math.max(
-        100,
-        Math.round(
-          (Number(pagination.rowAlignmentDurationMs) || 1_000) * 0.7
-        )
-      ),
+      scaledTableSwipeDurationMs(pagination.rowAlignmentDurationMs),
       signal
     );
     if (usedTouchFallback) {
@@ -1841,7 +2393,7 @@ async function alignPagedTablePage(
       );
     }
     await (context.sleep || delay)(
-      Math.max(500, Number(pagination.rowAlignmentSettleMs) || 1_500),
+      scaledTableSettleMs(pagination.rowAlignmentSettleMs, 1_500, 300),
       signal
     );
     frame = await captureTableFrame(
@@ -2071,10 +2623,7 @@ async function alignMemberDetailsPage(
             ? adjustment.anchorY - adjustment.distance
             : adjustment.anchorY + adjustment.distance
       },
-      Math.max(
-        100,
-        Math.round((Number(pagination.rowAlignmentDurationMs) || 1_000) * 0.7)
-      ),
+      scaledTableSwipeDurationMs(pagination.rowAlignmentDurationMs),
       signal
     );
     if (usedTouchFallback) {
@@ -2085,7 +2634,7 @@ async function alignMemberDetailsPage(
       );
     }
     await (context.sleep || delay)(
-      Math.max(500, Number(pagination.rowAlignmentSettleMs) || 1_000),
+      scaledTableSettleMs(pagination.rowAlignmentSettleMs, 1_000, 300),
       signal
     );
     frame = await captureTableFrame(
@@ -2105,7 +2654,10 @@ async function memberAlignmentSwipe(adb, from, to, durationMs, signal) {
   }
   const distance = Math.abs(Number(to.y) - Number(from.y));
   const steps = Math.max(2, Math.ceil(distance / 10));
-  const intervalMs = Math.max(80, Math.round(durationMs / steps));
+    const intervalMs = Math.max(
+      TABLE_MOTION_MIN_INTERVAL_MS,
+      Math.round(durationMs / steps)
+    );
   const shellMotion = async (action, y) => {
     await adb.shell(
       ["input", "mouse", "motionevent", action, Math.round(from.x), Math.round(y)],
@@ -2212,7 +2764,12 @@ async function readMemberColorBands(
   }));
 }
 
-function memberRowAlignmentAdjustment(bands, region, page, pagination) {
+function memberRowAlignmentAdjustment(
+  bands,
+  region,
+  page,
+  pagination
+) {
   if (!Array.isArray(bands) || bands.length < 2) return null;
   const rowHeight = Math.max(1, Number(pagination.rowHeightPx) || 95);
   const first = bands[0];
@@ -2277,10 +2834,10 @@ function memberFullPageDefinition(definition) {
       // never a new member and must be discarded before taking the five full
       // rows that follow it.
       skipLeadingPartialRows: true,
-      // `fullPageRows` is the maximum number of rows returned from the
-      // expanded crop; keep the calibrated row spacing/count for anchor
-      // inference so a missing online-state OCR token is not redistributed
-      // across the larger crop.
+      // The expanded crop is still a five-row page. The partial row above it
+      // is discarded by the calibrated anchor offset; no seventh-row buffer
+      // may leak into the roster or recovery merge.
+      fullPageRows: Number(definition.pagination.rowsPerPage) || 1,
       rowsPerPage: Number(definition.pagination.rowsPerPage) || 1
     }
   };
@@ -2324,7 +2881,23 @@ function mergeContributionRows(primary, recovered) {
     if (!fallback) return row;
     const merged = { ...row };
     for (const field of fields) {
-      if (!String(merged[field] || "").trim() && String(fallback[field] || "").trim()) {
+      const currentValue = String(merged[field] || "").trim();
+      const recoveredValue = String(fallback[field] || "").trim();
+      // Vision.extractTableRows has already applied the shared symbol-aware
+      // native/Qwen merge. Prefer its name only when both reads identify the
+      // same text core; this replaces a boundary artifact such as `卒`, `米`,
+      // `#` or a mayor crest without allowing an unrelated shifted Qwen row
+      // to overwrite the native row. Numeric fields retain the native value
+      // unless it was missing.
+      if (
+        field === "name" &&
+        recoveredValue &&
+        (!currentValue ||
+          (sameContributionNameCore(currentValue, recoveredValue) &&
+            contributionNameHasOcrBoundaryArtifact(currentValue)))
+      ) {
+        merged[field] = recoveredValue;
+      } else if (!currentValue && recoveredValue) {
         merged[field] = fallback[field];
       }
     }
@@ -2335,11 +2908,42 @@ function mergeContributionRows(primary, recovered) {
     : merged;
 }
 
-export function alignContributionRowsToRoster(rows, roster) {
+function sameContributionNameCore(left, right) {
+  const core = (value) =>
+    Array.from(String(value || "").normalize("NFKC").toLocaleLowerCase())
+      .filter((character) => /[\p{L}\p{N}\u3400-\u9fff]/u.test(character))
+      .join("");
+  const stripBoundary = (value) =>
+    value
+      .replace(/^(?:9|q|g|4|日|山)/iu, "")
+      .replace(/(?:卒|米|導|导|樂|乐|楽|參|午|忠|志)$/u, "");
+  const leftCore = stripBoundary(core(left));
+  const rightCore = stripBoundary(core(right));
+  if (!leftCore || !rightCore) return false;
+  if (leftCore === rightCore) return true;
+  // One or two Han/digit boundary glyphs can be the OCR rendering of a
+  // nearby badge or decoration (`楠卒` vs `楠`, `慕离米` vs `慕离`). Treat
+  // this as the same row only when one core is a strict prefix/suffix of the
+  // other; unrelated same-length OCR substitutions remain protected.
+  return (
+    Math.abs(leftCore.length - rightCore.length) <= 2 &&
+    (leftCore.startsWith(rightCore) || rightCore.startsWith(leftCore))
+  );
+}
+
+function contributionNameHasOcrBoundaryArtifact(value) {
+  return /(?:卒|米|導|导|樂|乐|楽|參|午|忠|志|[★☆#＃*$+＋&＆]|[”"。)）]|^(?:[9qg4日山]))/iu.test(
+    String(value || "").normalize("NFKC").replace(/\s+/gu, "")
+  );
+}
+
+export function alignContributionRowsToRoster(rows, roster, options = {}) {
+  const preserveUnmatched = options?.preserveUnmatched === true;
   const members = (roster || [])
     .map((item) => ({
       name: String(item?.name || "").trim(),
-      key: contributionNameKey(item?.name)
+      key: contributionNameKey(item?.name),
+      weeklyContribution: Number(item?.weeklyContribution) || 0
     }))
     .filter((item) => item.name && item.key);
   const byCanonicalName = new Map();
@@ -2348,6 +2952,33 @@ export function alignContributionRowsToRoster(rows, roster) {
     if (!sourceKey) continue;
     const exact = members.filter((member) => member.key === sourceKey);
     let matched = exact.length === 1 ? exact[0] : null;
+    if (!matched) {
+      // A corrected symbol may still be a different Unicode string from the
+      // roster (`*慕离米` vs `❀慕离❀`). Match the alphanumeric/CJK core only
+      // when it identifies exactly one roster member. If two members share
+      // the same core, keep the row unresolved rather than assigning a
+      // contribution to the wrong decorated player.
+      const sourceCore = contributionNameCore(row?.name);
+      const coreCandidates = sourceCore
+        ? members.filter((member) => contributionNameCore(member.name) === sourceCore)
+        : [];
+      if (coreCandidates.length === 1) {
+        matched = coreCandidates[0];
+      } else if (coreCandidates.length > 1) {
+        // The profile snapshot also carries the previous weekly value. It is
+        // useful as a conservative tie-breaker when two decorated players
+        // share the same text core and the contribution OCR lost both
+        // decorations; a tied/stale value remains unresolved for Workers to
+        // report as ambiguous.
+        const sourceWeekly = Number(row?.weeklyContribution);
+        const valueMatches = Number.isFinite(sourceWeekly)
+          ? coreCandidates.filter(
+              (member) => member.weeklyContribution === sourceWeekly
+            )
+          : [];
+        if (valueMatches.length === 1) matched = valueMatches[0];
+      }
+    }
     // The mayor card places a small role badge immediately after the name.
     // OCR sometimes returns that badge as one extra Han character (for
     // example 雨梦也). Only accept a unique one/two-character prefix/suffix
@@ -2364,11 +2995,16 @@ export function alignContributionRowsToRoster(rows, roster) {
       });
       matched = candidates.length === 1 ? candidates[0] : null;
     }
-    // Contribution data is subordinate to the profile roster. An OCR-only
-    // name must never create a new member or reach the server as a candidate.
-    if (!matched) continue;
-    const canonicalRow = { ...row, name: matched.name };
-    const canonicalKey = contributionNameKey(matched.name);
+    // Contribution data is subordinate to the profile roster. In the normal
+    // member-sync path an OCR-only name is discarded. The standalone
+    // contribution task can retain it for the server-side reconciliation
+    // pass, but it still cannot create a member: Workers will either map it
+    // to this roster or ignore/report it as ambiguous.
+    const canonicalRow = matched ? { ...row, name: matched.name } : { ...row };
+    if (!matched && !preserveUnmatched) continue;
+    const canonicalKey = matched
+      ? contributionNameKey(matched.name)
+      : `${contributionNameKey(row?.name)}|${String(row?.weeklyContribution || "")}|${String(row?.technologyPointsUsed || "")}|${String(row?.materialContribution || "")}`;
     const previous = byCanonicalName.get(canonicalKey);
     byCanonicalName.set(
       canonicalKey,
@@ -2378,6 +3014,12 @@ export function alignContributionRowsToRoster(rows, roster) {
     );
   }
   return [...byCanonicalName.values()];
+}
+
+function contributionNameCore(value) {
+  return Array.from(String(value || "").normalize("NFKC").toLocaleLowerCase())
+    .filter((character) => /[\p{L}\p{N}\u3400-\u9fff]/u.test(character))
+    .join("");
 }
 
 function mergeContributionRecord(current, incoming) {
@@ -2517,7 +3159,11 @@ function memberDetailQualityScore(row) {
   return (isPlausibleMemberName(name) ? 100 : 0) + populatedFields * 2;
 }
 
-function hasSuspiciousMemberCollision(rows, byName) {
+function hasSuspiciousMemberCollision(
+  rows,
+  byName,
+  ignoredExistingKeys = new Set()
+) {
   const pageRows = new Map();
   for (const row of rows) {
     const key = memberProfileNameKey(row.name);
@@ -2529,7 +3175,11 @@ function hasSuspiciousMemberCollision(rows, byName) {
     if (samePage) return true;
     pageRows.set(key, samePage || row);
     const existing = byName.get(key);
-    if (existing && memberProfileDataConflicts(existing, row)) {
+    if (
+      existing &&
+      !ignoredExistingKeys.has(key) &&
+      memberProfileDataConflicts(existing, row)
+    ) {
       return true;
     }
   }
@@ -2599,6 +3249,13 @@ function memberProfileNameKey(value) {
   // made distinct members such as "#愿✨" and "愿" collapse into one map
   // entry, which caused the page count to be lower than the header count.
   return normalized;
+}
+
+export function expectedMemberTailOverlapCount(expectedCount, rowsPerPage = 5) {
+  const count = Math.max(0, Number.parseInt(expectedCount, 10) || 0);
+  const pageRows = Math.max(1, Number.parseInt(rowsPerPage, 10) || 5);
+  const remainder = count % pageRows;
+  return remainder === 0 ? 0 : pageRows - remainder;
 }
 
 function memberProfileDataConflicts(left, right) {

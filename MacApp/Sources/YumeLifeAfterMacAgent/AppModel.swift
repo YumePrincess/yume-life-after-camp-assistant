@@ -9,6 +9,9 @@ final class AppModel: ObservableObject {
     @Published var plugins: [AgentPlugin] = []
     @Published var logText = ""
     @Published var logRunIdFilter: String?
+    @Published private(set) var taskLogGroups: [TaskLogGroup] = []
+    @Published private(set) var selectedTaskDebugImages: [TaskDebugImage] = []
+    @Published var selectedTaskLogID: String?
     @Published var logDisplayMode: LogDisplayMode
     @Published private(set) var logPage = 0
     @Published private(set) var latestRunId: String?
@@ -42,6 +45,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var adbInfo = AdbRuntimeInfo.missing
     @Published private(set) var modelInfo = ModelRuntimeInfo.missing
     @Published private(set) var qwenEnabled = true
+    @Published var debugMode: Bool
 
     let browser = AdminBrowser()
     private let runtime = RuntimeService.shared
@@ -68,6 +72,7 @@ final class AppModel: ObservableObject {
         adminKey = ""
         mumuInstanceName = defaults.string(forKey: "mumuInstanceName") ?? "Life After CN Auto"
         allowUnsignedPlugins = defaults.bool(forKey: "allowUnsignedPlugins")
+        debugMode = defaults.bool(forKey: "debugMode")
         let selectedLanguage = defaults.string(forKey: "language") ?? Self.preferredLanguage()
         language = selectedLanguage
         defaults.set([selectedLanguage], forKey: "AppleLanguages")
@@ -78,6 +83,7 @@ final class AppModel: ObservableObject {
         ) ?? .raw
         setupCompleted = defaults.bool(forKey: "setupCompleted")
         logRunIdFilter = nil
+        selectedTaskLogID = nil
         latestRunId = nil
         isAppleSilicon = Self.platformIsAppleSilicon()
     }
@@ -108,6 +114,7 @@ final class AppModel: ObservableObject {
             adbInfo = await runtime.adbStatus()
             modelInfo = await runtime.modelStatus()
             qwenEnabled = await runtime.localVisionEnabled()
+            debugMode = await runtime.debugCaptureEnabled()
             if runtimeWasUpdated {
                 updateSteps = [text("Synchronizing bundled runtime…")]
                 updateResult = nil
@@ -188,6 +195,13 @@ final class AppModel: ObservableObject {
                 logPage = 0
                 latestRunId = Self.latestRunId(in: refreshedLogs) ?? latestRunId
             }
+            taskLogGroups = Self.taskLogGroups(in: logText)
+            if let selectedTaskLogID,
+               !taskLogGroups.contains(where: { $0.id == selectedTaskLogID }) {
+                self.selectedTaskLogID = nil
+                selectedTaskDebugImages = []
+                logRunIdFilter = nil
+            }
         }
     }
 
@@ -240,8 +254,22 @@ final class AppModel: ObservableObject {
     }
 
     func openCurrentTaskLogs() {
-        logRunIdFilter = health?.activeRunId ?? latestRunId
+        selectTaskLog(health?.activeRunId ?? latestRunId)
         selection = .logs
+    }
+
+    func selectTaskLog(_ runID: String?) {
+        selectedTaskLogID = runID
+        logRunIdFilter = runID
+        logPage = 0
+        guard let runID, !runID.isEmpty else {
+            selectedTaskDebugImages = []
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            selectedTaskDebugImages = await runtime.debugImages(runID: runID)
+        }
     }
 
     func cancelCurrentTask() async {
@@ -264,6 +292,8 @@ final class AppModel: ObservableObject {
 
     func showAllLogs() {
         logRunIdFilter = nil
+        selectedTaskLogID = nil
+        selectedTaskDebugImages = []
         logPage = 0
     }
 
@@ -272,11 +302,31 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.set(mode.rawValue, forKey: "logDisplayMode")
     }
 
+    func setDebugMode(_ enabled: Bool) async {
+        let previous = debugMode
+        debugMode = enabled
+        do {
+            try await runtime.setDebugCaptureEnabled(enabled)
+            await runtime.setRuntimeDebugCapture(enabled, debugToken: debugToken)
+            UserDefaults.standard.set(enabled, forKey: "debugMode")
+            statusMessage = text(enabled
+                ? "Debug screenshots enabled."
+                : "Debug screenshots disabled and cleared.")
+            if !enabled { selectedTaskDebugImages = [] }
+        } catch {
+            debugMode = previous
+            alertMessage = error.localizedDescription
+        }
+    }
+
     func clearLogs() async {
         do {
             try await runtime.clearLogs()
             logText = ""
             logRunIdFilter = nil
+            taskLogGroups = []
+            selectedTaskLogID = nil
+            selectedTaskDebugImages = []
             logPage = 0
             statusMessage = text("Logs cleared")
         } catch {
@@ -507,7 +557,8 @@ final class AppModel: ObservableObject {
             adminKey: adminKey,
             mumuInstanceName: mumuInstanceName,
             allowUnsignedLocalPlugins: allowUnsignedPlugins,
-            locale: language
+            locale: language,
+            captureDebugArtifacts: debugMode
         )
         await runtime.setRuntimeLocale(language, debugToken: debugToken)
         try await runtime.registerAgent(
@@ -525,6 +576,7 @@ final class AppModel: ObservableObject {
         defaults.set(language, forKey: "language")
         defaults.set(theme.rawValue, forKey: "theme")
         defaults.set(logDisplayMode.rawValue, forKey: "logDisplayMode")
+        defaults.set(debugMode, forKey: "debugMode")
     }
 
     func syncLanguageToRuntime() async {
@@ -655,6 +707,58 @@ final class AppModel: ObservableObject {
               let data = String(line).data(using: .utf8)
         else { throw RuntimeError.failed(text("The plugin response was invalid.")) }
         return try JSONDecoder().decode(PluginEnvelope.self, from: data)
+    }
+
+    private static func taskLogGroups(in text: String) -> [TaskLogGroup] {
+        var groups: [String: TaskLogGroup] = [:]
+        var order: [String] = []
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let jsonStart = trimmed.firstIndex(of: "{"),
+                  let data = String(trimmed[jsonStart...]).data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let runID = object["runId"] as? String,
+                  !runID.isEmpty
+            else { continue }
+            let timestamp = (object["timestamp"] as? String)
+                ?? (object["time"] as? String)
+                ?? String(trimmed.prefix(24))
+            var group = groups[runID] ?? TaskLogGroup(
+                id: runID,
+                taskKey: (object["taskKey"] as? String) ?? "",
+                taskName: (object["taskName"] as? String) ?? (object["taskKey"] as? String) ?? "Task",
+                executionMode: (object["executionMode"] as? String) ?? (object["mode"] as? String) ?? "unknown",
+                startedAt: (object["startedAt"] as? String) ?? timestamp,
+                finishedAt: nil,
+                status: "running",
+                finalMessage: nil,
+                lines: []
+            )
+            group.lines.append(line)
+            if let taskKey = object["taskKey"] as? String, !taskKey.isEmpty { group.taskKey = taskKey }
+            if let taskName = object["taskName"] as? String, !taskName.isEmpty { group.taskName = taskName }
+            if let mode = (object["executionMode"] as? String) ?? (object["mode"] as? String), !mode.isEmpty {
+                group.executionMode = mode
+            }
+            if let startedAt = object["startedAt"] as? String, !startedAt.isEmpty { group.startedAt = startedAt }
+            let event = object["event"] as? String
+            if event == "task_finished" {
+                group.finishedAt = (object["finishedAt"] as? String) ?? timestamp
+                if let state = object["state"] as? String { group.status = state }
+                else if let success = object["success"] as? Bool { group.status = success ? "succeeded" : "failed" }
+                group.finalMessage = object["message"] as? String
+            } else if event == "task_failure_detailed" {
+                group.status = "failed"
+                group.finalMessage = (object["message"] as? String) ?? (object["errorMessage"] as? String)
+            }
+            if !groups.keys.contains(runID) { order.append(runID) }
+            groups[runID] = group
+        }
+        return order.compactMap { groups[$0] }.sorted {
+            if $0.startedAt == $1.startedAt { return $0.id > $1.id }
+            return $0.startedAt > $1.startedAt
+        }
     }
 
     private static func simplifiedLogEntry(

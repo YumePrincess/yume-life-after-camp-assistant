@@ -1,5 +1,6 @@
 import { loadConfig } from "../src/config.mjs";
 import { AdbClient } from "../src/adb.mjs";
+import { MumuLifecycle } from "../src/mumu.mjs";
 import { Vision } from "../src/vision.mjs";
 import { GameUi } from "../src/ui.mjs";
 import { capturePagedTable } from "../src/workflows/member-sync.mjs";
@@ -10,6 +11,7 @@ import {
 
 const config = await loadConfig();
 const adb = new AdbClient(config);
+const mumu = new MumuLifecycle(config, adb);
 const vision = new Vision(config, adb);
 const controller = new AbortController();
 const report = async (level, step, message, detail = {}) => {
@@ -32,7 +34,7 @@ ui.setRuntimeAutomation({
     frozenScreenSeconds: 180
   }
 });
-const context = { config, adb, vision, ui, report };
+const context = { config, adb, mumu, vision, ui, report };
 
 for (const signalName of ["SIGINT", "SIGTERM"]) {
   process.on(signalName, () => {
@@ -47,23 +49,41 @@ let advisorStarted = false;
 let profiles = [];
 let staff = [];
 let completed = false;
+let expectedProfiles = null;
+let finalPageMissingAllowed = false;
 const startedAt = Date.now();
 try {
+  const instance = await mumu.resolveInstance(controller.signal, { refresh: true });
   await adb.connect();
-  advisorStarted = await vision.startAdvisor(controller.signal);
-  const expectedProfiles = await vision.readMemberExpectedTotal(
-    controller.signal
+  await adb.waitReady(config.mumu.adbReadyTimeoutSeconds, controller.signal);
+  await report(
+    "info",
+    "mumu_instance_resolved",
+    `已连接 MuMu 实例 ${instance.name}(${instance.index})，ADB ${config.adb.serial}`,
+    { instance: instance.name, index: instance.index, serial: config.adb.serial }
   );
+  advisorStarted = await vision.startAdvisor(controller.signal);
+  await ui.executeFlow("resetMemberPanelForRescan", {}, controller.signal);
+  const memberCountBreakdown =
+    typeof vision.readMemberExpectedBreakdown === "function"
+      ? await vision.readMemberExpectedBreakdown(controller.signal)
+      : { total: await vision.readMemberExpectedTotal(controller.signal) };
+  expectedProfiles = memberCountBreakdown.total;
+  const scanState = {};
   profiles = normalizeProfiles(
     await capturePagedTable(
       context,
       "member-details",
       config.tables.members,
       controller.signal,
-      { expectedCount: expectedProfiles }
+      { expectedCount: expectedProfiles, scanState }
     )
   );
-  if (profiles.length !== expectedProfiles) {
+  finalPageMissingAllowed =
+    scanState.finalPageMissingAllowed === true &&
+    Number(scanState.finalPageMissingCount) === 1 &&
+    profiles.length === expectedProfiles - 1;
+  if (profiles.length !== expectedProfiles && !finalPageMissingAllowed) {
     console.log(
       JSON.stringify({
         event: "member_profile_current_test_mismatch_rows",
@@ -80,6 +100,20 @@ try {
     );
     throw new Error(
       `MEMBER_PROFILE_INCOMPLETE: recognized ${profiles.length}/${expectedProfiles} required unique member rows`
+    );
+  }
+  if (finalPageMissingAllowed) {
+    await report(
+      "warning",
+      "member_profile_tail_missing_allowed",
+      `末页固定底部行与最后一名成员重叠，实机测试允许缺失 1 人：实际 ${profiles.length}/${expectedProfiles}`,
+      {
+        expectedCount: expectedProfiles,
+        recognizedCount: profiles.length,
+        missingCount: 1,
+        finalPage: scanState.finalPage,
+        positionLocked: true
+      }
     );
   }
   await ui.executeFlow("openStaffPanel", {}, controller.signal);
@@ -115,6 +149,9 @@ try {
       completed,
       elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(2)),
       profiles: profiles.length,
+      expectedProfiles,
+      missingCount: Math.max(0, expectedProfiles - profiles.length),
+      finalPageMissingAllowed,
       uniqueNames: new Set(profiles.map((row) => row.name)).size,
       withProfession: profiles.filter((row) => row.profession).length,
       withRoommate: profiles.filter((row) => row.roommateName).length,

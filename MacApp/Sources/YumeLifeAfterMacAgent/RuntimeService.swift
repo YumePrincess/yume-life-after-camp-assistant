@@ -39,6 +39,10 @@ actor RuntimeService {
         applicationSupport.appending(path: "credentials.json")
     }
 
+    var debugDirectory: URL {
+        applicationSupport.appending(path: "debug", directoryHint: .isDirectory)
+    }
+
     var modelsDirectory: URL {
         applicationSupport.appending(path: "Models", directoryHint: .isDirectory)
     }
@@ -201,8 +205,15 @@ actor RuntimeService {
             if storedDebugToken == "KEYCHAIN" ||
                 (storedDebugToken != nil && storedDebugToken != "" && credentialsExist) {
                 debug["token"] = "CREDENTIALS_FILE"
-                object["debug"] = debug
                 changed = true
+            }
+            if debug["captureScreenshots"] == nil {
+                debug["captureScreenshots"] = false
+                changed = true
+            }
+            object["debug"] = debug
+            if debug["captureScreenshots"] as? Bool != true {
+                try? fileManager.removeItem(at: debugDirectory)
             }
             var vision = object["vision"] as? [String: Any] ?? [:]
             if vision["prewarmEnabled"] == nil {
@@ -414,6 +425,7 @@ actor RuntimeService {
         object["server"] = server
         var debug = object["debug"] as? [String: Any] ?? [:]
         debug["token"] = "CREDENTIALS_FILE"
+        debug["captureScreenshots"] = debug["captureScreenshots"] as? Bool ?? false
         object["debug"] = debug
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: config, options: .atomic)
@@ -1055,6 +1067,67 @@ actor RuntimeService {
             let file = logDirectory.appending(path: name)
             try Data().write(to: file, options: .atomic)
         }
+        // A Debug image is evidence for a log entry. Clearing the complete
+        // local log history must not leave unreferenced task evidence behind.
+        try? fileManager.removeItem(at: debugDirectory)
+    }
+
+    func debugCaptureEnabled() -> Bool {
+        let config = runtimeRoot.appending(path: "config.json")
+        guard let data = try? Data(contentsOf: config),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let debug = object["debug"] as? [String: Any]
+        else { return false }
+        return debug["captureScreenshots"] as? Bool ?? false
+    }
+
+    func setDebugCaptureEnabled(_ enabled: Bool) throws {
+        let config = runtimeRoot.appending(path: "config.json")
+        guard fileManager.fileExists(atPath: config.path) else {
+            throw RuntimeError.failed(String(localized: "Runtime configuration is missing. Run the setup assistant first."))
+        }
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: config)) as! [String: Any]
+        var debug = object["debug"] as? [String: Any] ?? [:]
+        debug["captureScreenshots"] = enabled
+        object["debug"] = debug
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: config, options: .atomic)
+        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path)
+        if !enabled {
+            try? fileManager.removeItem(at: debugDirectory)
+        }
+    }
+
+    func clearDebugCapture() throws {
+        try? fileManager.removeItem(at: debugDirectory)
+    }
+
+    func debugImages(runID: String) -> [TaskDebugImage] {
+        let safeID = runID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !safeID.isEmpty,
+              safeID.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil
+        else { return [] }
+        let base = debugDirectory.standardizedFileURL
+        let directory = base.appending(path: safeID, directoryHint: .isDirectory).standardizedFileURL
+        guard directory.path.hasPrefix(base.path + "/"),
+              let files = try? fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+              )
+        else { return [] }
+        return files
+            .filter { ["png", "jpg", "jpeg", "webp"].contains($0.pathExtension.lowercased()) }
+            .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            .enumerated()
+            .map { index, url in
+                let name = url.deletingPathExtension().lastPathComponent
+                let components = name.split(separator: "-", maxSplits: 1).map(String.init)
+                let sequence = Int(components.first ?? "") ?? index + 1
+                let label = components.count > 1 ? components[1] : name
+                return TaskDebugImage(id: "\(safeID)-\(sequence)-\(url.lastPathComponent)", sequence: sequence, label: label, url: url)
+            }
     }
 
     func saveConnection(
@@ -1066,7 +1139,8 @@ actor RuntimeService {
         adminKey: String,
         mumuInstanceName: String,
         allowUnsignedLocalPlugins: Bool,
-        locale: String
+        locale: String,
+        captureDebugArtifacts: Bool
     ) throws {
         try saveCredentials(agentToken: agentToken, debugToken: debugToken, adminKey: adminKey)
         let root = runtimeRoot
@@ -1094,6 +1168,7 @@ actor RuntimeService {
         object["adb"] = adb
         var debug = object["debug"] as? [String: Any] ?? [:]
         debug["token"] = "CREDENTIALS_FILE"
+        debug["captureScreenshots"] = captureDebugArtifacts
         object["debug"] = debug
         var plugins = object["plugins"] as? [String: Any] ?? [:]
         plugins.removeValue(forKey: "catalogUrl")
@@ -1103,6 +1178,9 @@ actor RuntimeService {
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: path, options: [.atomic])
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+        if !captureDebugArtifacts {
+            try? fileManager.removeItem(at: debugDirectory)
+        }
     }
 
     func setRuntimeLocale(_ locale: String, debugToken: String) async {
@@ -1114,6 +1192,18 @@ actor RuntimeService {
         request.setValue("Bearer \(debugToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["locale": locale])
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
+    func setRuntimeDebugCapture(_ enabled: Bool, debugToken: String) async {
+        guard !debugToken.isEmpty,
+              let url = URL(string: "http://127.0.0.1:8091/debug-capture") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 3
+        request.setValue("Bearer \(debugToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["enabled": enabled])
         _ = try? await URLSession.shared.data(for: request)
     }
 

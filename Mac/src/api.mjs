@@ -84,10 +84,10 @@ export class AgentApi {
     );
   }
 
-  snapshot(runId, type, payload, capturedAt, signal) {
+  snapshot(runId, type, payload, capturedAt, signal, metadata = {}) {
     return this.request(
       "/api/agent/snapshot",
-      { runId, type, payload, capturedAt },
+      { runId, type, payload, capturedAt, ...metadata },
       signal,
       { maximumAttempts: 3 }
     );

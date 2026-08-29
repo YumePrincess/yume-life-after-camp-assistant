@@ -1822,6 +1822,15 @@
     if (canView("history")) renderRuns(data.recentRuns || []);
     if (canView("members")) {
       renderAdminMembers(data.members || []);
+      const listedMemberCount = data.members?.length || 0;
+      const reportedMemberCount = Number(data.memberSummary?.expectedCount);
+      const totalMemberCount = Number.isInteger(reportedMemberCount) && reportedMemberCount >= 0
+        ? reportedMemberCount
+        : listedMemberCount;
+      setText(
+        "admin-member-count",
+        `当前列表 ${listedMemberCount} / 总人数 ${totalMemberCount}`
+      );
     }
     state.accessAllowed = canView("access");
     for (const link of document.querySelectorAll("[data-nav-target]")) {

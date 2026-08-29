@@ -123,4 +123,42 @@ describe("reconcileContributionMembers", () => {
     expect(result.updates).toEqual([]);
     expect(result.ambiguous).toBe(1);
   });
+
+  it("uses a unique contribution value when decorative symbols were lost", () => {
+    const result = reconcileContributionMembers(
+      [contribution("慕离", 222)],
+      [
+        { name: "❀慕离❀", weeklyContribution: 111 },
+        { name: "✿慕离✿", weeklyContribution: 222 }
+      ]
+    );
+
+    expect(result.updates.map((member) => member.name)).toEqual(["✿慕离✿"]);
+    expect(result.ignored).toBe(0);
+    expect(result.ambiguous).toBe(0);
+  });
+
+  it("does not guess between same-core members when corroboration is tied", () => {
+    const result = reconcileContributionMembers(
+      [contribution("慕离", 222)],
+      [
+        { name: "❀慕离❀", weeklyContribution: 222 },
+        { name: "✿慕离✿", weeklyContribution: 222 }
+      ]
+    );
+
+    expect(result.updates).toEqual([]);
+    expect(result.ambiguous).toBe(1);
+    expect(result.ignored).toBe(1);
+  });
+
+  it("lets Workers resolve a short OCR suffix against the unique profile name", () => {
+    const result = reconcileContributionMembers(
+      [contribution("好甜呀em", 222)],
+      [{ name: "好甜呀", weeklyContribution: 100 }]
+    );
+
+    expect(result.updates.map((member) => member.name)).toEqual(["好甜呀"]);
+    expect(result.ignored).toBe(0);
+  });
 });

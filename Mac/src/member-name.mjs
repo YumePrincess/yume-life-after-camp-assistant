@@ -30,10 +30,39 @@ export function isMemberIdentityBadge(value) {
   return /^(?:启航|回归|先行者|R|®|ℝ)$/iu.test(text);
 }
 
+export function stripMemberTableIdentityBadge(value) {
+  let text = String(value || "")
+    .trim()
+    .normalize("NFKC")
+    .replace(/\s+/g, " ");
+  if (!text) return "";
+  // Contribution/activity rows can contain the single mayor crest after the
+  // player's name. OCR may render that isolated crest as a mayor label, a
+  // crown/chess glyph, or an emoji. It is table metadata, never part of the
+  // display name. Keep this scoped to the known isolated badge tokens so
+  // ordinary stars, flowers and emoji in player names remain untouched.
+  const mayorBadge = /^(?:市长|mayor|皇冠|王冠|盾|忠|志|[♔♕♖♗♘♙♚♛♜♝♞♟]|👑)$/iu;
+  const parts = text.split(" ");
+  while (parts.length && mayorBadge.test(parts.at(-1))) parts.pop();
+  if (!parts.length) return "";
+  return parts
+    .join(" ")
+    .replace(
+      /(?:市长|mayor|皇冠|王冠|盾|忠|志|[♔♕♖♗♘♙♚♛♜♝♞♟]|👑)$/iu,
+      ""
+    )
+    .trim();
+}
+
 export function isMemberProfessionArtifact(value, profession) {
   const name = compact(value);
   const role = compact(profession);
-  return Boolean(name && role && name === role);
+  if (!name || !role || name !== role) return false;
+  // A profession-only OCR leak is ordinarily plain Han text. A real display
+  // name can legitimately equal a noisy/misaligned profession field while
+  // carrying a digit or decoration (for example a model-number name). Keep
+  // that player-shaped candidate so one bad field cannot erase a row.
+  return !/[\p{N}\p{S}\p{P}]/u.test(name);
 }
 
 export function isMemberSymbolOnlyName(value) {

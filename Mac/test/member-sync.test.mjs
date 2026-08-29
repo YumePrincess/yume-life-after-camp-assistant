@@ -4,17 +4,20 @@ import { readFile } from "node:fs/promises";
 import {
   captureContribution,
   capturePagedTable,
+  captureProfilesAndStaff,
   alignContributionRowsToRoster,
   dedupeStaffAssignments,
   dedupeContributionRows,
   assertContributionComplete,
   containsSailingTitleLeak,
+  expectedMemberTailOverlapCount,
   reconcilePageRows,
   mergeActivityRecoveryRows,
   selectActivityWarningRows,
   stripStaffColorCodes,
   tableRowAlignmentAdjustment
 } from "../src/workflows/member-sync.mjs";
+import { stripMemberTableIdentityBadge } from "../src/member-name.mjs";
 
 test("contribution OCR role badges are aligned to the authoritative roster", () => {
   assert.deepEqual(
@@ -32,6 +35,39 @@ test("contribution OCR role badges are aligned to the authoritative roster", () 
     ).map((row) => row.name),
     ["雨梦", "星河踏月归✨"]
   );
+});
+
+test("contribution roster alignment uses the profile value to separate lost symbols", () => {
+  const rows = alignContributionRowsToRoster(
+    [{
+      name: "慕离",
+      weeklyContribution: "222",
+      technologyPointsUsed: "20",
+      materialContribution: "100"
+    }],
+    [
+      { name: "❀慕离❀", weeklyContribution: 111 },
+      { name: "✿慕离✿", weeklyContribution: 222 }
+    ]
+  );
+
+  assert.equal(rows[0]?.name, "✿慕离✿");
+});
+
+test("contribution keeps unresolved candidates for Workers reconciliation when requested", () => {
+  const rows = alignContributionRowsToRoster(
+    [{
+      name: "OCR未知候选",
+      weeklyContribution: "222",
+      technologyPointsUsed: "20",
+      materialContribution: "100"
+    }],
+    [{ name: "好甜呀em", weeklyContribution: 222 }],
+    { preserveUnmatched: true }
+  );
+
+  assert.equal(rows[0]?.name, "OCR未知候选");
+  assert.equal(rows.length, 1);
 });
 
 test("contribution rows keep all three values while deduplicating against the roster", () => {
@@ -93,7 +129,7 @@ test("contribution and inactivity scans wait three seconds after paging and stop
       assert.equal(config.tables[table].pagination.rowAnchorTop, 285);
       assert.equal(config.tables[table].pagination.rowHeightPx, 66);
       assert.equal(config.tables[table].pagination.measurePageHeightFromRows, true);
-      assert.equal(config.tables[table].pagination.pageHeightPx, 730);
+      assert.equal(config.tables[table].pagination.pageHeightPx, 729);
       assert.equal(config.tables[table].pagination.pageHeightExtraPx, 0);
       assert.equal(config.tables[table].pagination.rowResidualMaxPx, 18);
       assert.equal(config.tables[table].pagination.to.y, 250);
@@ -109,7 +145,12 @@ test("contribution and inactivity scans wait three seconds after paging and stop
       right: 1800,
       bottom: 810
     });
-    assert.equal(config.tables.members.pagination.fullPageRows, 7);
+    assert.equal(config.tables.members.pagination.fullPageRows, 5);
+    assert.equal(config.tables.members.pagination.maxPages, 24);
+    assert.equal(
+      Object.hasOwn(config.tables.members.pagination, "maxExtraPagesAfterExpected"),
+      false
+    );
     assert.deepEqual(
       config.flows.resetMemberPanelForRescan.map((action) => action.op),
       ["clickText", "waitAnyText", "clickText", "waitAnyText"]
@@ -132,6 +173,21 @@ test("member profile helpers clean staff color codes and detect leaked sailing t
   assert.equal(containsSailingTitleLeak("#P 启航"), false);
   assert.equal(containsSailingTitleLeak("#W#Y 启航"), false);
   assert.equal(containsSailingTitleLeak("雨梦"), false);
+});
+
+test("member tail overlap is calculated from the header total", () => {
+  assert.equal(expectedMemberTailOverlapCount(100, 5), 0);
+  assert.equal(expectedMemberTailOverlapCount(96, 5), 4);
+  assert.equal(expectedMemberTailOverlapCount(101, 5), 4);
+  assert.equal(expectedMemberTailOverlapCount(120, 5), 0);
+});
+
+test("contribution and activity table names exclude only the mayor badge", () => {
+  assert.equal(stripMemberTableIdentityBadge("雨梦 ♛"), "雨梦");
+  assert.equal(stripMemberTableIdentityBadge("雨梦市长"), "雨梦");
+  assert.equal(stripMemberTableIdentityBadge("雨梦志"), "雨梦");
+  assert.equal(stripMemberTableIdentityBadge("❀林昭宓❀"), "❀林昭宓❀");
+  assert.equal(stripMemberTableIdentityBadge("-😊-"), "-😊-");
 });
 
 test("member scan rereads a full page when a sailing title leaks into the name", async () => {
@@ -202,14 +258,74 @@ test("member scan rereads a full page when a sailing title leaks into the name",
   assert.equal(advisorOptions[0].forceMemberAdvisor, true);
 });
 
+test("local vision rereads every member-details page without dropping native rows", async () => {
+  const qwenOptions = [];
+  const reports = [];
+  const context = {
+    config: { localVisionModel: { enabled: true, transport: "http" } },
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, _definition, label, _signal, options) {
+        qwenOptions.push(options || {});
+        const page = Number(label.match(/-(\d+)/)?.[1] || 1);
+        return Array.from({ length: 5 }, (_, index) => ({
+          name: `Qwen${page}-${index + 1}`
+        }));
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: { async afterAction() {} },
+    async report(_level, step, _message, detail) {
+      reports.push({ step, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      columns: [
+        { key: "identity", left: 0, right: 0.3 },
+        { key: "profession", left: 0.3, right: 0.46 },
+        { key: "manorLevel", left: 0.46, right: 0.65 },
+        { key: "onlineState", left: 0.65, right: 0.75 },
+        { key: "roommateName", left: 0.75, right: 1 }
+      ],
+      headerPattern: [],
+      pagination: {
+        maxPages: 2,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        stopAfterStagnantPages: 2,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        durationMs: 1
+      }
+    }
+  );
+  assert.equal(rows.length, 10);
+  assert.equal(qwenOptions.length, 2);
+  assert.ok(qwenOptions.every((options) =>
+    options.forceMemberAdvisor === true && options.forceLocalVision === true
+  ));
+  assert.equal(
+    reports.filter(({ step }) => step === "local_model_table_reread").length,
+    2
+  );
+});
+
 test("contribution and activity pages use 11-row calibrated segmented swipes", async () => {
   for (const label of ["member-contribution", "member-activity"]) {
     const swipes = [];
     const shellCalls = [];
     let probeCalls = 0;
     const reports = [];
+    const qwenOptions = [];
     const context = {
-      config: { localVisionModel: { enabled: false, transport: "http" } },
+      config: { localVisionModel: { enabled: true, transport: "http" } },
       vision: {
         async capture(currentLabel) {
           const capturePage = Number(currentLabel.match(/-(\d+)/)?.[1] || 1);
@@ -252,7 +368,8 @@ test("contribution and activity pages use 11-row calibrated segmented swipes", a
             };
           });
         },
-        async extractTableRows(_path, _definition, currentLabel) {
+        async extractTableRows(_path, _definition, currentLabel, _signal, options) {
+          qwenOptions.push(options || {});
           const page = Number(currentLabel.match(/-(\d+)/)?.[1] || 1);
           return Array.from({ length: 11 }, (_, index) => ({
             name: `${label}-${page}-${index}`,
@@ -296,6 +413,16 @@ test("contribution and activity pages use 11-row calibrated segmented swipes", a
       }
     );
     assert.equal(rows.length, 22);
+    assert.equal(qwenOptions.length, 2);
+    assert.ok(
+      qwenOptions.every((options) =>
+        label === "member-contribution"
+          ? options.forceContributionVision === true &&
+            options.forceLocalVision === true
+          : options.forceActivityVision === true &&
+            options.forceLocalVision === true
+      )
+    );
     assert.equal(swipes.length, 0);
     assert.ok(probeCalls >= 1);
     assert.ok(shellCalls.some((args) => args[0] === "input" && args[2] === "motionevent"));
@@ -306,7 +433,7 @@ test("contribution and activity pages use 11-row calibrated segmented swipes", a
     assert.ok(alignmentStart >= 0);
     assert.ok(motionY.includes(567));
     assert.ok(motionY.includes(980));
-    assert.ok(motionY.includes(227));
+    assert.ok(motionY.includes(228));
     assert.ok(reports.some(({ step }) => step === "table_row_alignment"));
     assert.equal(reports.find(({ step }) => step === "table_row_alignment").detail.distance, 10);
     assert.equal(reports.find(({ step }) => step === "table_row_alignment").detail.direction, "up");
@@ -316,7 +443,18 @@ test("contribution and activity pages use 11-row calibrated segmented swipes", a
     );
     assert.equal(
       reports.find(({ step }) => step === "table_page_height_calibrated").detail.swipeHeightPx,
-      753
+      752
+    );
+    assert.equal(
+      reports.filter(({ step }) => step === "local_model_table_reread").length,
+      2
+    );
+    assert.ok(
+      reports.every(({ step, detail }) =>
+        step === "local_model_table_reread"
+          ? detail.recognizedNames.length > 0
+          : true
+      )
     );
   }
 });
@@ -398,14 +536,67 @@ test("contribution pages recover a missing name without shifting later rows", as
   assert.deepEqual(recoveryOptions, [{ forceContributionRecovery: true }]);
 });
 
-test("contribution scans continue past the roster count and retain raw page overlap", async () => {
+test("contribution pages keep the shared symbol repair in the final page rows", async () => {
+  const nativeRows = Array.from({ length: 11 }, (_, index) => ({
+    name: index === 0 ? "★^楠^卒" : `原生${index + 1}`,
+    weeklyContribution: "0",
+    technologyPointsUsed: String(index + 1),
+    materialContribution: String(index + 10)
+  }));
+  const nativeObservations = nativeRows.flatMap((row, index) => [
+    { text: row.name, x: 120, y: 290 + index * 66, width: 90, height: 20 },
+    { text: row.weeklyContribution, x: 380, y: 290 + index * 66, width: 20, height: 20 },
+    { text: row.technologyPointsUsed, x: 560, y: 290 + index * 66, width: 40, height: 20 },
+    { text: row.materialContribution, x: 760, y: 290 + index * 66, width: 50, height: 20 }
+  ]);
+  const rows = await capturePagedTable(
+    {
+      config: { localVisionModel: { enabled: true, transport: "http" } },
+      vision: {
+        async capture() {
+          return { path: "contribution-symbols.png", observations: nativeObservations };
+        },
+        async extractTableRows() {
+          return nativeRows.map((row, index) => ({
+            ...row,
+            name: index === 0 ? "✨^楠^✨" : row.name
+          }));
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report() {}
+    },
+    "member-contribution",
+    {
+      region: { left: 100, top: 270, right: 900, bottom: 1000 },
+      columns: [
+        { key: "name", left: 0, right: 0.32 },
+        { key: "weeklyContribution", left: 0.32, right: 0.54 },
+        { key: "technologyPointsUsed", left: 0.54, right: 0.76 },
+        { key: "materialContribution", left: 0.76, right: 1 }
+      ],
+      headerPattern: [],
+      pagination: {
+        maxPages: 1,
+        rowsPerPage: 11,
+        minimumRowsPerPage: 11,
+        stopAfterStagnantPages: 1
+      }
+    }
+  );
+
+  assert.equal(rows[0].name, "✨^楠^✨");
+});
+
+test("contribution scans to the calculated tail and excludes predicted overlap", async () => {
   const swipes = [];
   const pages = [
     Array.from({ length: 11 }, (_, index) => ({ name: `成员${index + 1}` })),
     Array.from({ length: 11 }, (_, index) => ({ name: `成员${index + 12}` })),
     [
-      { name: "成员22" },
-      ...Array.from({ length: 10 }, (_, index) => ({ name: `成员${index + 12}` }))
+      ...Array.from({ length: 10 }, (_, index) => ({ name: `成员${index + 13}` })),
+      { name: "成员23" }
     ]
   ];
   const rows = await capturePagedTable(
@@ -445,10 +636,10 @@ test("contribution scans continue past the roster count and retain raw page over
     { expectedCount: 23 }
   );
 
-  assert.equal(rows.length, 44);
-  assert.equal(rows.filter((row) => row.name === "成员22").length, 3);
-  assert.equal(rows.filter((row) => row.name === "成员12").length, 3);
-  assert.equal(swipes.length, 3);
+  assert.equal(rows.length, 23);
+  assert.equal(new Set(rows.map((row) => row.name)).size, 23);
+  assert.equal(rows.at(-1).name, "成员23");
+  assert.equal(swipes.length, 2);
 });
 
 test("contribution rows are deduplicated only after the complete scan", () => {
@@ -838,6 +1029,75 @@ test("activity boundary reread restores a warning row before stopping", async ()
   assert.ok(reports.some(({ step }) => step === "activity_threshold_reached"));
 });
 
+test("activity scan uses the roster-calculated tail and retains only its new rows", async () => {
+  const pages = [
+    Array.from({ length: 11 }, (_, index) => ({
+      name: `成员${index + 1}`,
+      onlineState: "2天前"
+    })),
+    Array.from({ length: 11 }, (_, index) => ({
+      name: `成员${index + 12}`,
+      onlineState: "2天前"
+    })),
+    [
+      ...Array.from({ length: 10 }, (_, index) => ({
+        name: `成员${index + 13}`,
+        onlineState: "2天前"
+      })),
+      { name: "成员23", onlineState: "2天前" }
+    ]
+  ];
+  const reports = [];
+  const rows = await capturePagedTable(
+    {
+      vision: {
+        async capture() {
+          return { path: "activity-tail.png", observations: [] };
+        },
+        async extractTableRows(_path, _definition, label) {
+          const page = Number(label.match(/-(\d+)/)?.[1] || 1);
+          return pages[Math.min(page - 1, pages.length - 1)];
+        }
+      },
+      adb: { async mouseSwipe() {} },
+      ui: { async afterAction() {} },
+      async report(_level, step, message, detail) {
+        reports.push({ step, message, detail });
+      }
+    },
+    "member-activity",
+    {
+      region: { left: 100, top: 200, right: 900, bottom: 900 },
+      columns: [
+        { key: "name", left: 0, right: 0.5 },
+        { key: "onlineState", left: 0.5, right: 1 }
+      ],
+      headerPattern: [],
+      pagination: {
+        maxPages: 11,
+        rowsPerPage: 11,
+        minimumRowsPerPage: 11,
+        stopAfterStagnantPages: 2,
+        from: { x: 800, y: 850 },
+        to: { x: 800, y: 120 },
+        durationMs: 1,
+        pageHeightPx: 730
+      }
+    },
+    undefined,
+    { expectedCount: 23 }
+  );
+
+  assert.equal(rows.length, 23);
+  assert.equal(rows.at(-1).name, "成员23");
+  assert.equal(
+    reports.find(({ step }) => step === "member-activity_tail_overlap_excluded")
+      .detail.expectedTailOverlapCount,
+    10
+  );
+  assert.ok(reports.some(({ step }) => step === "member-activity_tail_complete"));
+});
+
 test("activity recovery merge keeps the first row data and adds only new names", () => {
   const merged = mergeActivityRecoveryRows(
     [
@@ -1122,13 +1382,12 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
       { bottom: 780, rowsPerPage: 5 },
       { bottom: 780, rowsPerPage: 5 },
       { bottom: 780, rowsPerPage: 5 },
-      { bottom: 810, rowsPerPage: 5 },
       { bottom: 810, rowsPerPage: 5 }
     ]
   );
 });
 
-test("incomplete calculated tail keeps both continuation pages in full-page mode", async () => {
+test("calculated tail does not continue beyond the predicted page count", async () => {
   const swipes = [];
   const definitions = [];
   const tailPages = [
@@ -1189,20 +1448,479 @@ test("incomplete calculated tail keeps both continuation pages in full-page mode
     undefined,
     { expectedCount: 10 }
   );
-  assert.equal(rows.length, 10);
+  assert.equal(rows.length, 7);
   assert.deepEqual(
     definitions.map(({ bottom, rowsPerPage }) => ({ bottom, rowsPerPage })),
     [
       { bottom: 780, rowsPerPage: 5 },
-      { bottom: 810, rowsPerPage: 5 },
-      { bottom: 810, rowsPerPage: 5 },
       { bottom: 810, rowsPerPage: 5 }
     ]
   );
   assert.deepEqual(
     swipes.map(({ durationMs }) => durationMs),
-    [700, 700, 700]
+    [600]
   );
+});
+
+test("the penultimate member page keeps its five top rows and skips row alignment", async () => {
+  const swipes = [];
+  const reports = [];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async probe(_path, points) {
+        return points.map(({ x, y }) => ({
+          x,
+          y,
+          meanBlue: y < 340 ? 0.1 : y < 435 ? 0.8 : 0.1
+        }));
+      },
+      async extractTableRows(_path, definition, label) {
+        const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
+        if (definition.region.bottom === 810) {
+          return Array.from({ length: 5 }, (_, index) => ({
+            name: `成员${index + 7}`
+          }));
+        }
+        const first = page === 2 ? 6 : 1;
+        return Array.from({ length: 5 }, (_, index) => ({
+          name: `成员${first + index}`
+        }));
+      }
+    },
+    adb: {
+      async mouseSwipe(from, to) {
+        swipes.push({ from, to });
+      }
+    },
+    ui: { async afterAction() {} },
+    async report(_level, step, _message, detail) {
+      reports.push({ step, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      rowAnchorTop: 315,
+      columns: [],
+      pagination: {
+        maxPages: 5,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 3,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 5,
+        rowHeightPx: 95,
+        rowColorThreshold: 0.3,
+        rowColorSampleStepPx: 5,
+        maxRowAlignments: 1,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1,
+        rowAlignmentDurationMs: 1,
+        rowAlignmentSettleMs: 0
+      }
+    },
+    undefined,
+    { expectedCount: 11 }
+  );
+
+  assert.equal(rows.length, 11);
+  assert.equal(swipes.length, 2);
+  assert.deepEqual(rows.slice(5).map((row) => row.name), [
+    "成员6",
+    "成员7",
+    "成员8",
+    "成员9",
+    "成员10",
+    "成员11"
+  ]);
+  assert.ok(
+    reports.some(
+      ({ step, detail }) =>
+        step === "member_details_penultimate_fixed_geometry" &&
+        detail.positionLocked === true &&
+        detail.ignoredBottomPartialRows === 1
+    )
+  );
+  assert.ok(
+    !reports.some(
+      ({ step, detail }) =>
+        step === "member_details_row_alignment" && detail.page === 2
+    )
+  );
+});
+
+test("calculated tail excludes a name repeated from the previous page", async () => {
+  const reports = [];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
+        if (definition.region.bottom === 810) {
+          return [
+            { name: "成员5" },
+            { name: "成员6" },
+            { name: "成员7" },
+            { name: "成员8" },
+            { name: "成员9" }
+          ];
+        }
+        return Array.from({ length: 5 }, (_, index) => ({
+          name: `成员${(page - 1) * 5 + index + 1}`
+        }));
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: { async afterAction() {} },
+    async report(_level, step, _message, detail) {
+      reports.push({ step, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 24,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 3,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 5,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 9 }
+  );
+
+  assert.equal(rows.length, 9);
+  assert.ok(
+    reports.some(
+      ({ step, detail }) =>
+        step === "member_details_tail_overlap_excluded" &&
+        detail.overlapNames.includes("成员5") &&
+        detail.expectedTailOverlapCount === 1
+    )
+  );
+  assert.ok(
+    !reports.some(({ step }) => step === "member_details_expected_page_incomplete")
+  );
+});
+
+test("calculated tail corrects an unexpected physical overlap in place", async () => {
+  const reports = [];
+  let tailReads = 0;
+  const context = {
+    config: { localVisionModel: { enabled: false } },
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        if (definition.region.bottom === 810) {
+          if (label.includes("page-recovery")) {
+            return [
+              { name: "成员5" },
+              { name: "成员6" },
+              { name: "成员7" },
+              { name: "成员8" },
+              { name: "成员9" }
+            ];
+          }
+          tailReads += 1;
+          return tailReads === 1
+            ? [
+                { name: "成员5" },
+                { name: "成员6" },
+                { name: "成员7" },
+                { name: "成员8" },
+                { name: "成员9" }
+              ]
+            : [
+                { name: "成员6" },
+                { name: "成员7" },
+                { name: "成员8" },
+                { name: "成员9" },
+                { name: "成员10" }
+              ];
+        }
+        return Array.from({ length: 5 }, (_, index) => ({
+          name: `成员${index + 1}`
+        }));
+      }
+    },
+    adb: {
+      async mouseSwipe() {}
+    },
+    ui: { async afterAction() {} },
+    async sleep() {},
+    async report(_level, step, _message, detail) {
+      reports.push({ step, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 24,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 5,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1,
+        settleAfterSwipeMs: 0
+      }
+    },
+    undefined,
+    { expectedCount: 10 }
+  );
+
+  assert.equal(rows.length, 10);
+  assert.equal(tailReads, 2);
+  assert.ok(
+    reports.some(({ step }) => step === "member_details_tail_alignment_correction")
+  );
+  assert.ok(
+    reports
+      .filter(({ step }) => step === "member_details_tail_alignment_correction")
+      .every(({ detail }) => detail.positionLocked === true)
+  );
+  assert.ok(
+    !reports.some(({ step }) => step === "member_details_page_limit_reached")
+  );
+});
+
+test("calculated final tail allows exactly one physically hidden member", async () => {
+  const reports = [];
+  const scanState = {};
+  let swipes = 0;
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        if (definition.region.bottom === 810) {
+          return [
+            { name: "成员6" },
+            { name: "成员7" },
+            { name: "成员8" },
+            { name: "成员9" }
+          ];
+        }
+        return Array.from({ length: 5 }, (_, index) => ({
+          name: `成员${index + 1}`
+        }));
+      }
+    },
+    adb: { async mouseSwipe() { swipes += 1; } },
+    ui: { async afterAction() {} },
+    async report(level, step, message, detail) {
+      reports.push({ level, step, message, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 24,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 5,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1,
+        settleAfterSwipeMs: 0
+      }
+    },
+    undefined,
+    { expectedCount: 10, scanState }
+  );
+
+  assert.equal(rows.length, 9);
+  assert.equal(swipes, 1);
+  assert.equal(scanState.finalPageMissingCount, 1);
+  assert.equal(scanState.finalPageMissingAllowed, true);
+  assert.ok(reports.some(({ step }) => step === "member_details_tail_missing_allowed"));
+  assert.ok(reports.some(({ step }) => step === "member_details_tail_complete"));
+  assert.ok(!reports.some(({ step }) => step === "member_details_incomplete_stop"));
+});
+
+test("calculated final tail rejects a two-member physical gap", async () => {
+  const reports = [];
+  const scanState = {};
+  let swipes = 0;
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition) {
+        if (definition.region.bottom === 810) {
+          return [{ name: "成员6" }, { name: "成员7" }, { name: "成员8" }];
+        }
+        return Array.from({ length: 5 }, (_, index) => ({
+          name: `成员${index + 1}`
+        }));
+      }
+    },
+    adb: { async mouseSwipe() { swipes += 1; } },
+    ui: { async afterAction() {} },
+    async report(level, step, message, detail) {
+      reports.push({ level, step, message, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 24,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 5,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1,
+        settleAfterSwipeMs: 0
+      }
+    },
+    undefined,
+    { expectedCount: 10, scanState }
+  );
+
+  assert.equal(rows.length, 8);
+  assert.equal(swipes, 1);
+  assert.equal(scanState.finalPageMissingCount, 2);
+  assert.equal(scanState.finalPageMissingAllowed, false);
+  assert.equal(scanState.stoppedOnIncompletePage, true);
+  assert.ok(reports.some(({ step }) => step === "member_details_tail_missing_unresolved"));
+  assert.ok(reports.some(({ step }) => step === "member_details_incomplete_stop"));
+  assert.ok(!reports.some(({ step }) => step === "member_details_tail_complete"));
+});
+
+test("profile workflow uploads the expected total with one allowed final gap", async () => {
+  const reports = [];
+  const flows = [];
+  const context = {
+    config: {
+      tables: {
+        members: {
+          extractionMode: "hybrid",
+          headerPattern: [],
+          region: { left: 115, top: 285, right: 1800, bottom: 780 },
+          pagination: {
+            maxPages: 24,
+            rowsPerPage: 5,
+            minimumRowsPerPage: 5,
+            fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+            fullPageRows: 5,
+            from: { x: 1700, y: 700 },
+            to: { x: 1700, y: 225 },
+            firstPageFrom: { x: 1700, y: 700 },
+            firstPageTo: { x: 1700, y: 225 },
+            durationMs: 1,
+            settleAfterSwipeMs: 0
+          },
+          columns: []
+        },
+        staffGrid: { slots: [] }
+      }
+    },
+    vision: {
+      async readMemberExpectedBreakdown() {
+        return {
+          formalCurrent: 10,
+          formalTotal: 10,
+          sailingCurrent: 0,
+          sailingTotal: 0,
+          total: 10
+        };
+      },
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition) {
+        if (definition.region.bottom === 810) {
+          return [{ name: "成员6" }, { name: "成员7" }, { name: "成员8" }, { name: "成员9" }];
+        }
+        return Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 1}` }));
+      },
+      async captureAccurate() {
+        return { path: "staff.png", observations: [] };
+      },
+      async extractStaffRows() {
+        return [{ roleKey: "mayor", roleName: "市长", memberName: "成员1" }];
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: {
+      async executeFlow(name) {
+        flows.push(name);
+      },
+      async afterAction() {}
+    },
+    async report(level, step, message, detail) {
+      reports.push({ level, step, message, detail });
+    }
+  };
+
+  const result = await captureProfilesAndStaff(context);
+
+  assert.equal(result.details.length, 9);
+  assert.equal(result.expectedMembers, 10);
+  assert.equal(result.finalTailMissingAllowed, true);
+  assert.deepEqual(result.memberScanSummary, {
+    expectedCount: 10,
+    recognizedCount: 9,
+    missingCount: 1,
+    missingAllowed: true,
+    finalPage: 2,
+    pages: 2,
+    positionLocked: true
+  });
+  assert.equal(flows.includes("resetMemberPanelForRescan"), false);
 });
 
 test("member profile scan stops immediately when a page remains incomplete", async () => {
@@ -1342,7 +2060,7 @@ test("tail recovery keeps a valid native row when the advisor drops it", async (
   assert.equal(recoveryCalls.length, 1);
 });
 
-test("member profile scan allows at most two pages after an incomplete calculated tail", async () => {
+test("member profile scan stops at the calculated tail when OCR count is short", async () => {
   const swipes = [];
   const reports = [];
   const pages = [
@@ -1424,8 +2142,8 @@ test("member profile scan allows at most two pages after an incomplete calculate
     { expectedCount: 16 }
   );
   assert.equal(rows.length, 15);
-  assert.ok(swipes.length <= 5);
-  assert.ok(reports.some(({ step }) => step === "member_details_expected_page_incomplete"));
+  assert.equal(swipes.length, 3);
+  assert.ok(!reports.some(({ step }) => step === "member_details_expected_page_incomplete"));
   assert.ok(reports.some(({ step }) => step === "member-details_page_limit_reached"));
 });
 

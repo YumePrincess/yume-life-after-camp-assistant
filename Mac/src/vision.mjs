@@ -8,7 +8,8 @@ import {
   isMemberIdentityBadge,
   isMemberProfessionArtifact,
   isMemberSymbolOnlyName,
-  isPlausibleMemberName
+  isPlausibleMemberName,
+  stripMemberTableIdentityBadge
 } from "./member-name.mjs";
 import { isStaffSeatPlaceholder, parseTable } from "./table-parser.mjs";
 
@@ -46,6 +47,36 @@ function memberDetailsOcrRegion(definition) {
   return { ...region, left };
 }
 
+function memberDetailsReadDefinition(definition) {
+  const source = definition || {};
+  const pagination = source.pagination || {};
+  if (pagination.skipLeadingPartialRows) return source;
+  const rowHeight = Number(pagination.rowHeightPx);
+  const rowAnchorTop = Number(
+    source.rowAnchorTop ?? pagination.rowAnchorTop
+  );
+  const rowsPerPage = Number(pagination.rowsPerPage);
+  if (
+    !Number.isFinite(rowHeight) ||
+    rowHeight <= 0 ||
+    !Number.isFinite(rowAnchorTop) ||
+    !Number.isFinite(rowsPerPage) ||
+    rowsPerPage < 1 ||
+    !source.region
+  ) {
+    return source;
+  }
+  const lastRowBoundary = rowAnchorTop + (rowsPerPage - 0.5) * rowHeight;
+  const bottom = Math.min(Number(source.region.bottom), lastRowBoundary);
+  if (!Number.isFinite(bottom) || bottom >= Number(source.region.bottom)) {
+    return source;
+  }
+  return {
+    ...source,
+    region: { ...source.region, bottom }
+  };
+}
+
 export class Vision {
   constructor(config, adb) {
     this.config = config;
@@ -53,6 +84,7 @@ export class Vision {
     this.sequence = 0;
     this.snapshotDir = resolve(MAC_ROOT, "snapshots");
     this.taskPaths = new Set();
+    this.taskDebugRecorder = null;
     this.ocrModeHealth = new Map();
     this.ocrPrewarmPromise = null;
     this.advisor = new LocalVisionAdvisor(config.localVisionModel);
@@ -85,8 +117,9 @@ export class Vision {
     };
   }
 
-  beginTask() {
+  beginTask({ taskDebug = null } = {}) {
     this.taskPaths.clear();
+    this.taskDebugRecorder = taskDebug;
   }
 
   async prewarm(signal) {
@@ -151,7 +184,8 @@ export class Vision {
     );
     await this.adb.screenshot(path);
     this.taskPaths.add(path);
-    return { path, observations: [] };
+    const debugPath = await this.taskDebugRecorder?.recordImage(path, label);
+    return { path, debugPath: debugPath || null, observations: [] };
   }
 
   async captureTable(label, definition, signal) {
@@ -211,6 +245,7 @@ export class Vision {
     );
     await this.adb.screenshot(path);
     this.taskPaths.add(path);
+    await this.taskDebugRecorder?.recordImage(path, `${label}-advisor`);
     try {
       return await this.advisor.analyze(path, context, signal);
     } finally {
@@ -229,6 +264,7 @@ export class Vision {
     );
     await this.adb.screenshot(path);
     this.taskPaths.add(path);
+    await this.taskDebugRecorder?.recordImage(path, `${label}-overlay-advisor`);
     try {
       return await this.advisor.identifyOverlayControl(path, context, signal);
     } finally {
@@ -570,7 +606,7 @@ export class Vision {
     definition,
     label,
     signal,
-    _options = {}
+    options = {}
   ) {
     const configuredMinimum = Number(definition.ocrMinimumConfidence);
     const memberOcrMinimum = Number.isFinite(configuredMinimum)
@@ -658,6 +694,50 @@ export class Vision {
       });
     }
     const region = definition.region;
+    const useFullTableAdvisor =
+      this.advisor.enabled &&
+      (options.forceLocalVision ||
+        options.forceContributionVision ||
+        options.forceContributionRecovery);
+    if (useFullTableAdvisor) {
+      let advisedRows = [];
+      try {
+        advisedRows = await this.#withTemporaryCrop(
+          imagePath,
+          region,
+          `${label}-vision-table-crop`,
+          signal,
+          (cropPath) =>
+            this.advisor.extractTable(
+              cropPath,
+              {
+                columns: [
+                  "name",
+                  "weeklyContribution",
+                  "technologyPointsUsed",
+                  "materialContribution"
+                ]
+              },
+              signal
+            )
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        // Keep the native accurate pass when Qwen is unavailable for one
+        // page; a failed enhancement must never erase a readable table.
+        advisedRows = [];
+      }
+      rows = mergeVisionRowsByIndex(
+        rows,
+        advisedRows,
+        [
+          "name",
+          "weeklyContribution",
+          "technologyPointsUsed",
+          "materialContribution"
+        ]
+      );
+    }
     const nameColumn = definition.columns.find(
       (column) => column.key === "name"
     );
@@ -697,14 +777,18 @@ export class Vision {
         advisedNames.map((item) => [item.row, item.name])
       );
       return rows
-        .map((row, index) => ({
-          ...row,
-          name:
-            (isPlausibleMemberName(row.name) && row.name) ||
-            (isPlausibleMemberName(namesByRow.get(index + 1))
-              ? namesByRow.get(index + 1)
-              : "")
-        }));
+        .map((row, index) => {
+          const nativeName = cleanVisionTableName(row.name);
+          const advisedName = cleanVisionTableName(namesByRow.get(index + 1));
+          return {
+            ...row,
+            name:
+              preferredMemberVisionName(nativeName, advisedName) ||
+              nativeName ||
+              advisedName ||
+              ""
+          };
+        });
     } finally {
       this.taskPaths.delete(cropPath);
       await rm(cropPath, { force: true });
@@ -718,6 +802,12 @@ export class Vision {
     signal,
     options = {}
   ) {
+    // The normal five-row crop must not include the next row's lower edge.
+    // When the list is one row short at the top, Apple/Qwen can otherwise
+    // promote that partial bottom row into slot five and silently shift the
+    // page. The calculated tail keeps its expanded region unchanged because
+    // it intentionally starts with a partial previous row.
+    definition = memberDetailsReadDefinition(definition);
     const configuredMinimum = Number(definition.ocrMinimumConfidence);
     const memberOcrMinimum = Number.isFinite(configuredMinimum)
       ? Math.max(0.25, Math.min(0.8, configuredMinimum))
@@ -756,44 +846,46 @@ export class Vision {
       1,
       Number(definition.pagination?.rowsPerPage) || anchors.length
     );
-    // Avoid a second full-screen OCR when the regional pass omitted the
-    // online-state anchor. That fallback caused intermittent 30s stalls.
-    // The table has a stable configured row count, so infer row centers from
-    // the existing regional observations instead.
-    if (!anchors.length && observations.length && rowsPerPage > 0) {
-      const first = Math.max(
-        region.top,
-        Number(definition.rowAnchorTop) || region.top
-      );
-      const available = Math.max(1, region.bottom - first);
-      const spacing = rowsPerPage > 1 ? available / rowsPerPage : available / 2;
-      anchors = Array.from(
-        { length: rowsPerPage },
-        (_, index) => first + spacing * index
-      );
-    }
-    if (anchors.length > rowsPerPage) {
-      anchors = anchors.slice(-rowsPerPage);
-    }
-    // Online/offline OCR is only an alignment aid. A single missed status
-    // token must not make the whole page look like a four-row page: the table
-    // has calibrated geometry, so rebuild all row slots from that geometry
-    // whenever the regional OCR returns fewer anchors than the visible page.
-    // The caller still stops when repeated reads remain below the page minimum.
+    // Online/offline OCR is only an alignment aid. Even when it happens to
+    // produce the configured number of anchors, one missed token can make a
+    // later partially visible row take an earlier row's slot. The member list
+    // has calibrated geometry, so fixed row slots must be authoritative.
     const fixedRowHeight = Number(definition.pagination?.rowHeightPx);
     const fixedRowTop = Number(
       definition.rowAnchorTop ?? definition.pagination?.rowAnchorTop
     );
     if (
-      anchors.length < rowsPerPage &&
       Number.isFinite(fixedRowHeight) &&
       fixedRowHeight > 0 &&
       Number.isFinite(fixedRowTop)
     ) {
+      const leadingPartialRows = definition.pagination?.skipLeadingPartialRows
+        ? 1
+        : 0;
       anchors = Array.from(
         { length: rowsPerPage },
-        (_, index) => fixedRowTop + index * fixedRowHeight
+        (_, index) =>
+          fixedRowTop + (index + leadingPartialRows) * fixedRowHeight
       );
+    } else {
+      // Older/plugin definitions may not carry calibrated row geometry. Avoid
+      // a second full-screen OCR in that case; use the available anchors or
+      // infer evenly spaced slots from the configured region.
+      if (!anchors.length && observations.length && rowsPerPage > 0) {
+        const first = Math.max(
+          region.top,
+          Number(definition.rowAnchorTop) || region.top
+        );
+        const available = Math.max(1, region.bottom - first);
+        const spacing = rowsPerPage > 1 ? available / rowsPerPage : available / 2;
+        anchors = Array.from(
+          { length: rowsPerPage },
+          (_, index) => first + spacing * index
+        );
+      }
+      if (anchors.length > rowsPerPage) {
+        anchors = anchors.slice(-rowsPerPage);
+      }
     }
     if (!anchors.length) return [];
 
@@ -904,7 +996,7 @@ export class Vision {
                 left: identityBounds.left,
                 top: Math.max(region.top, row.upper - 14),
                 right: identityBounds.right,
-                bottom: Math.min(region.bottom, row.lower + 14)
+                bottom: Math.min(region.bottom, row.upper + 55)
               };
               await this.#cropImage(
                 imagePath,
@@ -967,12 +1059,10 @@ export class Vision {
         region.top,
         Math.floor(anchors[0] - rowSpacing / 2)
       );
-      const advisorRowCount = forceMemberAdvisor
-        ? Math.max(
-            anchors.length,
-            Number(definition.pagination?.fullPageRows) || rowsPerPage
-          )
-        : anchors.length;
+      // Use the calibrated visible row slots, not the configured maximum for
+      // an expanded tail crop. Asking for extra rows makes Qwen shift later
+      // names when a light/emoji-only row is hard to see.
+      const advisorRowCount = rowData.length;
       const cropBottom = forceMemberAdvisor
         ? region.bottom
         : Math.min(
@@ -1002,28 +1092,153 @@ export class Vision {
         await rm(cropPath, { force: true });
       }
     }
-    return rowData
-      .map(({ items, identity, profession }, index) => {
+    const targetedNamesByRow = new Map();
+    if (this.advisor.enabled && forceMemberAdvisor) {
+      const identityBounds = columnBounds.get("identity");
+      const rowsNeedingTargetedVision = rowData.filter((row, index) => {
+        const nativeName = cleanMemberName(row.identity.name, row.profession);
+        const advisedName = cleanMemberName(
+          advisedByRow.get(index + 1)?.name,
+          row.profession
+        );
+        // A missing Qwen row must not trigger an extra request when native
+        // OCR already has a usable name; the native row is the safe fallback.
+        // Rows without a native name still get a targeted symbol/emoji read.
+        if (!nativeName) return true;
+        if (!advisedName) return false;
+        return (
+          !compatibleMemberVisionName(nativeName, advisedName) ||
+          memberVisionDecorationCount(nativeName) !==
+            memberVisionDecorationCount(advisedName)
+        );
+      });
+      await Promise.all(
+        rowsNeedingTargetedVision.map(async (row, recoveryIndex) => {
+          const rowIndex = rowData.indexOf(row) + 1;
+          const identityRegion = {
+            left: Math.max(region.left, identityBounds.left - 6),
+            // Keep the crop around the current row's text baseline and out of
+            // the neighboring row. A full 95px row band can still contain
+            // two names on the tail crop when the target name is emoji-only.
+            top: Math.max(region.top, row.upper - 14),
+            right: Math.min(region.right, identityBounds.right + 6),
+            bottom: Math.min(region.bottom, row.upper + 55)
+          };
+          try {
+            const candidate = await this.#withTemporaryCrop(
+              imagePath,
+              identityRegion,
+              `${label}-member-symbol-vision-${recoveryIndex + 1}`,
+              signal,
+              (cropPath) => this.advisor.extractMemberName(cropPath, signal)
+            );
+            const name = cleanMemberName(candidate, row.profession);
+            const nativeName = cleanMemberName(row.identity.name, row.profession);
+            const advisedName = cleanMemberName(
+              advisedByRow.get(rowIndex)?.name,
+              row.profession
+            );
+            if (
+              name &&
+              (!nativeName ||
+                compatibleMemberVisionName(nativeName, name) ||
+                !advisedName ||
+                compatibleMemberVisionName(advisedName, name))
+            ) {
+              targetedNamesByRow.set(rowIndex, name);
+            }
+          } catch (error) {
+            if (signal?.aborted) throw error;
+            // The fixed full-table result and native row remain the fallback.
+          }
+        })
+      );
+      const unresolvedRows = rowData.filter((row, index) => {
+        const advisedName = cleanMemberName(
+          targetedNamesByRow.get(index + 1) || advisedByRow.get(index + 1)?.name,
+          row.profession
+        );
+        const nativeName = cleanMemberName(row.identity.name, row.profession);
+        return !advisedName && !nativeName;
+      });
+      await Promise.all(
+        unresolvedRows.map(async (row, recoveryIndex) => {
+          const identityRegion = {
+            left: Math.max(region.left, identityBounds.left - 6),
+            top: Math.max(region.top, row.upper - 14),
+            right: Math.min(region.right, identityBounds.right + 6),
+            bottom: Math.min(region.bottom, row.upper + 55)
+          };
+          try {
+            let candidate = await this.#withTemporaryCrop(
+              imagePath,
+              identityRegion,
+              `${label}-member-row-vision-${recoveryIndex + 1}`,
+              signal,
+              (cropPath) => this.advisor.extractMemberName(cropPath, signal)
+            );
+            let name = cleanMemberName(candidate, row.profession);
+            if (!name) {
+              const fullRowRegion = {
+                left: memberDetailsOcrRegion(definition).left,
+                top: Math.max(region.top, row.upper - 12),
+                right: region.right,
+                bottom: Math.min(region.bottom, row.upper + 55)
+              };
+              candidate = await this.#withTemporaryCrop(
+                imagePath,
+                fullRowRegion,
+                `${label}-member-row-full-vision-${recoveryIndex + 1}`,
+                signal,
+                (cropPath) =>
+                  this.advisor.extractMemberDetails(cropPath, 1, signal, {
+                    singleRow: true,
+                    symbolAware: true
+                  })
+              );
+              name = cleanMemberName(candidate?.[0]?.name, row.profession);
+            }
+            if (name) row.identity = { name, campTitle: "" };
+          } catch (error) {
+            if (signal?.aborted) throw error;
+            // Leave the fixed row unresolved so the outer page retry can try
+            // again without shifting a later row into its position.
+          }
+        })
+      );
+    }
+    const rowsWithNameCandidates = rowData.map(
+      ({ items, identity, profession }, index) => {
         const ai = advisedByRow.get(index + 1) || {};
-        const nativeName =
-          isPlausibleMemberName(identity.name) &&
-          !isMemberAvatarArtifact(identity.name) &&
-          !isMemberProfessionArtifact(identity.name, profession)
-            ? identity.name
-            : "";
-        const nativeNameDuplicated =
-          nativeNameCounts.get(comparableVisionName(nativeName)) > 1;
-        const advisedName = cleanMemberName(ai.name, profession);
+        const nativeName = cleanMemberName(identity.name, profession);
+        const advisedName = cleanMemberName(
+          targetedNamesByRow.get(index + 1) || ai.name,
+          profession
+        );
+        const preferredName = preferredMemberVisionName(
+          nativeName,
+          advisedName
+        );
         return {
-          name:
-            (
-              forceMemberAdvisor ||
-              !nativeName ||
-              nativeNameDuplicated
-            ) &&
-            advisedName
-              ? advisedName
-              : nativeName,
+          // Apple OCR can include adjacent badges/icons. Prefer a valid Qwen
+          // name for each fixed row when it agrees with the native row's text.
+          // If Qwen skipped a row and shifted the following names upward, the
+          // fixed row must retain its native candidate instead of accepting a
+          // different member. An empty native row remains recoverable by Qwen.
+          name: preferredName,
+          // Keep both row-aligned candidates until the complete page has
+          // been assembled. A one-character OCR correction can otherwise
+          // turn two distinct rows (such as numeric variants) into the same
+          // name; the collision resolver below can then choose the unused
+          // candidate without any player-specific dictionary.
+          __nameCandidates: [preferredName, nativeName, advisedName]
+            .filter(Boolean)
+            .filter(
+              (candidate, candidateIndex, candidates) =>
+                candidates.indexOf(candidate) === candidateIndex &&
+                (!preferredName ||
+                  compatibleMemberVisionName(preferredName, candidate))
+            ),
           // The member list is a name roster. Its second identity line is a
           // camp title, not another member name; only the staff-card parser
           // is allowed to promote that line to a role field.
@@ -1041,7 +1256,10 @@ export class Vision {
           roommateName:
             firstColumnText(items, columnBounds.get("roommateName"))
         };
-      })
+      }
+    );
+    return resolveMemberVisionRowNameCollisions(rowsWithNameCandidates)
+      .map(({ __nameCandidates, ...row }) => row)
       .filter((row) => row.name);
   }
 
@@ -1065,16 +1283,45 @@ export class Vision {
       memberOcrMinimum,
       options.forceActivityRecovery ? 2 : 1
     );
-    return parseTable(observations, definition).filter(
-      (row) =>
-        isPlausibleMemberName(row.name) &&
-        row.onlineState &&
-        !definition.headerPattern.some(
-          (value) =>
-            row.name.includes(value) ||
-            row.onlineState.includes(value)
-        )
-    );
+    let rows = parseTable(observations, definition)
+      .map((row) => ({
+        ...row,
+        // Apply the same symbol/badge normalization used by contribution and
+        // member-profile tables even when the local model is unavailable for
+        // this page. This prevents a mayor crest or a known OCR boundary
+        // artifact from becoming part of the activity identity key.
+        name: cleanVisionTableName(row.name)
+      }))
+      .filter(
+        (row) =>
+          row.name &&
+          !definition.headerPattern.some(
+            (value) =>
+              row.name.includes(value) ||
+              row.onlineState.includes(value)
+          )
+      );
+    const useActivityAdvisor =
+      this.advisor.enabled &&
+      (options.forceLocalVision ||
+        options.forceActivityVision ||
+        options.forceActivityRecovery);
+    if (useActivityAdvisor) {
+      try {
+        const advisedRows = await this.#withTemporaryCrop(
+          imagePath,
+          definition.region,
+          `${label}-vision-table-crop`,
+          signal,
+          (cropPath) => this.advisor.extractActivity(cropPath, signal)
+        );
+        rows = mergeVisionActivityRows(rows, advisedRows);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        // Preserve native rows when the local model is stopped or times out.
+      }
+    }
+    return rows.filter((row) => row.name && row.onlineState);
   }
 
   async ocrRegion(
@@ -1123,6 +1370,7 @@ export class Vision {
           ],
           { timeoutMs: 30_000, signal }
         );
+        await this.taskDebugRecorder?.recordImage(scaledPath, `${label}-ocr-scaled`);
         if (crop.adjusted) {
           await this.#assertImageDimensions(
             scaledPath,
@@ -1204,6 +1452,7 @@ export class Vision {
       ],
       { timeoutMs: 30_000, signal }
     );
+    await this.taskDebugRecorder?.recordImage(outputPath, "crop");
     if (crop.adjusted) {
       await this.#assertImageDimensions(
         outputPath,
@@ -1214,6 +1463,21 @@ export class Vision {
       );
     }
     return crop;
+  }
+
+  async #withTemporaryCrop(imagePath, region, label, signal, operation) {
+    const cropPath = resolve(
+      this.snapshotDir,
+      `${String(++this.sequence).padStart(4, "0")}-${safe(label)}.png`
+    );
+    this.taskPaths.add(cropPath);
+    try {
+      await this.#cropImage(imagePath, region, cropPath, signal);
+      return await operation(cropPath);
+    } finally {
+      this.taskPaths.delete(cropPath);
+      await rm(cropPath, { force: true });
+    }
   }
 
   async #assertImageDimensions(path, expectedWidth, expectedHeight, signal, label) {
@@ -1246,6 +1510,7 @@ export class Vision {
     );
     await this.adb.screenshot(path);
     this.taskPaths.add(path);
+    const debugPath = await this.taskDebugRecorder?.recordImage(path, label);
     try {
       let observations = [];
       try {
@@ -1288,7 +1553,11 @@ export class Vision {
         // Vision framework failures must degrade to the guarded local model;
         // a single OCR subprocess crash must never terminate the game task.
       }
-      return { path: transient ? null : path, observations };
+      return {
+        path: transient ? null : path,
+        debugPath: debugPath || null,
+        observations
+      };
     } finally {
       if (transient) {
         this.taskPaths.delete(path);
@@ -1712,13 +1981,21 @@ export function inferMemberIdentity(items, options = {}) {
 }
 
 function isLikelyMemberTitle(value) {
-  return /^(?:#\s*[BDGKOPRUWY](?:\s|#|$)|市长|营地助手|公职人员|职位|title\b)/i.test(
+  // Camp staff titles use a colour/role prefix such as #U followed directly
+  // by the title. They are the second line of a staff row, never a member
+  // name; keep the rule shape-based so no player name is embedded here.
+  return /^(?:#\s*[BDGKOPRUWY](?:[\p{L}\p{N}\u3400-\u9fff]|\s|#){1,}|市长|营地助手|公职人员|职位|title\b)/iu.test(
     String(value || "").trim()
   );
 }
 
 function cleanMemberName(value, profession = "") {
-  const text = cleanModelText(value);
+  const text = cleanModelText(value)
+    // Qwen sometimes emits U+2212/U+207B for the ordinary hyphen visible in
+    // the game. Keep the player's `-😊-` display name stable across rereads.
+    .replace(/[−⁻]/gu, "-")
+    .replace(/(?:启航|回归|先行者|R|®|ℝ)$/iu, "")
+    .trim();
   return isPlausibleMemberName(text) &&
     !isMemberAvatarArtifact(text) &&
     !isMemberIdentityBadge(text) &&
@@ -1726,6 +2003,525 @@ function cleanMemberName(value, profession = "") {
     !isLikelyMemberTitle(text)
     ? text
     : "";
+}
+
+function compatibleMemberVisionName(nativeName, advisedName) {
+  const nativeCore = memberVisionNameCore(nativeName);
+  const advisedCore = memberVisionNameCore(advisedName);
+  if (!nativeCore || !advisedCore) return true;
+  if (nativeCore === advisedCore) return true;
+  if (
+    nativeCore.startsWith(advisedCore) ||
+    advisedCore.startsWith(nativeCore)
+  ) {
+    return Math.abs(nativeCore.length - advisedCore.length) <= 2;
+  }
+  if (nativeCore.length !== advisedCore.length) return false;
+  return memberVisionNameDistance(nativeCore, advisedCore) <= 1;
+}
+
+function preferredMemberVisionName(nativeName, advisedName) {
+  const repairedNativeName = repairMemberOcrName(nativeName, advisedName);
+  const nativeWasRepaired = Boolean(
+    repairedNativeName && repairedNativeName !== nativeName
+  );
+  nativeName = repairedNativeName || nativeName;
+  // Normalize the independent Qwen candidate as well. Otherwise a repaired
+  // native row can still be replaced by a second-pass artifact such as
+  // a sparkle pair with an extra hash or a digit-shaped decorative boundary.
+  const repairedAdvisedName = repairMemberOcrName(advisedName, advisedName);
+  advisedName = repairedAdvisedName || advisedName;
+  if (!advisedName) return nativeName;
+  if (!nativeName || !compatibleMemberVisionName(nativeName, advisedName)) {
+    return nativeName || advisedName;
+  }
+  const nativeCore = memberVisionNameCore(nativeName);
+  const advisedCore = memberVisionNameCore(advisedName);
+  // A symbol-only native row is valid. Conversely, a Qwen symbol-only result
+  // is not allowed to erase the native Chinese/Latin core. This is especially
+  // important for caret-delimited sparkle names, where one pass may see only the
+  // surrounding symbols and another may see only the text.
+  if (!nativeCore || !advisedCore) {
+    return nativeName;
+  }
+  // The repair rules below are based on a visible native artifact plus an
+  // independent Qwen text-core confirmation. Once such a repair restores a
+  // glyph pair (for example a trailing `卒` -> `✨core✨`), do not let the
+  // model's plain-name response immediately erase the restored symbols.
+  if (nativeWasRepaired) {
+    // A native decoration repair can still be based on a truncated core
+    // (`好甜呀$` -> `好甜呀✨`) while Qwen sees the extra Latin suffix
+    // (`好甜呀em$` -> `好甜呀em✨`). Prefer the longer, model-confirmed
+    // prefix in that narrow case; otherwise keep the native symbol repair.
+    if (
+      advisedCore.length > nativeCore.length &&
+      advisedCore.startsWith(nativeCore) &&
+      advisedCore.length - nativeCore.length <= 2
+    ) {
+      return advisedName;
+    }
+    return nativeName;
+  }
+  // If both reads agree on the underlying name, never erase decorations that
+  // Apple OCR did preserve. This keeps hollow/solid flowers, stars and emoji
+  // visible when Qwen's text decode returns only the Han-character core.
+  if (
+    nativeCore === advisedCore &&
+    memberVisionDecorationCount(nativeName) >
+      memberVisionDecorationCount(advisedName)
+  ) {
+    return nativeName;
+  }
+  // When both passes see the same-length Han-character core but Qwen has
+  // confused one character, keep a decorated native read. A decorated row is
+  // materially more informative than a plain one-character edit-distance
+  // correction: replacing a decorated name with a one-character variant would erase the identity
+  // that distinguishes this member from another `林昭容`-like OCR result.
+  if (
+    memberVisionDecorationCount(nativeName) > 0 &&
+    nativeCore.length === advisedCore.length &&
+    memberVisionNameDistance(nativeCore, advisedCore) <= 1
+  ) {
+    return nativeName;
+  }
+  // For undecorated equal-length names, a one-character Qwen substitution is
+  // more often a small-model glyph confusion than a safe correction (`晔` /
+  // `咩`, `樗` / `檀`). Keep the native text in that narrow case. Qwen is still
+  // allowed to supply a clearly decorated name, which is the information the
+  // native OCR most commonly loses.
+  if (
+    memberVisionDecorationCount(nativeName) === 0 &&
+    memberVisionDecorationCount(advisedName) === 0 &&
+    nativeCore.length === advisedCore.length &&
+    memberVisionNameDistance(nativeCore, advisedCore) <= 1 &&
+    memberVisionHasHanOnlySubstitution(nativeCore, advisedCore)
+  ) {
+    return nativeName;
+  }
+  // Apple OCR can append one glyph of a flower as 米/导/導/卒 or replace the
+  // visible decoration with `*`/`※`. When Qwen returns the shorter core and
+  // the native read still carries a decoration, retain the native candidate
+  // so two visually distinct decorated/plain players cannot be
+  // collapsed into the same key. This is deliberately limited to a short
+  // prefix/suffix difference and never fuzzy-merges two completed names.
+  const shortCore = nativeCore.length <= advisedCore.length
+    ? nativeCore
+    : advisedCore;
+  const longCore = nativeCore.length <= advisedCore.length
+    ? advisedCore
+    : nativeCore;
+  if (
+    memberVisionDecorationCount(nativeName) >
+      memberVisionDecorationCount(advisedName) &&
+    longCore.startsWith(shortCore) &&
+    longCore.length - shortCore.length <= 2
+  ) {
+    return nativeName;
+  }
+  return advisedName;
+}
+
+function repairMemberOcrName(nativeName, advisedName) {
+  const originalNative = String(nativeName || "").trim();
+  const native =
+    repairKnownMemberOcrArtifact(originalNative) || originalNative;
+  const advised = String(advisedName || "").trim();
+  if (!native) return native;
+  const knownArtifactRepair = repairKnownMemberOcrArtifact(native);
+  if (!advised) return knownArtifactRepair || native;
+  const advisedCore = memberVisionNameCore(advised);
+  if (!advisedCore) return native;
+
+  // Apple Vision often turns the two identical six-petal decorations into a
+  // leading `*`/`※` and a trailing `米`.  When Qwen independently confirms
+  // the same text core, restore the decoration class instead of keeping the
+  // OCR artifact.  This is intentionally shape-oriented and does not merge
+  // names by removing their real decorations.
+  const flowerArtifact = native.match(/^([*※])(.+?)米$/u);
+  if (flowerArtifact) {
+    const coreCandidate = flowerArtifact[2];
+    if (memberVisionNameCore(coreCandidate) === advisedCore) {
+      const flower = flowerArtifact[1] === "*" ? "✿" : "❀";
+      return `${flower}${coreCandidate}${flower}`;
+    }
+  }
+  const balancedFlowerArtifact = native.match(/^※(.+?)※$/u);
+  if (balancedFlowerArtifact) {
+    const coreCandidate = balancedFlowerArtifact[1];
+    if (memberVisionNameCore(coreCandidate) === advisedCore) {
+      return `❀${coreCandidate}❀`;
+    }
+  }
+
+  // The solid sparkle pair is frequently emitted by Apple Vision as the
+  // Chinese-looking boundary glyphs `十` and `卒`.  Require visible carets in
+  // the inner text so an ordinary Chinese name containing 十/卒 is untouched.
+  const sparkleArtifact = native.match(/^十(.+\^.*)卒$/u);
+  if (sparkleArtifact) {
+    const coreCandidate = sparkleArtifact[1];
+    if (memberVisionNameCore(coreCandidate) === advisedCore) {
+      return `✨${coreCandidate}✨`;
+    }
+  }
+  // The leading OCR glyph is not stable: the same sparkle pair has appeared
+  // as `十...卒`, `牛...卒` and other one-character boundary noise. Restrict
+  // this repair to a caret-delimited inner name confirmed by Qwen, so a real
+  // Chinese name ending in 卒 is not changed.
+  const genericSparkleArtifact = native.match(/^(.)(.+\^.*)卒$/u);
+  if (genericSparkleArtifact) {
+    const coreCandidate = genericSparkleArtifact[2];
+    if (memberVisionNameCore(coreCandidate) === advisedCore) {
+      return `✨${coreCandidate}✨`;
+    }
+  }
+  const hashCaretSparkleArtifact = native.match(/^#(\^.+\^)卒$/u);
+  if (hashCaretSparkleArtifact) {
+    const coreCandidate = hashCaretSparkleArtifact[1];
+    if (memberVisionNameCore(coreCandidate) === advisedCore) {
+      return `✨${coreCandidate}✨`;
+    }
+  }
+
+  // The game renders solid hearts around some names. Vision has also returned
+  // the right-hand heart as a full-width opening parenthesis; only restore it
+  // when the independent text core agrees exactly.
+  const heartPairArtifact = native.match(/^(.+?)（$/u);
+  if (
+    heartPairArtifact &&
+    memberVisionNameCore(heartPairArtifact[1]) === advisedCore
+  ) {
+    return `♥${heartPairArtifact[1]}♥`;
+  }
+
+  // Adjacent R/person identity badges and their antialiased edge pixels are
+  // occasionally OCR'd as a leading digit or a trailing digit. If the two
+  // reads have the complementary one-digit artifacts, retain the confirmed
+  // text core without either badge digit.
+  const leadingDigitArtifact = native.match(/^\d(.+)$/u);
+  const trailingDigitArtifact = advised.match(/^(.+)\d$/u);
+  if (
+    leadingDigitArtifact &&
+    trailingDigitArtifact &&
+    memberVisionNameCore(leadingDigitArtifact[1]) ===
+      memberVisionNameCore(trailingDigitArtifact[1])
+  ) {
+    return leadingDigitArtifact[1];
+  }
+
+  // An outline heart is commonly read as `'？`; the confirmed prefix lets us
+  // restore the visible symbol without guessing a symbol for unrelated names.
+  const outlineHeartArtifact = native.match(/^(.+)(?:'？|”{1,2}|"{1,2})$/u);
+  if (
+    outlineHeartArtifact &&
+    memberVisionNameCore(outlineHeartArtifact[1]) === advisedCore
+  ) {
+    return `${outlineHeartArtifact[1]}♡`;
+  }
+
+  // A flower's antialiased edge is sometimes read as a leading dot/9 and a
+  // full-width ampersand at the other edge. When Qwen confirms the text core,
+  // restore the balanced hollow-flower decoration without using a name list.
+  const hollowFlowerBoundaryArtifact = native.match(/^(?:[•·9])?(.+?)[＆&]$/u);
+  if (
+    hollowFlowerBoundaryArtifact &&
+    memberVisionNameCore(hollowFlowerBoundaryArtifact[1]) === advisedCore &&
+    /^(?:[•·9])/u.test(advised)
+  ) {
+    return `❀${hollowFlowerBoundaryArtifact[1]}❀`;
+  }
+
+  // `&`/`壓` are edge-pixel hallucinations at the end of rows whose separate
+  // identity badge is immediately to the right. They are only removed when
+  // Qwen confirms the complete shorter name.
+  const trailingBadgeArtifact = native.match(/^(.+)&(?:[\u3400-\u9fff])?$/u);
+  if (
+    trailingBadgeArtifact &&
+    memberVisionNameCore(trailingBadgeArtifact[1]) === advisedCore
+  ) {
+    return trailingBadgeArtifact[1];
+  }
+  const trailingRoleArtifact = native.match(/^(.+)&屋$/u);
+  if (
+    trailingRoleArtifact &&
+    memberVisionNameCore(trailingRoleArtifact[1]) === advisedCore
+  ) {
+    return trailingRoleArtifact[1];
+  }
+
+  // A small trailing `$` is another common read of a sparkle. Only use the
+  // conversion when the confirmed Qwen core is exactly the prefix, so a
+  // genuine dollar sign in another name survives.
+  const trailingDollarArtifact = native.match(/^(.+)\$$/u);
+  if (
+    trailingDollarArtifact &&
+    memberVisionNameCore(trailingDollarArtifact[1]) === advisedCore
+  ) {
+    return `${trailingDollarArtifact[1]}✨`;
+  }
+
+  // A trailing sparkle can be returned as a hash, full-width hash, or a pair
+  // of plus signs. Require the independently confirmed core before restoring
+  // only the decoration at the row boundary.
+  const trailingSparkleBoundaryArtifact = native.match(/^(.+?)[#＃]$/u);
+  if (
+    trailingSparkleBoundaryArtifact &&
+    memberVisionNameCore(trailingSparkleBoundaryArtifact[1]) === advisedCore
+  ) {
+    return `✨${trailingSparkleBoundaryArtifact[1]}✨`;
+  }
+  const trailingDoublePlusArtifact = native.match(/^(.+?)\s*[+＋]{2}$/u);
+  if (
+    trailingDoublePlusArtifact &&
+    memberVisionNameCore(trailingDoublePlusArtifact[1]) === advisedCore
+  ) {
+    return `${trailingDoublePlusArtifact[1]}✨`;
+  }
+
+  // The final sparkle in 好甜呀e✨ has been returned as the Han-looking 午.
+  // This is deliberately limited to an exact prefix confirmation.
+  const trailingSparkleHanArtifact = native.match(/^(.+)午$/u);
+  if (
+    trailingSparkleHanArtifact &&
+    memberVisionNameCore(trailingSparkleHanArtifact[1]) === advisedCore
+  ) {
+    return `${trailingSparkleHanArtifact[1]}✨`;
+  }
+
+  // A leading single digit in front of a Chinese name is the left edge of a
+  // role badge, not a player character. Only remove it
+  // after the remaining text is the model-confirmed core.
+  const leadingBadgeDigit = native.match(/^\d(.+)$/u);
+  if (
+    leadingBadgeDigit &&
+    memberVisionNameCore(leadingBadgeDigit[1]) === advisedCore
+  ) {
+    return leadingBadgeDigit[1];
+  }
+
+  // A solid sparkle has also been OCR'd as 卒. Require an exact shorter-core
+  // confirmation before converting it.
+  const trailingSparkleArtifact = native.match(/^(.+)卒$/u);
+  if (
+    trailingSparkleArtifact &&
+    memberVisionNameCore(trailingSparkleArtifact[1]) === advisedCore
+  ) {
+    return `${trailingSparkleArtifact[1]}✨`;
+  }
+
+  // A trailing `&心` is an OCR rendering of an adjacent identity decoration,
+  // not a second Han character, when the independent model confirms the
+  // shorter prefix.  Keep this narrow to the explicit ampersand-plus-heart
+  // artifact so legitimate names ending in 心 remain valid.
+  const heartArtifact = native.match(/^(.+)&心$/u);
+  if (heartArtifact && memberVisionNameCore(heartArtifact[1]) === advisedCore) {
+    return advised;
+  }
+  return native;
+}
+
+function repairKnownMemberOcrArtifact(native) {
+  // OCR frequently inserts a space between the text core and a decorative
+  // boundary. Remove whitespace only for strings that already contain one of
+  // the known boundary glyphs; ordinary player names may legitimately contain
+  // spaces and must remain unchanged.
+  if (/[卒米導导樂乐楽參$#＃*＊※★☆”"。)]/u.test(native)) {
+    native = native.replace(/\s+/gu, "");
+  }
+  // These are shape-confusion patterns from the member-list font, not a
+  // general fuzzy name dictionary. They only fire for a very specific glyph
+  // boundary and leave ordinary Han/Latin names untouched.
+  // Qwen can preserve the outer sparkle pair but insert one glyph from the
+  // antialiased boundary (for example `#` or `★`) before the caret-delimited
+  // text. Remove only that non-letter/non-number boundary glyph; the inner
+  // player text and both carets remain untouched.
+  const qwenSparkleBoundaryArtifact = native.match(
+    /^✨([^\p{L}\p{N}])(\^[\u3400-\u9fff]{1,}\^)✨$/u
+  );
+  if (qwenSparkleBoundaryArtifact) {
+    return `✨${qwenSparkleBoundaryArtifact[2]}✨`;
+  }
+
+  // Tibetan marks `༺` and `༻` are often returned as digit/Latin boundary
+  // noise, for example a digit/Latin pair or a quote/parenthesis pair. Require a CJK
+  // core plus both sides of the observed boundary artifact before restoring
+  // the symbol pair; this is independent of the player's actual name.
+  const tibetanPairArtifact = native.match(
+    /^[9qg4][89]?([\u3400-\u9fff]{1,})[Gg5s][”"）)]*$/iu
+  );
+  if (tibetanPairArtifact) return `༺${tibetanPairArtifact[1]}༻`;
+
+  const tibetanPairQuoteArtifact = native.match(
+    /^[94q][89]?([\u3400-\u9fff]{1,})[”"。]）?$/iu
+  );
+  if (tibetanPairQuoteArtifact) {
+    return `༺${tibetanPairQuoteArtifact[1]}༻`;
+  }
+
+  const tibetanPairQwenArtifact = native.match(
+    /^《([\u3400-\u9fff]{1,})[”"]）?$/u
+  );
+  if (tibetanPairQwenArtifact) {
+    return `༺${tibetanPairQwenArtifact[1]}༻`;
+  }
+
+  const tibetanLeadingNoiseArtifact = native.match(
+    /^(?:[9qg4日山])([\u3400-\u9fff]{1,})[”"。]）?\)?$/iu
+  );
+  if (tibetanLeadingNoiseArtifact) {
+    return `༺${tibetanLeadingNoiseArtifact[1]}༻`;
+  }
+
+  // When the left mark is lost at the name-column edge, Apple OCR can still
+  // leave the right mark as a quote/parenthesis pair (for example
+  // `纸鸢”)`). A CJK-only core plus that boundary is enough to restore the
+  // same decorative class; ordinary names are not changed unless the glyph
+  // boundary is present.
+  const tibetanTrailingArtifact = native.match(
+    /^([\u3400-\u9fff]{1,})[”"]\)?$/u
+  );
+  if (tibetanTrailingArtifact) {
+    return `༺${tibetanTrailingArtifact[1]}༻`;
+  }
+
+  const leadingBadgeDigit = native.match(/^(9)([\u3400-\u9fff]{2,})$/u);
+  if (leadingBadgeDigit) return leadingBadgeDigit[2];
+
+  const leadingAndTrailingBadgeNoise = native.match(
+    /^9([\u3400-\u9fff]{2,})[Gg6]$/u
+  );
+  if (leadingAndTrailingBadgeNoise) return leadingAndTrailingBadgeNoise[1];
+
+  const trailingRole = native.match(/^([\u3400-\u9fff]{2,})&屋$/u);
+  if (trailingRole) return trailingRole[1];
+
+  const trailingAmpersand = native.match(/^([\u3400-\u9fff]{2,})&$/u);
+  if (trailingAmpersand) return trailingAmpersand[1];
+
+  const solidFlowerPair = native.match(/^[*＊](.+?)[*＊]$/u);
+  if (solidFlowerPair) return `✿${solidFlowerPair[1]}✿`;
+
+  const hollowFlowerBoundaryPair = native.match(/^米(.+?)米$/u);
+  if (hollowFlowerBoundaryPair) return `❀${hollowFlowerBoundaryPair[1]}❀`;
+
+  const hollowFlowerArtifact = native.match(
+    /^(?:※|栄|荣)(.+?)(?:米|樂|乐|楽|導|导|參|[*＊])$/u
+  );
+  if (hollowFlowerArtifact) return `❀${hollowFlowerArtifact[1]}❀`;
+
+  const hollowFlowerPair = native.match(/^※(.+?)※$/u);
+  if (hollowFlowerPair) return `❀${hollowFlowerPair[1]}❀`;
+
+  const fullWidthHeart = native.match(/^([\u3400-\u9fff]{2,})（$/u);
+  if (fullWidthHeart) return `♥${fullWidthHeart[1]}♥`;
+
+  // A caret-delimited sparkle pair has appeared with a leading symbol plus
+  // `へ`/`十`/`牛` and a Han-looking trailing glyph. Keep only the inner CJK
+  // core and its two carets; no player name is special-cased here.
+  const malformedCaretSparkle = native.match(
+    /^(?:[#★十牛])(?:へ)?\^?([\u3400-\u9fff]{1,})\^[平卒+]$/u
+  );
+  if (malformedCaretSparkle) {
+    return `✨^${malformedCaretSparkle[1]}^✨`;
+  }
+
+  // The same row can expose both carets but OCR the surrounding sparkles as
+  // `#`/`★` and `+`/`卒`. Keep the inner caret-delimited player text and drop
+  // only these known boundary glyphs.
+  const malformedCaretSparklePair = native.match(
+    /^[#★](\^[\u3400-\u9fff]{1,}\^)[+卒平]$/u
+  );
+  if (malformedCaretSparklePair) {
+    return `✨${malformedCaretSparklePair[1]}✨`;
+  }
+
+  const caretSparkle = native.match(/^#(\^.+\^)卒$/u);
+  if (caretSparkle) return `✨${caretSparkle[1]}✨`;
+
+  const trailingDollar = native.match(
+    /^([\p{L}\p{N}\u3400-\u9fff]{2,})\$$/u
+  );
+  if (trailingDollar) return `${trailingDollar[1]}✨`;
+
+  const trailingSparkleGlyph = native.match(
+    /^([\p{L}\p{N}\u3400-\u9fff]{2,})[★☆]$/u
+  );
+  if (trailingSparkleGlyph) return `${trailingSparkleGlyph[1]}✨`;
+
+  const trailingSparkleHan = native.match(/^([\u3400-\u9fff]{2,}e)午$/u);
+  if (trailingSparkleHan) return `${trailingSparkleHan[1]}✨`;
+
+  const trailingSparkleHanGlyph = native.match(
+    /^([\p{L}\p{N}\u3400-\u9fff]{2,})卒$/u
+  );
+  if (trailingSparkleHanGlyph) {
+    return `${trailingSparkleHanGlyph[1]}✨`;
+  }
+
+  const trailingFlowerHanArtifact = native.match(
+    /^([\p{L}\p{N}\u3400-\u9fff]{2,})(?:米|導|导|樂|乐|楽|參)$/u
+  );
+  if (trailingFlowerHanArtifact) {
+    return `❀${trailingFlowerHanArtifact[1]}❀`;
+  }
+
+  const umbrellaArtifact = native.match(/^(.{2,}说)[手乎小]$/u);
+  if (umbrellaArtifact) {
+    return `${umbrellaArtifact[1]}☂`;
+  }
+  return "";
+}
+
+function memberVisionNameCore(value) {
+  return Array.from(String(value || "").normalize("NFKC").toLocaleLowerCase())
+    .filter((character) => /[\p{L}\p{N}\u3400-\u9fff]/u.test(character))
+    .join("");
+}
+
+function memberVisionDecorationCount(value) {
+  return Array.from(String(value || "").normalize("NFKC"))
+    .filter((character) => !/[\p{L}\p{N}\u3400-\u9fff]/u.test(character))
+    .length;
+}
+
+function memberVisionNameDistance(left, right) {
+  const leftCharacters = Array.from(left);
+  const rightCharacters = Array.from(right);
+  let previous = Array.from(
+    { length: rightCharacters.length + 1 },
+    (_, index) => index
+  );
+  for (let row = 1; row <= leftCharacters.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= rightCharacters.length; column += 1) {
+      current.push(
+        Math.min(
+          current[column - 1] + 1,
+          previous[column] + 1,
+          previous[column - 1] +
+            (leftCharacters[row - 1] === rightCharacters[column - 1] ? 0 : 1)
+        )
+      );
+    }
+    previous = current;
+  }
+  return previous[rightCharacters.length];
+}
+
+function memberVisionHasHanOnlySubstitution(left, right) {
+  const leftCharacters = Array.from(left);
+  const rightCharacters = Array.from(right);
+  if (leftCharacters.length !== rightCharacters.length) return false;
+  const differences = leftCharacters.filter(
+    (character, index) => character !== rightCharacters[index]
+  );
+  if (differences.length !== 1) return false;
+  const index = leftCharacters.findIndex(
+    (character, characterIndex) => character !== rightCharacters[characterIndex]
+  );
+  return (
+    /[\u3400-\u9fff]/u.test(leftCharacters[index]) &&
+    /[\u3400-\u9fff]/u.test(rightCharacters[index])
+  );
 }
 
 function cleanModelText(value) {
@@ -1741,10 +2537,166 @@ function comparableVisionName(value) {
     .replace(/\s+/g, "");
 }
 
+function resolveMemberVisionRowNameCollisions(rows) {
+  const candidates = (rows || []).map((row, index) => ({
+    row: { ...row },
+    index,
+    names: Array.isArray(row?.__nameCandidates)
+      ? row.__nameCandidates
+          .map((name) => String(name || "").trim())
+          .filter(Boolean)
+      : [String(row?.name || "").trim()].filter(Boolean)
+  }));
+  const groups = new Map();
+  for (const item of candidates) {
+    const key = comparableVisionName(item.row.name);
+    if (!key) continue;
+    const group = groups.get(key) || [];
+    group.push(item);
+    groups.set(key, group);
+  }
+  const occupied = new Set(
+    candidates
+      .filter((item) => {
+        const key = comparableVisionName(item.row.name);
+        return key && groups.get(key)?.length === 1;
+      })
+      .map((item) => comparableVisionName(item.row.name))
+  );
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const assigned = new Set();
+    // Rows with fewer alternatives are constrained first. This lets a row
+    // that only has the repeated candidate keep it while another row uses
+    // its unused native/model alternative.
+    const ordered = [...group].sort((left, right) => {
+      const leftAvailable = left.names.filter(
+        (name) =>
+          !occupied.has(comparableVisionName(name)) &&
+          !assigned.has(comparableVisionName(name))
+      ).length;
+      const rightAvailable = right.names.filter(
+        (name) =>
+          !occupied.has(comparableVisionName(name)) &&
+          !assigned.has(comparableVisionName(name))
+      ).length;
+      return leftAvailable - rightAvailable || left.index - right.index;
+    });
+    for (const item of ordered) {
+      const available = item.names.find((name) => {
+        const key = comparableVisionName(name);
+        return key && !occupied.has(key) && !assigned.has(key);
+      });
+      if (!available) continue;
+      item.row.name = available;
+      assigned.add(comparableVisionName(available));
+    }
+  }
+  return candidates
+    .sort((left, right) => left.index - right.index)
+    .map(({ row }) => row);
+}
+
 function medianNumber(values) {
   if (!values.length) return 0;
   const sorted = [...values].sort((left, right) => left - right);
   return sorted[Math.floor(sorted.length / 2)];
+}
+
+function mergeVisionRowsByIndex(primaryRows, recoveredRows, fields) {
+  const primary = Array.isArray(primaryRows) ? primaryRows : [];
+  const recovered = Array.isArray(recoveredRows) ? recoveredRows : [];
+  const hasRowNumbers = recovered.some((row) => Number.isInteger(row?.row));
+  const recoveredByRow = new Map(
+    recovered
+      .filter((row) => Number.isInteger(row?.row) && row.row > 0)
+      .map((row) => [row.row, row])
+  );
+  const maximumRow = Math.max(
+    primary.length,
+    ...recovered.map((row) => Number(row?.row) || 0)
+  );
+  return Array.from({ length: maximumRow }, (_, index) => {
+    const nativeRow = primary[index] || {};
+    const modelRow = hasRowNumbers
+      ? recoveredByRow.get(index + 1) || {}
+      : recovered[index] || {};
+    const merged = { ...nativeRow };
+    for (const field of fields) {
+      if (field === "name") {
+        const modelName = cleanVisionTableName(modelRow[field]);
+        const nativeName = cleanVisionTableName(nativeRow[field]);
+        merged[field] =
+          preferredMemberVisionName(nativeName, modelName) ||
+          nativeName ||
+          modelName ||
+          "";
+      } else if (hasContributionNumber(modelRow[field])) {
+        // Qwen is the second read for noisy OCR values. Use it when it
+        // returned a real integer, otherwise retain the native value.
+        merged[field] = modelRow[field];
+      } else if (hasContributionNumber(nativeRow[field])) {
+        merged[field] = nativeRow[field];
+      } else {
+        merged[field] = String(modelRow[field] || nativeRow[field] || "");
+      }
+    }
+    return merged;
+  });
+}
+
+function mergeVisionActivityRows(primaryRows, recoveredRows) {
+  const primary = Array.isArray(primaryRows) ? primaryRows : [];
+  const recovered = Array.isArray(recoveredRows) ? recoveredRows : [];
+  if (!recovered.length) return primary;
+  const hasRowNumbers = recovered.some((row) => Number.isInteger(row?.row));
+  const recoveredByRow = new Map(
+    recovered
+      .filter((row) => Number.isInteger(row?.row) && row.row > 0)
+      .map((row) => [row.row, row])
+  );
+  const length = Math.max(
+    primary.length,
+    hasRowNumbers
+      ? Math.max(...recovered.map((row) => Number(row?.row) || 0))
+      : recovered.length
+  );
+  return Array.from({ length }, (_, index) => {
+    const nativeRow = primary[index] || {};
+    const modelRow = hasRowNumbers
+      ? recoveredByRow.get(index + 1) || {}
+      : recovered[index] || {};
+    const nativeName = cleanVisionTableName(nativeRow.name);
+    const modelName = cleanVisionTableName(modelRow.name);
+    return {
+      ...nativeRow,
+      ...modelRow,
+      name:
+        preferredMemberVisionName(nativeName, modelName) ||
+        nativeName ||
+        modelName ||
+        "",
+      onlineState:
+        String(modelRow.onlineState || "").trim() ||
+        String(nativeRow.onlineState || "").trim()
+    };
+  });
+}
+
+function cleanVisionTableName(value) {
+  const source = stripMemberTableIdentityBadge(value);
+  const text = repairKnownMemberOcrArtifact(source) || source;
+  if (!text || isMemberAvatarArtifact(text) || isMemberIdentityBadge(text)) {
+    return "";
+  }
+  if (
+    /^(?:玩家名|成员名|姓名|name|player|全部成员|一周贡献|使用科技点|贡献物资|在线情况)$/iu.test(
+      text
+    )
+  ) {
+    return "";
+  }
+  return isPlausibleMemberName(text) ? text : "";
 }
 
 export function parsePopulationCapacity(observations, maximumCapacity) {

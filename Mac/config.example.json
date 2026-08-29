@@ -10,7 +10,8 @@
   "debug": {
     "host": "127.0.0.1",
     "port": 8091,
-    "token": "REPLACE_WITH_LONG_LOCAL_DEBUG_TOKEN"
+    "token": "REPLACE_WITH_LONG_LOCAL_DEBUG_TOKEN",
+    "captureScreenshots": false
   },
   "mumu": {
     "appName": "MuMuPlayer",
@@ -422,7 +423,7 @@
         "rowAnchorTop": 285,
         "rowHeightPx": 66,
         "measurePageHeightFromRows": true,
-        "pageHeightPx": 730,
+        "pageHeightPx": 729,
         "pageHeightExtraPx": 0,
         "rowColorMetric": "luminance",
         "rowColorAdaptive": true,
@@ -463,16 +464,15 @@
         "rowsPerPage": 5,
         "minimumRowsPerPage": 5,
         "maxIncompletePageRetries": 6,
-        "maxExtraPagesAfterExpected": 2,
         "fullPageRegion": { "left": 115, "top": 285, "right": 1800, "bottom": 810 },
-        "fullPageRows": 7,
+        "fullPageRows": 5,
         "maxRowAlignments": 1,
         "rowHeightPx": 95,
         "rowColorThreshold": 0.3,
         "rowColorSampleStepPx": 5,
         "rowAlignmentDurationMs": 1000,
         "rowAlignmentSettleMs": 2000,
-        "maxPages": 30,
+        "maxPages": 24,
         "stopAfterStagnantPages": 3
       }
     },
@@ -501,7 +501,7 @@
         "rowAnchorTop": 285,
         "rowHeightPx": 66,
         "measurePageHeightFromRows": true,
-        "pageHeightPx": 730,
+        "pageHeightPx": 729,
         "pageHeightExtraPx": 0,
         "rowColorMetric": "luminance",
         "rowColorAdaptive": true,

@@ -78,4 +78,40 @@ describe("reconcileActivityMembers", () => {
     expect(result.updates).toHaveLength(1);
     expect(result.ignored).toBe(1);
   });
+
+  it("maps damaged symbols to the authoritative roster without collapsing distinct decorated names", () => {
+    const result = reconcileActivityMembers(
+      [activity("纸鸢”", 3), activity("✿慕离✿", 4)],
+      [{ name: "༺纸鸢༻" }, { name: "❀慕离❀" }, { name: "✿慕离✿" }]
+    );
+
+    expect(result.updates.map((item) => item.name)).toEqual([
+      "༺纸鸢༻",
+      "✿慕离✿"
+    ]);
+    expect(result.ignored).toBe(0);
+    expect(result.ambiguous).toBe(0);
+  });
+
+  it("does not guess when activity OCR loses symbols for same-core members", () => {
+    const result = reconcileActivityMembers(
+      [activity("慕离")],
+      [{ name: "❀慕离❀" }, { name: "✿慕离✿" }]
+    );
+
+    expect(result.updates).toEqual([]);
+    expect(result.ignored).toBe(1);
+    expect(result.ambiguous).toBe(1);
+  });
+
+  it("resolves a short OCR suffix only when one roster member can accept it", () => {
+    const result = reconcileActivityMembers(
+      [activity("好甜呀em")],
+      [{ name: "好甜呀" }]
+    );
+
+    expect(result.updates[0]?.name).toBe("好甜呀");
+    expect(result.ignored).toBe(0);
+    expect(result.ambiguous).toBe(0);
+  });
 });

@@ -613,6 +613,43 @@ export async function listMembers(env: Env, limit = 200): Promise<Record<string,
   return result.results;
 }
 
+export type MemberScanSummary = {
+  expectedCount: number;
+  recognizedCount: number;
+  missingCount: number;
+  missingAllowed: boolean;
+  finalPage: number | null;
+  pages: number | null;
+  positionLocked: boolean;
+  runId: string;
+  capturedAt: string;
+};
+
+export async function getMemberScanSummary(
+  env: Env
+): Promise<MemberScanSummary | null> {
+  const row = await env.DB.prepare(
+    "SELECT value FROM settings WHERE key = ?"
+  )
+    .bind("member_scan_summary")
+    .first<{ value: string }>();
+  const parsed = parseJson<unknown>(row?.value, null);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  return parsed as MemberScanSummary;
+}
+
+export async function saveMemberScanSummary(
+  env: Env,
+  summary: MemberScanSummary
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  )
+    .bind("member_scan_summary", JSON.stringify(summary), isoNow())
+    .run();
+}
+
 export async function listActivityWarnings(
   env: Env,
   limit = 200
@@ -821,9 +858,25 @@ export function reconcileContributionMembers(
     if (exactCandidates.length === 1) {
       candidate = exactCandidates[0]!;
     } else if (exactCandidates.length > 1) {
-      ambiguous += 1;
-      ignored += 1;
-      continue;
+      // If OCR dropped or changed only the decorative boundary, several
+      // roster entries can share the same letter/CJK core (for example two
+      // differently decorated 慕离 players). A unique contribution value
+      // corroboration can disambiguate that collision without trusting the
+      // damaged symbol string. If the values are tied or stale, stay safe and
+      // leave the row unmatched instead of writing to the wrong member.
+      const corroborated = exactCandidates.filter((member) =>
+        contributionsCorroborate(
+          row.weeklyContribution,
+          member.weeklyContribution
+        )
+      );
+      if (corroborated.length === 1) {
+        candidate = corroborated[0]!;
+      } else {
+        ambiguous += 1;
+        ignored += 1;
+        continue;
+      }
     } else {
       const sourceName = comparableMemberName(row.name);
       const fuzzyCandidates = masterMembers.flatMap((member) => {
@@ -833,9 +886,12 @@ export function reconcileContributionMembers(
         const distance = levenshteinDistance(sourceName, targetName);
         const maximumDistance =
           minimumLength >= 10 ? 3 : minimumLength >= 5 ? 2 : 1;
+        const boundaryVariant = hasMemberCoreBoundaryVariant(row.name, [
+          member
+        ]).length === 1;
         return sourceName.length >= 3 &&
           targetName.length >= 3 &&
-          distance <= maximumDistance
+          (distance <= maximumDistance || boundaryVariant)
           ? [{
               member,
               distance,
@@ -934,18 +990,58 @@ export type ActivityReconciliation = {
 };
 
 export function reconcileActivityMembers(
-  incoming: ActivityRow[]
+  incoming: ActivityRow[],
+  masterMembers: Array<{ name: string }> = []
 ): ActivityReconciliation {
+  const hasMasterRoster = masterMembers.length > 0;
+  const rawByName = new Map<string, Array<{ name: string }>>();
+  const coreByName = new Map<string, Array<{ name: string }>>();
+  for (const member of masterMembers) {
+    const name = String(member?.name || "").trim();
+    if (!name) continue;
+    const rawKey = rawMemberName(name);
+    rawByName.set(rawKey, [...(rawByName.get(rawKey) ?? []), { name }]);
+    const coreKey = symbolInsensitiveMemberName(name) || comparableMemberName(name);
+    coreByName.set(coreKey, [
+      ...(coreByName.get(coreKey) ?? []),
+      { name }
+    ]);
+  }
   const updatesByName = new Map<string, ActivityRow>();
   let ignored = 0;
+  let ambiguous = 0;
 
   for (const row of incoming) {
-    const key =
-      symbolInsensitiveMemberName(row.name) || comparableMemberName(row.name);
+    let canonicalName = String(row.name || "").trim();
+    if (hasMasterRoster) {
+      const rawCandidates = rawByName.get(rawMemberName(row.name)) ?? [];
+      const coreKey = symbolInsensitiveMemberName(row.name) || comparableMemberName(row.name);
+      const coreCandidates = coreByName.get(coreKey) ?? [];
+      const boundaryCandidates = hasMemberCoreBoundaryVariant(
+        row.name,
+        masterMembers
+      );
+      const candidates = rawCandidates.length
+        ? rawCandidates
+        : coreCandidates.length
+          ? coreCandidates
+          : boundaryCandidates;
+      if (candidates.length === 1) {
+        canonicalName = candidates[0]!.name;
+      } else {
+        if (candidates.length > 1) ambiguous += 1;
+        ignored += 1;
+        continue;
+      }
+    }
+    const key = hasMasterRoster
+      ? rawMemberName(canonicalName)
+      : symbolInsensitiveMemberName(canonicalName) || comparableMemberName(canonicalName);
     if (!key) {
       ignored += 1;
       continue;
     }
+    const canonicalRow = { ...row, name: canonicalName };
     const existing = updatesByName.get(key);
     if (existing) {
       ignored += 1;
@@ -953,18 +1049,37 @@ export function reconcileActivityMembers(
         Number(row.inactiveDays ?? -1) >
         Number(existing.inactiveDays ?? -1)
       ) {
-        updatesByName.set(key, row);
+        updatesByName.set(key, canonicalRow);
       }
       continue;
     }
-    updatesByName.set(key, { ...row, name: row.name.trim() });
+    updatesByName.set(key, canonicalRow);
   }
 
-  return { updates: [...updatesByName.values()], ignored, ambiguous: 0 };
+  return { updates: [...updatesByName.values()], ignored, ambiguous };
 }
 
 function symbolInsensitiveMemberName(value: string): string {
   return comparableMemberName(value).replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function hasMemberCoreBoundaryVariant(
+  source: string,
+  members: Array<{ name: string }>
+): Array<{ name: string }> {
+  const sourceCore =
+    symbolInsensitiveMemberName(source) || comparableMemberName(source);
+  if (!sourceCore) return [];
+  return members.filter((member) => {
+    const targetCore =
+      symbolInsensitiveMemberName(member.name) || comparableMemberName(member.name);
+    const difference = Math.abs(sourceCore.length - targetCore.length);
+    return (
+      difference > 0 &&
+      difference <= 2 &&
+      (sourceCore.startsWith(targetCore) || targetCore.startsWith(sourceCore))
+    );
+  });
 }
 
 export async function updateActivitySnapshot(
@@ -975,7 +1090,13 @@ export async function updateActivitySnapshot(
     members: ActivityRow[];
   }
 ): Promise<ActivityReconciliation> {
-  const reconciliation = reconcileActivityMembers(input.members);
+  const master = await env.DB.prepare(
+    "SELECT name FROM members ORDER BY name"
+  ).all<{ name: string }>();
+  const reconciliation = reconcileActivityMembers(
+    input.members,
+    master.results
+  );
   // Preserve the last valid warning snapshot when a non-empty OCR payload
   // cannot produce even one self-contained warning row.
   if (input.members.length > 0 && reconciliation.updates.length === 0) {
@@ -985,9 +1106,10 @@ export async function updateActivitySnapshot(
     env.DB.prepare("DELETE FROM activity_warnings")
   ];
   for (const member of reconciliation.updates) {
-    const nameKey =
-      symbolInsensitiveMemberName(member.name) ||
-      comparableMemberName(member.name);
+    // With the authoritative roster, preserve the complete canonical name
+    // (including distinct decorative symbols) so two same-core players do
+    // not collide in the activity_warnings primary key.
+    const nameKey = rawMemberName(member.name) || comparableMemberName(member.name);
     statements.push(
       env.DB.prepare(
         `INSERT INTO activity_warnings(

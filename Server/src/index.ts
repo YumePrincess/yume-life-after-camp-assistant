@@ -32,6 +32,7 @@ import {
   findActiveRunForAgent,
   finalizeExpiredCancellations,
   getConfigBundle,
+  getMemberScanSummary,
   getHeartbeat,
   getRun,
   getTechnologyVoteHistory,
@@ -56,6 +57,7 @@ import {
   requestRunCancellation,
   saveBallot,
   saveConfigBundle,
+  saveMemberScanSummary,
   deleteTechnologyVoteHistory,
   touchHeartbeat,
   updateRun,
@@ -1729,6 +1731,9 @@ async function handleAgentApi(
     }
     if (type === "members") {
       const members = sanitizeMembers(body.payload);
+      const memberSummary = body.memberSummary === undefined
+        ? null
+        : sanitizeMemberScanSummary(body.memberSummary);
       const bundle = await getConfigBundle(env);
       await replaceMemberSnapshot(env, {
         runId,
@@ -1736,7 +1741,14 @@ async function handleAgentApi(
         capturedAt,
         members
       });
-      return json({ ok: true, count: members.length });
+      if (memberSummary) {
+        await saveMemberScanSummary(env, {
+          ...memberSummary,
+          runId,
+          capturedAt
+        });
+      }
+      return json({ ok: true, count: members.length, memberSummary });
     }
     if (type === "contribution") {
       const members = sanitizeContribution(body.payload);
@@ -1770,8 +1782,18 @@ async function handleAgentApi(
     }
     if (type === "profiles") {
       const members = sanitizeProfiles(body.payload);
+      const memberSummary = body.memberSummary === undefined
+        ? null
+        : sanitizeMemberScanSummary(body.memberSummary);
       await updateMemberProfiles(env, { runId, capturedAt, members });
-      return json({ ok: true, count: members.length });
+      if (memberSummary) {
+        await saveMemberScanSummary(env, {
+          ...memberSummary,
+          runId,
+          capturedAt
+        });
+      }
+      return json({ ok: true, count: members.length, memberSummary });
     }
     if (type === "departed") {
       const names = sanitizeMemberNames(body.payload);
@@ -1843,14 +1865,15 @@ async function buildPublicBootstrap(
   await reconcileTerminalRunCommands(env);
   const plugins = await effectiveWorkerPlugins(env);
   const pluginEnabled = new Map(plugins.map((plugin) => [plugin.id, plugin.enabled]));
-  const [voteSummary, staff, members, warnings, recentRuns] = await Promise.all([
+  const [voteSummary, staff, members, warnings, recentRuns, memberSummary] = await Promise.all([
     buildVoteSummary(env, bundle),
     listStaff(env),
     bundle.campConfig.publicMembersEnabled && pluginEnabled.get("member-profile")
       ? listMembers(env)
       : Promise.resolve([]),
     pluginEnabled.get("inactivity") ? listActivityWarnings(env) : Promise.resolve([]),
-    listRecentRuns(env, 10)
+    listRecentRuns(env, 10),
+    getMemberScanSummary(env)
   ]);
   return {
     plugins,
@@ -1882,6 +1905,17 @@ async function buildPublicBootstrap(
     voteSummary: localizeVoteSummary(voteSummary, locale),
     staffAssignments: staff,
     members,
+    memberSummary: memberSummary ?? (members.length
+      ? {
+          expectedCount: members.length,
+          recognizedCount: members.length,
+          missingCount: 0,
+          missingAllowed: false,
+          finalPage: null,
+          pages: null,
+          positionLocked: false
+        }
+      : null),
     recentRuns: recentRuns.filter(isCurrentFeatureRun).map(publicRun)
   };
 }
@@ -1906,14 +1940,15 @@ async function buildAdminBootstrap(
   const canMembers = Boolean(pluginEnabled.get("member-profile")) &&
     canViewAdminModule(session, "admin:members");
   const canHistory = canViewAdminModule(session, "admin:history");
-  const [voteSummary, heartbeats, recentRuns, staff, members] = await Promise.all([
+  const [voteSummary, heartbeats, recentRuns, staff, members, memberSummary] = await Promise.all([
     buildVoteSummary(env, bundle),
     canOverview
       ? listHeartbeats(env)
       : Promise.resolve([]),
     canHistory ? listRecentRuns(env, 100) : Promise.resolve([]),
     canMembers ? listStaff(env) : Promise.resolve([]),
-    canMembers ? listMembers(env) : Promise.resolve([])
+    canMembers ? listMembers(env) : Promise.resolve([]),
+    canMembers ? getMemberScanSummary(env) : Promise.resolve(null)
   ]);
   const voteBallots = canTechnology
     ? demo
@@ -1967,6 +2002,19 @@ async function buildAdminBootstrap(
       .map((run) => localizeWorkerRun(run, locale)),
     staffAssignments: canMembers ? staff : [],
     members: canMembers ? members : [],
+    memberSummary: canMembers
+      ? memberSummary ?? (members.length
+        ? {
+            expectedCount: members.length,
+            recognizedCount: members.length,
+            missingCount: 0,
+            missingAllowed: false,
+            finalPage: null,
+            pages: null,
+            positionLocked: false
+          }
+        : null)
+      : null,
     // Agent heartbeats are independent from the (potentially five-minute)
     // idle command poll. A stopped device should therefore expire quickly.
     agentOnlineThresholdSeconds: 45,
@@ -2440,6 +2488,31 @@ function sanitizeProfiles(value: unknown) {
       )
     };
   });
+}
+
+function sanitizeMemberScanSummary(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid member scan summary");
+  }
+  const item = value as Record<string, unknown>;
+  const expectedCount = requiredInteger(item.expectedCount, 1, 120);
+  const recognizedCount = requiredInteger(item.recognizedCount, 0, 120);
+  const missingCount = requiredInteger(item.missingCount, 0, 120);
+  if (
+    recognizedCount > expectedCount ||
+    missingCount !== expectedCount - recognizedCount
+  ) {
+    throw new Error("Invalid member scan summary counts");
+  }
+  return {
+    expectedCount,
+    recognizedCount,
+    missingCount,
+    missingAllowed: item.missingAllowed === true && missingCount === 1,
+    finalPage: nullableInteger(item.finalPage, 1, 24),
+    pages: nullableInteger(item.pages, 1, 24),
+    positionLocked: item.positionLocked === true
+  };
 }
 
 function sanitizeMemberNames(value: unknown): string[] {

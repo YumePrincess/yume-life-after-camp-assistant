@@ -11,6 +11,10 @@ import { withGameSession } from "./game-session.mjs";
 import { delay } from "./process.mjs";
 import { loadTaskPlugins } from "./plugin-loader.mjs";
 import {
+  clearTaskDebugArtifacts,
+  TaskDebugArtifacts
+} from "./task-debug.mjs";
+import {
   localizeTaskEvent,
   localizedTaskEventMessages,
   normalizeTaskLocale
@@ -33,6 +37,7 @@ if (staleSnapshotsRemoved) {
 }
 const once = process.argv.includes("--once");
 let active = null;
+let activeTaskDebug = null;
 let stopping = false;
 const runtimeLocale = {
   value: normalizeTaskLocale(config.server.locale)
@@ -271,6 +276,55 @@ async function executeCommand(command, signal) {
     await api.completeCommand(command, "failed", `未知任务：${taskKey}`);
     return;
   }
+  const startedAt = new Date().toISOString();
+  const taskName = localizedPluginTaskName(plugin.manifest, taskKey, taskLocale);
+  const taskMetadata = {
+    runId: command.runId,
+    commandId: command.id,
+    taskKey,
+    taskName,
+    executionMode:
+      command.payload?.executionMode ||
+      command.payload?.mode ||
+      command.payload?.triggerMode ||
+      "unknown",
+    startedAt
+  };
+  const taskDebug = config.debug?.captureScreenshots === true
+    ? new TaskDebugArtifacts(taskMetadata)
+    : null;
+  const writeTaskLog = async (record) => {
+    const event = {
+      ...taskMetadata,
+      timestamp: new Date().toISOString(),
+      ...record
+    };
+    // Every task-facing log entry gets one contemporaneous screen, even when
+    // the workflow did not attach a screenshot to its server detail payload.
+    // This is a raw capture: it does not add another OCR pass or alter the
+    // decisions of the actual workflow.
+    if (
+      taskDebug?.enabled === true &&
+      ["task_event", "task_started", "task_finished", "task_failure_detailed", "task_snapshots_removed"].includes(event.event)
+    ) {
+      try {
+        const frame = await vision.captureSource(
+          `log-${event.step || event.event}`,
+          signal?.aborted ? undefined : signal
+        );
+        if (frame.debugPath) {
+          event.detail = {
+            ...(event.detail || {}),
+            debugImage: frame.debugPath
+          };
+        }
+      } catch (error) {
+        event.debugImageCaptureError = String(error?.message || error);
+      }
+    }
+    console.info(JSON.stringify(event));
+    await taskDebug?.recordEvent(event);
+  };
   let terminalState = "succeeded";
   let terminalMessage = "任务完成";
   const updateRunSafely = async (update, phase, detached = false) => {
@@ -300,14 +354,14 @@ async function executeCommand(command, signal) {
       locale: taskLocale,
       localizedMessages
     };
-    console.info(JSON.stringify({
+    const event = {
       event: "task_event",
-      runId: command.runId,
       level,
       step,
       message: localizedMessage,
       detail: localizedDetail
-    }));
+    };
+    await writeTaskLog(event);
     await updateRunSafely({
       currentStep: step,
       message: localizedMessage,
@@ -355,8 +409,10 @@ async function executeCommand(command, signal) {
     skipReturnToCenter: positionIndependent,
     memberRoster: []
   };
-  vision.beginTask();
+  vision.beginTask({ taskDebug });
   try {
+    await taskDebug?.start();
+    activeTaskDebug = taskDebug;
     const bootstrap = await api.bootstrap(command.runId, signal);
     context.memberRoster = Array.isArray(bootstrap.memberRoster)
       ? bootstrap.memberRoster.filter((member) => member?.name)
@@ -365,6 +421,17 @@ async function executeCommand(command, signal) {
     ui.setRuntimeAutomation(bootstrap.configBundle.automationConfig);
     if (!bootstrap.run) throw new Error("任务记录不存在，拒绝执行孤立命令");
     if (bootstrap.run.cancel_requested) throw new Error("任务在开始前已被中断");
+    taskMetadata.executionMode =
+      taskMetadata.executionMode === "unknown"
+        ? bootstrap.run.trigger_mode || "unknown"
+        : taskMetadata.executionMode;
+    await writeTaskLog({
+      event: "task_started",
+      level: "info",
+      step: "starting",
+      message: "本地 Agent 已领取任务",
+      mode: taskMetadata.executionMode
+    });
     await updateRunSafely({
       state: "running",
       message: localizeTaskEvent(
@@ -489,16 +556,15 @@ async function executeCommand(command, signal) {
           suppressScheduledRetry: context.suppressScheduledRetry === true,
           suppressScheduledRetryReason:
             context.suppressScheduledRetryReason || null
-        };
+    };
     if (!interrupted) {
-      console.error(
-        JSON.stringify({
-          event: "task_failure_detailed",
-          runId: command.runId,
-          commandId: command.id,
-          ...failureDetail
-        })
-      );
+      await writeTaskLog({
+        event: "task_failure_detailed",
+        level: "error",
+        step: "failure",
+        ...failureDetail,
+        message: failureReason
+      });
     }
     const terminalSourceMessage = failureReason;
     const terminalMessages = localizedTaskEventMessages("finished", terminalSourceMessage);
@@ -535,14 +601,33 @@ async function executeCommand(command, signal) {
   } finally {
     const removedScreenshots = await vision.cleanupTask().catch(() => 0);
     if (removedScreenshots) {
-      console.log(
-        JSON.stringify({
-          event: "task_snapshots_removed",
-          runId: command.runId,
-          count: removedScreenshots
-        })
-      );
+      await writeTaskLog({
+        event: "task_snapshots_removed",
+        level: "info",
+        step: "cleanup",
+        count: removedScreenshots
+      });
     }
+    const finishedAt = new Date().toISOString();
+    await writeTaskLog({
+      event: "task_finished",
+      level: terminalState === "failed" ? "error" : terminalState === "interrupted" ? "warning" : "info",
+      step: "finished",
+      state: terminalState,
+      success: ["succeeded", "partially_succeeded"].includes(terminalState),
+      finishedAt,
+      message: terminalMessage
+    });
+    await taskDebug?.finish({
+      state: terminalState,
+      message: terminalMessage,
+      finishedAt
+    });
+    // task_finished itself may capture the final screen while Debug mode is
+    // enabled. Remove that transient source frame after the Debug artifact
+    // has been written so normal snapshots never accumulate on disk.
+    await vision.cleanupTask().catch(() => 0);
+    if (activeTaskDebug === taskDebug) activeTaskDebug = null;
     await api.completeCommand(
       command,
       ["succeeded", "partially_succeeded"].includes(terminalState)
@@ -568,6 +653,12 @@ function parseRunDetail(value) {
   }
 }
 
+function localizedPluginTaskName(manifest, taskKey, locale) {
+  const names = manifest?.name;
+  if (typeof names === "string") return names;
+  return names?.[locale] || names?.["zh-cn"] || names?.en || taskKey || "unknown";
+}
+
 function createDebugServer() {
   return createServer(async (request, response) => {
     response.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -586,6 +677,7 @@ function createDebugServer() {
           activeTaskKey: active?.command.payload?.taskKey || null,
           adbSerial: config.adb.serial,
           stopEmulatorAfterTask: config.mumu.stopEmulatorAfterTask,
+          debugCaptureScreenshots: config.debug.captureScreenshots === true,
           plugins: pluginRegistry.plugins.map(({ manifest, builtin }) => ({
             id: manifest.id,
             version: manifest.version,
@@ -607,6 +699,19 @@ function createDebugServer() {
     if (request.method === "POST" && request.url === "/abort") {
       if (active) active.controller.abort(new Error("本机调试端点请求中断"));
       response.end(JSON.stringify({ ok: true, interrupted: Boolean(active) }));
+      return;
+    }
+    if (request.method === "POST" && request.url === "/debug-capture") {
+      const body = await readJsonRequest(request);
+      config.debug.captureScreenshots = body.enabled === true;
+      if (!config.debug.captureScreenshots) {
+        activeTaskDebug?.disable();
+        await clearTaskDebugArtifacts();
+      }
+      response.end(JSON.stringify({
+        ok: true,
+        enabled: config.debug.captureScreenshots
+      }));
       return;
     }
     response.writeHead(404);

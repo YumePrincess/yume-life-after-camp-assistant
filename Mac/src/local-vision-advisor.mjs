@@ -208,12 +208,16 @@ export class LocalVisionAdvisor {
       "读取《明日之后》营地贡献表当前可见的所有成员行。",
       "图片已经只裁剪到表格区域。逐行读取，不能臆造看不清的行。",
       "四列从左到右是：玩家姓名、一周贡献、使用科技点、贡献物资。玩家姓名可能完全由emoji或符号组成，例如 -😊-、✨、★，必须保留，不得因缺少汉字、字母或数字而丢弃。",
+      "姓名符号按原图逐字符保留并区分空心/实心：❀、✿、❁、❃、✾、✽、✻、🌸、✨、✦、★、☆、♥、♡、༺、༻、☂、-、—、_、｜、|、・、·、^、&、+、$、@、括号、引号和其他emoji。༺与༻是藏文装饰标记，不能改写成꧁/꧂、9、q、4、G或5。不要把这些符号互换、删除或错读为※、*、米、導、数字或字母；只有原图确实出现时才输出。",
+      "姓名右侧与姓名隔开的小型R/®/回归/启航/先行者图标是身份徽章，不是姓名；不能把徽章或它的边缘像素并入姓名。姓名本身的花朵、星星、心形、藏文装饰和emoji必须保留。",
+      "贡献表中最多只会出现一个市长身份徽章（白色盾牌/王冠样式）；它不是玩家名称。若它出现在姓名右侧，无论模型将其读成市长、mayor、皇冠、王冠、盾、忠、♔♕♚♛或相近棋子，都必须从name中删除；不要删除姓名本身的星星、花朵、心形或emoji。",
       "贡献物资可能是超出单元格宽度的8位或更长数字；必须保留最左侧首位并读取完整数字。",
       "所有数值只保留十进制整数；逗号、空格等分隔符去掉。",
       "忽略表头、按钮和说明文字。看不到任何真实成员行时返回空rows，严禁输出字段名、示例值或占位数据。",
-      "当前画面通常有多行成员；必须把所有可见行放进同一个rows数组，只输出一次JSON对象，不要逐行输出多个对象，不要重复。",
-      `字段固定为：${columns.join(",")}。`,
-      "只返回一个单行JSON对象且不要Markdown。对象唯一顶层字段是rows；rows是数组，每项必须含上述四个字段。"
+      "当前画面通常有多行成员；必须按从上到下为每个可见行返回一项，row从1连续编号。看不清某一行时仍保留该row并把对应字段填空，不能跳过该行或把后面的姓名前移。",
+      "只返回一次单行JSON对象，不要逐行输出多个对象，不要重复。",
+      `字段固定为：row、${columns.join(",")}。`,
+      "只返回一个单行JSON对象且不要Markdown。对象唯一顶层字段是rows；rows是数组，每项必须含row整数和上述字段。"
     ].join("\n");
     const parsed = await requestHttp(
       this.config,
@@ -230,6 +234,7 @@ export class LocalVisionAdvisor {
     }
     return parsed.rows
       .map((row) => ({
+        row: Number.parseInt(row?.row, 10),
         name: String(row?.name || "").trim(),
         weeklyContribution: tableNumber(row?.weeklyContribution),
         technologyPointsUsed: tableNumber(row?.technologyPointsUsed),
@@ -237,9 +242,51 @@ export class LocalVisionAdvisor {
       }))
       .filter(
         (row) =>
-          row.name &&
+          Number.isInteger(row.row) &&
+          row.row > 0 &&
           !/^(?:玩家名|成员名|姓名|name|player)$/i.test(row.name) &&
           !/(?:全部成员|一周贡献|使用科技点|贡献物资)/.test(row.name)
+      );
+  }
+
+  async extractActivity(imagePath, signal) {
+    if (!this.enabled || this.config.transport !== "http") return [];
+    const prompt = [
+      "读取《明日之后》营地成员在线情况/斩杀预警表当前可见的所有成员行。",
+      "图片已经只裁剪到表格区域。按从上到下的视觉顺序逐行读取，不能臆造或跳过看不清的行。",
+      "每项读取玩家姓名name和在线情况onlineState；在线情况可能是“在线”、“刚刚”、“12小时前”、“1天前”等原始文字，必须保留原文。",
+      "玩家姓名可能完全由emoji或符号组成，例如 -😊-、✨、★；这些都是有效姓名，必须逐字符保留。",
+      "按原图区分花朵、星星、心形、藏文装饰标记༺/༻、雨伞、短横线、竖线、间隔点、插入符、&、+、$、括号、引号和emoji；不要把 ❀/✿、✨/✦/★/☆、♡/♥、༺/༻ 或其他相近符号互换、删除或读成汉字。",
+      "姓名右侧与姓名隔开的小型R/®/回归/启航/先行者图标是身份徽章，不是姓名；不能把徽章或它的边缘像素并入姓名。姓名本身的花朵、星星、心形、藏文装饰和emoji必须保留。",
+      "斩杀预警表中最多只会出现一个市长身份徽章（白色盾牌/王冠样式）；它不是玩家名称。若它出现在姓名右侧，无论模型将其读成市长、mayor、皇冠、王冠、盾、忠、♔♕♚♛或相近棋子，都必须从name中删除；不要删除姓名本身的星星、花朵、心形或emoji。",
+      "忽略表头、排序按钮、头像和说明文字。必须按从上到下为每个可见行返回一项，row从1连续编号；看不清某一行时仍保留row并把name或onlineState填空，不能跳过该行或把后面的姓名前移。看不到真实成员行时返回空rows，严禁输出字段名、示例值或占位数据。",
+      "只返回一次单行JSON对象且不要Markdown。顶层唯一字段是rows；每项必须含row整数、name字符串、onlineState字符串。"
+    ].join("\n");
+    const parsed = await requestHttp(
+      this.config,
+      imagePath,
+      prompt,
+      {
+        maxTokens: 512,
+        resizeShape: [730, 680]
+      },
+      signal
+    );
+    if (!Array.isArray(parsed.rows)) {
+      throw new Error("Local vision model activity response has no rows");
+    }
+    return parsed.rows
+      .map((row) => ({
+        row: Number.parseInt(row?.row, 10),
+        name: String(row?.name || "").trim(),
+        onlineState: String(row?.onlineState || "").trim()
+      }))
+      .filter(
+        (row) =>
+          Number.isInteger(row.row) &&
+          row.row > 0 &&
+          row.row <= 32 &&
+          !/(?:全部成员|在线情况|姓名)/.test(row.name)
       );
   }
 
@@ -250,6 +297,7 @@ export class LocalVisionAdvisor {
       "从上到下编号，第一条可见成员行为1。玩家姓名可能完全由emoji或符号组成，例如 -😊-、✨、★；这些都是有效姓名，必须逐字符保留，不能因为没有汉字、字母或数字而留空。",
       "必须为每一条可见行返回一个行号；看不清姓名时name为空字符串，不能跳过该行，不能把后续姓名提前。",
       "忽略表头、头像和其他列，不要读取任何贡献数值。",
+      "姓名右侧与姓名隔开的小型R/®/回归/启航/先行者图标是身份徽章，不是姓名；不能把徽章或它的边缘像素并入姓名。姓名本身的花朵、星星、心形、藏文装饰和emoji必须保留。",
       "只返回一次单行JSON对象且不要Markdown。顶层唯一字段names，数组每项只有row整数和name字符串。"
     ].join("\n");
     const parsed = await requestHttp(
@@ -293,8 +341,10 @@ export class LocalVisionAdvisor {
       options.symbolAware === false
         ? "保留姓名中的字母、数字和可辨认装饰符号。"
         : "玩家姓名可能完全由符号或emoji组成，例如 -😊-、✨、★、※；这些都是有效name，必须逐字符保留，不能因为没有汉字、字母或数字而留空。保留姓名中的字母、数字、emoji、标点和可辨认装饰符号。",
+      "符号必须以原图字形为准逐字符抄录：若原图可见才保留 ❀、✿、❁、❃、✾、✽、✻、🌸、✨、✦、★、☆、♥、♡、☂、-、—、_、｜、|、・、·、^、&、+、$、@、括号、引号或其他emoji；不要互换相近符号，不要把符号读成汉字、数字、字母或职位，也不要擅自补写。花朵、星星和心形的空心/实心差异属于姓名本身，必须保留。",
+      "姓名右侧的小型R/®/启航/回归/先行者徽标不是姓名；它通常与姓名之间有明确空格，或位于姓名右侧独立的小图标位置。只排除这个独立徽标，不得把它作为姓名字符，也不得因此删除姓名尾部真实的花朵、星星、心形、雨伞、短横线或emoji。",
       "头像卡片上印刷的2025、20251，以及OCR可能误读出的D025、O025、2O25等年份样式不是玩家姓名；遇到这些只忽略头像字样，继续读取同一行身份栏的真实姓名。只有身份栏确实没有任何姓名字形时才返回空name。",
-      "如果name与同一行profession完全相同，说明把职业误当成了姓名；此时name必须为空字符串，不能复制“特级步枪兵王”等职业文本。",
+      "如果name与同一行profession完全相同，且name本身只是普通无数字无符号的职业短语，说明把职业误当成了姓名；此时name必须为空字符串。若name含数字、字母、emoji或装饰符号，即使两个字段暂时相同，也必须保留为候选姓名，不能因字段相等而丢掉整行。",
       "忽略表头、头像、周贡献、庄园等级、在线状态与所在场景。",
       "只返回一次单行JSON对象且不要Markdown。顶层唯一字段profiles；每项只有row整数、name、campTitle、profession、roommateName字符串，campTitle固定为空字符串。"
     ].join("\n");
@@ -330,13 +380,17 @@ export class LocalVisionAdvisor {
       "读取这张《明日之后》营地成员表单行姓名栏裁剪图中的唯一玩家姓名。",
       "图中只有姓名栏，不要读取头像、职业、等级或其他列；不要用职业或其他行的姓名替代当前姓名。",
       "姓名可能完全由emoji或符号组成，例如 -😊-、-😊·、✨、★、※；必须逐字符保留，包括两侧的短横线、中文间隔点、标点和装饰符号。看不清时返回空字符串，不要猜测。",
+      "严格按原图区分空心花朵与实心花朵（如 ❀/✿/❁/❃/✾/✽/✻/🌸）、空心与实心星心（如 ✨/✦/★/☆/♡/♥）、藏文装饰标记༺/༻以及雨伞、短横线、竖线、间隔点、插入符、&、+、$和emoji；不要把相似符号替换成※、*、米、導、9、q、4、G或5。姓名后的R/®/启航等独立小徽标不属于姓名，但不能误删姓名自身的装饰符号；姓名和徽标之间若有空格，空格后的徽标必须丢弃。",
       '只返回一行JSON：{"name":""}，不要Markdown。'
     ].join("\n");
     const parsed = await requestHttp(
       this.config,
       imagePath,
       prompt,
-      { maxTokens: 128, resizeShape: [256, 480] },
+      // Targeted rows are where hollow/solid decorations and separated
+      // identity badges matter most. Keep more horizontal pixels than the
+      // old 256x480 request so small glyphs are not blurred together.
+      { maxTokens: 160, resizeShape: [384, 960] },
       signal
     );
     return String(parsed?.name || "").trim();

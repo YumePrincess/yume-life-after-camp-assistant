@@ -448,30 +448,81 @@ struct LogsView: View {
                 Button(model.text("Refresh")) { Task { await model.refreshStatusAndLogs(loadLogs: true) } }
                     .buttonStyle(GlassButtonStyle())
             }
-            ScrollViewReader { proxy in
+            HStack(alignment: .top, spacing: 14) {
                 ScrollView {
-                    if model.visibleLogLines.isEmpty {
-                        Text(model.text("No log entries yet."))
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
-                            .id("bottom")
-                    } else if model.logDisplayMode == .raw {
-                        Text(verbatim: model.visibleLogText)
-                            .font(.system(size: 12, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id("raw")
-                        Color.clear.frame(height: 1).id("bottom")
-                    } else {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(model.visibleLogEntries) { entry in
-                                SimpleLogRow(entry: entry)
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        if model.taskLogGroups.isEmpty {
+                            Text(model.text("No task runs yet."))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            ForEach(model.taskLogGroups) { group in
+                                TaskLogGroupRow(
+                                    group: group,
+                                    selected: model.selectedTaskLogID == group.id
+                                ) {
+                                    model.selectTaskLog(group.id)
+                                }
                             }
-                            Color.clear.frame(height: 1).id("bottom")
                         }
                     }
                 }
-                .glassPanel(radius: 20, padding: 16)
-                .onChange(of: model.visibleLogLines) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                .glassPanel(radius: 20, padding: 12)
+                .frame(width: 292)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            if model.visibleLogLines.isEmpty {
+                                Text(model.text("No log entries yet."))
+                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                                    .id("bottom")
+                            } else if model.logDisplayMode == .raw {
+                                Text(verbatim: model.visibleLogText)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .id("raw")
+                                Color.clear.frame(height: 1).id("bottom")
+                            } else {
+                                LazyVStack(alignment: .leading, spacing: 8) {
+                                    ForEach(model.visibleLogEntries) { entry in
+                                        SimpleLogRow(entry: entry)
+                                    }
+                                    Color.clear.frame(height: 1).id("bottom")
+                                }
+                            }
+                        }
+                        .glassPanel(radius: 20, padding: 16)
+                        .onChange(of: model.visibleLogLines) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+
+                    if model.selectedTaskLogID != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(model.text("Task evidence"))
+                                .font(.headline)
+                            if model.selectedTaskDebugImages.isEmpty {
+                                Text(model.debugMode
+                                    ? model.text("No Debug images for this task yet.")
+                                    : model.text("Enable Debug mode to preserve task images."))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ScrollView(.horizontal) {
+                                    HStack(alignment: .top, spacing: 10) {
+                                        ForEach(model.selectedTaskDebugImages) { image in
+                                            DebugImageThumbnail(image: image)
+                                        }
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                        }
+                        .glassPanel(radius: 20, padding: 12)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             HStack {
                 Spacer(minLength: 0)
@@ -493,6 +544,143 @@ struct LogsView: View {
         .padding(30)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshStatusAndLogs(loadLogs: true) }
+    }
+}
+
+private struct TaskLogGroupRow: View {
+    @EnvironmentObject private var model: AppModel
+    let group: TaskLogGroup
+    let selected: Bool
+    let action: () -> Void
+
+    private var statusColor: Color {
+        if group.status == "failed" || group.status == "interrupted" { return .red }
+        if group.status == "running" { return .orange }
+        return .green
+    }
+
+    private var statusKey: String {
+        switch group.status {
+        case "succeeded": return "Succeeded"
+        case "partially_succeeded": return "Partially succeeded"
+        case "failed": return "Failed"
+        case "interrupted": return "Interrupted"
+        default: return "Running"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(group.taskName)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Label(model.text(statusKey), systemImage: group.isSuccessful ? "checkmark.circle.fill" : "circle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(statusColor)
+                }
+                Text(group.id)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                Text("\(model.text("Mode")): \(group.executionMode)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("\(model.text("Started")): \(group.startedAt)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                if let finishedAt = group.finishedAt {
+                    Text("\(model.text("Finished")): \(finishedAt)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(selected ? YumePalette.gold.opacity(0.2) : .clear)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(selected ? YumePalette.gold.opacity(0.8) : .clear, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct DebugImageThumbnail: View {
+    @EnvironmentObject private var model: AppModel
+    let image: TaskDebugImage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let nsImage = NSImage(contentsOf: image.url) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 170, height: 105)
+                    .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                Image(systemName: "photo")
+                    .frame(width: 170, height: 105)
+            }
+            Text("\(image.sequence) · \(image.label)")
+                .font(.caption2.monospaced())
+                .lineLimit(2)
+                .frame(width: 170, alignment: .leading)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            openInPreview()
+        }
+        .contextMenu {
+            Button(model.text("Copy image"), systemImage: "doc.on.doc") {
+                copyImage()
+            }
+            Button(model.text("Show in Finder"), systemImage: "folder") {
+                NSWorkspace.shared.activateFileViewerSelecting([image.url])
+            }
+            Divider()
+            Button(model.text("Open in Preview"), systemImage: "eye") {
+                openInPreview()
+            }
+            Button(model.text("Open with default app"), systemImage: "arrow.up.right.square") {
+                NSWorkspace.shared.open(image.url)
+            }
+        }
+        .help(image.url.path)
+    }
+
+    private func copyImage() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        if let nsImage = NSImage(contentsOf: image.url) {
+            _ = pasteboard.writeObjects([nsImage])
+        } else {
+            _ = pasteboard.writeObjects([image.url as NSURL])
+        }
+    }
+
+    private func openInPreview() {
+        guard let previewURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.apple.Preview"
+        ) else {
+            NSWorkspace.shared.open(image.url)
+            return
+        }
+        NSWorkspace.shared.open(
+            [image.url],
+            withApplicationAt: previewURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        )
     }
 }
 
@@ -727,6 +915,18 @@ struct SettingsView: View {
                                 .buttonStyle(.link)
                         }
                     }
+                    Toggle(
+                        model.text("Debug mode"),
+                        isOn: Binding(
+                            get: { model.debugMode },
+                            set: { enabled in Task { await model.setDebugMode(enabled) } }
+                        )
+                    )
+                    Text(model.debugMode
+                        ? model.text("Debug mode preserves one ordered image for each task log step.")
+                        : model.text("Debug mode is off; disabling it clears saved Debug images."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 SettingsCard(title: model.text("Connection"), symbol: "network") {

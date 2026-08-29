@@ -282,6 +282,10 @@ test("member profession text cannot replace a missing symbol-only name", () => {
     isMemberProfessionArtifact("特级步枪兵王", "特级步枪兵王"),
     true
   );
+  assert.equal(
+    isMemberProfessionArtifact("模型0号", "模型0号"),
+    false
+  );
   assert.equal(isMemberProfessionArtifact("-😊-", "特级步枪兵王"), false);
   assert.equal(isPlausibleMemberName("-😊-"), true);
   assert.equal(isMemberSymbolOnlyName("-😊-"), true);
@@ -340,6 +344,351 @@ test("member row recovery preserves a pure-symbol name at every visible row posi
     assert.equal(rows.length, 5, `missing row ${missingIndex + 1}`);
     assert.equal(rows[missingIndex].name, "-😊·", `missing row ${missingIndex + 1}`);
   }
+});
+
+test("member table keeps the native tail row when Qwen returns only four rows", async () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ],
+    pagination: { rowsPerPage: 5, rowHeightPx: 95 }
+  };
+  const imagePath = "/private/tmp/member-qwen-four-rows.png";
+  await writeFile(
+    imagePath,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  const vision = new Vision({
+    adb: { screenWidth: 1920, screenHeight: 1200 },
+    vision: {},
+    localVisionModel: { enabled: true, transport: "http" }
+  }, {});
+  vision.ocrRegion = async () => Array.from({ length: 5 }, (_, index) => ({
+    text: `原生${index + 1}`,
+    x: 320,
+    y: 315 + index * 95,
+    width: 80,
+    height: 24
+  }));
+  vision.advisor.extractMemberDetails = async () =>
+    Array.from({ length: 4 }, (_, index) => ({
+      row: index + 1,
+      name: `原生${["一", "二", "三", "四"][index]}`
+    }));
+
+  const rows = await vision.extractTableRows(
+    imagePath,
+    definition,
+    "member-qwen-four-rows",
+    undefined,
+    { forceMemberAdvisor: true, forceLocalVision: true }
+  );
+
+  assert.deepEqual(rows.map((row) => row.name), [
+    "原生一",
+    "原生二",
+    "原生三",
+    "原生四",
+    "原生5"
+  ]);
+});
+
+test("member vision keeps a decorated same-core name separate from a plain name", async () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ],
+    pagination: { rowsPerPage: 2, rowHeightPx: 95 }
+  };
+  const imagePath = "/private/tmp/member-decorated-same-core.png";
+  await writeFile(
+    imagePath,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  const vision = new Vision({
+    adb: { screenWidth: 1920, screenHeight: 1200 },
+    vision: {},
+    localVisionModel: { enabled: true, transport: "http" }
+  }, {});
+  vision.ocrRegion = async (_path, region) => {
+    if (region.left < 700 && region.right > 700) {
+      return [
+        { text: "*慕离米", x: 320, y: 315, width: 100, height: 24 },
+        { text: "特级步枪兵王", x: 700, y: 315, width: 180, height: 24 },
+        { text: "在线", x: 1200, y: 315, width: 40, height: 24 },
+        { text: "慕离", x: 320, y: 410, width: 80, height: 24 },
+        { text: "特级步枪兵王", x: 700, y: 410, width: 180, height: 24 },
+        { text: "在线", x: 1200, y: 410, width: 40, height: 24 }
+      ];
+    }
+    return [];
+  };
+  vision.advisor.extractMemberDetails = async () => [
+    { row: 1, name: "慕离" },
+    { row: 2, name: "慕离" }
+  ];
+  vision.advisor.extractMemberName = async () => "慕离";
+
+  const rows = await vision.extractTableRows(
+    imagePath,
+    definition,
+    "member-decorated-same-core",
+    undefined,
+    { forceMemberAdvisor: true, forceLocalVision: true }
+  );
+
+  assert.deepEqual(rows.map((row) => row.name), ["✿慕离✿", "慕离"]);
+});
+
+test("member vision keeps an unused native name when Qwen collapses numeric rows", async () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ],
+    pagination: { rowsPerPage: 2, rowHeightPx: 95 }
+  };
+  const imagePath = "/private/tmp/member-numeric-collision.png";
+  await writeFile(
+    imagePath,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  const vision = new Vision({
+    adb: { screenWidth: 1920, screenHeight: 1200 },
+    vision: {},
+    localVisionModel: { enabled: true, transport: "http" }
+  }, {});
+  vision.ocrRegion = async () => [
+    { text: "模型0号", x: 320, y: 315, width: 90, height: 24 },
+    { text: "模型2号", x: 320, y: 410, width: 90, height: 24 },
+    { text: "在线", x: 1200, y: 315, width: 40, height: 24 },
+    { text: "在线", x: 1200, y: 410, width: 40, height: 24 }
+  ];
+  vision.advisor.extractMemberDetails = async () => [
+    { row: 1, name: "模型2号" },
+    { row: 2, name: "模型2号" }
+  ];
+  vision.advisor.extractMemberName = async () => "";
+
+  const rows = await vision.extractTableRows(
+    imagePath,
+    definition,
+    "member-numeric-collision",
+    undefined,
+    { forceMemberAdvisor: true, forceLocalVision: true }
+  );
+
+  assert.deepEqual(rows.map((row) => row.name), ["模型0号", "模型2号"]);
+});
+
+test("member vision repairs common OCR artifacts without treating badges as names", async () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ],
+    pagination: { rowsPerPage: 5, rowHeightPx: 95 }
+  };
+  const imagePath = "/private/tmp/member-ocr-artifacts.png";
+  await writeFile(
+    imagePath,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  const vision = new Vision({
+    adb: { screenWidth: 1920, screenHeight: 1200 },
+    vision: {},
+    localVisionModel: { enabled: true, transport: "http" }
+  }, {});
+  vision.ocrRegion = async () => [
+    { text: "*慕离米", x: 320, y: 315, width: 100, height: 24 },
+    { text: "※林昭宓米", x: 320, y: 410, width: 120, height: 24 },
+    { text: "十^楠^卒", x: 320, y: 505, width: 100, height: 24 },
+    { text: "独爱&心", x: 320, y: 600, width: 100, height: 24 },
+    { text: "※碎碎念楽", x: 320, y: 695, width: 120, height: 24 }
+  ];
+  vision.advisor.extractMemberDetails = async () => [
+    { row: 1, name: "慕离" },
+    { row: 2, name: "林昭宓" },
+    { row: 3, name: "✨^楠^✨" },
+    { row: 4, name: "独爱" },
+    { row: 5, name: "碎碎念" }
+  ];
+  vision.advisor.extractMemberName = async () => "";
+
+  const rows = await vision.extractTableRows(
+    imagePath,
+    definition,
+    "member-ocr-artifacts",
+    undefined,
+    { forceMemberAdvisor: true, forceLocalVision: true }
+  );
+
+  assert.deepEqual(rows.map((row) => row.name), [
+    "✿慕离✿",
+    "❀林昭宓❀",
+    "✨^楠^✨",
+    "独爱",
+    "❀碎碎念❀"
+  ]);
+});
+
+test("member vision repairs screenshot-confirmed symbols and badge noise", async () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 1300 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ],
+    pagination: { rowsPerPage: 10, rowHeightPx: 95 }
+  };
+  const imagePath = "/private/tmp/member-screenshot-symbol-artifacts.png";
+  await writeFile(
+    imagePath,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  const vision = new Vision({
+    adb: { screenWidth: 1920, screenHeight: 1200 },
+    vision: {},
+    localVisionModel: { enabled: true, transport: "http" }
+  }, {});
+  const nativeNames = [
+    "中野三玖（",
+    "條晔超大&",
+    "模型0号&壓",
+    "9苏喂G",
+    "※林昭宓米",
+    "南街九尾狐'？",
+    "#^楠^+",
+    "海盗猫猫★",
+    "q纸鸢5）",
+    "甲乙卒"
+  ];
+  vision.ocrRegion = async () => nativeNames.flatMap((name, index) => [
+    { text: name, x: 320, y: 315 + index * 95, width: 120, height: 24 },
+    { text: "特级步枪兵王", x: 700, y: 315 + index * 95, width: 180, height: 24 },
+    { text: "在线", x: 1200, y: 315 + index * 95, width: 40, height: 24 }
+  ]);
+  vision.advisor.extractMemberDetails = async () => [
+    { row: 1, name: "中野三玖" },
+    { row: 2, name: "條晔超大" },
+    { row: 3, name: "模型0号" },
+    { row: 4, name: "苏喂" },
+    { row: 5, name: "林昭宓" },
+    { row: 6, name: "南街九尾狐" },
+    { row: 7, name: "✨★^楠^✨" },
+    { row: 8, name: "海盗猫猫" },
+    { row: 9, name: "《纸鸢”）" },
+    { row: 10, name: "甲乙" }
+  ];
+  vision.advisor.extractMemberName = async () => "";
+
+  const rows = await vision.extractTableRows(
+    imagePath,
+    definition,
+    "member-screenshot-symbol-artifacts",
+    undefined,
+    { forceMemberAdvisor: true, forceLocalVision: true }
+  );
+
+  assert.deepEqual(rows.map((row) => row.name), [
+    "♥中野三玖♥",
+    "條晔超大",
+    "模型0号",
+    "༺苏喂༻",
+    "❀林昭宓❀",
+    "南街九尾狐♡",
+    "✨^楠^✨",
+    "海盗猫猫✨",
+    "༺纸鸢༻",
+    "甲乙✨"
+  ]);
+});
+
+test("member vision restores the malformed sparkle pair around 楠", async () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 500 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ],
+    pagination: { rowsPerPage: 1, rowHeightPx: 95 }
+  };
+  const imagePath = "/private/tmp/member-malformed-sparkle.png";
+  await writeFile(
+    imagePath,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  const vision = new Vision({
+    adb: { screenWidth: 1920, screenHeight: 1200 },
+    vision: {},
+    localVisionModel: { enabled: true, transport: "http" }
+  }, {});
+  vision.ocrRegion = async () => [
+    { text: "★へ楠^平", x: 320, y: 315, width: 120, height: 24 },
+    { text: "在线", x: 1200, y: 315, width: 40, height: 24 }
+  ];
+  vision.advisor.extractMemberDetails = async () => [
+    { row: 1, name: "★へ楠^平" }
+  ];
+  vision.advisor.extractMemberName = async () => "★へ楠^平";
+
+  const rows = await vision.extractTableRows(
+    imagePath,
+    definition,
+    "member-malformed-sparkle",
+    undefined,
+    { forceMemberAdvisor: true, forceLocalVision: true }
+  );
+
+  assert.deepEqual(rows.map((row) => row.name), ["✨^楠^✨"]);
 });
 
 test("macOS 27 bottom-edge crops shift inward instead of silently returning the full frame", () => {

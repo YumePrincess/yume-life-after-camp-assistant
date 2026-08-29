@@ -526,7 +526,16 @@
     );
     setText("announcement", data.publicOverview?.announcement || "");
     setText("timezone-label", data.campConfig?.timezone || "Asia/Shanghai");
-    setText("hero-member-count", String(data.members?.length || 0));
+    const listedMemberCount = data.members?.length || 0;
+    const reportedMemberCount = Number(data.memberSummary?.expectedCount);
+    const totalMemberCount = Number.isInteger(reportedMemberCount) && reportedMemberCount >= 0
+      ? reportedMemberCount
+      : listedMemberCount;
+    setText("hero-member-count", String(totalMemberCount));
+    setText(
+      "member-list-count",
+      `当前列表 ${listedMemberCount} / 总人数 ${totalMemberCount}`
+    );
     setText(
       "hero-warning-count",
       String(data.inactivityWarnings?.length || 0)

@@ -42,6 +42,29 @@ struct SimplifiedLogEntry: Identifiable {
     let message: String
 }
 
+struct TaskDebugImage: Identifiable, Sendable {
+    let id: String
+    let sequence: Int
+    let label: String
+    let url: URL
+}
+
+struct TaskLogGroup: Identifiable {
+    let id: String
+    var taskKey: String
+    var taskName: String
+    var executionMode: String
+    var startedAt: String
+    var finishedAt: String?
+    var status: String
+    var finalMessage: String?
+    var lines: [String]
+
+    var isSuccessful: Bool {
+        ["succeeded", "partially_succeeded", "success"].contains(status)
+    }
+}
+
 enum L10n {
     static func string(_ key: String, language: String) -> String {
         if let path = Bundle.module.path(forResource: language, ofType: "lproj"),
