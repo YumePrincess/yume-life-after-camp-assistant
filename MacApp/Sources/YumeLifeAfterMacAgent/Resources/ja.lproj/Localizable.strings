@@ -214,5 +214,6 @@
 "Copy image" = "画像をコピー";
 "Show in Finder" = "Finder で表示";
 "Open in Preview" = "プレビューで開く";
+"Open in Agent" = "Agent 内で開く";
 "Open with default app" = "デフォルトのアプリで開く";
 "Image unavailable" = "画像を利用できません";

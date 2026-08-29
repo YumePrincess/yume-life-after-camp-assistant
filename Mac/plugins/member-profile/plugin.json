@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.member-profile",
   "version": "27.0.0",
-  "build": 27107,
+  "build": 27108,
   "kind": "task",
   "architectures": ["arm64"],
   "minimumAgentVersion": "27.0.0",

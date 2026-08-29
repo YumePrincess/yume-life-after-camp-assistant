@@ -757,6 +757,27 @@ test("member header total accepts 0/0 sailing citizens without fallback contamin
   assert.equal(await vision.readMemberExpectedTotal(), 93);
 });
 
+test("member header total includes sailing citizens for pagination", async () => {
+  const vision = new Vision({
+    vision: {},
+    localVisionModel: { enabled: false }
+  }, {});
+  vision.capture = async () => ({ path: "/private/tmp/member-header-101.png" });
+  vision.ocrRegion = async (_path, _region, label) =>
+    label.startsWith("member-count-")
+      ? [{ text: "9/100", x: 350 }]
+      : [{ text: "0/1", x: 490 }];
+
+  assert.deepEqual(await vision.readMemberExpectedBreakdown(), {
+    formalCurrent: 9,
+    formalTotal: 100,
+    sailingCurrent: 0,
+    sailingTotal: 1,
+    total: 101
+  });
+  assert.equal(await vision.readMemberExpectedTotal(), 101);
+});
+
 test("accepts zero online citizens and split OCR fragments", () => {
   assert.equal(
     parsePopulationCapacity(

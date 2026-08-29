@@ -71,4 +71,10 @@ exit 2
 
   assert.match(result.stdout, /running \(pid 4242\)/);
   assert.equal((await readFile(resolve(state, "bootstrap-count"), "utf8")).trim(), "4");
+  const plist = await readFile(
+    resolve(home, "Library/LaunchAgents/zone.yume.lifeafter.macagent.runtime.plist"),
+    "utf8"
+  );
+  assert.match(plist, /<key>RunAtLoad<\/key>\s*<false\/>/);
+  assert.match(plist, /<key>KeepAlive<\/key>\s*<false\/>/);
 });

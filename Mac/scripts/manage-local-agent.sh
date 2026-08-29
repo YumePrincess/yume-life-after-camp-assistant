@@ -35,7 +35,7 @@ Yume Life After 本地 Agent 综合管理
   ./scripts/manage-local-agent.sh <命令>
 
 命令：
-  install     安装/更新依赖、登录自启动并启动 Agent
+  install     安装/更新依赖、注册可由 App 控制的 Agent 并启动
   uninstall   停止并卸载 Agent（保留外置模型、源码和 config.json）
   update      更新依赖、OCR 和 LaunchAgent，然后恢复运行
   start       启动 Agent（本地模型会按任务自动启动）

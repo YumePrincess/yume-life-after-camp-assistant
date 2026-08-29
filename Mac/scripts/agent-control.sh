@@ -125,7 +125,7 @@ stop_agent() {
   if is_loaded; then
     launchctl bootout "${SERVICE_TARGET}"
     wait_until_unloaded
-    echo "Stopped ${LABEL}; it will start again at the next macOS login."
+    echo "Stopped ${LABEL}; it will remain stopped until the App or agent:start explicitly starts it."
   else
     echo "${LABEL} is already stopped."
   fi

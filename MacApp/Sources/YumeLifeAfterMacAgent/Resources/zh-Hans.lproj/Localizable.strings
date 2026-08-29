@@ -223,5 +223,6 @@
 "Copy image" = "复制图片";
 "Show in Finder" = "在 Finder 中显示";
 "Open in Preview" = "用预览打开";
+"Open in Agent" = "在 Agent 内打开";
 "Open with default app" = "用默认应用打开";
 "Image unavailable" = "图片不可用";

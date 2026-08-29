@@ -381,15 +381,15 @@ actor RuntimeService {
                     pagination["settleAfterSwipeMs"] = 2000
                     pagination["rowsPerPage"] = 5
                     pagination["minimumRowsPerPage"] = 5
-                    pagination["maxIncompletePageRetries"] = 3
+                    pagination["maxIncompletePageRetries"] = 6
                     pagination["maxExtraPagesAfterExpected"] = 2
                     pagination["fullPageRegion"] = [
                         "left": 115,
-                        "top": 285,
+                        "top": 363,
                         "right": 1800,
                         "bottom": 810
                     ]
-                    pagination["fullPageRows"] = 7
+                    pagination["fullPageRows"] = 5
                     pagination["maxRowAlignments"] = 1
                     pagination["rowHeightPx"] = 95
                     pagination["rowColorThreshold"] = 0.3

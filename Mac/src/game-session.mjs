@@ -491,6 +491,21 @@ export async function waitForGameReady(context, signal) {
     loadingQuietMs: 5_000,
     ...config.postLoginPromotions
   };
+  const voiceChannelPrompt = {
+    enabled: true,
+    promptTexts: [
+      "可以加入队伍语音频道进行自由沟通",
+      "加入队伍语音频道",
+      "是否加入"
+    ],
+    cancelTexts: ["取消(Esc)", "取消（Esc）", "取消"],
+    region: { left: 560, top: 300, right: 1360, bottom: 820 },
+    cancelPoint: { x: 800, y: 700 },
+    keyCode: 111,
+    ocrIntervalMs: 1_000,
+    maxDismissAttempts: 4,
+    ...(promotions.voiceChannelPrompt || {})
+  };
   // Reuse the already calibrated bottom-left return tap used by the existing
   // page-closing flow. The activity page is a mis-navigation of the promotion
   // close action, so it must return through that same safe point rather than
@@ -593,6 +608,9 @@ export async function waitForGameReady(context, signal) {
   let readyAccurateChannelSeen = false;
   let lastLoadingEvidenceAt = 0;
   let lastReadyDiagnosticsAt = 0;
+  let lastVoiceChannelPromptOcrAt = 0;
+  let voiceChannelPromptOcrFailureReported = false;
+  let voiceChannelPromptDismissAttempts = 0;
   const reservePromotionDismissAttempt = (state) => {
     const previous = promotionDismissAttempts.get(state);
     const now = Date.now();
@@ -638,6 +656,122 @@ export async function waitForGameReady(context, signal) {
     };
     let frame = await vision.captureTransient("game-login-state", signal);
     let accurateChannelCandidate = false;
+    let voicePromptEvidence = findVoiceChannelPromptEvidence(
+      vision,
+      frame.observations,
+      voiceChannelPrompt
+    );
+    // This prompt is frequently rendered during the transition from the
+    // loading HUD to the world HUD. A normal fast full-frame OCR can miss the
+    // small centered dialog, so use a bounded accurate reread as a fallback;
+    // it is still deterministic text evidence, never a blind click.
+    if (
+      loginClicked &&
+      voiceChannelPrompt.enabled !== false &&
+      !voicePromptEvidence.detected &&
+      typeof vision.captureSource === "function" &&
+      typeof vision.ocrRegion === "function" &&
+      Date.now() - lastVoiceChannelPromptOcrAt >=
+        Math.max(250, Number(voiceChannelPrompt.ocrIntervalMs) || 1_000)
+    ) {
+      lastVoiceChannelPromptOcrAt = Date.now();
+      try {
+        const promptFrame = await vision.captureSource(
+          "voice-channel-prompt-source",
+          signal
+        );
+        const promptObservations = await vision.ocrRegion(
+          promptFrame.path,
+          voiceChannelPrompt.region,
+          "voice-channel-prompt-accurate",
+          signal,
+          "accurate",
+          0.08,
+          2
+        );
+        voicePromptEvidence = findVoiceChannelPromptEvidence(
+          vision,
+          [...frame.observations, ...promptObservations],
+          voiceChannelPrompt
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        if (!voiceChannelPromptOcrFailureReported) {
+          voiceChannelPromptOcrFailureReported = true;
+          await report(
+            "warning",
+            "voice_channel_prompt_ocr_unavailable",
+            "队伍语音确认框的局部高精度 OCR 暂不可用，将继续用全屏 OCR 识别并等待，不盲目点击",
+            { reason: conciseError(error, 500) }
+          );
+        }
+      }
+    }
+    if (voicePromptEvidence.detected) {
+      voiceChannelPromptDismissAttempts += 1;
+      const attempt = voiceChannelPromptDismissAttempts;
+      const maxAttempts = Math.max(
+        1,
+        Number(voiceChannelPrompt.maxDismissAttempts) || 4
+      );
+      const keyCode = Math.max(
+        0,
+        Number(voiceChannelPrompt.keyCode) || 111
+      );
+      let action = "escape";
+      let keyError = null;
+      try {
+        await adb.key(keyCode, signal);
+        await ui.afterAction(signal);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        keyError = error;
+      }
+      // If ESC was rejected or the same confirmed dialog survives one full
+      // retry, click the OCR-located cancel button. The fixed fallback point
+      // covers the case where OCR sees the prompt text but misses the button.
+      if (keyError || attempt >= 2) {
+        const cancelPoint = voicePromptEvidence.cancelMatch
+          ? center(voicePromptEvidence.cancelMatch)
+          : voiceChannelPrompt.cancelPoint;
+        if (
+          cancelPoint &&
+          Number.isFinite(Number(cancelPoint.x)) &&
+          Number.isFinite(Number(cancelPoint.y))
+        ) {
+          action = keyError ? "cancel-fallback" : "cancel-retry";
+          await ui.tap(
+            { x: Number(cancelPoint.x), y: Number(cancelPoint.y) },
+            signal
+          );
+        }
+      }
+      await report(
+        keyError ? "warning" : "info",
+        "voice_channel_prompt_dismiss",
+        keyError
+          ? `检测到“可以加入队伍语音频道进行自由沟通，是否加入？”但 ESC 发送失败，已点击取消按钮（第 ${attempt}/${maxAttempts} 次）`
+          : action === "escape"
+            ? `检测到“可以加入队伍语音频道进行自由沟通，是否加入？”，已发送 ESC 选择取消（第 ${attempt}/${maxAttempts} 次）`
+            : `队伍语音确认框仍存在，已点击取消按钮（第 ${attempt}/${maxAttempts} 次）`,
+        {
+          action,
+          attempt,
+          maxAttempts,
+          promptTexts: voicePromptEvidence.promptMatches.map((item) => item.text),
+          cancelTexts: voicePromptEvidence.cancelMatches.map((item) => item.text),
+          cancelPoint: voicePromptEvidence.cancelMatch
+            ? center(voicePromptEvidence.cancelMatch)
+            : voiceChannelPrompt.cancelPoint,
+          keyError: keyError ? conciseError(keyError, 500) : null
+        }
+      );
+      if (attempt >= maxAttempts) voiceChannelPromptDismissAttempts = 0;
+      continue;
+    }
+    if (voiceChannelPromptDismissAttempts > 0) {
+      voiceChannelPromptDismissAttempts = 0;
+    }
     const blockingStateTexts = [
       ...announcements.texts,
       ...updates.stateTexts,
@@ -997,7 +1131,11 @@ export async function waitForGameReady(context, signal) {
             : "游戏界面已就绪，未出现活动宣传页"
         );
         await context.progress?.(0.06, "game_ready");
-        await ui.keyIfAnyText(["加入队伍语音频道"], 111, signal);
+        await ui.keyIfAnyText(
+          voiceChannelPrompt.promptTexts || ["加入队伍语音频道"],
+          Number(voiceChannelPrompt.keyCode) || 111,
+          signal
+        );
         await adb.releaseMouseButton?.(
           Math.round((config.adb.screenWidth || 1920) / 2),
           Math.round((config.adb.screenHeight || 1200) / 2),
@@ -1336,13 +1474,6 @@ export async function waitForGameReady(context, signal) {
       continue;
     }
 
-    const voicePrompt = vision.find(frame.observations, "加入队伍语音频道");
-    if (voicePrompt) {
-      await adb.key(111, signal);
-      await ui.afterAction(signal);
-      continue;
-    }
-
     if (
       unknownRecoveryRequested &&
       !unknownRecoveryAttempted &&
@@ -1640,6 +1771,44 @@ function findReadyTextsInRegion(vision, observations, texts = [], region) {
     const candidate = candidates.find(({ tokens }) => tokens.has(expected));
     return candidate ? [{ text, match: candidate.item }] : [];
   });
+}
+
+function findVoiceChannelPromptEvidence(vision, observations, config = {}) {
+  const region = config.region;
+  const bounded = (Array.isArray(observations) ? observations : []).filter(
+    (item) => {
+      const centerX = Number(item?.x || 0) + Number(item?.width || 0) / 2;
+      const centerY = Number(item?.y || 0) + Number(item?.height || 0) / 2;
+      return (
+        !region ||
+        (centerX >= Number(region.left || 0) &&
+          centerX <= Number(region.right || Number.POSITIVE_INFINITY) &&
+          centerY >= Number(region.top || 0) &&
+          centerY <= Number(region.bottom || Number.POSITIVE_INFINITY))
+      );
+    }
+  );
+  const matches = (texts) =>
+    (Array.isArray(texts) ? texts : [])
+      .map((text) => ({ text, match: vision.find(bounded, text) }))
+      .filter((item) => item.match);
+  const promptMatches = matches(config.promptTexts);
+  const cancelMatches = matches(config.cancelTexts);
+  const hasPromptPhrase = promptMatches.some(({ text }) => {
+    const value = String(text || "");
+    return (
+      value.includes("可以加入") ||
+      value.includes("加入队伍语音频道") ||
+      value.includes("是否加入")
+    );
+  });
+  return {
+    detected: hasPromptPhrase || (promptMatches.length > 0 && cancelMatches.length > 0),
+    promptMatches,
+    cancelMatches,
+    promptMatch: promptMatches[0]?.match || null,
+    cancelMatch: cancelMatches[0]?.match || null
+  };
 }
 
 function channelLabelTokens(value) {

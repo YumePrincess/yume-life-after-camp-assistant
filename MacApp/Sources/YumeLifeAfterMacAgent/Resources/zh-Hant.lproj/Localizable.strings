@@ -214,5 +214,6 @@
 "Copy image" = "複製圖片";
 "Show in Finder" = "在 Finder 中顯示";
 "Open in Preview" = "用預覽打開";
+"Open in Agent" = "在 Agent 內開啟";
 "Open with default app" = "用預設 App 打開";
 "Image unavailable" = "圖片無法使用";

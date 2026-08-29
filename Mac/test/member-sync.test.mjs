@@ -141,7 +141,7 @@ test("contribution and inactivity scans wait three seconds after paging and stop
     assert.deepEqual(config.tables.members.pagination.firstPageTo, { x: 1700, y: 225 });
     assert.deepEqual(config.tables.members.pagination.fullPageRegion, {
       left: 115,
-      top: 285,
+      top: 363,
       right: 1800,
       bottom: 810
     });
@@ -1346,7 +1346,8 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
     {
       extractionMode: "hybrid",
       headerPattern: [],
-    region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      rowAnchorTop: 315,
       pagination: {
         maxPages: 10,
         rowsPerPage: 5,
@@ -1354,6 +1355,7 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
         stopAfterStagnantPages: 3,
         fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
         fullPageRows: 5,
+        rowHeightPx: 95,
         from: { x: 1700, y: 700 },
         to: { x: 1700, y: 225 },
         firstPageFrom: { x: 1700, y: 700 },
@@ -1377,12 +1379,12 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
     }
   ]);
   assert.deepEqual(
-    definitions.map(({ region, rowsPerPage }) => ({ bottom: region.bottom, rowsPerPage })),
+    definitions.map(({ region, rowsPerPage }) => ({ top: region.top, bottom: region.bottom, rowsPerPage })),
     [
-      { bottom: 780, rowsPerPage: 5 },
-      { bottom: 780, rowsPerPage: 5 },
-      { bottom: 780, rowsPerPage: 5 },
-      { bottom: 810, rowsPerPage: 5 }
+      { top: 285, bottom: 780, rowsPerPage: 5 },
+      { top: 285, bottom: 780, rowsPerPage: 5 },
+      { top: 285, bottom: 780, rowsPerPage: 5 },
+      { top: 363, bottom: 810, rowsPerPage: 5 }
     ]
   );
 });

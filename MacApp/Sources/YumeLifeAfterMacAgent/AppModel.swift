@@ -228,6 +228,10 @@ final class AppModel: ObservableObject {
             .joined(separator: "\n")
     }
 
+    func localizedLogLine(_ line: String) -> String {
+        Self.localizedRawLine(line, language: language)
+    }
+
     var visibleLogEntries: [SimplifiedLogEntry] {
         visibleLogLines.enumerated().map { index, line in
             Self.simplifiedLogEntry(line, index: index, language: language)
@@ -270,6 +274,14 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             selectedTaskDebugImages = await runtime.debugImages(runID: runID)
         }
+    }
+
+    func debugImageID(for entry: SimplifiedLogEntry) -> String? {
+        guard let path = entry.debugImagePath, !path.isEmpty else { return nil }
+        let filename = URL(fileURLWithPath: path).lastPathComponent
+        return selectedTaskDebugImages.first {
+            $0.url.lastPathComponent == filename
+        }?.id
     }
 
     func cancelCurrentTask() async {
@@ -787,12 +799,15 @@ final class AppModel: ObservableObject {
             fallback: fallbackMessage,
             language: language
         )
+        let debugImagePath = ((object?["detail"] as? [String: Any])?["debugImage"] as? String)
+            ?? (object?["debugImage"] as? String)
         return SimplifiedLogEntry(
             id: "\(index)-\(trimmed.hashValue)",
             timestamp: timestamp,
             level: level,
             step: step,
-            message: message
+            message: message,
+            debugImagePath: debugImagePath
         )
     }
 

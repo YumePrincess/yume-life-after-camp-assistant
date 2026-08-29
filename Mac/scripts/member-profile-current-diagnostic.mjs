@@ -68,7 +68,10 @@ try {
     typeof vision.readMemberExpectedBreakdown === "function"
       ? await vision.readMemberExpectedBreakdown(controller.signal)
       : { total: await vision.readMemberExpectedTotal(controller.signal) };
-  expectedProfiles = memberCountBreakdown.total;
+  // Both header denominators are member populations for pagination; online
+  // numerators and the adjacent info glyph are never added.
+  expectedProfiles = memberCountBreakdown.total ??
+    memberCountBreakdown.formalTotal + memberCountBreakdown.sailingTotal;
   const scanState = {};
   profiles = normalizeProfiles(
     await capturePagedTable(

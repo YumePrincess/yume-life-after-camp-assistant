@@ -80,6 +80,25 @@ test("zero promotion pages reaches HUD without blindly tapping the map area", as
   assert.match(fixture.messages.at(-1), /未出现活动宣传页/);
 });
 
+test("the voice-channel confirmation is cancelled with ESC before the HUD is accepted", async () => {
+  const fixture = createFixture([
+    ["登录游戏"],
+    [
+      { text: "可以加入队伍语音频道进行自由沟通，是否加入？", x: 680, y: 390, width: 560, height: 70 },
+      { text: "取消(Esc)", x: 680, y: 650, width: 240, height: 70 }
+    ],
+    ["背包"]
+  ]);
+
+  await waitForGameReady(fixture.context);
+
+  assert.deepEqual(fixture.keys, [111]);
+  assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("已发送 ESC 选择取消"))
+  );
+});
+
 test("stable HUD sends the game-mouse key once after login, not before it", async () => {
   const fixture = createFixture([["登录游戏"], ["背包"]]);
   const hudCalls = [];
@@ -651,6 +670,7 @@ function createFixture(
   regionalFrames = []
 ) {
   const taps = [];
+  const keys = [];
   const touchTaps = [];
   const messages = [];
   let frameIndex = 0;
@@ -772,7 +792,9 @@ function createFixture(
       }
     },
     adb: {
-      async key() {},
+      async key(keyCode) {
+        keys.push(keyCode);
+      },
       async gameHealth() {
         return { running: true, anr: false };
       },
@@ -798,6 +820,7 @@ function createFixture(
   return {
     context,
     taps,
+    keys,
     touchTaps,
     messages,
     get captures() {

@@ -40,6 +40,7 @@ struct SimplifiedLogEntry: Identifiable {
     let level: String
     let step: String
     let message: String
+    let debugImagePath: String?
 }
 
 struct TaskDebugImage: Identifiable, Sendable {

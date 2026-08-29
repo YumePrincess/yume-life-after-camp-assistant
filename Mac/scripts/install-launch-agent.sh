@@ -44,8 +44,11 @@ trap 'rm -f -- "${PLIST_STAGING}"' EXIT
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:YUME_AGENT_FILE_LOG string 1" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:YLA_CREDENTIALS_FILE string ${CREDENTIALS_PATH}" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:PATH string ${NODE_BIN_DIR}:/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" "${PLIST_STAGING}"
-/usr/libexec/PlistBuddy -c "Add :RunAtLoad bool true" "${PLIST_STAGING}"
-/usr/libexec/PlistBuddy -c "Add :KeepAlive bool true" "${PLIST_STAGING}"
+# The native Mac App is the owner of the local Agent. Keep the LaunchAgent
+# registered so the App can start it quickly, but do not let launchd start or
+# resurrect the runtime after a macOS reboot while the App is closed.
+/usr/libexec/PlistBuddy -c "Add :RunAtLoad bool false" "${PLIST_STAGING}"
+/usr/libexec/PlistBuddy -c "Add :KeepAlive bool false" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :ThrottleInterval integer 10" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :StandardOutPath string /dev/null" "${PLIST_STAGING}"
 /usr/libexec/PlistBuddy -c "Add :StandardErrorPath string /dev/null" "${PLIST_STAGING}"

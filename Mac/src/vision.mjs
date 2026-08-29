@@ -536,6 +536,10 @@ export class Vision {
               }
             : null);
         if (breakdown) {
+          // The two denominators are separate header fractions, but both are
+          // member populations for pagination. Online/current numerators are
+          // never included. Thus 9/100 plus 0/1 means 101 roster members and
+          // ceil(101 / 5) = 21 pages.
           return {
             ...breakdown,
             total: breakdown.formalTotal + breakdown.sailingTotal,
@@ -566,7 +570,8 @@ export class Vision {
 
   async readMemberExpectedTotal(signal) {
     const breakdown = await this.readMemberExpectedBreakdown(signal);
-    return breakdown.total;
+    return breakdown.total ??
+      breakdown.formalTotal + breakdown.sailingTotal;
   }
 
   async #verifyMemberHeaderCounts(

@@ -561,18 +561,27 @@ export async function captureProfilesAndStaff(context, signal, options = {}) {
           sailingCurrent: null,
           sailingTotal: 0
         };
+  // Both header denominators are member populations for pagination. The
+  // current/online numerators and the adjacent info glyph are never counted;
+  // 9/100 plus 0/1 therefore predicts 101 members and 21 pages.
   const expectedMembers = memberCountBreakdown.total ??
     memberCountBreakdown.formalTotal + memberCountBreakdown.sailingTotal;
   await context.report(
     "info",
     "member_header_count",
-    `顶部人数识别：正式市民 ${memberCountBreakdown.formalCurrent ?? "?"}/${memberCountBreakdown.formalTotal}，启航市民 ${memberCountBreakdown.sailingCurrent ?? "?"}/${memberCountBreakdown.sailingTotal}，合计 ${expectedMembers} 名（当前在线人数不计入总数）`,
+    `顶部人数识别：正式市民 ${memberCountBreakdown.formalCurrent ?? "?"}/${memberCountBreakdown.formalTotal}，启航市民 ${memberCountBreakdown.sailingCurrent ?? "?"}/${memberCountBreakdown.sailingTotal}，成员资料扫描总数 ${expectedMembers} 名（当前在线人数不计入总数）`,
     {
       formalCurrent: memberCountBreakdown.formalCurrent,
       formalTotal: memberCountBreakdown.formalTotal,
       sailingCurrent: memberCountBreakdown.sailingCurrent,
       sailingTotal: memberCountBreakdown.sailingTotal,
-      total: expectedMembers
+      total: expectedMembers,
+      headerCombinedTotal:
+        Number.isFinite(Number(memberCountBreakdown.formalTotal)) &&
+        Number.isFinite(Number(memberCountBreakdown.sailingTotal))
+          ? Number(memberCountBreakdown.formalTotal) +
+            Number(memberCountBreakdown.sailingTotal)
+          : null
     }
   );
   const scanProgressRange = progressRangeSlice(options.progressRange, 0.1);
@@ -894,12 +903,16 @@ export async function capturePagedTable(
       await report(
         "info",
         "member_details_tail_fixed_geometry",
-        `第 ${page + 1} 页为预测末页，忽略固定顶部半行，锁定其下方 ${memberRowsPerPage} 个成员槽位读取；末页仅保留计算的 ${Math.max(1, memberRowsPerPage - (expectedTailOverlapCount || 0))} 行新成员`,
+        `第 ${page + 1} 页为预测末页，扫描区域已下移到顶部半行下方，锁定其下方 ${memberRowsPerPage} 个成员槽位读取；末页仅保留计算的 ${Math.max(1, memberRowsPerPage - (expectedTailOverlapCount || 0))} 行新成员`,
         {
           page: page + 1,
           expectedCount,
           expectedPageCount,
           fixedTopPartialRows: 1,
+          scanRegion: pageDefinition.region,
+          scanRegionTopOffsetPx:
+            Number(pageDefinition.region?.top) -
+            Number(definition.pagination?.fullPageRegion?.top),
           fixedRowsBelowPartial: memberRowsPerPage,
           expectedTailOverlapCount,
           expectedTailNewCount: Math.max(
@@ -2822,23 +2835,42 @@ function clamp(value, minimum, maximum) {
 }
 
 function memberFullPageDefinition(definition) {
-  const fullPageRegion = definition.pagination?.fullPageRegion;
+  const pagination = definition.pagination || {};
+  const fullPageRegion = pagination.fullPageRegion;
   if (!fullPageRegion) return definition;
+  const rowHeight = Number(pagination.rowHeightPx);
+  const rowAnchorTop = Number(
+    definition.rowAnchorTop ?? pagination.rowAnchorTop
+  );
+  // The end page is not a normal five-row window: the top of the viewport is
+  // the lower half of the previous row.  The old definition kept the normal
+  // OCR top (285), so Apple OCR/Qwen could spend the first fixed slot on that
+  // partial row and the real fifth member was lost behind the sticky bottom
+  // assistant row.  Start the effective crop at the first complete row's
+  // calibrated boundary.  Keep the configured bottom unchanged because the
+  // game's fixed bottom row occupies the area below it and may physically
+  // cover the last real member; the workflow handles that as the one allowed
+  // final-page gap.
+  const configuredTop = Number(fullPageRegion.top);
+  const firstCompleteRowTop =
+    Number.isFinite(rowHeight) && rowHeight > 0 && Number.isFinite(rowAnchorTop)
+      ? rowAnchorTop + rowHeight * 0.5
+      : configuredTop;
+  const effectiveTop = Number.isFinite(firstCompleteRowTop)
+    ? Math.max(configuredTop, Math.round(firstCompleteRowTop))
+    : configuredTop;
   return {
     ...definition,
-    region: { ...fullPageRegion },
+    region: { ...fullPageRegion, top: effectiveTop },
     pagination: {
-      ...definition.pagination,
-      // The tail crop begins immediately below the black member-count bar.
-      // Its first visible band is the lower half of the previous row; it is
-      // never a new member and must be discarded before taking the five full
-      // rows that follow it.
+      ...pagination,
+      // The effective region already begins below the leading partial row;
+      // retain this marker for the fixed-anchor parser and diagnostics.
       skipLeadingPartialRows: true,
-      // The expanded crop is still a five-row page. The partial row above it
-      // is discarded by the calibrated anchor offset; no seventh-row buffer
-      // may leak into the roster or recovery merge.
-      fullPageRows: Number(definition.pagination.rowsPerPage) || 1,
-      rowsPerPage: Number(definition.pagination.rowsPerPage) || 1
+      // Never use a stale seven-row value from an older installed config.
+      fullPageRows: Number(pagination.rowsPerPage) || 1,
+      rowsPerPage: Number(pagination.rowsPerPage) || 1,
+      fullPageRegionEffectiveTop: effectiveTop
     }
   };
 }

@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import ImageIO
+import UniformTypeIdentifiers
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
@@ -399,6 +401,8 @@ private struct GlobalOperationStatusBar: View {
 
 struct LogsView: View {
     @EnvironmentObject private var model: AppModel
+    @StateObject private var debugState = LogsDebugState()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
@@ -479,16 +483,28 @@ struct LogsView: View {
                                     .frame(maxWidth: .infinity, alignment: .topLeading)
                                     .id("bottom")
                             } else if model.logDisplayMode == .raw {
-                                Text(verbatim: model.visibleLogText)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .id("raw")
-                                Color.clear.frame(height: 1).id("bottom")
+                                LazyVStack(alignment: .leading, spacing: 2) {
+                                    ForEach(Array(model.visibleLogLines.enumerated()), id: \.offset) { index, line in
+                                        Text(verbatim: model.localizedLogLine(line))
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .textSelection(.enabled)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture {
+                                                guard model.visibleLogEntries.indices.contains(index) else { return }
+                                                let entry = model.visibleLogEntries[index]
+                                                debugState.focusedDebugImageID = model.debugImageID(for: entry)
+                                            }
+                                    }
+                                    Color.clear.frame(height: 1).id("bottom")
+                                }
+                                .id("raw")
                             } else {
                                 LazyVStack(alignment: .leading, spacing: 8) {
                                     ForEach(model.visibleLogEntries) { entry in
-                                        SimpleLogRow(entry: entry)
+                                        SimpleLogRow(entry: entry) {
+                                            debugState.focusedDebugImageID = model.debugImageID(for: entry)
+                                        }
                                     }
                                     Color.clear.frame(height: 1).id("bottom")
                                 }
@@ -509,13 +525,35 @@ struct LogsView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             } else {
-                                ScrollView(.horizontal) {
-                                    HStack(alignment: .top, spacing: 10) {
-                                        ForEach(model.selectedTaskDebugImages) { image in
-                                            DebugImageThumbnail(image: image)
+                                ScrollViewReader { evidenceProxy in
+                                    ScrollView(.horizontal) {
+                                        LazyHStack(alignment: .top, spacing: 10) {
+                                            ForEach(model.selectedTaskDebugImages) { image in
+                                                DebugImageThumbnail(
+                                                    image: image,
+                                                    focused: debugState.focusedDebugImageID == image.id,
+                                                    onSelect: { debugState.focusedDebugImageID = $0 },
+                                                    onOpen: { debugState.previewDebugImage = $0 }
+                                                )
+                                                .id(image.id)
+                                            }
+                                        }
+                                        .padding(.vertical, 2)
+                                    }
+                                    .onChange(of: debugState.focusedDebugImageID) { _, imageID in
+                                        guard let imageID else { return }
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            evidenceProxy.scrollTo(imageID, anchor: .center)
                                         }
                                     }
-                                    .padding(.vertical, 2)
+                                    .onChange(of: model.selectedTaskDebugImages.count) { _, _ in
+                                        guard let imageID = debugState.focusedDebugImageID else { return }
+                                        DispatchQueue.main.async {
+                                            withAnimation(.easeOut(duration: 0.2)) {
+                                                evidenceProxy.scrollTo(imageID, anchor: .center)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -544,7 +582,18 @@ struct LogsView: View {
         .padding(30)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.refreshStatusAndLogs(loadLogs: true) }
+        .onChange(of: model.selectedTaskLogID) { _, _ in
+            debugState.focusedDebugImageID = nil
+        }
+        .sheet(item: $debugState.previewDebugImage) { image in
+            DebugImagePreview(image: image)
+        }
     }
+}
+
+private final class LogsDebugState: ObservableObject {
+    @Published var focusedDebugImageID: String?
+    @Published var previewDebugImage: TaskDebugImage?
 }
 
 private struct TaskLogGroupRow: View {
@@ -619,10 +668,14 @@ private struct TaskLogGroupRow: View {
 private struct DebugImageThumbnail: View {
     @EnvironmentObject private var model: AppModel
     let image: TaskDebugImage
+    let focused: Bool
+    let onSelect: (String) -> Void
+    let onOpen: (TaskDebugImage) -> Void
+    @StateObject private var state = DebugImageThumbnailState()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let nsImage = NSImage(contentsOf: image.url) {
+            if let thumbnailData = state.thumbnailData, let nsImage = NSImage(data: thumbnailData) {
                 Image(nsImage: nsImage)
                     .resizable()
                     .scaledToFit()
@@ -638,8 +691,21 @@ private struct DebugImageThumbnail: View {
                 .frame(width: 170, alignment: .leading)
         }
         .contentShape(Rectangle())
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(focused ? YumePalette.gold : .clear, lineWidth: 2)
+        }
+        .onTapGesture {
+            onSelect(image.id)
+        }
         .onTapGesture(count: 2) {
-            openInPreview()
+            onOpen(image)
+        }
+        .task(id: image.url) {
+            state.thumbnailData = await DebugImageLoader.thumbnailData(
+                from: image.url,
+                maxPixelSize: 480
+            )
         }
         .contextMenu {
             Button(model.text("Copy image"), systemImage: "doc.on.doc") {
@@ -649,8 +715,8 @@ private struct DebugImageThumbnail: View {
                 NSWorkspace.shared.activateFileViewerSelecting([image.url])
             }
             Divider()
-            Button(model.text("Open in Preview"), systemImage: "eye") {
-                openInPreview()
+            Button(model.text("Open in Agent"), systemImage: "eye") {
+                onOpen(image)
             }
             Button(model.text("Open with default app"), systemImage: "arrow.up.right.square") {
                 NSWorkspace.shared.open(image.url)
@@ -669,23 +735,89 @@ private struct DebugImageThumbnail: View {
         }
     }
 
-    private func openInPreview() {
-        guard let previewURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: "com.apple.Preview"
-        ) else {
-            NSWorkspace.shared.open(image.url)
-            return
-        }
-        NSWorkspace.shared.open(
-            [image.url],
-            withApplicationAt: previewURL,
-            configuration: NSWorkspace.OpenConfiguration()
-        )
+}
+
+private final class DebugImageThumbnailState: ObservableObject {
+    @Published var thumbnailData: Data?
+}
+
+private enum DebugImageLoader {
+    static func thumbnailData(from url: URL, maxPixelSize: Int) async -> Data? {
+        await Task.detached(priority: .utility) {
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let image = CGImageSourceCreateThumbnailAtIndex(
+                    source,
+                    0,
+                    [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                    ] as CFDictionary
+                  ) else {
+                return nil
+            }
+            return pngData(for: image)
+        }.value
     }
+
+    static func originalData(from url: URL) async -> Data? {
+        await Task.detached(priority: .userInitiated) {
+            try? Data(contentsOf: url)
+        }.value
+    }
+
+    private static func pngData(for image: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            data,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return data as Data
+    }
+}
+
+private struct DebugImagePreview: View {
+    let image: TaskDebugImage
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var state = DebugImagePreviewState()
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let imageData = state.imageData, let nsImage = NSImage(data: imageData) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(24)
+            } else {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.white)
+            }
+        }
+        .frame(minWidth: 900, minHeight: 650)
+        .task(id: image.url) {
+            state.imageData = await DebugImageLoader.originalData(from: image.url)
+        }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close", systemImage: "xmark") { dismiss() }
+            }
+        }
+    }
+}
+
+private final class DebugImagePreviewState: ObservableObject {
+    @Published var imageData: Data?
 }
 
 private struct SimpleLogRow: View {
     let entry: SimplifiedLogEntry
+    let onSelect: () -> Void
 
     private var levelColor: Color {
         switch entry.level {
@@ -734,6 +866,8 @@ private struct SimpleLogRow: View {
         }
         .padding(10)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
     }
 }
 
