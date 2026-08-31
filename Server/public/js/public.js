@@ -375,8 +375,73 @@
   function renderHighlights(items) {
     const root = byId("highlights");
     root.replaceChildren();
-    for (const item of items || []) {
-      root.append(create("div", "highlight-item", item));
+    const entries = (items || []).map((item) =>
+      typeof item === "string"
+        ? { blocks: [{ type: "text", text: item }] }
+        : item
+    );
+    if (!entries.length) {
+      root.append(create("p", "empty-state", "当前没有需要公示的营地公告。"));
+      return;
+    }
+    for (const [index, item] of entries.entries()) {
+      const blocks = Array.isArray(item?.blocks) ? item.blocks : [];
+      const card = create("article", "highlight-item");
+      const header = create("div", "highlight-item-header");
+      header.append(
+        create("span", "highlight-item-index", String(index + 1).padStart(2, "0")),
+        create("span", "highlight-item-label", "营地公告")
+      );
+      card.append(header);
+      for (const block of blocks) {
+        if (block?.type === "image" && /^https:\/\//i.test(String(block.url || ""))) {
+          const figure = document.createElement("figure");
+          figure.className = "highlight-image";
+          const image = document.createElement("img");
+          image.src = block.url;
+          image.alt = block.alt || "营地公告图片";
+          image.loading = "lazy";
+          image.decoding = "async";
+          image.tabIndex = 0;
+          image.setAttribute("role", "button");
+          image.setAttribute("aria-label", window.MrzhI18n.t("点击查看大图"));
+          image.title = window.MrzhI18n.t("点击查看大图");
+          image.addEventListener("click", () => openImagePreview(block.url, image.alt));
+          image.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              openImagePreview(block.url, image.alt);
+            }
+          });
+          image.addEventListener("error", () => {
+            figure.classList.add("is-broken");
+          }, { once: true });
+          figure.append(image);
+          card.append(figure);
+        } else if (block?.type === "text" && String(block.text || "").trim()) {
+          const copy = document.createElement("p");
+          copy.className = "highlight-copy";
+          copy.textContent = block.text;
+          card.append(copy);
+        }
+      }
+      if (card.childElementCount > 1) root.append(card);
+    }
+  }
+
+  function openImagePreview(url, alt = "营地公告图片") {
+    const dialog = byId("image-preview-dialog");
+    const image = byId("image-preview");
+    if (!dialog || !image) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    image.src = url;
+    image.alt = alt;
+    if (typeof dialog.showModal === "function") {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   }
 
@@ -1053,6 +1118,12 @@
     const identityCode = state.voteErrorRenewalCode;
     byId("vote-error-dialog").close();
     if (identityCode) openRenewal(identityCode);
+  });
+  byId("image-preview-dialog").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) event.currentTarget.close();
+  });
+  byId("image-preview-dialog").addEventListener("close", () => {
+    byId("image-preview").removeAttribute("src");
   });
   byId("identity-application-form").addEventListener(
     "submit",

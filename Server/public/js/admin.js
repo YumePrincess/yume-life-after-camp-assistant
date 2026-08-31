@@ -747,8 +747,9 @@
         temporaryKeyLoginEnabled: bundle.authConfig.temporaryKeyLoginEnabled,
         announcement:
           state.publicContentDraft[state.publicContentLocale]?.announcement || "",
-        highlights:
-          (state.publicContentDraft[state.publicContentLocale]?.highlights || []).join("\n\n")
+        highlights: serializePublicHighlights(
+          state.publicContentDraft[state.publicContentLocale]?.highlights || []
+        )
       })) {
         setField(name, value);
       }
@@ -2348,14 +2349,88 @@
     return next;
   }
 
+  function publicHighlightBlocks(item) {
+    if (typeof item === "string") {
+      const text = item.trim();
+      return text ? [{ type: "text", text }] : [];
+    }
+    if (!item || typeof item !== "object" || !Array.isArray(item.blocks)) {
+      return [];
+    }
+    return item.blocks.filter(
+      (block) =>
+        block &&
+        typeof block === "object" &&
+        (block.type === "text" || block.type === "image")
+    );
+  }
+
+  function serializePublicHighlights(items) {
+    return (items || [])
+      .map((item) =>
+        publicHighlightBlocks(item)
+          .map((block) =>
+            block.type === "image"
+              ? block.alt
+                ? `![${block.alt}](${block.url})`
+                : `[图片] ${block.url}`
+              : String(block.text || "")
+          )
+          .filter(Boolean)
+          .join("\n")
+      )
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  function parsePublicImageLine(line) {
+    const marker = String(line || "").match(/^\s*\[图片\]\s*(\S+)\s*$/i);
+    if (marker) {
+      return { type: "image", url: marker[1] };
+    }
+    const markdown = String(line || "").match(
+      /^\s*!\[([^\]]*)\]\((https:\/\/[^)\s]+)\)\s*$/i
+    );
+    return markdown
+      ? {
+          type: "image",
+          url: markdown[2],
+          ...(markdown[1].trim() ? { alt: markdown[1].trim() } : {})
+        }
+      : null;
+  }
+
+  function parsePublicHighlights(value) {
+    return String(value || "")
+      .split(/\n\s*\n/)
+      .map((entry) => {
+        const blocks = [];
+        let textLines = [];
+        const flushText = () => {
+          const text = textLines.join("\n").trim();
+          if (text) blocks.push({ type: "text", text });
+          textLines = [];
+        };
+        for (const line of entry.split("\n")) {
+          const image = parsePublicImageLine(line);
+          if (image) {
+            flushText();
+            blocks.push(image);
+          } else {
+            textLines.push(line);
+          }
+        }
+        flushText();
+        return { blocks };
+      })
+      .filter((item) => item.blocks.length);
+  }
+
   function capturePublicContentDraft() {
     if (!state.publicContentDraft) return;
     state.publicContentDraft[state.publicContentLocale] = {
       announcement: String(getField("announcement") || "").trim(),
-      highlights: String(getField("highlights") || "")
-        .split(/\n\s*\n/)
-        .map((value) => value.trim())
-        .filter(Boolean)
+      highlights: parsePublicHighlights(getField("highlights"))
     };
   }
 
@@ -2367,7 +2442,7 @@
       highlights: []
     };
     setField("announcement", content.announcement);
-    setField("highlights", content.highlights.join("\n\n"));
+    setField("highlights", serializePublicHighlights(content.highlights));
   }
 
   async function saveConfig(event) {

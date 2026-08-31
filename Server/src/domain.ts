@@ -42,11 +42,19 @@ export interface CampConfig {
 
 export interface PublicOverview {
   announcement: string;
-  highlights: string[];
+  highlights: PublicOverviewItem[];
   localized: Record<
     "zh-cn" | "zh-tw" | "en" | "fr" | "ja",
-    { announcement: string; highlights: string[] }
+    { announcement: string; highlights: PublicOverviewItem[] }
   >;
+}
+
+export type PublicOverviewBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; url: string; alt?: string };
+
+export interface PublicOverviewItem {
+  blocks: PublicOverviewBlock[];
 }
 
 export interface AuthConfig {

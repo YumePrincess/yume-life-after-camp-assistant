@@ -3,6 +3,8 @@ import type {
   AuthConfig,
   CampConfig,
   ConfigBundle,
+  PublicOverviewBlock,
+  PublicOverviewItem,
   PublicOverview,
   TechnologyCategory,
   TechnologyConfig,
@@ -81,6 +83,73 @@ function assetUrl(value: unknown, field: string): string {
   } catch {
     throw new Error(`${field} must be a root-relative or HTTPS URL`);
   }
+}
+
+function publicImageUrl(value: unknown, field: string): string {
+  const result = text(value, field, { max: 2000 });
+  try {
+    const url = new URL(result);
+    if (url.protocol !== "https:") throw new Error();
+    return url.toString();
+  } catch {
+    throw new Error(`${field} must be an HTTPS URL`);
+  }
+}
+
+function validatePublicOverviewBlock(
+  value: unknown,
+  field: string
+): PublicOverviewBlock {
+  const source = object(value, field);
+  if (source.type === "text") {
+    return {
+      type: "text",
+      text: text(source.text, `${field}.text`, { max: 1000 })
+    };
+  }
+  if (source.type === "image") {
+    const alt = source.alt === undefined
+      ? undefined
+      : text(source.alt, `${field}.alt`, { max: 160, allowEmpty: true });
+    return {
+      type: "image",
+      url: publicImageUrl(source.url, `${field}.url`),
+      ...(alt ? { alt } : {})
+    };
+  }
+  throw new Error(`${field}.type must be text or image`);
+}
+
+function validatePublicOverviewItems(
+  value: unknown,
+  field: string,
+  legacyTextMax = 240
+): PublicOverviewItem[] {
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
+  if (value.length > 12) throw new Error(`${field} must contain at most 12 announcements`);
+  return value.map((item, index) => {
+    const itemField = `${field}[${index}]`;
+    if (typeof item === "string") {
+      return {
+        blocks: [{
+          type: "text",
+          text: text(item, itemField, { max: legacyTextMax })
+        }]
+      };
+    }
+    const source = object(item, itemField);
+    if (!Array.isArray(source.blocks) || source.blocks.length < 1) {
+      throw new Error(`${itemField}.blocks must contain at least one block`);
+    }
+    if (source.blocks.length > 24) {
+      throw new Error(`${itemField}.blocks must contain at most 24 blocks`);
+    }
+    const blocks = source.blocks
+      .map((block, blockIndex) =>
+        validatePublicOverviewBlock(block, `${itemField}.blocks[${blockIndex}]`)
+      );
+    return { blocks };
+  });
 }
 
 function taskSchedule(
@@ -251,14 +320,13 @@ export function validatePublicOverview(value: unknown): PublicOverview {
     throw new Error("publicOverview.highlights must be an array");
   }
   const announcement = text(source.announcement, "publicOverview.announcement", {
-      max: 1000,
-      allowEmpty: true
-    });
-  const highlights = source.highlights
-      .slice(0, 12)
-      .map((item, index) =>
-        text(item, `publicOverview.highlights[${index}]`, { max: 240 })
-      );
+    max: 1000,
+    allowEmpty: true
+  });
+  const highlights = validatePublicOverviewItems(
+    source.highlights,
+    "publicOverview.highlights"
+  );
   const localizedSource =
     source.localized && typeof source.localized === "object" && !Array.isArray(source.localized)
       ? (source.localized as Record<string, unknown>)
@@ -271,7 +339,9 @@ export function validatePublicOverview(value: unknown): PublicOverview {
         !Array.isArray(localizedSource[locale])
           ? (localizedSource[locale] as Record<string, unknown>)
           : {};
-      const rawHighlights = Array.isArray(raw.highlights) ? raw.highlights : highlights;
+      const rawHighlights = Array.isArray(raw.highlights)
+        ? raw.highlights
+        : highlights;
       return [
         locale,
         {
@@ -282,12 +352,9 @@ export function validatePublicOverview(value: unknown): PublicOverview {
                   allowEmpty: true
                 })
               : announcement,
-          highlights: rawHighlights.slice(0, 12).map((item, index) =>
-            text(
-              item,
-              `publicOverview.localized.${locale}.highlights[${index}]`,
-              { max: 240 }
-            )
+          highlights: validatePublicOverviewItems(
+            rawHighlights,
+            `publicOverview.localized.${locale}.highlights`
           )
         }
       ];

@@ -919,6 +919,12 @@ h2 {
   margin-bottom: 16px;
 }
 
+.field-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .field > span,
 legend {
   color: var(--muted);
@@ -1068,31 +1074,136 @@ textarea:focus {
 
 .highlight-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
   margin-top: 0;
 }
 
 .highlight-item {
-  min-height: 100%;
-  padding: 12px 14px;
+  display: flex;
+  grid-column: span 6;
+  min-width: 0;
+  padding: 16px;
+  overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 20px;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.025);
-  line-height: 1.65;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 56%),
+    rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  flex-direction: column;
+  gap: 12px;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) ease,
+    background var(--duration-fast) ease;
+}
+
+.highlight-item:only-child {
+  grid-column: 1 / -1;
+}
+
+.highlight-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.highlight-item-index {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  place-items: center;
+}
+
+.highlight-item-label {
+  font-weight: 700;
+}
+
+.highlight-copy {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.highlight-image {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: clamp(140px, 26vw, 320px);
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.08);
+  place-items: center;
+}
+
+.highlight-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.highlight-image.is-broken::after {
+  display: grid;
+  min-height: 80px;
+  color: var(--muted);
+  content: "图片暂时无法加载";
+  place-items: center;
+}
+
+:root[data-theme="dark"] .highlight-item {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 13%, transparent), transparent 56%),
+    rgba(255, 255, 255, 0.035);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .highlight-item:hover {
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 56%),
+      rgba(255, 255, 255, 0.06);
+    transform: translateY(-2px);
+  }
 }
 
 .highlights-panel {
   display: grid;
-  grid-template-columns: minmax(150px, 0.25fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 24px;
-  padding-block: 22px;
+  grid-template-columns: minmax(160px, 0.27fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 28px;
+  padding: 24px;
 }
 
 .highlights-heading h2 {
+  margin: 4px 0 8px;
   font-size: 24px;
+}
+
+.highlights-heading::after {
+  display: block;
+  width: 38px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
 }
 
 .staff-grid {
@@ -1469,22 +1580,6 @@ td {
 .vote-success-card .button {
   justify-self: center;
   min-width: 148px;
-}
-
-.highlight-list {
-  display: grid;
-  gap: 12px;
-}
-
-.highlight-item {
-  padding: 15px 16px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.055), transparent),
-    rgba(255, 255, 255, 0.025);
 }
 
 .identity-rules {
@@ -3131,6 +3226,52 @@ dialog::backdrop {
   backdrop-filter: blur(5px);
 }
 
+.image-preview-dialog {
+  width: min(1100px, calc(100% - 24px));
+  max-width: 1100px;
+  max-height: 92vh;
+  overflow: visible;
+  border-color: var(--line-strong);
+  background: transparent;
+}
+
+.image-preview-card {
+  position: relative;
+  min-width: 0;
+  padding: 16px;
+  background: transparent;
+}
+
+.image-preview-card img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: calc(92vh - 32px);
+  margin: 0 auto;
+  border-radius: 16px;
+  object-fit: contain;
+  background: var(--panel-strong);
+}
+
+.image-preview-close {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  font-size: 24px;
+  line-height: 1;
+  place-items: center;
+}
+
 .app-modal {
   position: fixed;
   inset: 0;
@@ -3351,6 +3492,10 @@ dialog::backdrop {
 @media (max-width: 640px) {
   .shell {
     width: min(100% - 20px, 1180px);
+  }
+
+  .highlight-item {
+    grid-column: 1 / -1;
   }
 
   .footer-timezone {

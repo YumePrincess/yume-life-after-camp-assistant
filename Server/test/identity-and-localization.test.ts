@@ -124,8 +124,46 @@ describe("five-language public content", () => {
     });
     expect(overview.localized.en).toEqual({
       announcement: "公告",
-      highlights: ["第一条"]
+      highlights: [{ blocks: [{ type: "text", text: "第一条" }] }]
     });
     expect(overview.localized.ja).toEqual(overview.localized["zh-cn"]);
+  });
+
+  it("validates image blocks and preserves their order within an announcement", () => {
+    const overview = validatePublicOverview({
+      announcement: "公告",
+      highlights: [
+        {
+          blocks: [
+            { type: "text", text: "活动开始" },
+            { type: "image", url: "https://cdn.example.com/one.png" },
+            { type: "image", url: "https://cdn.example.com/two.jpg", alt: "活动海报" }
+          ]
+        },
+        {
+          blocks: [{ type: "image", url: "https://cdn.example.com/standalone.webp" }]
+        }
+      ]
+    });
+
+    expect(overview.highlights).toEqual([
+      {
+        blocks: [
+          { type: "text", text: "活动开始" },
+          { type: "image", url: "https://cdn.example.com/one.png" },
+          { type: "image", url: "https://cdn.example.com/two.jpg", alt: "活动海报" }
+        ]
+      },
+      {
+        blocks: [{ type: "image", url: "https://cdn.example.com/standalone.webp" }]
+      }
+    ]);
+  });
+
+  it("rejects non-HTTPS public announcement images", () => {
+    expect(() => validatePublicOverview({
+      announcement: "公告",
+      highlights: [{ blocks: [{ type: "image", url: "http://example.com/image.png" }] }]
+    })).toThrow("publicOverview.highlights[0].blocks[0].url must be an HTTPS URL");
   });
 });
