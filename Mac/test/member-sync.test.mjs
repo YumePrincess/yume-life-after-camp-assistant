@@ -1561,6 +1561,161 @@ test("the penultimate member page keeps its five top rows and skips row alignmen
   );
 });
 
+test("remainder-one rosters fall back from an incomplete penultimate page to tail geometry", async () => {
+  const reports = [];
+  const captures = [];
+  const context = {
+    vision: {
+      async capture(label) {
+        captures.push(label);
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
+        if (definition.region.bottom === 810) {
+          return page === 2
+            ? Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 6}` }))
+            : [{ name: "成员10" }, { name: "成员11" }];
+        }
+        if (page === 2) return Array.from({ length: 4 }, (_, index) => ({ name: `成员${index + 6}` }));
+        return Array.from({ length: 5 }, (_, index) => ({ name: `成员${index + 1}` }));
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: { async afterAction() {} },
+    async report(_level, step, _message, detail) {
+      reports.push({ step, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 5,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        stopAfterStagnantPages: 3,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 5,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1,
+        settleAfterSwipeMs: 0
+      }
+    },
+    undefined,
+    { expectedCount: 11 }
+  );
+
+  assert.equal(rows.length, 11);
+  assert.equal(captures.filter((label) => label.startsWith("member-details-2")).length, 5);
+  assert.equal(
+    reports.filter(({ step }) => step === "member_details_page_incomplete_retry").length,
+    3
+  );
+  assert.ok(
+    reports.some(
+      ({ step, detail }) =>
+        step === "member_details_penultimate_tail_fallback" &&
+        detail.retries === 3 &&
+        detail.positionLocked === true
+    )
+  );
+  assert.ok(
+    reports.some(
+      ({ step, detail }) =>
+        step === "member_details_tail_fixed_geometry" &&
+        detail.penultimateRecovery === true
+    )
+  );
+});
+
+test("tail filtering keeps leading new members before repeated rows", async () => {
+  const reports = [];
+  const scanState = {};
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        const page = Number(label.match(/member-details-(\d+)/)?.[1] || 1);
+        if (definition.region.bottom === 810) {
+          return [
+            { name: "成员99" },
+            { name: "成员100" },
+            { name: "成员96" },
+            { name: "成员97" },
+            { name: "成员98" }
+          ];
+        }
+        if (page < 20) {
+          return Array.from({ length: 5 }, (_, index) => ({
+            name: `成员${(page - 1) * 5 + index + 1}`
+          }));
+        }
+        return [
+          { name: "成员96" },
+          { name: "成员97" },
+          { name: "成员98" },
+          { name: "成员94" },
+          { name: "成员95" }
+        ];
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: { async afterAction() {} },
+    async report(_level, step, _message, detail) {
+      reports.push({ step, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 24,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 5,
+        stopAfterStagnantPages: 3,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 5,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1,
+        settleAfterSwipeMs: 0
+      }
+    },
+    undefined,
+    { expectedCount: 101, scanState }
+  );
+
+  assert.equal(rows.length, 100);
+  assert.equal(scanState.finalPageMissingCount, 1);
+  assert.equal(scanState.finalPageMissingAllowed, true);
+  assert.deepEqual(rows.slice(-5).map((row) => row.name), [
+    "成员96",
+    "成员97",
+    "成员98",
+    "成员99",
+    "成员100"
+  ]);
+  const tailReport = reports.find(({ step }) => step === "member_details_tail_overlap_excluded");
+  assert.equal(tailReport.detail.observedOverlapCount, 3);
+  assert.ok(reports.some(({ step }) => step === "member_details_tail_missing_allowed"));
+});
+
 test("calculated tail excludes a name repeated from the previous page", async () => {
   const reports = [];
   const context = {

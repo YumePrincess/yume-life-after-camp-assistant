@@ -67,6 +67,9 @@ export async function loadConfig(options = {}) {
   };
   config.plugins.allowUnsignedLocal ??= false;
   config.server.agentName ||= config.server.agentId;
+  // Workers uses Asia/Shanghai by default. Keep older local configs readable
+  // while allowing the App to persist the exact timezone returned by Workers.
+  config.server.timezone ||= "Asia/Shanghai";
   validate(config, { validateCredentials });
   return config;
 }

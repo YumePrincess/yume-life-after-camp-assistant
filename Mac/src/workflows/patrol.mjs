@@ -28,6 +28,7 @@ export async function runPatrol(context, command, bundle, signal) {
       !signal?.aborted &&
       !context.suppressScheduledRetry &&
       !context.patrolKeepExistingTeam &&
+      !context.patrolRouteActive &&
       context.patrolTeamPhase &&
       context.patrolTeamPhase !== "precreate";
     if (
@@ -85,6 +86,7 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
     // create a second team for the same scheduled task.
     context.patrolExistingValidRoute = true;
     context.patrolKeepExistingTeam = true;
+    context.patrolRouteActive = true;
     context.patrolTeamPhase = "existing-valid-route";
     await updateWorkflowProgress(context, 0.46, "patrol_existing_route");
     if (context.patrolExistingValidRoutePanelOpen) {
@@ -99,7 +101,13 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
     }
     await ensureExistingPatrolTargetForSharing(context, signal);
     await updateWorkflowProgress(context, 0.52, "patrol_existing_route_share");
-    await sharePatrolTeam(context, signal);
+    await shareActivePatrolUntilDeadline(
+      context,
+      signal,
+      patrolDeadlineAt,
+      patrol,
+      "patrol_existing_route_initial_share"
+    );
     await report(
       "info",
       "patrol_existing_route_reused",
@@ -197,6 +205,10 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
   await updateWorkflowProgress(context, 0.47, "patrol_open_route");
   await ui.executeFlow("openPatrol", {}, signal);
   await startHardPatrolWithRetry(context, signal);
+  // From this point the game owns a live patrol route. Sharing failures must
+  // be retried in-place until the configured deadline; leaving the team would
+  // abandon the route and make the scheduled share task unrecoverable.
+  context.patrolRouteActive = true;
   await updateWorkflowProgress(context, 0.60, "patrol_route_accepted");
   await ui.executeFlow("exitPatrolPages", {}, signal);
   await updateWorkflowProgress(context, 0.66, "patrol_team_reopen");
@@ -210,7 +222,13 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
   await updateWorkflowProgress(context, 0.70, "patrol_switch_target");
   await ui.executeFlow("switchToBookDefense", {}, signal);
   await updateWorkflowProgress(context, 0.74, "patrol_final_share");
-  await sharePatrolTeam(context, signal);
+  await shareActivePatrolUntilDeadline(
+    context,
+    signal,
+    patrolDeadlineAt,
+    patrol,
+    "patrol_final_share"
+  );
   await ui.executeFlow("openTeamPanel", {}, signal);
   const readyAt = new Date().toISOString();
   await report("info", "patrol_ready", "困难巡逻已确认，队伍已切换为保卫古籍并分享", {
@@ -253,7 +271,17 @@ async function continuePatrolSharesUntilDeadline(
       "patrol_waiting_deadline"
     );
     if (Date.now() >= nextShareAt) {
-      await sharePatrolTeam(context, signal);
+      if (context.patrolRouteActive) {
+        await shareActivePatrolUntilDeadline(
+          context,
+          signal,
+          patrolDeadlineAt,
+          patrol,
+          "patrol_scheduled_share"
+        );
+      } else {
+        await sharePatrolTeam(context, signal);
+      }
       await report("info", "patrol_share", "已再次分享到营地频道和场景频道");
       nextShareAt = Date.now() + shareIntervalMs;
     }
@@ -269,6 +297,41 @@ async function continuePatrolSharesUntilDeadline(
   await updateWorkflowProgress(context, 0.97, "patrol_cleanup");
   await report("info", "patrol_done", "已到巡逻任务结束时间");
   await closePatrolPanelBeforeExit(context, signal);
+}
+
+async function shareActivePatrolUntilDeadline(
+  context,
+  signal,
+  patrolDeadlineAt,
+  patrol,
+  phase
+) {
+  const { report } = context;
+  const shareIntervalMs = Math.max(
+    1_000,
+    (Number(patrol?.shareIntervalMinutes) || 10) * 60_000
+  );
+  let lastError = null;
+  while (Date.now() < patrolDeadlineAt) {
+    try {
+      await sharePatrolTeam(context, signal);
+      return true;
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason || error;
+      lastError = error;
+      const remainingMs = Math.max(0, patrolDeadlineAt - Date.now());
+      if (remainingMs <= 0) break;
+      await report(
+        "warning",
+        "patrol_active_route_share_retry",
+        `有效巡逻队分享阶段（${phase}）未确认成功；保留队伍，不执行离队，等待后在预设结束时间前重试（${Math.ceil(remainingMs / 60_000)} 分钟内）`,
+        { phase, remainingMs, error: String(error?.message || error) }
+      );
+      await delay(Math.min(shareIntervalMs, remainingMs), signal);
+    }
+  }
+  if (lastError) throw lastError;
+  return false;
 }
 
 export async function ensureExistingPatrolTargetForSharing(context, signal) {
@@ -2288,7 +2351,24 @@ async function confirmPatrolLeaveDialog(
     return { screen, present: false, confirmed: false, validRoute: false };
   }
 
-  if (action === "cancel") {
+  // A patrol route is still active when the game says that leaving would
+  // abandon the patrol. Never confirm that dialog, even when generic failure
+  // cleanup called this helper with action="confirm".
+  const validRoute = Boolean(
+    findAnyTextInRegion(
+      vision,
+      screen.observations,
+      controls.leaveTeamValidRouteTexts || [
+        "巡逻任务尚未完成",
+        "视为放弃任务",
+        "放弃任务"
+      ],
+      confirmRegion
+    )
+  );
+  const effectiveAction = validRoute ? "cancel" : action;
+
+  if (effectiveAction === "cancel") {
     const maxCancelAttempts = Math.max(
       1,
       Math.min(3, Number(controls.leaveTeamCancelAttempts) || 3)
@@ -2305,7 +2385,28 @@ async function confirmPatrolLeaveDialog(
           validRoute: true
         };
       }
-      if (matches.cancelMatch) {
+      const validRouteCancelKeyCode = Number(controls.leaveTeamCancelKeyCode) || 111;
+      const sendValidRouteCancelKey =
+        validRoute && typeof ui?.sendGameKey === "function"
+          ? (keyCode) => ui.sendGameKey(keyCode, signal)
+          : validRoute && typeof adb?.key === "function"
+            ? (keyCode) => adb.key(keyCode, signal)
+            : null;
+      if (sendValidRouteCancelKey) {
+        await report(
+          "warning",
+          "patrol_leave_confirmation_cancelled",
+          `${reason}检测到巡逻任务放弃确认框；为保护有效巡逻队伍不执行离队，强制发送 Esc/键码 ${validRouteCancelKeyCode} 取消并保留队伍（第 ${attempt}/${maxCancelAttempts} 次）`,
+          {
+            dialogText: matches.dialogMatch?.text || null,
+            cancelKeyCode: validRouteCancelKeyCode,
+            cancelPoint: matches.cancelMatch
+              ? observationCenter(matches.cancelMatch)
+              : null
+          }
+        );
+        await sendValidRouteCancelKey(validRouteCancelKeyCode);
+      } else if (matches.cancelMatch) {
         const cancelPoint = observationCenter(matches.cancelMatch);
         await report(
           "warning",
@@ -2377,7 +2478,7 @@ async function confirmPatrolLeaveDialog(
     );
     await tapPatrolMouse(ui, confirmPoint, signal);
   } else if (typeof ui?.sendGameKey === "function") {
-    const keyCode = Number(controls.leaveTeamConfirmKeyCode) || 70;
+    const keyCode = Number(controls.leaveTeamConfirmKeyCode) || 34;
     await report(
       "warning",
       "patrol_leave_confirmation_key_fallback",
@@ -2386,7 +2487,7 @@ async function confirmPatrolLeaveDialog(
     );
     await ui.sendGameKey(keyCode, signal);
   } else if (typeof adb?.key === "function") {
-    const keyCode = Number(controls.leaveTeamConfirmKeyCode) || 70;
+    const keyCode = Number(controls.leaveTeamConfirmKeyCode) || 34;
     await report(
       "warning",
       "patrol_leave_confirmation_key_fallback",
@@ -2974,6 +3075,30 @@ async function sharePatrolChannel(context, signal, common, target) {
       { point: channelPoint }
     );
     await tapPatrolMouse(ui, channelPoint, signal);
+    // The game toast is displayed in a fixed top-center region and can vanish
+    // before the normal settle delay. Capture and verify immediately after the
+    // channel click, then keep the settled capture as a backup.
+    const immediateResultScreen = await capturePatrolScreen(
+      vision,
+      `patrol-share-${target.key}-result-immediate-${attempt}`,
+      signal
+    );
+    const immediateSuccess = target.successTexts.some((text) =>
+      hasTextInRegion(
+        vision,
+        immediateResultScreen.observations,
+        text,
+        controls.successRegion
+      )
+    );
+    if (immediateSuccess) {
+      await report(
+        "info",
+        "patrol_share_success_immediate",
+        `点击“${target.text}”后立即在固定提示区域确认分享成功`
+      );
+      return { skipped: false, success: true, immediate: true };
+    }
     await sleep(settleMs, signal);
     const resultScreen = await capturePatrolScreen(
       vision,

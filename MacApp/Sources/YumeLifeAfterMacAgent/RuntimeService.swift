@@ -194,6 +194,17 @@ actor RuntimeService {
                 server["agentName"] = Host.current().localizedName ?? "Mac Agent"
                 changed = true
             }
+            if let storedTimezone = server["timezone"] as? String,
+               TimeZone(identifier: storedTimezone) != nil {
+                // Keep a valid user-selected timezone. Setup registration can
+                // replace the initial default with the Workers timezone.
+            } else {
+                // Legacy runtimes did not persist a local display timezone.
+                // Asia/Shanghai is the Workers default and is replaced during
+                // first registration when the deployment uses another zone.
+                server["timezone"] = "Asia/Shanghai"
+                changed = true
+            }
             if server["agentToken"] as? String == "KEYCHAIN" {
                 server["agentToken"] = "CREDENTIALS_FILE"
                 changed = true
@@ -636,6 +647,33 @@ actor RuntimeService {
             ]
             changed = true
         }
+        if patrol["leaveTeamCancelTexts"] == nil {
+            patrol["leaveTeamCancelTexts"] = ["取消(Esc)", "取消", "Cancel", "Esc"]
+            changed = true
+        }
+        if patrol["leaveTeamCancelKeyCode"] == nil {
+            patrol["leaveTeamCancelKeyCode"] = 111
+            changed = true
+        }
+        if patrol["leaveTeamCancelAttempts"] == nil {
+            patrol["leaveTeamCancelAttempts"] = 3
+            changed = true
+        }
+        if patrol["leaveTeamValidRouteTexts"] == nil {
+            patrol["leaveTeamValidRouteTexts"] = ["巡逻任务尚未完成", "视为放弃任务", "放弃任务"]
+            changed = true
+        }
+        if patrol["leaveTeamDialogTexts"] == nil {
+            patrol["leaveTeamDialogTexts"] = [
+                "退出队伍", "离开队伍", "是否退出", "是否离开", "确认离开",
+                "巡逻任务尚未完成", "视为放弃任务", "放弃任务", "是否退出队伍"
+            ]
+            changed = true
+        }
+        if patrol["leaveTeamConfirmKeyCode"] == nil {
+            patrol["leaveTeamConfirmKeyCode"] = 34
+            changed = true
+        }
 
         var share = patrol["share"] as? [String: Any] ?? [:]
         if let attempts = share["recruitAttempts"] as? NSNumber,
@@ -678,6 +716,22 @@ actor RuntimeService {
                 "back": ["x": 75, "y": 1120],
                 "collapse": ["x": 1740, "y": 1110]
             ]
+            changed = true
+        }
+        if share["sceneChannelTexts"] == nil {
+            share["sceneChannelTexts"] = ["场景频道", "场景"]
+            changed = true
+        }
+        if share["sceneSuccessTexts"] == nil {
+            share["sceneSuccessTexts"] = ["成功分享至场景频道", "分享成功"]
+            changed = true
+        }
+        if share["successTexts"] == nil {
+            share["successTexts"] = ["成功分享至营地频道", "分享成功"]
+            changed = true
+        }
+        if share["successRegion"] == nil {
+            share["successRegion"] = ["left": 650, "top": 150, "right": 1300, "bottom": 330]
             changed = true
         }
         patrol["share"] = share
@@ -996,7 +1050,7 @@ actor RuntimeService {
         agentID: String,
         agentName: String,
         agentToken: String
-    ) async throws {
+    ) async throws -> String? {
         guard let endpoint = URL(string: baseURL)?.appending(path: "api/agent/register") else {
             throw RuntimeError.failed(String(localized: "The Workers URL is invalid."))
         }
@@ -1018,6 +1072,8 @@ actor RuntimeService {
                 "\(String(localized: "The Agent could not be registered with Workers.")) \(message)"
             )
         }
+        let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        return payload?["timezone"] as? String
     }
 
     func logs(maxBytesPerFile: Int = 2_000_000, maxLinesPerFile: Int = 8_000) async -> String {
@@ -1173,6 +1229,7 @@ actor RuntimeService {
         mumuInstanceName: String,
         allowUnsignedLocalPlugins: Bool,
         locale: String,
+        timezone: String,
         captureDebugArtifacts: Bool
     ) throws {
         try saveCredentials(agentToken: agentToken, debugToken: debugToken, adminKey: adminKey)
@@ -1188,6 +1245,7 @@ actor RuntimeService {
         server["agentId"] = agentID
         server["agentName"] = agentName
         server["locale"] = locale
+        server["timezone"] = timezone
         server["agentToken"] = "CREDENTIALS_FILE"
         object["server"] = server
         var mumu = object["mumu"] as? [String: Any] ?? [:]
@@ -1291,20 +1349,36 @@ actor RuntimeService {
         ]
         try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
             .write(to: payload.appending(path: "manifest.json"), options: .atomic)
-        let config = runtimeRoot.appending(path: "config.json")
-        if fileManager.fileExists(atPath: config.path) {
-            var object = try JSONSerialization.jsonObject(with: Data(contentsOf: config)) as! [String: Any]
-            object.removeValue(forKey: "memberKick")
-            _ = migrateExternalModelSettings(&object)
-            var server = object["server"] as? [String: Any] ?? [:]
-            server["agentToken"] = "CREDENTIALS_FILE"
-            object["server"] = server
-            var debug = object["debug"] as? [String: Any] ?? [:]
-            debug["token"] = "CREDENTIALS_FILE"
-            object["debug"] = debug
-            try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
-                .write(to: payload.appending(path: "config.json"), options: .atomic)
+        // Normalize a copy through the same migration path used on App
+        // startup/import. This keeps an archive made from an older runtime
+        // aligned with the newest bundled defaults and flow definitions,
+        // while never mutating the live config during export.
+        let exportRuntime = stagingRoot.appending(path: "Runtime", directoryHint: .isDirectory)
+        try fileManager.createDirectory(at: exportRuntime, withIntermediateDirectories: true)
+        let template = runtimeRoot.appending(path: "config.example.json")
+        guard fileManager.fileExists(atPath: template.path) else {
+            throw RuntimeError.failed(String(localized: "The bundled runtime configuration template is missing."))
         }
+        try fileManager.copyItem(at: template, to: exportRuntime.appending(path: "config.example.json"))
+        let currentConfig = runtimeRoot.appending(path: "config.json")
+        if fileManager.fileExists(atPath: currentConfig.path) {
+            try fileManager.copyItem(at: currentConfig, to: exportRuntime.appending(path: "config.json"))
+        }
+        try ensureRuntimeConfig(at: exportRuntime)
+        let normalizedConfig = exportRuntime.appending(path: "config.json")
+        guard fileManager.fileExists(atPath: normalizedConfig.path) else {
+            throw RuntimeError.failed(String(localized: "Runtime configuration is missing. Run the setup assistant first."))
+        }
+        var object = try JSONSerialization.jsonObject(with: Data(contentsOf: normalizedConfig)) as! [String: Any]
+        object.removeValue(forKey: "memberKick")
+        var server = object["server"] as? [String: Any] ?? [:]
+        server["agentToken"] = "CREDENTIALS_FILE"
+        object["server"] = server
+        var debug = object["debug"] as? [String: Any] ?? [:]
+        debug["token"] = "CREDENTIALS_FILE"
+        object["debug"] = debug
+        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            .write(to: payload.appending(path: "config.json"), options: .atomic)
         let plugins = applicationSupport.appending(path: "Plugins", directoryHint: .isDirectory)
         if fileManager.fileExists(atPath: plugins.path) {
             try fileManager.copyItem(at: plugins, to: payload.appending(path: "Plugins", directoryHint: .isDirectory))

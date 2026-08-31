@@ -28,6 +28,7 @@ final class AppModel: ObservableObject {
     @Published var mumuInstanceName: String
     @Published var allowUnsignedPlugins: Bool
     @Published var language: String
+    @Published var timezone: String
     @Published var showLanguageRestartPrompt = false
     @Published var theme: AppTheme
     @Published var setupCompleted: Bool
@@ -51,6 +52,7 @@ final class AppModel: ObservableObject {
     private let runtime = RuntimeService.shared
     private var pollingTask: Task<Void, Never>?
     private let logPageSize = 250
+    private var timezoneConfigured: Bool
 
     init() {
         let defaults = UserDefaults.standard
@@ -75,6 +77,8 @@ final class AppModel: ObservableObject {
         debugMode = defaults.bool(forKey: "debugMode")
         let selectedLanguage = defaults.string(forKey: "language") ?? Self.preferredLanguage()
         language = selectedLanguage
+        timezone = defaults.string(forKey: "timezone") ?? "Asia/Shanghai"
+        timezoneConfigured = defaults.string(forKey: "timezone") != nil
         defaults.set([selectedLanguage], forKey: "AppleLanguages")
         defaults.set(Self.appleLocale(for: selectedLanguage), forKey: "AppleLocale")
         theme = AppTheme(rawValue: defaults.string(forKey: "theme") ?? "system") ?? .system
@@ -91,7 +95,57 @@ final class AppModel: ObservableObject {
     deinit { pollingTask?.cancel() }
 
     var locale: Locale { Locale(identifier: language) }
+    var timezoneOptions: [String] {
+        let common = [
+            "Asia/Shanghai", "Asia/Tokyo", "Asia/Seoul", "Asia/Singapore",
+            "Asia/Kolkata", "Europe/London", "Europe/Paris", "Europe/Berlin",
+            "America/Los_Angeles", "America/Denver", "America/Chicago",
+            "America/New_York", "Australia/Sydney", "Pacific/Auckland", "UTC"
+        ]
+        return Array(NSOrderedSet(array: common + TimeZone.knownTimeZoneIdentifiers)).compactMap { $0 as? String }
+            .filter { TimeZone(identifier: $0) != nil }
+    }
+
+    func displayTimestamp(_ value: String) -> String {
+        guard let date = Self.parseTimestamp(value) else { return value }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = locale
+        formatter.timeZone = TimeZone(identifier: timezone) ?? .current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss zzz"
+        return formatter.string(from: date)
+    }
     func text(_ key: String) -> String { L10n.string(key, language: language) }
+
+    func localizedTaskName(_ group: TaskLogGroup) -> String {
+        let key: String
+        switch group.taskKey {
+        case "contribution_sync": key = "Task contribution_sync"
+        case "inactivity_sync": key = "Task inactivity_sync"
+        case "member_profile_sync": key = "Task member_profile_sync"
+        case "patrol": key = "Task patrol"
+        case "tech_switch": key = "Task tech_switch"
+        case "automation_routine": key = "Task automation_routine"
+        default: return group.taskName
+        }
+        let localized = text(key)
+        return localized == key ? group.taskName : localized
+    }
+
+    func localizedExecutionMode(_ mode: String) -> String {
+        let normalized = mode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let key: String
+        switch normalized {
+        case "scheduled": key = "Execution mode scheduled"
+        case "manual": key = "Execution mode manual"
+        case "scheduled_window": key = "Execution mode scheduled_window"
+        case "retry": key = "Execution mode retry"
+        case "unknown", "": key = "Execution mode unknown"
+        default: return mode
+        }
+        let localized = text(key)
+        return localized == key ? mode : localized
+    }
     var nodeSummary: String {
         if nodeInfo.isAvailable {
             return "Node.js \(nodeInfo.version ?? "available")"
@@ -282,6 +336,40 @@ final class AppModel: ObservableObject {
         return selectedTaskDebugImages.first {
             $0.url.lastPathComponent == filename
         }?.id
+    }
+
+    /// Select the log page that owns a debug image and return the stable row
+    /// id used by ScrollViewReader. Images are loaded for the whole task, so
+    /// the matching log may be on a page other than the currently visible
+    /// one; changing logPage here keeps image -> log navigation deterministic.
+    func focusLogEntry(for image: TaskDebugImage) -> String? {
+        let lines = filteredLogLines
+        guard let absoluteIndex = lines.firstIndex(where: { line in
+            let entry = Self.simplifiedLogEntry(
+                line,
+                index: 0,
+                language: language
+            )
+            guard let path = entry.debugImagePath, !path.isEmpty else { return false }
+            return URL(fileURLWithPath: path).lastPathComponent == image.url.lastPathComponent
+        }) else {
+            return nil
+        }
+        let distanceFromEnd = lines.count - 1 - absoluteIndex
+        logPage = max(0, distanceFromEnd / logPageSize)
+        let pageLines = visibleLogLines
+        guard let visibleIndex = pageLines.firstIndex(where: { line in
+            let entry = Self.simplifiedLogEntry(line, index: 0, language: language)
+            guard let path = entry.debugImagePath, !path.isEmpty else { return false }
+            return URL(fileURLWithPath: path).lastPathComponent == image.url.lastPathComponent
+        }) else {
+            return nil
+        }
+        return Self.simplifiedLogEntry(
+            pageLines[visibleIndex],
+            index: visibleIndex,
+            language: language
+        ).id
     }
 
     func cancelCurrentTask() async {
@@ -560,6 +648,17 @@ final class AppModel: ObservableObject {
     }
 
     private func persistSettings() async throws {
+        let workerTimezone = try await runtime.registerAgent(
+            baseURL: serverURL,
+            agentID: agentID,
+            agentName: agentName,
+            agentToken: agentToken
+        )
+        if !timezoneConfigured,
+           let workerTimezone,
+           TimeZone(identifier: workerTimezone) != nil {
+            timezone = workerTimezone
+        }
         try await runtime.saveConnection(
             baseURL: serverURL,
             agentID: agentID,
@@ -570,15 +669,10 @@ final class AppModel: ObservableObject {
             mumuInstanceName: mumuInstanceName,
             allowUnsignedLocalPlugins: allowUnsignedPlugins,
             locale: language,
+            timezone: timezone,
             captureDebugArtifacts: debugMode
         )
         await runtime.setRuntimeLocale(language, debugToken: debugToken)
-        try await runtime.registerAgent(
-            baseURL: serverURL,
-            agentID: agentID,
-            agentName: agentName,
-            agentToken: agentToken
-        )
         let defaults = UserDefaults.standard
         defaults.set(serverURL, forKey: "serverURL")
         defaults.set(agentID, forKey: "agentID")
@@ -586,6 +680,8 @@ final class AppModel: ObservableObject {
         defaults.set(mumuInstanceName, forKey: "mumuInstanceName")
         defaults.set(allowUnsignedPlugins, forKey: "allowUnsignedPlugins")
         defaults.set(language, forKey: "language")
+        defaults.set(timezone, forKey: "timezone")
+        timezoneConfigured = true
         defaults.set(theme.rawValue, forKey: "theme")
         defaults.set(logDisplayMode.rawValue, forKey: "logDisplayMode")
         defaults.set(debugMode, forKey: "debugMode")
@@ -860,6 +956,14 @@ final class AppModel: ObservableObject {
         if preferred.hasPrefix("ja") { return "ja" }
         if preferred.hasPrefix("fr") { return "fr" }
         return "en"
+    }
+
+    private static func parseTimestamp(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     private static func latestRunId(in logs: String) -> String? {

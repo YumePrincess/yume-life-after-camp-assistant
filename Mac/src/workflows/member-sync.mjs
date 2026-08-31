@@ -865,6 +865,16 @@ export async function capturePagedTable(
     (memberDetailsMode || alignedPagedTableMode) && expectedCount !== null
       ? expectedMemberTailOverlapCount(expectedCount, memberRowsPerPage)
       : null;
+  // A roster whose count leaves exactly one row after five-row pagination is
+  // affected by a game defect: the physical last row can occupy the sticky
+  // assistant row, so the calculated final page may be absent or the
+  // penultimate page may be the actual end position.  Keep this exception
+  // narrowly scoped to remainder-one rosters; exact multiples and every
+  // other intermediate page retain the normal strict five-row behavior.
+  const remainderOneTailWorkaround =
+    memberDetailsMode &&
+    expectedCount !== null &&
+    expectedCount % memberRowsPerPage === 1;
   let alignedPageHeightPx = Math.max(
     0,
     Number(definition.pagination.pageHeightPx) || 0
@@ -889,6 +899,7 @@ export async function capturePagedTable(
     const penultimateFixedGeometry =
       memberDetailsMode &&
       hasFullPageDefinition &&
+      remainderOneTailWorkaround &&
       expectedPageCount !== null &&
       page + 2 === expectedPageCount;
     const currentTailReason =
@@ -903,7 +914,9 @@ export async function capturePagedTable(
       await report(
         "info",
         "member_details_tail_fixed_geometry",
-        `第 ${page + 1} 页为预测末页，扫描区域已下移到顶部半行下方，锁定其下方 ${memberRowsPerPage} 个成员槽位读取；末页仅保留计算的 ${Math.max(1, memberRowsPerPage - (expectedTailOverlapCount || 0))} 行新成员`,
+        currentTailReason === "penultimate-incomplete"
+          ? `第 ${page + 1} 页普通区域连续只确认不足 ${memberRowsPerPage} 行，切换到末页规则：忽略顶部半行并扫描其下方 ${memberRowsPerPage} 个成员槽位`
+          : `第 ${page + 1} 页为预测末页，扫描区域已下移到顶部半行下方，锁定其下方 ${memberRowsPerPage} 个成员槽位读取；末页仅保留按当前累计名单计算的剩余成员`,
         {
           page: page + 1,
           expectedCount,
@@ -917,9 +930,12 @@ export async function capturePagedTable(
           expectedTailOverlapCount,
           expectedTailNewCount: Math.max(
             1,
-            memberRowsPerPage - (expectedTailOverlapCount || 0)
+            expectedCount !== null
+              ? expectedCount - byName.size
+              : memberRowsPerPage - (expectedTailOverlapCount || 0)
           ),
           finalPage: scheduledLastPage,
+          penultimateRecovery: currentTailReason === "penultimate-incomplete",
           positionLocked: true
         }
       );
@@ -983,7 +999,8 @@ export async function capturePagedTable(
       1,
       Number(definition.pagination.minimumRowsPerPage) || rowsPerPage
     );
-    for (let readAttempt = 1; readAttempt <= 3; readAttempt += 1) {
+    const readAttemptsPerPage = penultimateFixedGeometry ? 1 : 3;
+    for (let readAttempt = 1; readAttempt <= readAttemptsPerPage; readAttempt += 1) {
       const attemptLabel =
         readAttempt === 1
           ? `${label}-${page + 1}`
@@ -1194,7 +1211,10 @@ export async function capturePagedTable(
         frame = attemptFrame;
         rows = attemptRows;
       }
-      if (rows.length >= minimumRowsPerPage || readAttempt === 3) break;
+      if (
+        rows.length >= minimumRowsPerPage ||
+        readAttempt === readAttemptsPerPage
+      ) break;
       await report(
         "warning",
         `${label}_empty_page_retry`,
@@ -1379,32 +1399,26 @@ export async function capturePagedTable(
       // Normal pages are deliberately non-overlapping five-row windows. Do
       // not run cross-page aliasing/reconciliation on them: a visually valid
       // row whose OCR name resembles a previous row must remain a candidate.
-      // Only the calculated tail is allowed to reconcile OCR variants because
-      // it is read as one expanded end-page crop and can contain the previous
-      // page's half-visible row.
+      // Only an expanded end-page crop (including the remainder-one
+      // penultimate recovery) is allowed to reconcile OCR variants because
+      // it can contain the previous page's half-visible row.
       const rawRows = filterMemberDetailRows(rows);
       if (fullPageRead && page > 0) {
-        const previousPageKeys = new Set(
-          previousRows
-            .map((row) => memberProfileNameKey(row?.name))
-            .filter(Boolean)
-        );
+        // The expanded tail crop can return the unique rows before the
+        // repeated rows.  Classify duplicates by their actual name/key,
+        // never by their position, otherwise a valid leading new member is
+        // discarded when the game exposes three repeated rows at the bottom.
+        const knownMemberKeys = new Set(byName.keys());
         tailOverlapKeys = new Set(
           rawRows
-            .slice(0, Math.min(expectedTailOverlapCount || 0, rawRows.length))
             .map((row) => memberProfileNameKey(row?.name))
-            .filter((key) => key && previousPageKeys.has(key))
+            .filter((key) => key && knownMemberKeys.has(key))
         );
         tailOverlapRowIndexes = new Set(
-          Array.from(
-            {
-              length: Math.min(
-                expectedTailOverlapCount || 0,
-                rawRows.length
-              )
-            },
-            (_, index) => index
-          )
+          rawRows
+            .map((row, index) => ({ key: memberProfileNameKey(row?.name), index }))
+            .filter(({ key }) => key && knownMemberKeys.has(key))
+            .map(({ index }) => index)
         );
       }
       // Detect a duplicate before collapsing it. A repeated row can mean a
@@ -1435,15 +1449,11 @@ export async function capturePagedTable(
         }
       }
       if (fullPageRead && page > 0) {
-        const previousPageKeys = new Set(
-          previousRows
-            .map((row) => memberProfileNameKey(row?.name))
-            .filter(Boolean)
-        );
+        const knownMemberKeys = new Set(byName.keys());
         observedTailOverlapKeys = new Set(
           rows
             .map((row) => memberProfileNameKey(row?.name))
-            .filter((key) => key && previousPageKeys.has(key))
+            .filter((key) => key && knownMemberKeys.has(key))
         );
         if (tailOverlapKeys.size || expectedTailOverlapCount > 0) {
           await report(
@@ -1579,14 +1589,20 @@ export async function capturePagedTable(
       // the sticky bottom assistant row. That is a physical UI defect, not a
       // reason to invent a placeholder member. Keep every normal page strict,
       // but allow exactly one absent new row on the calculated final page.
+      // Calculate the tail expectation from the roster size immediately
+      // before this page.  The overlap count is only a geometry prediction;
+      // it must not turn a page containing [new, new, repeated, repeated,
+      // repeated] into zero new members by slicing its first four rows.
+      const membersBeforeTail = byName.size;
       finalTailExpectedRows = Math.max(
         1,
-        memberRowsPerPage - (expectedTailOverlapCount || 0)
+        expectedCount !== null
+          ? expectedCount - membersBeforeTail
+          : memberRowsPerPage - (expectedTailOverlapCount || 0)
       );
-      const finalTailOverlapRows = rows.filter((row, index) => {
+      const finalTailOverlapRows = rows.filter((row) => {
         const key = memberProfileNameKey(row?.name);
         return (
-          tailOverlapRowIndexes.has(index) ||
           (key &&
             (tailOverlapKeys.has(key) || observedTailOverlapKeys.has(key)))
         );
@@ -1644,7 +1660,8 @@ export async function capturePagedTable(
     }
     if (memberDetailsMode && !fullPageRead && rows.length < memberRowsPerPage) {
       const retryCount = (memberPageRetries.get(page) || 0) + 1;
-      if (retryCount <= maxMemberPageRetries) {
+      const pageRetryLimit = penultimateFixedGeometry ? 3 : maxMemberPageRetries;
+      if (retryCount <= pageRetryLimit) {
         memberPageRetries.set(page, retryCount);
         const recognizedNames = rows
           .map((row) => String(row?.name || "").trim())
@@ -1652,12 +1669,37 @@ export async function capturePagedTable(
         await report(
           "warning",
           "member_details_page_incomplete_retry",
-          `第 ${page + 1} 页只确认 ${rows.length}/${memberRowsPerPage} 行，保持当前位置重读，不推进到下一页（第 ${retryCount}/${maxMemberPageRetries} 次）；当前已读到：${recognizedNames.join("、") || "无"}`,
+          `第 ${page + 1} 页只确认 ${rows.length}/${memberRowsPerPage} 行，保持当前位置重读，不推进到下一页（第 ${retryCount}/${pageRetryLimit} 次）；当前已读到：${recognizedNames.join("、") || "无"}`,
           {
             page: page + 1,
             recognizedRows: rows.length,
             expectedRows: memberRowsPerPage,
+            maxRetries: pageRetryLimit,
+            penultimateRecovery: penultimateFixedGeometry,
             recognizedNames
+          }
+        );
+        continue;
+      }
+      if (penultimateFixedGeometry && hasFullPageDefinition) {
+        // When the normal top-five crop still sees only four rows, this page
+        // is the game's hidden final position.  Re-read it in the same place
+        // with the tail geometry before advancing to the calculated final
+        // page.  This is deliberately limited to remainder-one rosters.
+        tailFullPagePending = true;
+        tailFullPageReason = "penultimate-incomplete";
+        memberPageRetries.delete(page);
+        await report(
+          "warning",
+          "member_details_penultimate_tail_fallback",
+          `第 ${page + 1} 页连续 ${pageRetryLimit} 次普通区域仍只确认 ${rows.length}/${memberRowsPerPage} 行，改用末页偏移区域重读后再继续翻页`,
+          {
+            page: page + 1,
+            recognizedRows: rows.length,
+            expectedRows: memberRowsPerPage,
+            retries: pageRetryLimit,
+            positionLocked: true,
+            scanRegion: memberFullPageDefinition(definition).region
           }
         );
         continue;
@@ -1739,7 +1781,7 @@ export async function capturePagedTable(
         }
       }
     } else {
-      for (const [rowIndex, row] of rows.entries()) {
+      for (const row of rows) {
         const baseRowKey = memberDetailsMode
           ? memberProfileNameKey(row.name)
           : row.name;
@@ -1748,8 +1790,7 @@ export async function capturePagedTable(
         if (
           memberDetailsMode &&
           fullPageRead &&
-          (tailOverlapRowIndexes.has(rowIndex) ||
-            tailOverlapKeys.has(rowKey) ||
+          (tailOverlapKeys.has(rowKey) ||
             observedTailOverlapKeys.has(rowKey))
         ) {
           rejectedAfterExpectedCount += 1;
@@ -1823,10 +1864,14 @@ export async function capturePagedTable(
     if (stopAfterIncompletePage) break;
     const unexpectedTailOverlapCount =
       fullPageRead && page > 0
-        ? Math.max(
-            0,
-            observedTailOverlapKeys.size - (expectedTailOverlapCount || 0)
-          )
+        ? memberDetailsMode &&
+          remainderOneTailWorkaround &&
+          memberPageNovelty === 0
+          ? 0
+          : Math.max(
+              0,
+              observedTailOverlapKeys.size - (expectedTailOverlapCount || 0)
+            )
         : 0;
     if (
       memberDetailsMode &&

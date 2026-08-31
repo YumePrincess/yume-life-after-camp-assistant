@@ -299,6 +299,59 @@ test("patrol failure cleanup confirms the leave-team dialog before verifying exi
   ]);
 });
 
+test("patrol failure cleanup cancels an active-route dialog with Esc instead of leaving", async () => {
+  const taps = [];
+  const keys = [];
+  let captures = 0;
+  const context = {
+    patrolTeamPhase: "created",
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async sendGameKey(keyCode) {
+        keys.push(keyCode);
+      }
+    },
+    vision: {
+      async capture() {
+        captures += 1;
+        return {
+          path: "failure-active-route.png",
+          observations:
+            captures === 1
+              ? [observation("离开队伍", 1500, 1080)]
+              : captures === 2
+                ? [
+                    observation("巡逻任务尚未完成", 850, 520),
+                    observation("是否退出？", 850, 560)
+                  ]
+                : []
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async report() {},
+    async sleep() {}
+  };
+
+  assert.equal(
+    await cleanupPatrolTeamOnFailure(
+      context,
+      undefined,
+      new Error("share verification failed")
+    ),
+    true
+  );
+  assert.deepEqual(taps, [{ x: 1570, y: 1100 }]);
+  assert.deepEqual(keys, [111]);
+});
+
 test("patrol team creation follows only region-verified live-device steps", async () => {
   const taps = [];
   const reports = [];
@@ -613,6 +666,7 @@ test("patrol flag click is attempted through the shared ADB clicker", async () =
 
 test("existing teams use the leave probe and cancel a valid-route confirmation", async () => {
   const taps = [];
+  const keys = [];
   const reports = [];
   let cancelCapture = false;
   const context = {
@@ -622,7 +676,12 @@ test("existing teams use the leave probe and cancel a valid-route confirmation",
         taps.push(point);
       }
     },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: {
+      async key(keyCode) {
+        keys.push(keyCode);
+      },
+      async mouseSwipe() {}
+    },
     vision: {
       async capture(label) {
         if (label.includes("patrol-leave-cancelled")) {
@@ -670,15 +729,14 @@ test("existing teams use the leave probe and cancel a valid-route confirmation",
 
   assert.equal(await createPatrolTeam(context), "existing-valid-route");
   assert.equal(cancelCapture, true);
-  assert.deepEqual(taps, [
-    { x: 1570, y: 1100 },
-    { x: 870, y: 720 }
-  ]);
+  assert.deepEqual(taps, [{ x: 1570, y: 1100 }]);
+  assert.deepEqual(keys, [111]);
   assert.ok(reports.includes("patrol_existing_valid_route_leave_cancelled"));
 });
 
 test("valid-route confirmation retries cancel up to three times before sharing", async () => {
   const taps = [];
+  const keys = [];
   const reports = [];
   let cancelReads = 0;
   const context = {
@@ -688,7 +746,12 @@ test("valid-route confirmation retries cancel up to three times before sharing",
         taps.push(point);
       }
     },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: {
+      async key(keyCode) {
+        keys.push(keyCode);
+      },
+      async mouseSwipe() {}
+    },
     vision: {
       async capture(label) {
         if (label.includes("patrol-leave-cancelled")) {
@@ -745,7 +808,8 @@ test("valid-route confirmation retries cancel up to three times before sharing",
 
   assert.equal(await createPatrolTeam(context), "existing-valid-route");
   assert.equal(cancelReads, 3);
-  assert.equal(taps.length, 4);
+  assert.equal(taps.length, 1);
+  assert.deepEqual(keys, [111, 111, 111]);
   assert.equal(
     reports.filter((step) => step === "patrol_leave_confirmation_cancel_retry").length,
     2
@@ -1640,6 +1704,7 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
   ]);
   assert.ok(sleeps.includes(3_000));
   assert.ok(reports.includes("patrol_share_camp_channel_verified"));
+  assert.ok(reports.includes("patrol_share_success_immediate"));
   assert.ok(reports.includes("patrol_share_success"));
 });
 

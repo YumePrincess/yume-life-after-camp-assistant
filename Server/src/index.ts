@@ -1489,7 +1489,13 @@ async function handleAgentApi(
         ? boundedText(body.displayName, "displayName", 80)
         : agentId;
     const registered = await registerAgentDevice(env, { agentId, displayName });
-    return json({ ok: true, agentId, ...registered });
+    const bundle = await getConfigBundle(env);
+    return json({
+      ok: true,
+      agentId,
+      timezone: bundle.campConfig.timezone,
+      ...registered
+    });
   }
   if (path === "/api/agent/heartbeat" && method === "POST") {
     const body = await readJsonObject(request, 64_000);

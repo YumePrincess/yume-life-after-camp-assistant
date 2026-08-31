@@ -404,6 +404,11 @@ struct LogsView: View {
     @StateObject private var debugState = LogsDebugState()
 
     var body: some View {
+        // Materialize the visible page once per render. Accessing the
+        // computed parsed-entry array from every LazyVStack row caused a
+        // quadratic JSON parse while scrolling a busy task log.
+        let visibleLogLines = model.visibleLogLines
+        let visibleLogEntries = model.visibleLogEntries
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 VStack(alignment: .leading, spacing: 8) {
@@ -474,44 +479,78 @@ struct LogsView: View {
                 }
                 .glassPanel(radius: 20, padding: 12)
                 .frame(width: 292)
+                .frame(maxHeight: .infinity)
 
                 VStack(alignment: .leading, spacing: 12) {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            if model.visibleLogLines.isEmpty {
+                            if visibleLogLines.isEmpty {
                                 Text(model.text("No log entries yet."))
                                     .frame(maxWidth: .infinity, alignment: .topLeading)
                                     .id("bottom")
                             } else if model.logDisplayMode == .raw {
                                 LazyVStack(alignment: .leading, spacing: 2) {
-                                    ForEach(Array(model.visibleLogLines.enumerated()), id: \.offset) { index, line in
+                                    ForEach(Array(visibleLogLines.enumerated()), id: \.offset) { index, line in
+                                        let entry = visibleLogEntries[index]
                                         Text(verbatim: model.localizedLogLine(line))
                                             .font(.system(size: 12, design: .monospaced))
                                             .textSelection(.enabled)
                                             .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(6)
+                                            .background(
+                                                debugState.focusedLogEntryID == entry.id
+                                                    ? YumePalette.gold.opacity(0.16)
+                                                    : .clear,
+                                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            )
+                                            .overlay {
+                                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                    .stroke(
+                                                        debugState.focusedLogEntryID == entry.id
+                                                            ? YumePalette.gold
+                                                            : .clear,
+                                                        lineWidth: 2
+                                                    )
+                                            }
                                             .contentShape(Rectangle())
                                             .onTapGesture {
-                                                guard model.visibleLogEntries.indices.contains(index) else { return }
-                                                let entry = model.visibleLogEntries[index]
                                                 debugState.focusedDebugImageID = model.debugImageID(for: entry)
+                                                debugState.focusedLogEntryID = entry.id
                                             }
+                                            .id(entry.id)
                                     }
                                     Color.clear.frame(height: 1).id("bottom")
                                 }
                                 .id("raw")
                             } else {
                                 LazyVStack(alignment: .leading, spacing: 8) {
-                                    ForEach(model.visibleLogEntries) { entry in
-                                        SimpleLogRow(entry: entry) {
+                                    ForEach(visibleLogEntries) { entry in
+                                        SimpleLogRow(
+                                            entry: entry,
+                                            selected: debugState.focusedLogEntryID == entry.id
+                                        ) {
                                             debugState.focusedDebugImageID = model.debugImageID(for: entry)
+                                            debugState.focusedLogEntryID = entry.id
                                         }
+                                        .id(entry.id)
                                     }
                                     Color.clear.frame(height: 1).id("bottom")
                                 }
                             }
                         }
                         .glassPanel(radius: 20, padding: 16)
-                        .onChange(of: model.visibleLogLines) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                        .frame(maxHeight: .infinity)
+                        .onChange(of: model.logText) { _, _ in
+                            proxy.scrollTo("bottom", anchor: .bottom)
+                        }
+                        .onChange(of: debugState.focusedLogEntryID) { _, entryID in
+                            guard let entryID else { return }
+                            DispatchQueue.main.async {
+                                withAnimation(.easeOut(duration: 0.15)) {
+                                    proxy.scrollTo(entryID, anchor: .center)
+                                }
+                            }
+                        }
                     }
 
                     if model.selectedTaskLogID != nil {
@@ -532,7 +571,19 @@ struct LogsView: View {
                                                 DebugImageThumbnail(
                                                     image: image,
                                                     focused: debugState.focusedDebugImageID == image.id,
-                                                    onSelect: { debugState.focusedDebugImageID = $0 },
+                                                    onSelect: { imageID in
+                                                        debugState.focusedDebugImageID = imageID
+                                                        debugState.focusedLogEntryID = model.focusLogEntry(for: image)
+                                                    },
+                                                    onMove: { offset in
+                                                        guard let currentID = debugState.focusedDebugImageID,
+                                                              let currentIndex = model.selectedTaskDebugImages.firstIndex(where: { $0.id == currentID }) else { return }
+                                                        let nextIndex = currentIndex + offset
+                                                        guard model.selectedTaskDebugImages.indices.contains(nextIndex) else { return }
+                                                        let nextImage = model.selectedTaskDebugImages[nextIndex]
+                                                        debugState.focusedDebugImageID = nextImage.id
+                                                        debugState.focusedLogEntryID = model.focusLogEntry(for: nextImage)
+                                                    },
                                                     onOpen: { debugState.previewDebugImage = $0 }
                                                 )
                                                 .id(image.id)
@@ -558,6 +609,11 @@ struct LogsView: View {
                             }
                         }
                         .glassPanel(radius: 20, padding: 12)
+                        // Keep evidence to one thumbnail row. This fixed
+                        // height includes the 105pt thumbnail, its two-line
+                        // sequence/description caption, and panel insets;
+                        // extra window height belongs to the log list above.
+                        .frame(height: 220)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -584,6 +640,7 @@ struct LogsView: View {
         .task { await model.refreshStatusAndLogs(loadLogs: true) }
         .onChange(of: model.selectedTaskLogID) { _, _ in
             debugState.focusedDebugImageID = nil
+            debugState.focusedLogEntryID = nil
         }
         .sheet(item: $debugState.previewDebugImage) { image in
             DebugImagePreview(image: image)
@@ -593,6 +650,7 @@ struct LogsView: View {
 
 private final class LogsDebugState: ObservableObject {
     @Published var focusedDebugImageID: String?
+    @Published var focusedLogEntryID: String?
     @Published var previewDebugImage: TaskDebugImage?
 }
 
@@ -622,7 +680,7 @@ private struct TaskLogGroupRow: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(group.taskName)
+                    Text(model.localizedTaskName(group))
                         .font(.callout.weight(.semibold))
                         .lineLimit(1)
                     Spacer(minLength: 4)
@@ -635,15 +693,15 @@ private struct TaskLogGroupRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .textSelection(.enabled)
-                Text("\(model.text("Mode")): \(group.executionMode)")
+                Text("\(model.text("Mode")): \(model.localizedExecutionMode(group.executionMode))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Text("\(model.text("Started")): \(group.startedAt)")
+                Text("\(model.text("Started")): \(model.displayTimestamp(group.startedAt))")
                     .font(.caption2.monospaced())
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                 if let finishedAt = group.finishedAt {
-                    Text("\(model.text("Finished")): \(finishedAt)")
+                    Text("\(model.text("Finished")): \(model.displayTimestamp(finishedAt))")
                         .font(.caption2.monospaced())
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -670,12 +728,14 @@ private struct DebugImageThumbnail: View {
     let image: TaskDebugImage
     let focused: Bool
     let onSelect: (String) -> Void
+    let onMove: (Int) -> Void
     let onOpen: (TaskDebugImage) -> Void
     @StateObject private var state = DebugImageThumbnailState()
+    @FocusState private var isKeyboardFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let thumbnailData = state.thumbnailData, let nsImage = NSImage(data: thumbnailData) {
+            if let nsImage = state.thumbnailImage {
                 Image(nsImage: nsImage)
                     .resizable()
                     .scaledToFit()
@@ -696,16 +756,32 @@ private struct DebugImageThumbnail: View {
                 .stroke(focused ? YumePalette.gold : .clear, lineWidth: 2)
         }
         .onTapGesture {
+            isKeyboardFocused = true
             onSelect(image.id)
         }
         .onTapGesture(count: 2) {
             onOpen(image)
         }
+        .focusable()
+        .focused($isKeyboardFocused)
+        .onKeyPress(keys: [.leftArrow, .rightArrow], phases: .down) { press in
+            onMove(press.key == .leftArrow ? -1 : 1)
+            return .handled
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "cC"), phases: .down) { press in
+            guard press.modifiers.contains(.command) || press.modifiers.contains(.control) else {
+                return .ignored
+            }
+            copyImage()
+            return .handled
+        }
         .task(id: image.url) {
-            state.thumbnailData = await DebugImageLoader.thumbnailData(
+            let data = await DebugImageLoader.thumbnailData(
                 from: image.url,
                 maxPixelSize: 480
             )
+            state.thumbnailData = data
+            state.thumbnailImage = data.flatMap(NSImage.init(data:))
         }
         .contextMenu {
             Button(model.text("Copy image"), systemImage: "doc.on.doc") {
@@ -739,6 +815,7 @@ private struct DebugImageThumbnail: View {
 
 private final class DebugImageThumbnailState: ObservableObject {
     @Published var thumbnailData: Data?
+    @Published var thumbnailImage: NSImage?
 }
 
 private enum DebugImageLoader {
@@ -816,7 +893,9 @@ private final class DebugImagePreviewState: ObservableObject {
 }
 
 private struct SimpleLogRow: View {
+    @EnvironmentObject private var model: AppModel
     let entry: SimplifiedLogEntry
+    let selected: Bool
     let onSelect: () -> Void
 
     private var levelColor: Color {
@@ -836,38 +915,63 @@ private struct SimpleLogRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol)
-                .foregroundStyle(levelColor)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    Text(entry.level.uppercased())
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(levelColor)
-                    if !entry.step.isEmpty {
-                        Text(entry.step)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+        Button(action: onSelect) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: symbol)
+                    .foregroundStyle(levelColor)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(entry.level.uppercased())
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(levelColor)
+                        if !entry.step.isEmpty {
+                            Text(entry.step)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        if !entry.timestamp.isEmpty {
+                            Text(model.displayTimestamp(entry.timestamp))
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.tertiary)
+                        }
                     }
-                    Spacer()
-                    if !entry.timestamp.isEmpty {
-                        Text(entry.timestamp)
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.tertiary)
-                    }
+                    // Simplified rows are intentionally not text-selectable:
+                    // a primary click must always navigate to its evidence.
+                    Text(entry.message)
+                        .font(.callout)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text(entry.message)
-                    .font(.callout)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(selected ? YumePalette.gold : .clear, lineWidth: 2)
             }
         }
-        .padding(10)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .buttonStyle(.plain)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        .contextMenu {
+            Button(model.text("Copy log"), systemImage: "doc.on.doc") {
+                copyLog()
+            }
+        }
+    }
+
+    private func copyLog() {
+        let fields = [
+            entry.timestamp,
+            entry.level.uppercased(),
+            entry.step,
+            entry.message
+        ].filter { !$0.isEmpty }
+        let text = fields.joined(separator: " ")
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
 }
 
@@ -998,6 +1102,14 @@ struct SettingsView: View {
                             Text(model.text(theme.titleKey)).tag(theme)
                         }
                     }
+                    Picker(model.text("Timezone"), selection: $model.timezone) {
+                        ForEach(model.timezoneOptions, id: \.self) { zone in
+                            Text(zone).tag(zone)
+                        }
+                    }
+                    Text(model.text("Task times are displayed in this timezone. New installations default to the Workers timezone."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Picker(
                         model.text("Log display"),
                         selection: Binding(
@@ -1330,6 +1442,14 @@ struct SetupAssistantView: View {
             TextField("Workers URL", text: $model.serverURL).textFieldStyle(.roundedBorder)
             TextField("Agent device name", text: $model.agentName).textFieldStyle(.roundedBorder)
             TextField("MuMu container name", text: $model.mumuInstanceName).textFieldStyle(.roundedBorder)
+            Picker(model.text("Timezone"), selection: $model.timezone) {
+                ForEach(model.timezoneOptions, id: \.self) { zone in
+                    Text(zone).tag(zone)
+                }
+            }
+            Text(model.text("The default follows the timezone configured in Workers."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
             HStack(spacing: 10) {
                 Label(
                     model.nodeSummary,

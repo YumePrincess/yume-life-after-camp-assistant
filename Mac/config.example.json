@@ -5,6 +5,7 @@
     "agentId": "mac-life-after-agent",
     "agentName": "Mac Agent",
     "locale": "zh-cn",
+    "timezone": "Asia/Shanghai",
     "pollSeconds": 5
   },
   "debug": {
@@ -362,8 +363,9 @@
     "leaveTeamCancelTexts": ["取消(Esc)", "取消", "Cancel", "Esc"],
     "leaveTeamCancelKeyCode": 111,
     "leaveTeamCancelAttempts": 3,
+    "leaveTeamValidRouteTexts": ["巡逻任务尚未完成", "视为放弃任务", "放弃任务"],
     "leaveTeamDialogTexts": ["退出队伍", "离开队伍", "是否退出", "是否离开", "确认离开", "巡逻任务尚未完成", "视为放弃任务", "放弃任务", "是否退出队伍"],
-    "leaveTeamConfirmKeyCode": 70,
+    "leaveTeamConfirmKeyCode": 34,
     "teamMemberSlotRegions": [
       { "left": 560, "top": 290, "right": 955, "bottom": 960 },
       { "left": 960, "top": 290, "right": 1355, "bottom": 960 },
