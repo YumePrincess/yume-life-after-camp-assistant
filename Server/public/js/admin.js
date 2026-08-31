@@ -2372,8 +2372,8 @@
           .map((block) =>
             block.type === "image"
               ? block.alt
-                ? `![${block.alt}]("${block.url}")`
-                : `图片："${block.url}"`
+                ? `![${block.alt}](${block.url})`
+                : `![](${block.url})`
               : String(block.text || "")
           )
           .filter(Boolean)
@@ -2385,19 +2385,13 @@
 
   function parsePublicImageLine(line) {
     const source = String(line || "");
-    const marker = source.match(
-      /^\s*图片\s*[:：]\s*(?:"(https:\/\/[^"\s]+)"|(https:\/\/\S+))\s*$/i
-    );
-    if (marker) {
-      return { type: "image", url: marker[1] || marker[2] };
-    }
     const markdown = String(line || "").match(
-      /^\s*!\[([^\]]*)\]\((?:"(https:\/\/[^"\s]+)"|(https:\/\/[^)\s]+))\)\s*$/i
+      /^\s*!\[([^\]]*)\]\((https:\/\/[^)\s]+)\)\s*$/i
     );
     return markdown
       ? {
           type: "image",
-          url: markdown[2] || markdown[3],
+          url: markdown[2],
           ...(markdown[1].trim() ? { alt: markdown[1].trim() } : {})
         }
       : null;

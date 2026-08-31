@@ -1728,8 +1728,8 @@
       "拒绝并发送通知": "Reject and send notice",
       "营地公告列表（公告之间空一行；公告内可换行）":
         "Camp announcements (blank line between announcements; line breaks allowed)",
-      "图片单独占一行，格式：图片：\"https://...\"；也支持 ![说明](\"https://...\")；空行分隔不同公告，同一公告可插入多张图片。":
-        "Put an image on its own line as 图片：\"https://...\" or ![说明](\"https://...\"). Use a blank line between announcements; one announcement can contain multiple images.",
+      "图片单独占一行，使用标准 Markdown 格式：![说明](https://...)；只有完整图片语法会识别为图片，普通引用和链接不会识别。":
+        "Put an image on its own line using standard Markdown: ![说明](https://...). Only complete image syntax is treated as an image; normal quotes and links are not.",
       "当前没有需要公示的营地公告。": "There are no camp announcements to show.",
       "点击查看大图": "Click to view full size",
       "科技": "Technology",
@@ -1881,8 +1881,8 @@
       "拒绝并发送通知": "Refuser et notifier",
       "营地公告列表（公告之间空一行；公告内可换行）":
         "Annonces du camp (ligne vide entre annonces ; retours à la ligne autorisés)",
-      "图片单独占一行，格式：图片：\"https://...\"；也支持 ![说明](\"https://...\")；空行分隔不同公告，同一公告可插入多张图片。":
-        "Placez une image sur sa propre ligne avec 图片：\"https://...\" ou ![说明](\"https://...\"). Séparez les annonces par une ligne vide ; une annonce peut contenir plusieurs images.",
+      "图片单独占一行，使用标准 Markdown 格式：![说明](https://...)；只有完整图片语法会识别为图片，普通引用和链接不会识别。":
+        "Placez une image seule sur sa ligne avec le Markdown standard : ![说明](https://...). Seule la syntaxe complète d’image est convertie en image ; les citations et liens ordinaires ne le sont pas.",
       "当前没有需要公示的营地公告。": "Aucune annonce du camp à afficher.",
       "点击查看大图": "Cliquer pour voir en grand",
       "公告编辑语言": "Langue d’édition des annonces",
@@ -2032,8 +2032,8 @@
       "拒绝并发送通知": "却下して通知",
       "营地公告列表（公告之间空一行；公告内可换行）":
         "野営地のお知らせ（項目間は空行、項目内は改行可）",
-      "图片单独占一行，格式：图片：\"https://...\"；也支持 ![说明](\"https://...\")；空行分隔不同公告，同一公告可插入多张图片。":
-        "画像は 图片：\"https://...\" または ![説明](\"https://...\") の形式で1行に入力します。空行でお知らせを分け、1つのお知らせに複数画像を追加できます。",
+      "图片单独占一行，使用标准 Markdown 格式：![说明](https://...)；只有完整图片语法会识别为图片，普通引用和链接不会识别。":
+        "画像は標準Markdownの ![説明](https://...) 形式で1行に入力します。完全な画像構文だけを画像として扱い、通常の引用やリンクは画像になりません。",
       "当前没有需要公示的营地公告。": "表示する野営地のお知らせはありません。",
       "点击查看大图": "クリックして拡大表示",
       "公告编辑语言": "お知らせの編集言語",
@@ -2183,8 +2183,8 @@
       "拒绝并发送通知": "拒絕並寄送通知",
       "营地公告列表（公告之间空一行；公告内可换行）":
         "營地公告列表（公告之間空一行；公告內可換行）",
-      "图片单独占一行，格式：图片：\"https://...\"；也支持 ![说明](\"https://...\")；空行分隔不同公告，同一公告可插入多张图片。":
-        "圖片請單獨一行，格式為 圖片：\"https://...\" 或 ![說明](\"https://...\")。公告之間空一行；同一公告可插入多張圖片。",
+      "图片单独占一行，使用标准 Markdown 格式：![说明](https://...)；只有完整图片语法会识别为图片，普通引用和链接不会识别。":
+        "圖片請單獨一行並使用標準 Markdown 格式：![說明](https://...)；只有完整圖片語法會識別為圖片，普通引用和連結不會識別。",
       "当前没有需要公示的营地公告。": "目前沒有需要公告的營地公告。",
       "点击查看大图": "點擊查看大圖",
       "公告编辑语言": "公告編輯語言",
