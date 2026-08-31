@@ -53,6 +53,15 @@ final class AppModel: ObservableObject {
     private var pollingTask: Task<Void, Never>?
     private let logPageSize = 250
     private var timezoneConfigured: Bool
+    private var cachedLogLinesSource = ""
+    private var cachedLogLines: [String] = []
+    private var logRevision = 0
+    private var visibleCacheRevision = -1
+    private var visibleCacheFilter: String?
+    private var visibleCachePage = -1
+    private var visibleCacheLanguage = ""
+    private var cachedVisibleLogLines: [String] = []
+    private var cachedVisibleLogEntries: [SimplifiedLogEntry] = []
 
     init() {
         let defaults = UserDefaults.standard
@@ -246,10 +255,13 @@ final class AppModel: ObservableObject {
             let refreshedLogs = await runtime.logs()
             if refreshedLogs != logText {
                 logText = refreshedLogs
+                logRevision += 1
                 logPage = 0
                 latestRunId = Self.latestRunId(in: refreshedLogs) ?? latestRunId
+                taskLogGroups = Self.taskLogGroups(in: refreshedLogs)
+            } else if taskLogGroups.isEmpty, !logText.isEmpty {
+                taskLogGroups = Self.taskLogGroups(in: logText)
             }
-            taskLogGroups = Self.taskLogGroups(in: logText)
             if let selectedTaskLogID,
                !taskLogGroups.contains(where: { $0.id == selectedTaskLogID }) {
                 self.selectedTaskLogID = nil
@@ -260,20 +272,20 @@ final class AppModel: ObservableObject {
     }
 
     private var filteredLogLines: [String] {
-        let allLines = logText
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map(String.init)
+        if cachedLogLinesSource != logText {
+            cachedLogLinesSource = logText
+            cachedLogLines = logText
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map(String.init)
+        }
+        let allLines = cachedLogLines
         guard let runId = logRunIdFilter, !runId.isEmpty else { return allLines }
         return allLines.filter { $0.contains(runId) }
     }
 
     var visibleLogLines: [String] {
-        let lines = filteredLogLines
-        let pageCount = max(1, Int(ceil(Double(lines.count) / Double(logPageSize))))
-        let currentPage = min(max(0, logPage), pageCount - 1)
-        let end = max(0, lines.count - currentPage * logPageSize)
-        let start = max(0, end - logPageSize)
-        return Array(lines[start..<end])
+        rebuildVisibleLogCacheIfNeeded()
+        return cachedVisibleLogLines
     }
 
     var visibleLogText: String {
@@ -287,9 +299,8 @@ final class AppModel: ObservableObject {
     }
 
     var visibleLogEntries: [SimplifiedLogEntry] {
-        visibleLogLines.enumerated().map { index, line in
-            Self.simplifiedLogEntry(line, index: index, language: language)
-        }
+        rebuildVisibleLogCacheIfNeeded()
+        return cachedVisibleLogEntries
     }
 
     var logPageCount: Int {
@@ -331,11 +342,20 @@ final class AppModel: ObservableObject {
     }
 
     func debugImageID(for entry: SimplifiedLogEntry) -> String? {
-        guard let path = entry.debugImagePath, !path.isEmpty else { return nil }
-        let filename = URL(fileURLWithPath: path).lastPathComponent
-        return selectedTaskDebugImages.first {
-            $0.url.lastPathComponent == filename
-        }?.id
+        if let path = entry.debugImagePath, !path.isEmpty {
+            let filename = URL(fileURLWithPath: path).lastPathComponent
+            if let exact = selectedTaskDebugImages.first(where: {
+                $0.url.lastPathComponent == filename
+            }) {
+                return exact.id
+            }
+        }
+        guard !entry.step.isEmpty else { return nil }
+        let step = entry.step.lowercased()
+        return selectedTaskDebugImages.first(where: { image in
+            let label = image.label.lowercased()
+            return label == step || label == "log-\(step)" || label.hasSuffix("-\(step)")
+        })?.id
     }
 
     /// Select the log page that owns a debug image and return the stable row
@@ -344,32 +364,49 @@ final class AppModel: ObservableObject {
     /// one; changing logPage here keeps image -> log navigation deterministic.
     func focusLogEntry(for image: TaskDebugImage) -> String? {
         let lines = filteredLogLines
-        guard let absoluteIndex = lines.firstIndex(where: { line in
-            let entry = Self.simplifiedLogEntry(
-                line,
-                index: 0,
-                language: language
-            )
-            guard let path = entry.debugImagePath, !path.isEmpty else { return false }
-            return URL(fileURLWithPath: path).lastPathComponent == image.url.lastPathComponent
-        }) else {
-            return nil
+        let parsed = lines.enumerated().map { index, line in
+            Self.simplifiedLogEntry(line, index: index, language: language)
         }
+        let exactImageName = image.url.lastPathComponent
+        var absoluteIndex = parsed.firstIndex { entry in
+            guard let path = entry.debugImagePath, !path.isEmpty else { return false }
+            return URL(fileURLWithPath: path).lastPathComponent == exactImageName
+        }
+        if absoluteIndex == nil, !image.label.isEmpty {
+            let step = image.label
+                .replacingOccurrences(of: "^log-", with: "", options: .regularExpression)
+                .lowercased()
+            absoluteIndex = parsed.firstIndex { entry in
+                entry.step.lowercased() == step
+            }
+        }
+        if absoluteIndex == nil, !parsed.isEmpty {
+            // OCR/crop captures can be useful evidence without being the
+            // extra log capture attached to a task event. Associate them
+            // with the nearest event capture so every visible image still
+            // has a deterministic log destination.
+            let directCaptures: [(index: Int, sequence: Int)] = parsed.enumerated().compactMap { entryIndex, entry in
+                guard let path = entry.debugImagePath, !path.isEmpty,
+                      let image = selectedTaskDebugImages.first(where: {
+                          $0.url.lastPathComponent == URL(fileURLWithPath: path).lastPathComponent
+                      }) else { return nil }
+                return (index: entryIndex, sequence: image.sequence)
+            }
+            if let nearest = directCaptures.min(by: {
+                abs($0.sequence - image.sequence) < abs($1.sequence - image.sequence)
+            }) {
+                absoluteIndex = nearest.index
+            }
+        }
+        guard let absoluteIndex else { return nil }
         let distanceFromEnd = lines.count - 1 - absoluteIndex
         logPage = max(0, distanceFromEnd / logPageSize)
         let pageLines = visibleLogLines
-        guard let visibleIndex = pageLines.firstIndex(where: { line in
-            let entry = Self.simplifiedLogEntry(line, index: 0, language: language)
-            guard let path = entry.debugImagePath, !path.isEmpty else { return false }
-            return URL(fileURLWithPath: path).lastPathComponent == image.url.lastPathComponent
-        }) else {
-            return nil
-        }
-        return Self.simplifiedLogEntry(
-            pageLines[visibleIndex],
-            index: visibleIndex,
-            language: language
-        ).id
+        let end = max(0, lines.count - logPage * logPageSize)
+        let start = max(0, end - logPageSize)
+        let visibleIndex = absoluteIndex - start
+        guard pageLines.indices.contains(visibleIndex) else { return nil }
+        return Self.simplifiedLogEntry(pageLines[visibleIndex], index: visibleIndex, language: language).id
     }
 
     func cancelCurrentTask() async {
@@ -423,6 +460,7 @@ final class AppModel: ObservableObject {
         do {
             try await runtime.clearLogs()
             logText = ""
+            logRevision += 1
             logRunIdFilter = nil
             taskLogGroups = []
             selectedTaskLogID = nil
@@ -432,6 +470,29 @@ final class AppModel: ObservableObject {
         } catch {
             alertMessage = error.localizedDescription
         }
+    }
+
+    private func rebuildVisibleLogCacheIfNeeded() {
+        if visibleCacheRevision == logRevision,
+           visibleCacheFilter == logRunIdFilter,
+           visibleCachePage == logPage,
+           visibleCacheLanguage == language {
+            return
+        }
+        let lines = filteredLogLines
+        let pageCount = max(1, Int(ceil(Double(lines.count) / Double(logPageSize))))
+        let currentPage = min(max(0, logPage), pageCount - 1)
+        let end = max(0, lines.count - currentPage * logPageSize)
+        let start = max(0, end - logPageSize)
+        let visible = Array(lines[start..<end])
+        cachedVisibleLogLines = visible
+        cachedVisibleLogEntries = visible.enumerated().map { index, line in
+            Self.simplifiedLogEntry(line, index: index, language: language)
+        }
+        visibleCacheRevision = logRevision
+        visibleCacheFilter = logRunIdFilter
+        visibleCachePage = logPage
+        visibleCacheLanguage = language
     }
 
     func performAgentAction(_ action: String) async {

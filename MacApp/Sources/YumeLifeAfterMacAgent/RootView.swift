@@ -551,6 +551,15 @@ struct LogsView: View {
                                 }
                             }
                         }
+                        .onChange(of: model.logPage) { _, _ in
+                            guard let entryID = debugState.focusedLogEntryID else { return }
+                            // Page changes rebuild the LazyVStack. Defer one
+                            // run-loop turn so the target row exists before
+                            // asking ScrollViewReader to reveal it.
+                            DispatchQueue.main.async {
+                                proxy.scrollTo(entryID, anchor: .center)
+                            }
+                        }
                     }
 
                     if model.selectedTaskLogID != nil {
@@ -572,8 +581,7 @@ struct LogsView: View {
                                                     image: image,
                                                     focused: debugState.focusedDebugImageID == image.id,
                                                     onSelect: { imageID in
-                                                        debugState.focusedDebugImageID = imageID
-                                                        debugState.focusedLogEntryID = model.focusLogEntry(for: image)
+                                                        focusDebugImage(image, imageID: imageID)
                                                     },
                                                     onMove: { offset in
                                                         guard let currentID = debugState.focusedDebugImageID,
@@ -581,8 +589,7 @@ struct LogsView: View {
                                                         let nextIndex = currentIndex + offset
                                                         guard model.selectedTaskDebugImages.indices.contains(nextIndex) else { return }
                                                         let nextImage = model.selectedTaskDebugImages[nextIndex]
-                                                        debugState.focusedDebugImageID = nextImage.id
-                                                        debugState.focusedLogEntryID = model.focusLogEntry(for: nextImage)
+                                                        focusDebugImage(nextImage, imageID: nextImage.id)
                                                     },
                                                     onOpen: { debugState.previewDebugImage = $0 }
                                                 )
@@ -644,6 +651,17 @@ struct LogsView: View {
         }
         .sheet(item: $debugState.previewDebugImage) { image in
             DebugImagePreview(image: image)
+        }
+    }
+
+    private func focusDebugImage(_ image: TaskDebugImage, imageID: String) {
+        let logEntryID = model.focusLogEntry(for: image)
+        debugState.focusedDebugImageID = imageID
+        // Reset first so selecting the same image again still issues a fresh
+        // navigation request after the target page has been rebuilt.
+        debugState.focusedLogEntryID = nil
+        DispatchQueue.main.async {
+            debugState.focusedLogEntryID = logEntryID
         }
     }
 }
@@ -780,7 +798,6 @@ private struct DebugImageThumbnail: View {
                 from: image.url,
                 maxPixelSize: 480
             )
-            state.thumbnailData = data
             state.thumbnailImage = data.flatMap(NSImage.init(data:))
         }
         .contextMenu {
@@ -814,13 +831,26 @@ private struct DebugImageThumbnail: View {
 }
 
 private final class DebugImageThumbnailState: ObservableObject {
-    @Published var thumbnailData: Data?
     @Published var thumbnailImage: NSImage?
 }
 
+private actor DebugImageThumbnailCache {
+    private var values: [String: Data] = [:]
+
+    func value(for key: String) -> Data? { values[key] }
+
+    func insert(_ value: Data, for key: String) {
+        values[key] = value
+    }
+}
+
 private enum DebugImageLoader {
+    private static let thumbnailCache = DebugImageThumbnailCache()
+
     static func thumbnailData(from url: URL, maxPixelSize: Int) async -> Data? {
-        await Task.detached(priority: .utility) {
+        let key = "\(url.path)#\(maxPixelSize)"
+        if let cached = await thumbnailCache.value(for: key) { return cached }
+        let data: Data? = await Task.detached(priority: .utility) { () -> Data? in
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(
                     source,
@@ -835,6 +865,10 @@ private enum DebugImageLoader {
             }
             return pngData(for: image)
         }.value
+        if let data {
+            await thumbnailCache.insert(data, for: key)
+        }
+        return data
     }
 
     static func originalData(from url: URL) async -> Data? {
