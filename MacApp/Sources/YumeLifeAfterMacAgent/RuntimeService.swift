@@ -396,7 +396,7 @@ actor RuntimeService {
                     pagination["maxExtraPagesAfterExpected"] = 2
                     pagination["fullPageRegion"] = [
                         "left": 115,
-                        "top": 363,
+                        "top": 340,
                         "right": 1800,
                         "bottom": 810
                     ]

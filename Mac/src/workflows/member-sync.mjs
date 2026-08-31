@@ -22,8 +22,9 @@ import {
 
 // Table paging is deliberately accelerated in one place so member, contribution
 // and inactivity scans keep the same calibrated row endpoints while changing
-// only the time spent moving and settling between pages.
-export const TABLE_PAGE_SPEED_FACTOR = 0.6;
+// only the time spent moving and settling between pages. The previous runtime
+// used 0.60; 0.42 is an additional 30% reduction from that baseline.
+export const TABLE_PAGE_SPEED_FACTOR = 0.42;
 export const TABLE_MOTION_MIN_INTERVAL_MS = 48;
 export const ALIGNED_TABLE_PAGE_STEP_REDUCTION_PX = 1;
 
@@ -925,7 +926,8 @@ export async function capturePagedTable(
           scanRegion: pageDefinition.region,
           scanRegionTopOffsetPx:
             Number(pageDefinition.region?.top) -
-            Number(definition.pagination?.fullPageRegion?.top),
+            Number(definition.region?.top),
+          scanRegionSource: "fixed-member-tail-screenshot-1920x1200",
           fixedRowsBelowPartial: memberRowsPerPage,
           expectedTailOverlapCount,
           expectedTailNewCount: Math.max(
@@ -2163,8 +2165,8 @@ export async function capturePagedTable(
       // can jump past one or more rows. Send the same calibrated drag as
       // small MOVE segments and release immediately at the calibrated
       // endpoint so the next page starts on a row boundary. The calibrated
-      // duration is shortened by 40% to increase speed without changing
-      // either endpoint or the segmented path.
+      // duration is shortened by 58% (an additional 30% over the previous
+      // 0.60 factor) without changing either endpoint or the segmented path.
       const usedTouchFallback = await memberAlignmentSwipe(
         adb,
         swipeFrom,
@@ -2910,39 +2912,26 @@ function memberFullPageDefinition(definition) {
   const pagination = definition.pagination || {};
   const fullPageRegion = pagination.fullPageRegion;
   if (!fullPageRegion) return definition;
-  const rowHeight = Number(pagination.rowHeightPx);
-  const rowAnchorTop = Number(
-    definition.rowAnchorTop ?? pagination.rowAnchorTop
-  );
-  // The end page is not a normal five-row window: the top of the viewport is
-  // the lower half of the previous row.  The old definition kept the normal
-  // OCR top (285), so Apple OCR/Qwen could spend the first fixed slot on that
-  // partial row and the real fifth member was lost behind the sticky bottom
-  // assistant row.  Start the effective crop at the first complete row's
-  // calibrated boundary.  Keep the configured bottom unchanged because the
-  // game's fixed bottom row occupies the area below it and may physically
-  // cover the last real member; the workflow handles that as the one allowed
-  // final-page gap.
-  const configuredTop = Number(fullPageRegion.top);
-  const firstCompleteRowTop =
-    Number.isFinite(rowHeight) && rowHeight > 0 && Number.isFinite(rowAnchorTop)
-      ? rowAnchorTop + rowHeight * 0.5
-      : configuredTop;
-  const effectiveTop = Number.isFinite(firstCompleteRowTop)
-    ? Math.max(configuredTop, Math.round(firstCompleteRowTop))
-    : configuredTop;
+  // The end page has a stable 1920x1200 layout: the black header covers the
+  // upper part of the first visible row, and the first complete member row
+  // starts at y=340. This rectangle is calibrated from the screenshot, not
+  // derived from rowAnchorTop. Deriving it from rowAnchorTop added the
+  // anchor's 30px inset to the half-row offset and moved the crop to y=363,
+  // cutting through the first real member row and letting Qwen invent a name.
+  const effectiveTop = Number(fullPageRegion.top);
   return {
     ...definition,
     region: { ...fullPageRegion, top: effectiveTop },
     pagination: {
       ...pagination,
-      // The effective region already begins below the leading partial row;
-      // retain this marker for the fixed-anchor parser and diagnostics.
+      // The fixed rectangle begins at the first complete visible row. Keep
+      // this marker so fixed row anchors do not reuse the hidden partial row.
       skipLeadingPartialRows: true,
       // Never use a stale seven-row value from an older installed config.
       fullPageRows: Number(pagination.rowsPerPage) || 1,
       rowsPerPage: Number(pagination.rowsPerPage) || 1,
-      fullPageRegionEffectiveTop: effectiveTop
+      fullPageRegionEffectiveTop: effectiveTop,
+      fullPageRegionSource: "fixed-member-tail-screenshot-1920x1200"
     }
   };
 }

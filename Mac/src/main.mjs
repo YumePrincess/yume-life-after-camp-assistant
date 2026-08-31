@@ -346,6 +346,30 @@ async function executeCommand(command, signal) {
       return false;
     }
   };
+  // Page scans emit several progress/events per swipe. Waiting for a debug
+  // screenshot and a Worker round-trip in that hot path makes the Agent drag
+  // visibly in MuMu, even though the same workflow is smooth in the local
+  // diagnostic script. Keep those updates ordered, but let the UI continue;
+  // terminal updates flush the queue before publishing the final state.
+  let runUpdateQueue = Promise.resolve();
+  const enqueueRunUpdate = (operation, phase) => {
+    const next = runUpdateQueue
+      .then(operation, operation)
+      .catch((error) => {
+        console.error(
+          JSON.stringify({
+            event: "run_update_queue_failed",
+            runId: command.runId,
+            phase,
+            message: String(error?.message || error)
+          })
+        );
+      });
+    runUpdateQueue = next;
+  };
+  const flushRunUpdates = async () => {
+    await runUpdateQueue;
+  };
   const report = async (level, step, message, detail = {}) => {
     const localizedMessages = localizedTaskEventMessages(step, message);
     const localizedMessage = localizedMessages[taskLocale];
@@ -361,17 +385,19 @@ async function executeCommand(command, signal) {
       message: localizedMessage,
       detail: localizedDetail
     };
-    await writeTaskLog(event);
-    await updateRunSafely({
-      currentStep: step,
-      message: localizedMessage,
-      detail: localizedDetail,
-      event: {
-        level,
-        step,
+    enqueueRunUpdate(async () => {
+      await writeTaskLog(event);
+      await updateRunSafely({
+        currentStep: step,
         message: localizedMessage,
-        detail: localizedDetail
-      }
+        detail: localizedDetail,
+        event: {
+          level,
+          step,
+          message: localizedMessage,
+          detail: localizedDetail
+        }
+      }, `event:${step}`);
     }, `event:${step}`);
   };
   const progressState = { value: 0.02, step: "starting" };
@@ -388,8 +414,11 @@ async function executeCommand(command, signal) {
     }
     progressState.value = next;
     progressState.step = currentStep;
-    await updateRunSafely(
-      { progress: next, currentStep },
+    enqueueRunUpdate(
+      () => updateRunSafely(
+        { progress: next, currentStep },
+        `progress:${currentStep || "unknown"}`
+      ),
       `progress:${currentStep || "unknown"}`
     );
   };
@@ -480,6 +509,7 @@ async function executeCommand(command, signal) {
         terminalSourceMessage
       );
       terminalMessage = localizedMessages[taskLocale];
+      await flushRunUpdates();
       await updateRunSafely({
         state: terminalState,
         message: terminalMessage,
@@ -508,6 +538,7 @@ async function executeCommand(command, signal) {
         "任务已成功完成，游戏与模拟器已停止"
       );
       terminalMessage = localizedMessages[taskLocale];
+      await flushRunUpdates();
       await updateRunSafely({
         state: "succeeded",
         message: terminalMessage,
@@ -557,6 +588,7 @@ async function executeCommand(command, signal) {
           suppressScheduledRetryReason:
             context.suppressScheduledRetryReason || null
     };
+    await flushRunUpdates();
     if (!interrupted) {
       await writeTaskLog({
         event: "task_failure_detailed",

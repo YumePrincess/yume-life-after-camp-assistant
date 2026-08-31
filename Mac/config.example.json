@@ -495,7 +495,7 @@
         "rowsPerPage": 5,
         "minimumRowsPerPage": 5,
         "maxIncompletePageRetries": 6,
-        "fullPageRegion": { "left": 115, "top": 363, "right": 1800, "bottom": 810 },
+        "fullPageRegion": { "left": 115, "top": 340, "right": 1800, "bottom": 810 },
         "fullPageRows": 5,
         "maxRowAlignments": 1,
         "rowHeightPx": 95,

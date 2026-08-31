@@ -15,7 +15,8 @@ import {
   mergeActivityRecoveryRows,
   selectActivityWarningRows,
   stripStaffColorCodes,
-  tableRowAlignmentAdjustment
+  tableRowAlignmentAdjustment,
+  TABLE_PAGE_SPEED_FACTOR
 } from "../src/workflows/member-sync.mjs";
 import { stripMemberTableIdentityBadge } from "../src/member-name.mjs";
 
@@ -141,7 +142,7 @@ test("contribution and inactivity scans wait three seconds after paging and stop
     assert.deepEqual(config.tables.members.pagination.firstPageTo, { x: 1700, y: 225 });
     assert.deepEqual(config.tables.members.pagination.fullPageRegion, {
       left: 115,
-      top: 363,
+      top: 340,
       right: 1800,
       bottom: 810
     });
@@ -318,6 +319,7 @@ test("local vision rereads every member-details page without dropping native row
 });
 
 test("contribution and activity pages use 11-row calibrated segmented swipes", async () => {
+  assert.equal(TABLE_PAGE_SPEED_FACTOR, 0.42);
   for (const label of ["member-contribution", "member-activity"]) {
     const swipes = [];
     const shellCalls = [];
@@ -1353,7 +1355,7 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
         rowsPerPage: 5,
         minimumRowsPerPage: 1,
         stopAfterStagnantPages: 3,
-        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRegion: { left: 115, top: 340, right: 1800, bottom: 810 },
         fullPageRows: 5,
         rowHeightPx: 95,
         from: { x: 1700, y: 700 },
@@ -1384,7 +1386,7 @@ test("member profile scan uses five-row pages and a full tail page", async () =>
       { top: 285, bottom: 780, rowsPerPage: 5 },
       { top: 285, bottom: 780, rowsPerPage: 5 },
       { top: 285, bottom: 780, rowsPerPage: 5 },
-      { top: 363, bottom: 810, rowsPerPage: 5 }
+      { top: 340, bottom: 810, rowsPerPage: 5 }
     ]
   );
 });
@@ -1460,7 +1462,7 @@ test("calculated tail does not continue beyond the predicted page count", async 
   );
   assert.deepEqual(
     swipes.map(({ durationMs }) => durationMs),
-    [600]
+    [420]
   );
 });
 

@@ -1060,10 +1060,17 @@ export class Vision {
       );
       this.taskPaths.add(cropPath);
       try {
-      const cropTop = Math.max(
-        region.top,
-        Math.floor(anchors[0] - rowSpacing / 2)
-      );
+      // A calculated member tail carries its own fixed screenshot rectangle.
+      // Do not recalculate the top from rowAnchorTop: that anchor already has
+      // the normal region's inset, so doing so clips the first complete tail
+      // row by roughly half a row. Normal pages retain their calibrated
+      // anchor-based crop.
+      const cropTop = definition.pagination?.skipLeadingPartialRows
+        ? region.top
+        : Math.max(
+            region.top,
+            Math.floor(anchors[0] - rowSpacing / 2)
+          );
       // Use the calibrated visible row slots, not the configured maximum for
       // an expanded tail crop. Asking for extra rows makes Qwen shift later
       // names when a light/emoji-only row is hard to see.
