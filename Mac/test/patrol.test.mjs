@@ -8,6 +8,7 @@ import {
   patrolTeamIsFull,
   removeFirstPatrolMemberOutsideCamp,
   sharePatrolTeam,
+  shareActivePatrolUntilDeadline,
   startHardPatrolWithRetry,
   dailyDeadlineAt
 } from "../src/workflows/patrol.mjs";
@@ -1668,13 +1669,13 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
         if (label.includes("-scene-result-")) {
           return {
             path: "success.png",
-            observations: [observation("成功分享至场景频道", 780, 210)]
+            observations: [observation("成功分享到场景频道", 780, 210)]
           };
         }
         return {
           path: "success.png",
           observations: [
-            observation("成功分享至营地频道", 780, 210)
+            observation("成功分享到营地频道", 780, 210)
           ]
         };
       },
@@ -1702,10 +1703,158 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
     { x: 343, y: 1128 },
     { x: 420, y: 890 }
   ]);
-  assert.ok(sleeps.includes(3_000));
+  assert.ok(sleeps.includes(1_500));
   assert.ok(reports.includes("patrol_share_camp_channel_verified"));
   assert.ok(reports.includes("patrol_share_success_immediate"));
   assert.ok(reports.includes("patrol_share_success"));
+});
+
+test("patrol share treats the channel selector disappearing as success", async () => {
+  const taps = [];
+  const reports = [];
+  const context = {
+    config: patrolConfig(),
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    vision: {
+      async capture(label) {
+        if (
+          label === "patrol-share-team-page" ||
+          label.includes("-recruit-verify-")
+        ) {
+          return {
+            path: "team.png",
+            observations: [
+              observation("保卫古籍", 160, 20),
+              observation("招募", 300, 1100)
+            ]
+          };
+        }
+        if (label.includes("-camp-channel-menu-")) {
+          return {
+            path: "camp-menu.png",
+            observations: [observation("营地频道", 350, 870)]
+          };
+        }
+        if (label.includes("-scene-channel-menu-")) {
+          return {
+            path: "scene-menu.png",
+            observations: [observation("场景频道", 350, 870)]
+          };
+        }
+        return {
+          path: "team-after-share.png",
+          observations: [
+            observation("保卫古籍", 160, 20),
+            observation("招募", 300, 1100)
+          ]
+        };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await sharePatrolTeam(context);
+
+  assert.deepEqual(taps, [
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 },
+    { x: 343, y: 1128 },
+    { x: 420, y: 890 }
+  ]);
+  assert.equal(
+    reports.filter((step) => step === "patrol_share_success_selector_closed").length,
+    2
+  );
+});
+
+test("active patrol share retry reports and waits for the configured interval", async () => {
+  const reports = [];
+  const sleeps = [];
+  const config = patrolConfig();
+  config.patrolTeamUi.share.channelAttempts = 1;
+  config.patrolTeamUi.share.recruitMenuWaitMs = 1;
+  config.patrolTeamUi.share.stepSettleMs = 1;
+  let now = Date.now();
+  const deadline = now + 11 * 60_000;
+  const originalNow = Date.now;
+  Date.now = () => now;
+  try {
+    const context = {
+      config,
+      ui: {
+        async tap() {}
+      },
+      vision: {
+        async capture(label) {
+          if (
+            label === "patrol-share-team-page" ||
+            label.includes("-recruit-verify-")
+          ) {
+            return {
+              path: "team.png",
+              observations: [
+                observation("保卫古籍", 160, 20),
+                observation("招募", 300, 1100)
+              ]
+            };
+          }
+          if (label.includes("-camp-channel-menu-")) {
+            return {
+              path: "camp-menu.png",
+              observations: [observation("营地频道", 350, 870)]
+            };
+          }
+          return { path: "empty.png", observations: [] };
+        },
+        find(observations, query, mode) {
+          return observations.find((item) =>
+            mode === "exact" ? item.text === query : item.text.includes(query)
+          );
+        }
+      },
+      async sleep(milliseconds) {
+        sleeps.push(milliseconds);
+        now += milliseconds;
+      },
+      async report(_level, _step, message, detail) {
+        reports.push({ message, detail });
+      }
+    };
+
+    await assert.rejects(
+      shareActivePatrolUntilDeadline(
+        context,
+        undefined,
+        deadline,
+        { shareIntervalMinutes: 10 },
+        "patrol_final_share"
+      ),
+      /PATROL_SHARE_CHANNEL_MENU_UNVERIFIED/
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+
+  const retry = reports.find(
+    (item) => item.detail?.phase === "patrol_final_share"
+  );
+  assert.ok(retry);
+  assert.match(retry.message, /按预设分享间隔 10 分钟后重试/);
+  assert.doesNotMatch(retry.message, /111/);
+  assert.ok(sleeps.includes(10 * 60_000));
+  assert.equal(retry.detail.retryDelayMs, 10 * 60_000);
 });
 
 test("patrol share rereads a missed recruit button and clicks its OCR position", async () => {

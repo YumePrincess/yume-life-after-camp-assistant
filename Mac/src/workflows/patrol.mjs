@@ -299,7 +299,7 @@ async function continuePatrolSharesUntilDeadline(
   await closePatrolPanelBeforeExit(context, signal);
 }
 
-async function shareActivePatrolUntilDeadline(
+export async function shareActivePatrolUntilDeadline(
   context,
   signal,
   patrolDeadlineAt,
@@ -321,13 +321,21 @@ async function shareActivePatrolUntilDeadline(
       lastError = error;
       const remainingMs = Math.max(0, patrolDeadlineAt - Date.now());
       if (remainingMs <= 0) break;
+      const retryDelayMs = Math.min(shareIntervalMs, remainingMs);
       await report(
         "warning",
         "patrol_active_route_share_retry",
-        `有效巡逻队分享阶段（${phase}）未确认成功；保留队伍，不执行离队，等待后在预设结束时间前重试（${Math.ceil(remainingMs / 60_000)} 分钟内）`,
-        { phase, remainingMs, error: String(error?.message || error) }
+        `有效巡逻队分享阶段（${phase}）未确认成功；保留队伍，不执行离队，按预设分享间隔 ${formatPatrolDelay(retryDelayMs)}后重试`,
+        {
+          phase,
+          remainingMs,
+          retryDelayMs,
+          retryAt: new Date(Date.now() + retryDelayMs).toISOString(),
+          configuredShareIntervalMinutes: shareIntervalMs / 60_000,
+          error: String(error?.message || error)
+        }
       );
-      await delay(Math.min(shareIntervalMs, remainingMs), signal);
+      await (context.sleep || delay)(retryDelayMs, signal);
     }
   }
   if (lastError) throw lastError;
@@ -2724,11 +2732,11 @@ export async function sharePatrolTeam(context, signal) {
   }
   const sleep = context.sleep || delay;
   const settleMs = Math.max(150, Number(controls.stepSettleMs) || 500);
-  // “招募”打开的频道列表有入场动画。必须完整等待三秒后再 OCR，
+  // “招募”打开的频道列表有入场动画。等待 1.5 秒后再 OCR，
   // 否则会把尚未稳定的列表当成可点击状态。
   const recruitMenuWaitMs = Math.max(
-    3_000,
-    Number(controls.recruitMenuWaitMs) || 3_000
+    1_500,
+    Number(controls.recruitMenuWaitMs) || 1_500
   );
   let screen = await capturePatrolScreen(
     vision,
@@ -2783,7 +2791,11 @@ export async function sharePatrolTeam(context, signal) {
       text: "营地频道",
       texts: controls.campChannelTexts || ["营地频道"],
       textRegion: controls.campChannelTextRegion || controls.channelMenuRegion,
-      successTexts: controls.successTexts || ["成功分享至营地频道", "分享成功"]
+      successTexts: mergePatrolTexts(controls.successTexts, [
+        "成功分享到营地频道",
+        "成功分享至营地频道",
+        "分享成功"
+      ])
     },
     {
       key: "scene",
@@ -2793,7 +2805,11 @@ export async function sharePatrolTeam(context, signal) {
         controls.sceneChannelTextRegion ||
         controls.campChannelTextRegion ||
         controls.channelMenuRegion,
-      successTexts: controls.sceneSuccessTexts || ["成功分享至场景频道", "分享成功"]
+      successTexts: mergePatrolTexts(controls.sceneSuccessTexts, [
+        "成功分享到场景频道",
+        "成功分享至场景频道",
+        "分享成功"
+      ])
     }
   ];
   for (const target of channelTargets) {
@@ -2816,7 +2832,9 @@ export async function sharePatrolTeam(context, signal) {
     await report(
       "info",
       "patrol_share_success",
-      `已确认“成功分享至${target.text}”`
+      result.successEvidence === "selector-closed"
+        ? `已确认“${target.text}”分享成功：分享目标选择框已消失`
+        : `已确认“成功分享至${target.text}”`
     );
     await sleep(settleMs, signal);
   }
@@ -2973,7 +2991,7 @@ async function sharePatrolChannel(context, signal, common, target) {
     await report(
       "info",
       "patrol_share_channel_wait",
-      `已点击“招募”，等待 3 秒让分享${target.text}列表稳定后再 OCR`
+      `已点击“招募”，等待 ${formatPatrolSeconds(recruitMenuWaitMs)} 秒让分享${target.text}列表稳定后再 OCR`
     );
     await sleep(recruitMenuWaitMs, signal);
     const menuScreen = await capturePatrolScreen(
@@ -3045,7 +3063,7 @@ async function sharePatrolChannel(context, signal, common, target) {
       await report(
         "warning",
         "patrol_share_channel_menu_unverified",
-        `第 ${attempt}/${shareAttempts} 轮点击“招募”后未识别到“${target.text}”；等待 3 秒后重新点击“招募”再识别`
+        `第 ${attempt}/${shareAttempts} 轮点击“招募”后未识别到“${target.text}”；等待 ${formatPatrolSeconds(recruitMenuWaitMs)} 秒后重新点击“招募”再识别`
       );
       if (fullTeamMatch) {
         await report(
@@ -3097,7 +3115,33 @@ async function sharePatrolChannel(context, signal, common, target) {
         "patrol_share_success_immediate",
         `点击“${target.text}”后立即在固定提示区域确认分享成功`
       );
-      return { skipped: false, success: true, immediate: true };
+      return {
+        skipped: false,
+        success: true,
+        immediate: true,
+        successEvidence: "toast"
+      };
+    }
+    if (
+      channelMenuVisible &&
+      !findAnyTextInRegion(
+        vision,
+        immediateResultScreen.observations,
+        target.texts,
+        target.textRegion
+      )
+    ) {
+      await report(
+        "info",
+        "patrol_share_success_selector_closed",
+        `点击“${target.text}”后分享目标选择框已消失，判定分享成功`
+      );
+      return {
+        skipped: false,
+        success: true,
+        immediate: true,
+        successEvidence: "selector-closed"
+      };
     }
     await sleep(settleMs, signal);
     const resultScreen = await capturePatrolScreen(
@@ -3113,7 +3157,38 @@ async function sharePatrolChannel(context, signal, common, target) {
         controls.successRegion
       )
     );
-    if (success) return { skipped: false, success: true };
+    if (success) {
+      await report(
+        "info",
+        "patrol_share_success_settled",
+        `点击“${target.text}”后在稳定画面确认分享成功`
+      );
+      return {
+        skipped: false,
+        success: true,
+        successEvidence: "toast"
+      };
+    }
+    if (
+      channelMenuVisible &&
+      !findAnyTextInRegion(
+        vision,
+        resultScreen.observations,
+        target.texts,
+        target.textRegion
+      )
+    ) {
+      await report(
+        "info",
+        "patrol_share_success_selector_closed",
+        `点击“${target.text}”后分享目标选择框已消失，判定分享成功`
+      );
+      return {
+        skipped: false,
+        success: true,
+        successEvidence: "selector-closed"
+      };
+    }
     await report(
       "warning",
       "patrol_share_result_unverified_retry",
@@ -3431,6 +3506,27 @@ function patrolTeamCreated(vision, observations, controls) {
 
 function hasTextInRegion(vision, observations, text, region) {
   return Boolean(findTextInRegion(vision, observations, text, region));
+}
+
+function mergePatrolTexts(configured, defaults) {
+  return [
+    ...(Array.isArray(configured) ? configured : []),
+    ...defaults
+  ].filter((text, index, texts) => texts.indexOf(text) === index);
+}
+
+function formatPatrolDelay(milliseconds) {
+  const ms = Math.max(0, Number(milliseconds) || 0);
+  if (ms >= 60_000) {
+    const minutes = ms / 60_000;
+    return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)} 分钟`;
+  }
+  return `${Math.max(1, Math.ceil(ms / 1_000))} 秒`;
+}
+
+function formatPatrolSeconds(milliseconds) {
+  const seconds = Math.max(0, Number(milliseconds) || 0) / 1_000;
+  return Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1);
 }
 
 function findTextInRegion(vision, observations, text, region) {

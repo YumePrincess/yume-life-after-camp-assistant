@@ -676,6 +676,17 @@ actor RuntimeService {
         }
 
         var share = patrol["share"] as? [String: Any] ?? [:]
+        if let recruitMenuWait = share["recruitMenuWaitMs"] as? NSNumber,
+           recruitMenuWait.intValue == 3_000 {
+            // Beta 137 shortens the stable-menu wait from the old fixed 3 s
+            // default to 1.5 s. Migrate only that legacy default so an
+            // administrator's intentional custom value remains intact.
+            share["recruitMenuWaitMs"] = 1_500
+            changed = true
+        } else if share["recruitMenuWaitMs"] == nil {
+            share["recruitMenuWaitMs"] = 1_500
+            changed = true
+        }
         if let attempts = share["recruitAttempts"] as? NSNumber,
            attempts.intValue < 15 {
             share["recruitAttempts"] = 15

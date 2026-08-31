@@ -398,7 +398,7 @@
       "recruitRecoveryRegion": { "left": 0, "top": 900, "right": 850, "bottom": 1200 },
       "recruitAiAttempts": 2,
       "recruitAttempts": 10,
-      "recruitMenuWaitMs": 3000,
+      "recruitMenuWaitMs": 1500,
       "recruitOverlayTexts": ["邀请", "推荐组队", "最近组队", "巡猎车队", "萌芽师徒"],
       "recruitOverlayRegion": { "left": 250, "top": 150, "right": 1350, "bottom": 820 },
       "recruitOverlayDismissPoint": { "x": 1800, "y": 900 },
@@ -419,9 +419,9 @@
       "campChannelTextRegion": { "left": 380, "top": 580, "right": 720, "bottom": 1150 },
       "sceneChannelTextRegion": { "left": 380, "top": 580, "right": 720, "bottom": 1150 },
       "sceneChannelTexts": ["场景频道", "场景"],
-      "sceneSuccessTexts": ["成功分享至场景频道", "分享成功"],
+      "sceneSuccessTexts": ["成功分享到场景频道", "成功分享至场景频道", "分享成功"],
       "channelAttempts": 10,
-      "successTexts": ["成功分享至营地频道", "分享成功"],
+      "successTexts": ["成功分享到营地频道", "成功分享至营地频道", "分享成功"],
       "successRegion": { "left": 650, "top": 150, "right": 1300, "bottom": 330 },
       "stepSettleMs": 500
     }
