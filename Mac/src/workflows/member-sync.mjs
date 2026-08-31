@@ -1402,7 +1402,16 @@ export async function capturePagedTable(
       // Only an expanded end-page crop (including the remainder-one
       // penultimate recovery) is allowed to reconcile OCR variants because
       // it can contain the previous page's half-visible row.
-      const rawRows = filterMemberDetailRows(rows);
+      let rawRows = filterMemberDetailRows(rows);
+      if (fullPageRead && page > 0) {
+        // The first complete slot in the expanded tail can be an existing
+        // member whose name was damaged by the clipped row above it.  Restore
+        // that name only when the following two exact names and the row data
+        // identify a contiguous suffix of the previous page.  This keeps a
+        // genuinely new leading member untouched while preventing a model
+        // substitution from becoming a new roster entry.
+        rawRows = restoreMemberTailLeadingOverlap(previousRows, rawRows);
+      }
       if (fullPageRead && page > 0) {
         // The expanded tail crop can return the unique rows before the
         // repeated rows.  Classify duplicates by their actual name/key,
@@ -1532,6 +1541,23 @@ export async function capturePagedTable(
         reconciledRecovery,
         byName
       );
+      const expectedTailNewRows =
+        expectedCount !== null
+          ? Math.max(1, expectedCount - byName.size)
+          : Math.max(1, memberRowsPerPage - (expectedTailOverlapCount || 0));
+      const nativeTailHasOverlap =
+        tailOverlapKeys.size > 0 ||
+        rows.some((row) => byName.has(memberProfileNameKey(row?.name)));
+      // The game can hide one real member behind the fixed assistant row. If
+      // native OCR already supplies all but that one tail member, do not fill
+      // the gap with a model-only name from the clipped/overlapping slots.
+      // Such a candidate is exactly how the recurring invented tail player
+      // was promoted to a full roster entry.
+      const nativeTailCanUseAllowedGap =
+        fullPageRead &&
+        expectedCount !== null &&
+        nativeTailHasOverlap &&
+        originalNovelty >= Math.max(1, expectedTailNewRows - 1);
       // The forced member advisor can correct a duplicated OCR name while
       // omitting another valid row (the live failure was a tail page where
       // it returned four rows and dropped Orange). For the calculated tail,
@@ -1544,7 +1570,8 @@ export async function capturePagedTable(
             reconciledRecovery,
             rows,
             Math.max(1, visibleRows),
-            byName
+            byName,
+            { preferOriginal: nativeTailCanUseAllowedGap }
           )
         : reconciledRecovery;
       const recoveryCandidateNovelty = pageNovelMemberCount(
@@ -3275,11 +3302,56 @@ function pageNovelMemberCount(rows, byName) {
   return added;
 }
 
+function restoreMemberTailLeadingOverlap(previousRows, currentRows) {
+  const previous = Array.isArray(previousRows) ? previousRows : [];
+  const current = Array.isArray(currentRows) ? currentRows : [];
+  if (previous.length < 3 || current.length < 3) return current;
+
+  // Look for two exact consecutive names that anchor the tail to the prior
+  // page. A single anchor is intentionally insufficient: a new leading row
+  // followed by one repeated row is a valid tail layout.
+  for (let currentStart = 1; currentStart < current.length - 1; currentStart += 1) {
+    for (let previousStart = 1; previousStart < previous.length - 1; previousStart += 1) {
+      const overlap = Math.min(
+        current.length - currentStart,
+        previous.length - previousStart
+      );
+      if (overlap < 2) continue;
+      let exactAnchors = 0;
+      while (
+        exactAnchors < overlap &&
+        memberProfileNameKey(current[currentStart + exactAnchors]?.name) ===
+          memberProfileNameKey(previous[previousStart + exactAnchors]?.name)
+      ) {
+        exactAnchors += 1;
+      }
+      if (exactAnchors < 2) continue;
+
+      const precedingCurrent = current[currentStart - 1];
+      const precedingPrevious = previous[previousStart - 1];
+      if (
+        !precedingCurrent?.name ||
+        !precedingPrevious?.name ||
+        !sameMemberProfileIdentity(precedingPrevious, precedingCurrent)
+      ) {
+        continue;
+      }
+      return current.map((row, index) =>
+        index === currentStart - 1
+          ? { ...row, name: precedingPrevious.name }
+          : row
+      );
+    }
+  }
+  return current;
+}
+
 function mergeMemberRecoveryCandidates(
   recoveredRows,
   originalRows,
   limit,
-  existingMembers = null
+  existingMembers = null,
+  options = {}
 ) {
   const merged = [];
   const seen = new Set();
@@ -3297,6 +3369,17 @@ function mergeMemberRecoveryCandidates(
     seen.add(key);
     merged.push(row);
   };
+  if (options?.preferOriginal === true) {
+    // A final page with an observed overlap may legitimately be one row short
+    // because the last member is behind the fixed assistant row. Keep the
+    // source-order native rows in that case; a recovery-only candidate has no
+    // physical row evidence and must not be used to manufacture completeness.
+    for (const row of originalRows || []) {
+      if (merged.length >= limit) break;
+      add(row);
+    }
+    return merged.slice(0, limit);
+  }
   // The tail can contain a sticky copy of the current player.  If the
   // advisor returns the missing row but lists already-known rows first,
   // adding recovered rows in source order can fill the limit before the

@@ -268,6 +268,24 @@ final class AppModel: ObservableObject {
                 selectedTaskDebugImages = []
                 logRunIdFilter = nil
             }
+            // A running debug task appends immutable image files while the
+            // log text may remain unchanged between polls. Refresh the
+            // selected task's directory on every log poll so newly captured
+            // screenshots appear without leaving and reopening the task.
+            await refreshSelectedTaskDebugImages()
+        }
+    }
+
+    private func refreshSelectedTaskDebugImages(for requestedRunID: String? = nil) async {
+        let runID = requestedRunID ?? selectedTaskLogID
+        guard let runID, !runID.isEmpty else { return }
+        let refreshedImages = await runtime.debugImages(runID: runID)
+        // Selection can change while the actor-backed directory read is in
+        // flight. Never apply a previous task's images to the newly selected
+        // task.
+        guard selectedTaskLogID == runID else { return }
+        if selectedTaskDebugImages.map(\.id) != refreshedImages.map(\.id) {
+            selectedTaskDebugImages = refreshedImages
         }
     }
 
@@ -337,7 +355,7 @@ final class AppModel: ObservableObject {
         }
         Task { [weak self] in
             guard let self else { return }
-            selectedTaskDebugImages = await runtime.debugImages(runID: runID)
+            await refreshSelectedTaskDebugImages(for: runID)
         }
     }
 

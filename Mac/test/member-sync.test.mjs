@@ -2217,6 +2217,81 @@ test("tail recovery keeps a valid native row when the advisor drops it", async (
   assert.equal(recoveryCalls.length, 1);
 });
 
+test("member tail does not promote a recovery-only name when one row is hidden", async () => {
+  const reports = [];
+  const context = {
+    vision: {
+      async capture(label) {
+        return { path: `${label}.png`, observations: [] };
+      },
+      async extractTableRows(_path, definition, label) {
+        if (definition.region.bottom === 810 && label.includes("page-recovery")) {
+          return [
+            { name: "北付不仅白市" },
+            { name: "重复二" },
+            { name: "重复一" },
+            { name: "新成员一" },
+            { name: "新成员二" }
+          ];
+        }
+        if (definition.region.bottom === 810) {
+          return [
+            { name: "重复一" },
+            { name: "重复二" },
+            { name: "重复二" },
+            { name: "新成员一" },
+            { name: "新成员二" }
+          ];
+        }
+        return [
+          { name: "重复一" },
+          { name: "重复二" },
+          { name: "成员三" },
+          { name: "成员四" },
+          { name: "成员五" }
+        ];
+      }
+    },
+    adb: { async mouseSwipe() {} },
+    ui: { async afterAction() {} },
+    async report(_level, step, _message, detail) {
+      reports.push({ step, detail });
+    }
+  };
+  const rows = await capturePagedTable(
+    context,
+    "member-details",
+    {
+      extractionMode: "hybrid",
+      headerPattern: [],
+      region: { left: 115, top: 285, right: 1800, bottom: 780 },
+      pagination: {
+        maxPages: 2,
+        rowsPerPage: 5,
+        minimumRowsPerPage: 1,
+        stopAfterStagnantPages: 3,
+        fullPageRegion: { left: 115, top: 285, right: 1800, bottom: 810 },
+        fullPageRows: 5,
+        from: { x: 1700, y: 700 },
+        to: { x: 1700, y: 225 },
+        firstPageFrom: { x: 1700, y: 700 },
+        firstPageTo: { x: 1700, y: 225 },
+        durationMs: 1
+      }
+    },
+    undefined,
+    { expectedCount: 8 }
+  );
+
+  assert.equal(rows.length, 7);
+  assert.deepEqual(rows.slice(5).map((row) => row.name), [
+    "新成员一",
+    "新成员二"
+  ]);
+  assert.ok(!rows.some((row) => row.name === "北付不仅白市"));
+  assert.ok(reports.some(({ step }) => step === "member_details_tail_missing_allowed"));
+});
+
 test("member profile scan stops at the calculated tail when OCR count is short", async () => {
   const swipes = [];
   const reports = [];
