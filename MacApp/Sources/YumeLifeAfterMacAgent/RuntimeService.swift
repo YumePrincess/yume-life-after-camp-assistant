@@ -478,6 +478,26 @@ actor RuntimeService {
     private func migratePatrolSettings(_ object: inout [String: Any]) -> Bool {
         var changed = false
         var patrol = object["patrolTeamUi"] as? [String: Any] ?? [:]
+        let teamPanelVerificationTexts = [
+            "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
+            "目标", "更换队伍", "招募"
+        ]
+        var patrolFlows = object["flows"] as? [String: Any] ?? [:]
+        for flowName in ["openTeamPanel", "openPatrolTeamPanelAfterAccept"] {
+            guard var actions = patrolFlows[flowName] as? [[String: Any]] else { continue }
+            for index in actions.indices where actions[index]["op"] as? String == "openTeamPanelGuarded" {
+                if actions[index]["panelTexts"] as? [String] != teamPanelVerificationTexts {
+                    actions[index]["panelTexts"] = teamPanelVerificationTexts
+                    changed = true
+                }
+                if (actions[index]["minimumPanelTexts"] as? NSNumber)?.intValue != 4 {
+                    actions[index]["minimumPanelTexts"] = 4
+                    changed = true
+                }
+            }
+            patrolFlows[flowName] = actions
+        }
+        if !patrolFlows.isEmpty { object["flows"] = patrolFlows }
         for key in [
             "hostMouseUnlockBeforeCreate",
             "hostMouseUnlockAttempts",
@@ -788,8 +808,8 @@ actor RuntimeService {
                 "cardPoint": ["x": 350, "y": 150],
                 "requiredCardTexts": ["自动匹配"],
                 "memberStateTexts": ["暂无队员加入", "等待队员加入"],
-                "panelTexts": ["调整", "离开队伍"],
-                "minimumPanelTexts": 2,
+                "panelTexts": ["调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式", "目标", "更换队伍", "招募"],
+                "minimumPanelTexts": 4,
                 "panelRegion": ["left": 0, "top": 0, "right": 1920, "bottom": 1180],
                 "cardRegion": ["left": 0, "top": 0, "right": 1920, "bottom": 1180],
                 "memberNameRegion": ["left": 0, "top": 120, "right": 620, "bottom": 520],
@@ -1041,6 +1061,21 @@ actor RuntimeService {
             throw RuntimeError.failed(String(localized: "Agent health check failed."))
         }
         return try JSONDecoder().decode(AgentHealth.self, from: data)
+    }
+
+    func setAgentActivity(active: Bool, debugToken: String) async throws {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:8091/activity")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 5
+        request.setValue("Bearer \(debugToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["active": active])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            throw RuntimeError.failed(payload?["error"] as? String ?? "HTTP \(status)")
+        }
     }
 
     func abort(debugToken: String) async throws {

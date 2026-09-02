@@ -276,6 +276,20 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func toggleAgentActivity() async {
+        guard !isBusy, !debugToken.isEmpty else { return }
+        isBusy = true
+        defer { isBusy = false }
+        let nextActive = health?.manualActive != true
+        do {
+            try await runtime.setAgentActivity(active: nextActive, debugToken: debugToken)
+            await refreshStatusAndLogs()
+            statusMessage = text(nextActive ? "Agent activity restored." : "Agent entered lazy mode.")
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
     private func refreshSelectedTaskDebugImages(for requestedRunID: String? = nil) async {
         let runID = requestedRunID ?? selectedTaskLogID
         guard let runID, !runID.isEmpty else { return }

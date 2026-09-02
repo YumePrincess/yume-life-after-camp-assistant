@@ -39,10 +39,18 @@ const once = process.argv.includes("--once");
 let active = null;
 let activeTaskDebug = null;
 let stopping = false;
+let manualActive = false;
+let pollingMode = "lazy";
+let nextScheduledAt = null;
+let scheduledTaskTimes = [];
+let scheduledWindowMinutes = 15;
+let lastPollingPolicySignature = "";
 const runtimeLocale = {
   value: normalizeTaskLocale(config.server.locale)
 };
 let nextPollSeconds = config.server.pollSeconds;
+let resolvePollWake = null;
+let lastHeartbeatAt = 0;
 const shutdownController = new AbortController();
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -97,13 +105,51 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 do {
   try {
-    await sendHeartbeat(shutdownController.signal);
-
-    const pollResponse = await api.nextCommand(Boolean(active), runtimeLocale.value);
+    const pollResponse = await api.nextCommand(
+      Boolean(active),
+      runtimeLocale.value,
+      shutdownController.signal,
+      manualActive
+    );
     const { command } = pollResponse;
-    if (Number.isFinite(pollResponse.pollAfterSeconds)) {
-      nextPollSeconds = Math.max(1, Math.min(3600, pollResponse.pollAfterSeconds));
+    pollingMode = ["active", "scheduled", "lazy"].includes(pollResponse.pollingMode)
+      ? pollResponse.pollingMode
+      : "lazy";
+    nextScheduledAt = typeof pollResponse.nextScheduledAt === "string"
+      ? pollResponse.nextScheduledAt
+      : null;
+    if (Array.isArray(pollResponse.scheduledTaskTimes)) {
+      scheduledTaskTimes = pollResponse.scheduledTaskTimes.filter(
+        (value) => typeof value === "string"
+      );
     }
+    if (Number.isFinite(pollResponse.scheduledWindowMinutes)) {
+      scheduledWindowMinutes = pollResponse.scheduledWindowMinutes;
+    }
+    const pollingPolicySignature = JSON.stringify({
+      pollingMode,
+      nextScheduledAt,
+      scheduledTaskTimes,
+      scheduledWindowMinutes
+    });
+    if (pollingPolicySignature !== lastPollingPolicySignature) {
+      lastPollingPolicySignature = pollingPolicySignature;
+      console.log(JSON.stringify({
+        event: "polling_policy_refreshed",
+        pollingMode,
+        nextScheduledAt,
+        scheduledTaskTimes,
+        scheduledWindowMinutes,
+        manualActive
+      }));
+    }
+    if (Number.isFinite(pollResponse.pollAfterSeconds)) {
+      nextPollSeconds = Math.max(1, Math.min(86_400, pollResponse.pollAfterSeconds));
+    }
+    // Refresh the server-side presence after the policy exchange so the first
+    // request on a lazy->active/scheduled transition always uses the latest
+    // task plan returned by Workers.
+    await sendHeartbeat(shutdownController.signal);
     if (command?.type === "interrupt_task") {
       const target = command.payload?.runId;
       if (active && active.command.runId === target) {
@@ -168,12 +214,19 @@ if (stopping) await sendOfflineHeartbeat();
 if (active) await active.promise.catch(() => undefined);
 await closeDebugServer(debugServer);
 
-function heartbeatPayload(status = active ? "running" : "idle") {
+function heartbeatPayload(status = "auto") {
+  const activityStatus = active
+    ? "running"
+    : manualActive
+      ? "active"
+      : pollingMode === "scheduled"
+        ? "scheduled"
+        : "lazy";
   return {
     locale: runtimeLocale.value,
     activeRunId: active?.command.runId || null,
     activeTaskKey: active?.command.payload?.taskKey || null,
-    status,
+    status: status === "auto" ? activityStatus : status,
     capabilities: {
       backgroundAdbMouse: true,
       visionOcr: true,
@@ -181,6 +234,9 @@ function heartbeatPayload(status = active ? "running" : "idle") {
       stopEmulatorAfterTask: config.mumu.stopEmulatorAfterTask
     },
     detail: {
+      activityMode: activityStatus,
+      manualActive,
+      lazy: activityStatus === "lazy",
       adbSerial: config.adb.serial,
       emulatorInstance:
         mumu.currentInstance()?.index ?? config.mumu.instanceIndex,
@@ -191,7 +247,14 @@ function heartbeatPayload(status = active ? "running" : "idle") {
 }
 
 async function sendHeartbeat(signal) {
+  if (
+    lastHeartbeatAt > 0 &&
+    Date.now() - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS
+  ) {
+    return { skipped: true };
+  }
   const heartbeat = await api.heartbeat(heartbeatPayload(), signal);
+  lastHeartbeatAt = Date.now();
   if (active && heartbeat.cancelRequested === true) {
     active.controller.abort(new Error("管理员请求中断"));
   }
@@ -215,14 +278,33 @@ async function sendOfflineHeartbeat() {
 
 async function waitForNextPoll(seconds) {
   const deadline = Date.now() + Math.max(1, seconds) * 1000;
-  while (!stopping) {
+  while (!stopping && Date.now() < deadline) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) return;
-    await delay(
-      Math.min(remaining, HEARTBEAT_INTERVAL_MS),
-      shutdownController.signal
+    const shouldHeartbeat = Boolean(
+      active || manualActive || pollingMode === "scheduled"
     );
-    if (Date.now() < deadline && !stopping) {
+    const waitMs = shouldHeartbeat
+      ? Math.min(remaining, HEARTBEAT_INTERVAL_MS)
+      : remaining;
+    let wake;
+    let wokeByActivity = false;
+    try {
+      wake = new Promise((resolve) => {
+        resolvePollWake = () => {
+          wokeByActivity = true;
+          resolve();
+        };
+      });
+      await Promise.race([
+        delay(waitMs, shutdownController.signal).catch(() => undefined),
+        wake
+      ]);
+    } finally {
+      resolvePollWake = null;
+    }
+    if (wokeByActivity) return;
+    if (Date.now() < deadline && !stopping && shouldHeartbeat) {
       try {
         await sendHeartbeat(shutdownController.signal);
       } catch (error) {
@@ -707,6 +789,12 @@ function createDebugServer() {
           locale: runtimeLocale.value,
           activeRunId: active?.command.runId || null,
           activeTaskKey: active?.command.payload?.taskKey || null,
+          manualActive,
+          pollingMode,
+          nextScheduledAt,
+          scheduledTaskTimes,
+          scheduledWindowMinutes,
+          lazy: !active && !manualActive && pollingMode === "lazy",
           adbSerial: config.adb.serial,
           stopEmulatorAfterTask: config.mumu.stopEmulatorAfterTask,
           debugCaptureScreenshots: config.debug.captureScreenshots === true,
@@ -719,6 +807,29 @@ function createDebugServer() {
           }))
         })
       );
+      return;
+    }
+    if (request.method === "POST" && request.url === "/activity") {
+      const body = await readJsonRequest(request);
+      manualActive = body.active === true;
+      pollingMode = manualActive ? "active" : "lazy";
+      lastHeartbeatAt = 0;
+      resolvePollWake?.();
+      try {
+        await sendHeartbeat();
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            event: "activity_heartbeat_failed",
+            message: error.message
+          })
+        );
+      }
+      response.end(JSON.stringify({
+        ok: true,
+        manualActive,
+        lazy: !manualActive && !active
+      }));
       return;
     }
     if (request.method === "POST" && request.url === "/locale") {

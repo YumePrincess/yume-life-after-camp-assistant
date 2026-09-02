@@ -14,6 +14,10 @@
 "Idle" = "閒置";
 "ADB not connected" = "ADB 未連線";
 "Start" = "啟動";
+"Restore activity" = "恢復活躍";
+"Enter lazy mode" = "解除活躍";
+"Agent activity restored." = "Agent 已恢復活躍。";
+"Agent entered lazy mode." = "Agent 已進入 lazy 狀態。";
 "Stop" = "停止";
 "Restart" = "重新啟動";
 "Install / Repair" = "安裝 / 修復";

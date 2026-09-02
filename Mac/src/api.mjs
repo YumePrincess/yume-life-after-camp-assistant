@@ -53,7 +53,7 @@ export class AgentApi {
     );
   }
 
-  nextCommand(busy, localeOrSignal, maybeSignal) {
+  nextCommand(busy, localeOrSignal, maybeSignal, manualActive = false) {
     // Keep the old two-argument shape working for diagnostic scripts and
     // third-party local callers while the Agent now sends its UI locale.
     const hasLocale = typeof localeOrSignal === "string";
@@ -61,7 +61,7 @@ export class AgentApi {
     const signal = hasLocale ? maybeSignal : localeOrSignal;
     return this.request(
       "/api/agent/next-command",
-      { agentId: this.agentId, busy, locale },
+      { agentId: this.agentId, busy, manualActive: manualActive === true, locale },
       signal
     );
   }

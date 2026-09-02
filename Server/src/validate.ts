@@ -615,6 +615,15 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
               2,
               3600
             ),
+      scheduledWindowMinutes:
+        pollingSource.scheduledWindowMinutes === undefined
+          ? 15
+          : integer(
+              pollingSource.scheduledWindowMinutes,
+              "automationConfig.agentPolling.scheduledWindowMinutes",
+              1,
+              240
+            ),
       claimTimeoutMinutes:
         pollingSource.claimTimeoutMinutes === undefined
           ? 45

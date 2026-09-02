@@ -88,10 +88,12 @@ import {
 } from "./tasks";
 import {
   nextTechnologyTargetDate,
+  isWithinScheduledTaskPollingWindow,
+  nextScheduledTaskPollingWindowStart,
+  scheduledTaskClocks,
   weekdayForDateKey,
   zonedDateTimeToIso,
-  zonedDateKey,
-  zonedParts
+  zonedDateKey
 } from "./time";
 import {
   preserveAutomationScheduleTimes,
@@ -1621,11 +1623,14 @@ async function handleAgentApi(
             attemptCount: command.attempt_count
           }
         : null,
-      pollAfterSeconds: pollingIntervalSeconds(
+      ...pollingDecision(
         bundle.automationConfig,
         body.busy === true,
-        new Date()
-      )
+        new Date(),
+        body.manualActive === true
+      ),
+      scheduledTaskTimes: scheduledTaskClocks(bundle.automationConfig.tasks),
+      scheduledWindowMinutes: bundle.automationConfig.agentPolling.scheduledWindowMinutes
     });
   }
   if (path === "/api/agent/bootstrap" && method === "POST") {
@@ -2192,29 +2197,53 @@ function demoTemporaryKeys(result: TemporaryKeysResult): TemporaryKeysResult {
   };
 }
 
-function pollingIntervalSeconds(
+function pollingDecision(
   automation: ConfigBundle["automationConfig"],
   busy: boolean,
-  now: Date
-): number {
-  if (busy) return automation.agentPolling.activeSeconds;
-  const parts = zonedParts(now, automation.timezone);
-  const minute = parts.hour * 60 + parts.minute;
-  const matching = automation.agentPolling.windows
-    .filter((window) => {
-      if (!window.weekdays.includes(parts.weekday)) return false;
-      const [startHour, startMinute] = window.start.split(":").map(Number);
-      const [endHour, endMinute] = window.end.split(":").map(Number);
-      const start = (startHour ?? 0) * 60 + (startMinute ?? 0);
-      const end = (endHour ?? 0) * 60 + (endMinute ?? 0);
-      return start <= end
-        ? minute >= start && minute < end
-        : minute >= start || minute < end;
-    })
-    .map((window) => window.seconds);
-  return matching.length
-    ? Math.min(...matching)
-    : automation.agentPolling.idleSeconds;
+  now: Date,
+  manualActive: boolean
+): { pollAfterSeconds: number; pollingMode: "active" | "scheduled" | "lazy"; nextScheduledAt: string | null } {
+  if (busy || manualActive) {
+    return {
+      pollAfterSeconds: automation.agentPolling.activeSeconds,
+      pollingMode: "active",
+      nextScheduledAt: null
+    };
+  }
+  const scheduled = isWithinScheduledTaskPollingWindow(
+    now,
+    automation.timezone,
+    automation.tasks,
+    automation.agentPolling.scheduledWindowMinutes
+  );
+  if (scheduled) {
+    return {
+      pollAfterSeconds: automation.agentPolling.activeSeconds,
+      pollingMode: "scheduled",
+      nextScheduledAt: null
+    };
+  }
+  const nextScheduled = nextScheduledTaskPollingWindowStart(
+    now,
+    automation.timezone,
+    automation.tasks,
+    automation.agentPolling.scheduledWindowMinutes
+  );
+  if (nextScheduled) {
+    return {
+      pollAfterSeconds: Math.max(
+        1,
+        Math.min(86_400, Math.ceil((nextScheduled.getTime() - now.getTime()) / 1000))
+      ),
+      pollingMode: "lazy",
+      nextScheduledAt: nextScheduled.toISOString()
+    };
+  }
+  return {
+    pollAfterSeconds: automation.agentPolling.idleSeconds,
+    pollingMode: "lazy",
+    nextScheduledAt: null
+  };
 }
 
 function permissionForAdminRequest(

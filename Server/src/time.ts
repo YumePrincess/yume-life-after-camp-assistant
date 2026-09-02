@@ -238,3 +238,82 @@ export function isWithinDailyClockWindow(
   }
   return false;
 }
+
+type ScheduledTaskLike = {
+  enabled?: boolean;
+  time?: string;
+  times?: string[];
+};
+
+/**
+ * Return the configured daily task clocks that can cause the Agent to wake.
+ * The scheduler stores all task times in the configured automation timezone;
+ * this helper deliberately accepts a small structural type so it can be used
+ * by the Agent polling endpoint without coupling the clock math to D1 models.
+ */
+export function scheduledTaskClocks(
+  tasks: Record<string, ScheduledTaskLike>
+): string[] {
+  return [...new Set(
+    Object.values(tasks).flatMap((schedule) => {
+      if (schedule.enabled === false) return [];
+      const values = Array.isArray(schedule.times) && schedule.times.length
+        ? schedule.times
+        : schedule.time
+          ? [schedule.time]
+          : [];
+      return values.filter((value): value is string => typeof value === "string");
+    })
+  )];
+}
+
+export function isWithinScheduledTaskPollingWindow(
+  now: Date,
+  timezone: string,
+  tasks: Record<string, ScheduledTaskLike>,
+  windowMinutes: number
+): boolean {
+  const current = minuteOfDay(zonedParts(now, timezone));
+  const radius = Math.max(1, Math.min(240, Math.floor(windowMinutes)));
+  return scheduledTaskClocks(tasks).some((clock) => {
+    const scheduled = clockToMinutes(clock);
+    const distance = Math.abs(current - scheduled);
+    return Math.min(distance, 24 * 60 - distance) <= radius;
+  });
+}
+
+/**
+ * Find the next start of a task polling window. Returning a real Date (rather
+ * than a minute count) keeps DST transitions correct for non-Asia/Shanghai
+ * deployments. The search includes the previous local day because a window
+ * around 00:00 begins on the preceding calendar date.
+ */
+export function nextScheduledTaskPollingWindowStart(
+  now: Date,
+  timezone: string,
+  tasks: Record<string, ScheduledTaskLike>,
+  windowMinutes: number
+): Date | null {
+  const clocks = scheduledTaskClocks(tasks);
+  if (!clocks.length) return null;
+  const radius = Math.max(1, Math.min(240, Math.floor(windowMinutes)));
+  const localDate = dateKey(zonedParts(now, timezone));
+  let next: Date | null = null;
+  for (let dayOffset = -1; dayOffset <= 8; dayOffset += 1) {
+    const scheduledDate = addDaysToDateKey(localDate, dayOffset);
+    for (const clock of clocks) {
+      const scheduled = clockToMinutes(clock);
+      let startDate = scheduledDate;
+      let startMinute = scheduled - radius;
+      if (startMinute < 0) {
+        startMinute += 24 * 60;
+        startDate = addDaysToDateKey(startDate, -1);
+      }
+      const startClock = `${String(Math.floor(startMinute / 60)).padStart(2, "0")}:${String(startMinute % 60).padStart(2, "0")}`;
+      const candidate = new Date(zonedDateTimeToIso(startDate, startClock, timezone));
+      if (candidate.getTime() <= now.getTime()) continue;
+      if (!next || candidate.getTime() < next.getTime()) next = candidate;
+    }
+  }
+  return next;
+}

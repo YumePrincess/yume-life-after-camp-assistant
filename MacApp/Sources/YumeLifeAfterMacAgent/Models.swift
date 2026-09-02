@@ -80,6 +80,10 @@ struct AgentHealth: Decodable {
     let ok: Bool
     let activeRunId: String?
     let activeTaskKey: String?
+    let manualActive: Bool?
+    let pollingMode: String?
+    let lazy: Bool?
+    let activityMode: String?
     let adbSerial: String?
     let stopEmulatorAfterTask: Bool?
     let plugins: [HealthPlugin]?

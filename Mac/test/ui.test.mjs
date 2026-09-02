@@ -329,7 +329,9 @@ test("guarded team-panel opening clicks the team card once and never the flag re
       ],
       [
         observation("调整", 350, 150),
-        observation("离开队伍", 350, 220)
+        observation("离开队伍", 350, 220),
+        observation("静音", 1600, 260),
+        observation("目标", 1600, 320)
       ]
     ]
   });
@@ -338,8 +340,11 @@ test("guarded team-panel opening clicks the team card once and never the flag re
     cardPoint: { x: 350, y: 150 },
     requiredCardTexts: ["自动匹配"],
     memberStateTexts: ["暂无队员加入", "等待队员加入"],
-    panelTexts: ["调整", "离开队伍"],
-    minimumPanelTexts: 2,
+    panelTexts: [
+      "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
+      "目标", "更换队伍", "招募"
+    ],
+    minimumPanelTexts: 4,
     settleMs: 1
   });
 
@@ -359,7 +364,9 @@ test("a concrete player name in the calibrated card region is valid team evidenc
       ],
       [
         observation("调整", 350, 150),
-        observation("离开队伍", 350, 220)
+        observation("离开队伍", 350, 220),
+        observation("静音", 1600, 260),
+        observation("目标", 1600, 320)
       ]
     ]
   });
@@ -369,8 +376,11 @@ test("a concrete player name in the calibrated card region is valid team evidenc
     requiredCardTexts: ["自动匹配"],
     memberStateTexts: ["暂无队员加入", "等待队员加入"],
     memberNameRegion: { left: 0, top: 120, right: 620, bottom: 520 },
-    panelTexts: ["调整", "离开队伍"],
-    minimumPanelTexts: 2,
+    panelTexts: [
+      "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
+      "目标", "更换队伍", "招募"
+    ],
+    minimumPanelTexts: 4,
     settleMs: 1
   });
 
@@ -383,7 +393,9 @@ test("automatic matching alone confirms a team card", async () => {
       [observation("自动匹配", 240, 180)],
       [
         observation("调整", 350, 150),
-        observation("离开队伍", 350, 220)
+        observation("离开队伍", 350, 220),
+        observation("静音", 1600, 260),
+        observation("目标", 1600, 320)
       ]
     ]
   });
@@ -392,8 +404,11 @@ test("automatic matching alone confirms a team card", async () => {
     cardPoint: { x: 350, y: 150 },
     requiredCardTexts: ["自动匹配"],
     memberStateTexts: ["暂无队员加入", "等待队员加入"],
-    panelTexts: ["调整", "离开队伍"],
-    minimumPanelTexts: 2,
+    panelTexts: [
+      "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
+      "目标", "更换队伍", "招募"
+    ],
+    minimumPanelTexts: 4,
     settleMs: 1
   });
   assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
@@ -405,7 +420,9 @@ test("cancel matching also confirms an existing team card", async () => {
       [observation("取消匹配", 240, 180)],
       [
         observation("调整", 350, 150),
-        observation("离开队伍", 350, 220)
+        observation("离开队伍", 350, 220),
+        observation("静音", 1600, 260),
+        observation("目标", 1600, 320)
       ]
     ]
   });
@@ -413,8 +430,11 @@ test("cancel matching also confirms an existing team card", async () => {
   await fixture.ui.openTeamPanelGuarded({
     cardPoint: { x: 350, y: 150 },
     memberStateTexts: ["暂无队员加入", "等待队员加入"],
-    panelTexts: ["调整", "离开队伍"],
-    minimumPanelTexts: 2,
+    panelTexts: [
+      "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
+      "目标", "更换队伍", "招募"
+    ],
+    minimumPanelTexts: 4,
     settleMs: 1
   });
   assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
@@ -426,7 +446,9 @@ test("a member state without automatic matching is auxiliary team evidence", asy
       [observation("暂无队员加入", 240, 220)],
       [
         observation("调整", 350, 150),
-        observation("离开队伍", 350, 220)
+        observation("离开队伍", 350, 220),
+        observation("静音", 1600, 260),
+        observation("目标", 1600, 320)
       ]
     ]
   });
@@ -435,8 +457,11 @@ test("a member state without automatic matching is auxiliary team evidence", asy
     cardPoint: { x: 350, y: 150 },
     requiredCardTexts: ["自动匹配"],
     memberStateTexts: ["暂无队员加入", "等待队员加入"],
-    panelTexts: ["调整", "离开队伍"],
-    minimumPanelTexts: 2,
+    panelTexts: [
+      "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
+      "目标", "更换队伍", "招募"
+    ],
+    minimumPanelTexts: 4,
     settleMs: 1
   });
   assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
@@ -448,7 +473,9 @@ test("a concrete player name is auxiliary team evidence when matching text is un
       [observation("玩家甲", 240, 260)],
       [
         observation("调整", 350, 150),
-        observation("离开队伍", 350, 220)
+        observation("离开队伍", 350, 220),
+        observation("静音", 1600, 260),
+        observation("目标", 1600, 320)
       ]
     ]
   });
@@ -458,8 +485,11 @@ test("a concrete player name is auxiliary team evidence when matching text is un
     requiredCardTexts: ["自动匹配", "取消匹配"],
     memberStateTexts: ["暂无队员加入", "等待队员加入"],
     memberNameRegion: { left: 0, top: 120, right: 620, bottom: 520 },
-    panelTexts: ["调整", "离开队伍"],
-    minimumPanelTexts: 2,
+    panelTexts: [
+      "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
+      "目标", "更换队伍", "招募"
+    ],
+    minimumPanelTexts: 4,
     settleMs: 1
   });
   assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
@@ -475,7 +505,9 @@ test("member evidence is optional when automatic matching is present", async () 
       ],
       [
         observation("调整", 350, 150),
-        observation("离开队伍", 350, 220)
+        observation("离开队伍", 350, 220),
+        observation("静音", 1600, 260),
+        observation("目标", 1600, 320)
       ]
     ]
   });
@@ -485,8 +517,11 @@ test("member evidence is optional when automatic matching is present", async () 
     requiredCardTexts: ["自动匹配"],
     memberStateTexts: ["暂无队员加入", "等待队员加入"],
     memberNameRegion: { left: 0, top: 120, right: 620, bottom: 520 },
-    panelTexts: ["调整", "离开队伍"],
-    minimumPanelTexts: 2,
+    panelTexts: [
+      "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
+      "目标", "更换队伍", "招募"
+    ],
+    minimumPanelTexts: 4,
     settleMs: 1
   });
   assert.deepEqual(fixture.taps, [{ x: 350, y: 150 }]);
@@ -1728,8 +1763,11 @@ test("open team panel requires a verified card click and never configures a flag
       cardPoint: { x: 350, y: 150 },
       requiredCardTexts: ["自动匹配", "取消匹配"],
       memberStateTexts: ["暂无队员加入", "等待队员加入"],
-      panelTexts: ["调整", "离开队伍"],
-      minimumPanelTexts: 2,
+      panelTexts: [
+        "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
+        "目标", "更换队伍", "招募"
+      ],
+      minimumPanelTexts: 4,
       panelRegion: { left: 0, top: 0, right: 1920, bottom: 1180 },
       cardRegion: { left: 0, top: 0, right: 1920, bottom: 1180 },
       memberNameRegion: { left: 0, top: 120, right: 620, bottom: 520 },

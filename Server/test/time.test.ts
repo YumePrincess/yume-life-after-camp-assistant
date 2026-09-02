@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   isWithinDailyClockWindow,
+  isWithinScheduledTaskPollingWindow,
   nextTechnologyTargetDate,
+  nextScheduledTaskPollingWindowStart,
+  scheduledTaskClocks,
   technologyEffectiveDateAtDailyReset,
   targetDateForTechnologyRun,
   zonedDateTimeToIso
@@ -118,5 +121,54 @@ describe("technology target date", () => {
         "03:00"
       )
     ).toBe("2026-07-29");
+  });
+});
+
+describe("scheduled Agent polling windows", () => {
+  const tasks = {
+    patrol: { enabled: true, time: "19:20" },
+    member_profile_sync: { enabled: true, times: ["00:05", "12:00"] },
+    disabled: { enabled: false, time: "12:30" }
+  };
+
+  it("derives wake clocks from enabled task schedules", () => {
+    expect(scheduledTaskClocks(tasks)).toEqual(["19:20", "00:05", "12:00"]);
+    expect(
+      isWithinScheduledTaskPollingWindow(
+        new Date("2026-09-02T19:05:00.000Z"),
+        "UTC",
+        tasks,
+        15
+      )
+    ).toBe(true);
+    expect(
+      isWithinScheduledTaskPollingWindow(
+        new Date("2026-09-02T19:36:00.000Z"),
+        "UTC",
+        tasks,
+        15
+      )
+    ).toBe(false);
+  });
+
+  it("finds the next task window start, including the next local day", () => {
+    const next = nextScheduledTaskPollingWindowStart(
+      new Date("2026-09-02T19:36:00.000Z"),
+      "UTC",
+      tasks,
+      15
+    );
+    expect(next?.toISOString()).toBe("2026-09-02T23:50:00.000Z");
+  });
+
+  it("handles a wake window that crosses midnight", () => {
+    expect(
+      isWithinScheduledTaskPollingWindow(
+        new Date("2026-09-02T23:55:00.000Z"),
+        "UTC",
+        { patrol: { enabled: true, time: "00:05" } },
+        15
+      )
+    ).toBe(true);
   });
 });

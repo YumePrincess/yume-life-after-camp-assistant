@@ -100,6 +100,7 @@ export interface AutomationConfig {
   agentPolling: {
     activeSeconds: number;
     idleSeconds: number;
+    scheduledWindowMinutes: number;
     claimTimeoutMinutes: number;
     windows: PollingWindow[];
   };

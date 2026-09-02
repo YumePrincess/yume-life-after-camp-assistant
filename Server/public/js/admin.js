@@ -785,6 +785,7 @@
     if (sections.includes("agent")) {
       for (const [name, value] of Object.entries({
         pollActiveSeconds: automation.agentPolling.activeSeconds,
+        pollScheduledWindowMinutes: automation.agentPolling.scheduledWindowMinutes ?? 15,
         pollIdleSeconds: automation.agentPolling.idleSeconds,
         queueClaimTimeoutMinutes:
           automation.agentPolling.claimTimeoutMinutes,
@@ -2306,6 +2307,7 @@
       }
       next.automationConfig.agentPolling = {
         activeSeconds: Number(getField("pollActiveSeconds")),
+        scheduledWindowMinutes: Number(getField("pollScheduledWindowMinutes")),
         idleSeconds: Number(getField("pollIdleSeconds")),
         claimTimeoutMinutes: Number(getField("queueClaimTimeoutMinutes")),
         windows: pollingWindows

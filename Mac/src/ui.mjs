@@ -953,7 +953,17 @@ export class GameUi {
   }
 
   async openTeamPanelGuarded(action, signal) {
-    const panelTexts = action.panelTexts || ["调整", "离开队伍"];
+    const panelTexts = action.panelTexts || [
+      "调整",
+      "离开队伍",
+      "静音",
+      "闭麦",
+      "2D模式",
+      "3D模式",
+      "目标",
+      "更换队伍",
+      "招募"
+    ];
     // Matching can already be running when the card is opened. In that state
     // the control changes from “自动匹配” to “取消匹配”; both are equivalent
     // team-card evidence and are mutually exclusive in the live UI.
@@ -979,8 +989,8 @@ export class GameUi {
       bottom: 520
     };
     const minimumPanelTexts = Math.max(
-      2,
-      Math.min(panelTexts.length, Number(action.minimumPanelTexts) || 2)
+      4,
+      Math.min(panelTexts.length, Number(action.minimumPanelTexts) || 4)
     );
     const taskGuideOverlay = action.taskGuideOverlay;
     const capture = (label) =>
