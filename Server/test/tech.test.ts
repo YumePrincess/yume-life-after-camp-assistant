@@ -3,6 +3,7 @@ import type { TechnologyConfig, VoteOption } from "../src/domain";
 import { BUILT_IN_TECHNOLOGY_CATALOG } from "../src/built-in-technology-catalog";
 import {
   buildTechnologyPlan,
+  fixedTechnologyKeysForDate,
   normalizeBallotSelections,
   prerequisiteNameForTechnology,
   technologyCatalogWithPrerequisites
@@ -80,6 +81,108 @@ const technologyConfig: TechnologyConfig = {
 };
 
 describe("buildTechnologyPlan", () => {
+  it("resolves weekday and skipped-day presets within their inclusive range", () => {
+    const config: TechnologyConfig = {
+      ...technologyConfig,
+      fixedPresets: [
+        {
+          id: "weekday",
+          mode: "weekday",
+          startDate: "2026-06-01",
+          endDate: "2026-06-10",
+          weekdays: [1, 3],
+          technologyKeys: ["fixed-core"]
+        },
+        {
+          id: "interval",
+          mode: "interval",
+          startDate: "2026-06-01",
+          endDate: "2026-06-07",
+          intervalDays: 1,
+          technologyKeys: ["general-a"]
+        }
+      ]
+    };
+
+    expect(fixedTechnologyKeysForDate(config, "2026-06-01")).toEqual([
+      "fixed-core",
+      "general-a"
+    ]);
+    expect(fixedTechnologyKeysForDate(config, "2026-06-02")).toEqual([]);
+    expect(fixedTechnologyKeysForDate(config, "2026-06-03")).toEqual([
+      "fixed-core",
+      "general-a"
+    ]);
+    expect(fixedTechnologyKeysForDate(config, "2026-06-08")).toEqual([
+      "fixed-core"
+    ]);
+    expect(fixedTechnologyKeysForDate(config, "2026-06-07")).toEqual([
+      "general-a"
+    ]);
+    expect(fixedTechnologyKeysForDate(config, "2026-06-10")).toEqual([
+      "fixed-core"
+    ]);
+    expect(fixedTechnologyKeysForDate(config, "2026-06-11")).toEqual([]);
+  });
+
+  it("gives an exact-date preset priority over recurring presets", () => {
+    const config: TechnologyConfig = {
+      ...technologyConfig,
+      fixedPresets: [
+        {
+          id: "weekday",
+          mode: "weekday",
+          startDate: "2026-06-01",
+          endDate: null,
+          weekdays: [1],
+          technologyKeys: ["fixed-core"]
+        },
+        {
+          id: "date",
+          mode: "date",
+          date: "2026-06-01",
+          technologyKeys: ["vote-core"]
+        }
+      ]
+    };
+
+    expect(fixedTechnologyKeysForDate(config, "2026-06-01")).toEqual([
+      "vote-core"
+    ]);
+  });
+
+  it("keeps fixed technologies ahead of vote fill within each row limit", () => {
+    const config: TechnologyConfig = {
+      ...technologyConfig,
+      fixedPresets: [
+        {
+          id: "interval",
+          mode: "interval",
+          startDate: "2026-06-01",
+          endDate: "2026-06-03",
+          intervalDays: 1,
+          technologyKeys: ["fixed-core"]
+        }
+      ],
+      limits: { core: 2, general: 1 }
+    };
+    const plan = buildTechnologyPlan({
+      targetDate: "2026-06-03",
+      currentCampType: "military",
+      technologyConfig: config,
+      voteOptions: config.catalog.map((item) => ({
+        ...item,
+        votes: item.key === "wrong-core" ? 99 : item.key === "vote-core" ? 5 : 4
+      }))
+    });
+
+    expect(plan.core.map((item) => item.key)).toEqual([
+      "fixed-core",
+      "vote-core"
+    ]);
+    expect(plan.general.map((item) => item.key)).toEqual(["wrong-core"]);
+  });
+
   it("defaults both row capacities to six for legacy configurations", () => {
     const legacy = { ...technologyConfig, limits: undefined };
     expect(validateTechnologyConfig(legacy).limits).toEqual({

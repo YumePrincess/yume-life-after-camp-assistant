@@ -1,10 +1,74 @@
 import type {
   TechnologyConfig,
   TechnologyDefinition,
+  TechnologyFixedPreset,
   TechnologyPlan,
   VoteOption
 } from "./domain";
 import { weekdayForDateKey } from "./time";
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function dateKeyToUtcDay(dateKey: string): number {
+  const [year = 0, month = 0, day = 0] = dateKey.split("-").map(Number);
+  return Date.UTC(year, month - 1, day) / MS_PER_DAY;
+}
+
+function isWithinPresetRange(
+  preset: TechnologyFixedPreset,
+  targetDate: string
+): boolean {
+  const startDate = preset.startDate;
+  if (!startDate) return false;
+  if (targetDate < startDate) return false;
+  return !preset.endDate || targetDate <= preset.endDate;
+}
+
+export function technologyFixedPresetApplies(
+  preset: TechnologyFixedPreset,
+  targetDate: string
+): boolean {
+  if (preset.mode === "date") return preset.date === targetDate;
+  if (!isWithinPresetRange(preset, targetDate)) return false;
+  if (preset.mode === "weekday") {
+    return (preset.weekdays ?? []).includes(weekdayForDateKey(targetDate));
+  }
+  const startDate = preset.startDate;
+  const intervalDays = preset.intervalDays ?? -1;
+  if (!startDate || !Number.isInteger(intervalDays) || intervalDays < 0) {
+    return false;
+  }
+  const elapsedDays = dateKeyToUtcDay(targetDate) - dateKeyToUtcDay(startDate);
+  return elapsedDays >= 0 && elapsedDays % (intervalDays + 1) === 0;
+}
+
+/**
+ * Resolve fixed technology keys for an effective day. Exact-date presets have
+ * priority over recurring presets, matching the legacy date override behavior.
+ * Multiple active recurring presets are combined and de-duplicated.
+ */
+export function fixedTechnologyKeysForDate(
+  technologyConfig: TechnologyConfig,
+  targetDate: string
+): string[] {
+  if (Array.isArray(technologyConfig.fixedPresets)) {
+    const presets = technologyConfig.fixedPresets;
+    const exact = presets.filter(
+      (preset) => preset.mode === "date" && technologyFixedPresetApplies(preset, targetDate)
+    );
+    const active = exact.length
+      ? exact
+      : presets.filter(
+          (preset) => preset.mode !== "date" && technologyFixedPresetApplies(preset, targetDate)
+        );
+    return [...new Set(active.flatMap((preset) => preset.technologyKeys))];
+  }
+  return [
+    ...(technologyConfig.fixedByDate[targetDate] ??
+      technologyConfig.fixedByWeekday[String(weekdayForDateKey(targetDate))] ??
+      [])
+  ];
+}
 
 function byVotesThenOrder(a: VoteOption, b: VoteOption): number {
   return b.votes - a.votes || a.sortOrder - b.sortOrder || a.key.localeCompare(b.key);
@@ -90,10 +154,7 @@ export function buildTechnologyPlan(input: {
 }): TechnologyPlan {
   const { targetDate, currentCampType, technologyConfig } = input;
   const weekday = weekdayForDateKey(targetDate);
-  const fixedKeys =
-    technologyConfig.fixedByDate[targetDate] ??
-    technologyConfig.fixedByWeekday[String(weekday)] ??
-    [];
+  const fixedKeys = fixedTechnologyKeysForDate(technologyConfig, targetDate);
   const catalog = technologyCatalogWithPrerequisites(technologyConfig.catalog);
   const catalogByKey = new Map(catalog.map((item) => [item.key, item]));
   const votesByKey = new Map(input.voteOptions.map((item) => [item.key, item.votes]));

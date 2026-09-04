@@ -369,7 +369,7 @@
                 <div>
                   <p class="eyebrow">TECHNOLOGY</p>
                   <h1>科技目录、投票与固定科技</h1>
-                  <p class="section-intro">设置投票时间与营地科技类型，再选择日期配置当日固定科技；筛选只影响当前显示，不会改变已保存配置。</p>
+                  <p class="section-intro">设置投票时间与营地科技类型，再用固定预设安排指定日、星期循环或间隔循环；固定科技会优先占位，剩余容量再按票数补足。</p>
                 </div>
                 <span id="next-tech-date" class="date-badge"></span>
               </div>
@@ -403,14 +403,52 @@
                   <input id="technology-general-limit" type="number" min="0" max="6" step="1" value="6" />
                 </label>
               </div>
-              <div class="technology-editor-toolbar">
-                <div class="technology-date-picker">
-                  <div class="technology-date-picker-recent">
-                    <span class="field-label">固定科技适用日期</span>
-                    <div id="technology-weekdays" class="weekday-tabs" role="tablist"></div>
+              <div class="technology-rule-workspace">
+                <section class="technology-presets-panel" aria-labelledby="technology-presets-title">
+                  <div class="technology-subheading">
+                    <div>
+                      <span class="field-label">固定规则</span>
+                      <strong id="technology-presets-title">固定科技预设</strong>
+                    </div>
+                    <button id="technology-add-preset" class="button button-primary button-small" type="button">新建规则</button>
                   </div>
+                  <p class="technology-help">指定日期适合临时安排；按星期和按间隔适合长期计划。规则可叠加，命中同一天时指定日期优先。</p>
+                  <div id="technology-preset-list" class="technology-preset-list" aria-live="polite"></div>
+                </section>
+                <section class="technology-rule-editor" aria-labelledby="technology-rule-title">
+                  <div id="technology-rule-empty" class="technology-rule-empty">
+                    <span class="technology-rule-empty-icon">＋</span>
+                    <strong>还没有选中的固定规则</strong>
+                    <p>新建规则后，从下方科技目录勾选需要优先开放的科技。</p>
+                  </div>
+                  <div id="technology-rule-form" hidden>
+                    <div class="technology-subheading technology-rule-heading">
+                      <div>
+                        <span class="field-label">规则编辑</span>
+                        <strong id="technology-rule-title">固定科技规则</strong>
+                      </div>
+                      <button id="technology-delete-preset" class="button button-danger button-small" type="button">删除规则</button>
+                    </div>
+                    <div id="technology-rule-fields" class="technology-rule-fields"></div>
+                    <div class="technology-rule-selection-summary">
+                      <div>
+                        <span class="field-label">本规则固定科技</span>
+                        <strong id="technology-rule-selection-count">尚未选择科技</strong>
+                      </div>
+                      <span id="technology-rule-lock-hint" class="technology-rule-lock-hint" hidden>当前投票已锁定</span>
+                    </div>
+                  </div>
+                </section>
+              </div>
+              <div class="technology-preview-toolbar">
+                <div>
+                  <span class="field-label">科技预测日期</span>
+                  <strong>查看某天最终会优先开放的固定科技</strong>
+                </div>
+                <div class="technology-date-picker">
+                  <div id="technology-weekdays" class="weekday-tabs" role="tablist" aria-label="科技预测日期"></div>
                   <label class="field technology-date-query">
-                    <span>设置指定日期</span>
+                    <span>跳转日期</span>
                     <input id="technology-fixed-date" type="date" />
                   </label>
                 </div>

@@ -9,7 +9,9 @@ import type {
   TechnologyCategory,
   TechnologyConfig,
   TechnologyDefinition,
-  TechnologyLane
+  TechnologyLane,
+  TechnologyFixedPreset,
+  TechnologyFixedPresetMode
 } from "./domain";
 import {
   assertClock,
@@ -70,6 +72,42 @@ function lane(value: unknown, field: string): TechnologyLane {
     throw new Error(`${field} is invalid`);
   }
   return value as TechnologyLane;
+}
+
+function technologyDate(value: unknown, field: string): string {
+  const result = text(value, field, { max: 10 });
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(result);
+  if (!match) throw new Error(`${field} must use YYYY-MM-DD`);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new Error(`${field} is not a valid calendar date`);
+  }
+  return result;
+}
+
+function compareTechnologyDates(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
+function fixedTechnologyKeys(
+  value: unknown,
+  field: string,
+  knownKeys: Set<string>
+): string[] {
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
+  const values = [
+    ...new Set(value.map((item) => text(item, "fixed technology key", { max: 64 })))
+  ];
+  const unknown = values.find((key) => !knownKeys.has(key));
+  if (unknown) throw new Error(`Unknown fixed technology: ${unknown}`);
+  return values;
 }
 
 function assetUrl(value: unknown, field: string): string {
@@ -421,17 +459,18 @@ export function validateTechnologyConfig(value: unknown): TechnologyConfig {
     };
   });
 
-  const fixedSource = object(source.fixedByWeekday, "technologyConfig.fixedByWeekday");
+  const fixedSource =
+    source.fixedByWeekday && typeof source.fixedByWeekday === "object"
+      ? object(source.fixedByWeekday, "technologyConfig.fixedByWeekday")
+      : {};
   const fixedByWeekday: Record<string, string[]> = {};
   for (let weekday = 1; weekday <= 7; weekday += 1) {
-    const raw = fixedSource[String(weekday)];
-    if (!Array.isArray(raw)) {
-      throw new Error(`technologyConfig.fixedByWeekday.${weekday} must be an array`);
-    }
-    const values = [...new Set(raw.map((item) => text(item, "fixed technology key", { max: 64 })))];
-    const unknown = values.find((key) => !seen.has(key));
-    if (unknown) throw new Error(`Unknown fixed technology: ${unknown}`);
-    fixedByWeekday[String(weekday)] = values;
+    const raw = fixedSource[String(weekday)] ?? [];
+    fixedByWeekday[String(weekday)] = fixedTechnologyKeys(
+      raw,
+      `technologyConfig.fixedByWeekday.${weekday}`,
+      seen
+    );
   }
   const fixedDateSource =
     source.fixedByDate && typeof source.fixedByDate === "object"
@@ -443,17 +482,149 @@ export function validateTechnologyConfig(value: unknown): TechnologyConfig {
     throw new Error("technologyConfig.fixedByDate is too large");
   }
   for (const [date, raw] of fixedDateEntries) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Array.isArray(raw)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new Error(`technologyConfig.fixedByDate.${date} is invalid`);
     }
-    const values = [
-      ...new Set(
-        raw.map((item) => text(item, "fixed technology key", { max: 64 }))
-      )
-    ];
-    const unknown = values.find((key) => !seen.has(key));
-    if (unknown) throw new Error(`Unknown fixed technology: ${unknown}`);
-    fixedByDate[date] = values;
+    technologyDate(date, `technologyConfig.fixedByDate.${date}`);
+    fixedByDate[date] = fixedTechnologyKeys(
+      raw,
+      `technologyConfig.fixedByDate.${date}`,
+      seen
+    );
+  }
+
+  const fixedPresets: TechnologyFixedPreset[] = [];
+  const fixedPresetSource = source.fixedPresets;
+  if (fixedPresetSource === undefined) {
+    for (const [date, technologyKeys] of Object.entries(fixedByDate)) {
+      fixedPresets.push({
+        id: `legacy-date-${date}`,
+        mode: "date",
+        date,
+        technologyKeys
+      });
+    }
+    for (let weekday = 1; weekday <= 7; weekday += 1) {
+      const technologyKeys = fixedByWeekday[String(weekday)] ?? [];
+      if (!technologyKeys.length) continue;
+      fixedPresets.push({
+        id: `legacy-weekday-${weekday}`,
+        mode: "weekday",
+        startDate: "1970-01-01",
+        endDate: null,
+        weekdays: [weekday],
+        technologyKeys
+      });
+    }
+  } else {
+    if (!Array.isArray(fixedPresetSource)) {
+      throw new Error("technologyConfig.fixedPresets must be an array");
+    }
+    if (fixedPresetSource.length > 200) {
+      throw new Error("technologyConfig.fixedPresets is too large");
+    }
+    const seenPresetIds = new Set<string>();
+    for (const [index, raw] of fixedPresetSource.entries()) {
+      const item = object(raw, `technologyConfig.fixedPresets[${index}]`);
+      const id = text(
+        item.id,
+        `technologyConfig.fixedPresets[${index}].id`,
+        { max: 80 }
+      );
+      if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+        throw new Error(`technologyConfig.fixedPresets[${index}].id is invalid`);
+      }
+      if (seenPresetIds.has(id)) {
+        throw new Error(`Duplicate fixed preset id: ${id}`);
+      }
+      seenPresetIds.add(id);
+      const modeValue = text(
+        item.mode,
+        `technologyConfig.fixedPresets[${index}].mode`,
+        { max: 16 }
+      ) as TechnologyFixedPresetMode;
+      if (!["date", "weekday", "interval"].includes(modeValue)) {
+        throw new Error(`technologyConfig.fixedPresets[${index}].mode is invalid`);
+      }
+      const technologyKeys = fixedTechnologyKeys(
+        item.technologyKeys,
+        `technologyConfig.fixedPresets[${index}].technologyKeys`,
+        seen
+      );
+      if (!technologyKeys.length) {
+        throw new Error(
+          `technologyConfig.fixedPresets[${index}].technologyKeys must not be empty`
+        );
+      }
+      if (modeValue === "date") {
+        const date = technologyDate(
+          item.date,
+          `technologyConfig.fixedPresets[${index}].date`
+        );
+        fixedPresets.push({ id, mode: modeValue, date, technologyKeys });
+        continue;
+      }
+
+      const startDate = technologyDate(
+        item.startDate,
+        `technologyConfig.fixedPresets[${index}].startDate`
+      );
+      const endDate =
+        item.endDate === undefined || item.endDate === null
+          ? null
+          : technologyDate(
+              item.endDate,
+              `technologyConfig.fixedPresets[${index}].endDate`
+            );
+      if (endDate && compareTechnologyDates(endDate, startDate) < 0) {
+        throw new Error(
+          `technologyConfig.fixedPresets[${index}].endDate must not be before startDate`
+        );
+      }
+      if (modeValue === "weekday") {
+        if (!Array.isArray(item.weekdays) || !item.weekdays.length) {
+          throw new Error(
+            `technologyConfig.fixedPresets[${index}].weekdays must not be empty`
+          );
+        }
+        const weekdays = [
+          ...new Set(
+            item.weekdays.map((value) =>
+              integer(
+                value,
+                `technologyConfig.fixedPresets[${index}].weekdays`,
+                1,
+                7
+              )
+            )
+          )
+        ].sort((left, right) => left - right);
+        fixedPresets.push({
+          id,
+          mode: modeValue,
+          startDate,
+          endDate,
+          weekdays,
+          technologyKeys
+        });
+        continue;
+      }
+
+      const intervalDays = integer(
+        item.intervalDays,
+        `technologyConfig.fixedPresets[${index}].intervalDays`,
+        0,
+        3650
+      );
+      fixedPresets.push({
+        id,
+        mode: modeValue,
+        startDate,
+        endDate,
+        intervalDays,
+        technologyKeys
+      });
+    }
   }
 
   const limits: Record<string, unknown> =
@@ -462,6 +633,7 @@ export function validateTechnologyConfig(value: unknown): TechnologyConfig {
       : object(source.limits, "technologyConfig.limits");
   return {
     catalog,
+    fixedPresets,
     fixedByWeekday,
     fixedByDate,
     voteLimit: integer(

@@ -75,8 +75,27 @@ export interface TechnologyDefinition {
   prerequisiteName?: string;
 }
 
+export type TechnologyFixedPresetMode = "date" | "weekday" | "interval";
+
+export interface TechnologyFixedPreset {
+  id: string;
+  mode: TechnologyFixedPresetMode;
+  technologyKeys: string[];
+  /** Used by the one-off date mode. */
+  date?: string;
+  /** Inclusive range for recurring presets. A null end date means forever. */
+  startDate?: string;
+  endDate?: string | null;
+  /** ISO weekdays, Monday = 1 through Sunday = 7. */
+  weekdays?: number[];
+  /** Number of technology days to skip between activations. 0 = every day. */
+  intervalDays?: number;
+}
+
 export interface TechnologyConfig {
   catalog: TechnologyDefinition[];
+  /** Canonical fixed-technology rules. Legacy maps remain for old clients/configs. */
+  fixedPresets?: TechnologyFixedPreset[];
   fixedByWeekday: Record<string, string[]>;
   fixedByDate: Record<string, string[]>;
   voteLimit: number;

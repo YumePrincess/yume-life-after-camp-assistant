@@ -138,6 +138,16 @@ export async function getConfigBundle(env: Env): Promise<ConfigBundle> {
         validTechnologyKeys.has(key)
       );
   }
+  if (Array.isArray(technologyConfig.fixedPresets)) {
+    technologyConfig.fixedPresets = technologyConfig.fixedPresets
+      .map((preset) => ({
+        ...preset,
+        technologyKeys: preset.technologyKeys.filter((key) =>
+          validTechnologyKeys.has(key)
+        )
+      }))
+      .filter((preset) => preset.technologyKeys.length > 0);
+  }
   return {
     campConfig: validateCampConfig(camp),
     authConfig: validateAuthConfig(auth),

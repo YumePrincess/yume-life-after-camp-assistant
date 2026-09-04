@@ -45,6 +45,7 @@
     selectedMember: null,
     technologyDate: "",
     technologyDraft: null,
+    technologyPresetId: "",
     technologyQuery: "",
     technologyCategory: "all",
     technologyHistory: { dates: [], history: null },
@@ -813,7 +814,9 @@
       }
       setTechnologyVoteEnd(camp.voteWindowEnd || "24:00");
       state.technologyDraft = JSON.parse(JSON.stringify(bundle.technologyConfig));
-      state.technologyDraft.fixedByDate ||= {};
+      ensureTechnologyPresets(state.technologyDraft);
+      state.technologyPresetId =
+        state.technologyDraft.fixedPresets[0]?.id || "";
       const limits = state.technologyDraft.limits || {};
       state.technologyDraft.limits = {
         core:
@@ -1283,6 +1286,142 @@
     return date.toISOString().slice(0, 10);
   }
 
+  function technologyFirstDate() {
+    return (
+      state.bootstrap?.voteSummary?.pollDate ||
+      state.bootstrap?.nextTechnologyTargetDate ||
+      identityExpiryDate(new Date())
+    );
+  }
+
+  function technologyDateDifference(startDate, endDate) {
+    return Math.round(
+      (new Date(`${endDate}T12:00:00Z`).getTime() -
+        new Date(`${startDate}T12:00:00Z`).getTime()) /
+        (24 * 60 * 60 * 1000)
+    );
+  }
+
+  function weekdayForTechnologyDate(date) {
+    const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+    return weekday === 0 ? 7 : weekday;
+  }
+
+  function technologyPresetApplies(preset, targetDate) {
+    if (preset.mode === "date") return preset.date === targetDate;
+    if (!preset.startDate || targetDate < preset.startDate) return false;
+    if (preset.endDate && targetDate > preset.endDate) return false;
+    if (preset.mode === "weekday") {
+      return (preset.weekdays || []).includes(weekdayForTechnologyDate(targetDate));
+    }
+    const intervalDays = Number(preset.intervalDays);
+    const elapsed = technologyDateDifference(preset.startDate, targetDate);
+    return Number.isInteger(intervalDays) && intervalDays >= 0 &&
+      elapsed >= 0 && elapsed % (intervalDays + 1) === 0;
+  }
+
+  function fixedTechnologyKeysForDate(config, targetDate) {
+    const presets = Array.isArray(config.fixedPresets)
+      ? config.fixedPresets
+      : [];
+    if (presets.length) {
+      const exact = presets.filter(
+        (preset) => preset.mode === "date" && technologyPresetApplies(preset, targetDate)
+      );
+      const active = exact.length
+        ? exact
+        : presets.filter(
+            (preset) => preset.mode !== "date" && technologyPresetApplies(preset, targetDate)
+          );
+      return [...new Set(active.flatMap((preset) => preset.technologyKeys || []))];
+    }
+    return [
+      ...(config.fixedByDate?.[targetDate] ||
+        config.fixedByWeekday?.[String(weekdayForTechnologyDate(targetDate))] ||
+        [])
+    ];
+  }
+
+  function createTechnologyPresetId() {
+    if (globalThis.crypto?.randomUUID) {
+      return `preset-${globalThis.crypto.randomUUID().replaceAll("-", "")}`;
+    }
+    return `preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function ensureTechnologyPresets(config) {
+    if (Array.isArray(config.fixedPresets)) return config.fixedPresets;
+    const presets = [];
+    for (const [date, technologyKeys] of Object.entries(config.fixedByDate || {})) {
+      if (technologyKeys?.length) {
+        presets.push({
+          id: `legacy-date-${date}`,
+          mode: "date",
+          date,
+          technologyKeys: [...technologyKeys]
+        });
+      }
+    }
+    for (let weekday = 1; weekday <= 7; weekday += 1) {
+      const technologyKeys = config.fixedByWeekday?.[String(weekday)] || [];
+      if (technologyKeys.length) {
+        presets.push({
+          id: `legacy-weekday-${weekday}`,
+          mode: "weekday",
+          startDate: "1970-01-01",
+          endDate: null,
+          weekdays: [weekday],
+          technologyKeys: [...technologyKeys]
+        });
+      }
+    }
+    config.fixedPresets = presets;
+    return presets;
+  }
+
+  function technologyWeekdayLabel(weekday) {
+    return new Intl.DateTimeFormat(localeTag(), {
+      weekday: "short",
+      timeZone: "UTC"
+    }).format(new Date(`2026-06-${String(weekday).padStart(2, "0")}T12:00:00Z`));
+  }
+
+  function technologyPresetModeLabel(mode) {
+    return {
+      date: "指定日期",
+      weekday: "按星期循环",
+      interval: "按间隔循环"
+    }[mode] || "固定规则";
+  }
+
+  function technologyPresetTitle(preset) {
+    if (preset.mode === "date") return `指定日期 · ${preset.date || "未设置"}`;
+    if (preset.mode === "weekday") {
+      const weekdays = (preset.weekdays || []).map(technologyWeekdayLabel).join("、");
+      return `每周 ${weekdays || "未选择星期"}`;
+    }
+    return `每隔 ${Number(preset.intervalDays) || 0} 个科技日`;
+  }
+
+  function technologyPresetRange(preset) {
+    if (preset.mode === "date") return preset.date || "未设置日期";
+    return `${preset.startDate || "未设置起始日"} — ${preset.endDate || "永久有效"}`;
+  }
+
+  function selectedTechnologyPreset() {
+    return state.technologyDraft?.fixedPresets?.find(
+      (preset) => preset.id === state.technologyPresetId
+    ) || null;
+  }
+
+  function selectedTechnologyPresetIsLocked(preset) {
+    const summary = state.bootstrap?.voteSummary;
+    return Boolean(
+      preset && summary?.isOpen === false &&
+      technologyPresetApplies(preset, summary.pollDate)
+    );
+  }
+
   function markTechnologyDirty() {
     state.dirtySections.add("technology");
     updateSaveState();
@@ -1290,6 +1429,405 @@
       .querySelector('[data-config-section="technology"]')
       ?.querySelector("[data-save-feedback]");
     if (feedback) feedback.textContent = translateUi("科技配置尚未保存");
+  }
+
+  function renderTechnologyPresetList() {
+    const config = state.technologyDraft;
+    const root = byId("technology-preset-list");
+    root.replaceChildren();
+    if (!config.fixedPresets.length) {
+      root.append(create("p", "technology-preset-empty", "暂无固定规则，点击右上角新建。"));
+      return;
+    }
+    for (const preset of config.fixedPresets) {
+      const button = create("button", "technology-preset-item");
+      button.type = "button";
+      button.dataset.active = String(preset.id === state.technologyPresetId);
+      const main = create("span", "technology-preset-item-main");
+      main.append(
+        create("strong", "", technologyPresetTitle(preset)),
+        create("small", "", technologyPresetRange(preset))
+      );
+      const meta = create("span", "technology-preset-item-meta");
+      meta.append(
+        create("span", "technology-preset-mode", technologyPresetModeLabel(preset.mode)),
+        create("span", "technology-preset-count", `${preset.technologyKeys.length} 项`)
+      );
+      button.append(main, meta);
+      button.addEventListener("click", () => {
+        state.technologyPresetId = preset.id;
+        if (preset.mode === "date" && preset.date) state.technologyDate = preset.date;
+        if (preset.mode !== "date" && preset.startDate) state.technologyDate = preset.startDate;
+        renderTechnologyEditor();
+      });
+      root.append(button);
+    }
+  }
+
+  function setTechnologyPresetMode(preset, mode) {
+    if (mode === preset.mode) return;
+    const firstDate = technologyFirstDate();
+    if (mode === "date") {
+      preset.date = preset.date || preset.startDate || firstDate;
+    } else {
+      preset.startDate = preset.startDate || preset.date || firstDate;
+      preset.endDate ??= null;
+      if (mode === "weekday") {
+        preset.weekdays = preset.weekdays?.length
+          ? preset.weekdays
+          : [weekdayForTechnologyDate(preset.startDate)];
+      } else {
+        preset.intervalDays = Number.isInteger(preset.intervalDays)
+          ? preset.intervalDays
+          : 1;
+      }
+    }
+    preset.mode = mode;
+  }
+
+  function renderTechnologyPresetEditor() {
+    const config = state.technologyDraft;
+    const preset = selectedTechnologyPreset();
+    const empty = byId("technology-rule-empty");
+    const form = byId("technology-rule-form");
+    empty.hidden = Boolean(preset);
+    form.hidden = !preset;
+    if (!preset) return;
+    const locked = selectedTechnologyPresetIsLocked(preset);
+    byId("technology-rule-title").textContent = technologyPresetTitle(preset);
+    byId("technology-delete-preset").disabled = locked;
+    const lockHint = byId("technology-rule-lock-hint");
+    lockHint.hidden = !locked;
+    lockHint.textContent = locked
+      ? "当前投票已锁定，刷新前不能改动命中今天的规则"
+      : "";
+    const fields = byId("technology-rule-fields");
+    fields.replaceChildren();
+
+    const modeLabel = create("span", "field-label", "生效方式");
+    const modeGroup = create("div", "technology-rule-modes");
+    for (const [mode, label] of [
+      ["date", "指定日期"],
+      ["weekday", "按星期循环"],
+      ["interval", "按间隔循环"]
+    ]) {
+      const button = create("button", "technology-rule-mode", label);
+      button.type = "button";
+      button.dataset.active = String(preset.mode === mode);
+      button.setAttribute("aria-pressed", String(preset.mode === mode));
+      button.disabled = locked;
+      button.addEventListener("click", () => {
+        setTechnologyPresetMode(preset, mode);
+        markTechnologyDirty();
+        renderTechnologyEditor();
+      });
+      modeGroup.append(button);
+    }
+    fields.append(modeLabel, modeGroup);
+
+    if (preset.mode === "date") {
+      const dateField = create("label", "field technology-rule-date-field");
+      dateField.append(create("span", "", "科技生效日"));
+      const input = document.createElement("input");
+      input.type = "date";
+      input.value = preset.date || technologyFirstDate();
+      input.required = true;
+      input.disabled = locked;
+      input.addEventListener("change", () => {
+        preset.date = input.value;
+        state.technologyDate = input.value;
+        markTechnologyDirty();
+        renderTechnologyEditor();
+      });
+      dateField.append(input);
+      fields.append(dateField);
+    } else {
+      const range = create("div", "technology-rule-date-range");
+      const startField = create("label", "field");
+      startField.append(create("span", "", "起始生效日"));
+      const startInput = document.createElement("input");
+      startInput.type = "date";
+      startInput.value = preset.startDate || technologyFirstDate();
+      startInput.required = true;
+      startInput.disabled = locked;
+      startInput.addEventListener("change", () => {
+        preset.startDate = startInput.value;
+        if (preset.endDate && preset.endDate < preset.startDate) preset.endDate = preset.startDate;
+        markTechnologyDirty();
+        renderTechnologyEditor();
+      });
+      startField.append(startInput);
+      const endField = create("label", "field");
+      endField.append(create("span", "", "结束生效日"));
+      const endInput = document.createElement("input");
+      endInput.type = "date";
+      endInput.value = preset.endDate || "";
+      endInput.min = preset.startDate || technologyFirstDate();
+      endInput.disabled = locked || preset.endDate === null;
+      endInput.addEventListener("change", () => {
+        preset.endDate = endInput.value || null;
+        markTechnologyDirty();
+        renderTechnologyEditor();
+      });
+      endField.append(endInput);
+      range.append(startField, endField);
+      const permanentLabel = create("label", "technology-permanent-toggle");
+      const permanent = document.createElement("input");
+      permanent.type = "checkbox";
+      permanent.checked = preset.endDate === null;
+      permanent.disabled = locked;
+      permanent.addEventListener("change", () => {
+        preset.endDate = permanent.checked
+          ? null
+          : preset.endDate || preset.startDate || technologyFirstDate();
+        markTechnologyDirty();
+        renderTechnologyEditor();
+      });
+      permanentLabel.append(permanent, document.createTextNode(" 永久有效"));
+      fields.append(range, permanentLabel);
+
+      if (preset.mode === "weekday") {
+        const weekdayField = create("div", "technology-rule-weekdays");
+        weekdayField.append(create("span", "field-label", "每周生效日（可多选）"));
+        const weekdayChoices = create("div", "technology-weekday-choices");
+        for (let weekday = 1; weekday <= 7; weekday += 1) {
+          const label = create("label", "technology-weekday-choice");
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.checked = (preset.weekdays || []).includes(weekday);
+          input.disabled = locked;
+          input.addEventListener("change", () => {
+            const next = new Set(preset.weekdays || []);
+            if (input.checked) next.add(weekday);
+            else next.delete(weekday);
+            preset.weekdays = [...next].sort((left, right) => left - right);
+            markTechnologyDirty();
+            renderTechnologyEditor();
+          });
+          label.append(input, document.createTextNode(technologyWeekdayLabel(weekday)));
+          weekdayChoices.append(label);
+        }
+        weekdayField.append(weekdayChoices);
+        fields.append(weekdayField);
+      } else {
+        const intervalField = create("label", "field technology-interval-field");
+        intervalField.append(create("span", "", "每隔几个科技日开放"));
+        const intervalInput = document.createElement("input");
+        intervalInput.type = "number";
+        intervalInput.min = "0";
+        intervalInput.max = "3650";
+        intervalInput.step = "1";
+        intervalInput.value = String(Number.isInteger(preset.intervalDays) ? preset.intervalDays : 1);
+        intervalInput.required = true;
+        intervalInput.disabled = locked;
+        intervalInput.addEventListener("change", () => {
+          preset.intervalDays = Number(intervalInput.value);
+          markTechnologyDirty();
+          renderTechnologyEditor();
+        });
+        intervalField.append(intervalInput, create("small", "field-hint", "填 1 时按 6 月 1 日、3 日、5 日……生效"));
+        fields.append(intervalField);
+      }
+    }
+    const count = byId("technology-rule-selection-count");
+    count.textContent = preset.technologyKeys.length
+      ? `${preset.technologyKeys.length} 项科技 · 请在下方目录勾选`
+      : "尚未选择科技 · 请在下方目录勾选";
+  }
+
+  function renderTechnologyPreview(config, campType, effectiveLane) {
+    const firstDate = technologyFirstDate();
+    const weekdayRoot = byId("technology-weekdays");
+    weekdayRoot.replaceChildren();
+    if (!state.technologyDate) state.technologyDate = firstDate;
+    if (state.technologyDate < firstDate) state.technologyDate = firstDate;
+    const dateInput = byId("technology-fixed-date");
+    if (dateInput) {
+      dateInput.min = firstDate;
+      if (document.activeElement !== dateInput) dateInput.value = state.technologyDate;
+    }
+    for (let index = 0; index < 7; index += 1) {
+      const date = datePlusDays(firstDate, index);
+      const weekday = new Intl.DateTimeFormat(localeTag(), {
+        weekday: "short",
+        timeZone: "UTC"
+      }).format(new Date(`${date}T00:00:00Z`));
+      const name = `${index === 0 ? `${translateUi("次日")} · ` : ""}${date.slice(5)} ${weekday}`;
+      const button = create("button", "weekday-tab", name);
+      button.type = "button";
+      button.dataset.active = String(state.technologyDate === date);
+      button.addEventListener("click", () => {
+        state.technologyDate = date;
+        renderTechnologyEditor();
+      });
+      weekdayRoot.append(button);
+    }
+
+    const fixed = new Set(fixedTechnologyKeysForDate(config, state.technologyDate));
+    const currentVoteSummary = state.bootstrap?.voteSummary;
+    const previewRoot = byId("technology-fixed-preview");
+    previewRoot.replaceChildren();
+    const showsCurrentProjection = state.technologyDate === currentVoteSummary?.pollDate;
+    const projectedOrderByLane = new Map(
+      ["core", "general"].map((lane) => [
+        lane,
+        showsCurrentProjection
+          ? (currentVoteSummary?.projectedPlan?.[lane] || []).map((item) => item.key)
+          : []
+      ])
+    );
+    for (const lane of ["core", "general"]) {
+      const projectedOrder = projectedOrderByLane.get(lane);
+      const projectedKeys = new Set(projectedOrder);
+      const selected = config.catalog
+        .filter((item) => showsCurrentProjection
+          ? projectedKeys.has(item.key)
+          : fixed.has(item.key) && effectiveLane(item) === lane)
+        .sort((a, b) => showsCurrentProjection
+          ? projectedOrder.indexOf(a.key) - projectedOrder.indexOf(b.key)
+          : a.sortOrder - b.sortOrder);
+      const limit = config.limits[lane];
+      const visibleSelected = selected.slice(0, limit);
+      const laneRoot = create("section", "technology-fixed-lane");
+      const laneHeader = create("div", "technology-fixed-lane-header");
+      laneHeader.append(
+        create("strong", "", technologyRowLabel(lane, campType)),
+        create("span", "", `${visibleSelected.length} / ${limit}`)
+      );
+      const slots = create("div", "technology-fixed-slots");
+      for (let index = 0; index < TECHNOLOGY_ROW_SLOT_COUNT; index += 1) {
+        const item = visibleSelected[index];
+        const slot = create("div", "technology-fixed-slot");
+        slot.dataset.filled = String(Boolean(item));
+        slot.dataset.source = item ? fixed.has(item.key) ? "fixed" : "vote" : "empty";
+        slot.title = item
+          ? formatUi("{name} · {source}", {
+              name: item.name,
+              source: fixed.has(item.key) ? translateUi("固定科技") : translateUi("投票科技")
+            })
+          : window.MrzhI18n.t("空位");
+        if (item?.iconUrl) {
+          const image = document.createElement("img");
+          image.src = item.iconUrl;
+          image.alt = item.name;
+          image.loading = "lazy";
+          slot.append(image);
+        } else if (item) slot.append(create("span", "", item.name.slice(0, 1)));
+        else slot.append(create("span", "", "+"));
+        slots.append(slot);
+      }
+      laneRoot.append(laneHeader, slots);
+      previewRoot.append(laneRoot);
+    }
+  }
+
+  function renderTechnologyCatalog(config, campType, effectiveLane) {
+    const root = byId("technology-catalog-grid");
+    root.replaceChildren();
+    byId("technology-empty").hidden = Boolean(config.catalog.length);
+    const normalizedQuery = state.technologyQuery.trim().toLocaleLowerCase();
+    const filteredCatalog = config.catalog.filter((item) => {
+      if (state.technologyCategory !== "all" && item.category !== state.technologyCategory) return false;
+      if (!normalizedQuery) return true;
+      return [item.name, item.description, item.uiLabel].filter(Boolean).some((value) =>
+        String(value).toLocaleLowerCase().includes(normalizedQuery)
+      );
+    });
+    byId("technology-filter-empty").hidden = !config.catalog.length || Boolean(filteredCatalog.length);
+    byId("technology-result-count").textContent = window.MrzhI18n.format(
+      "显示 {count} / {total} 项科技",
+      { count: filteredCatalog.length, total: config.catalog.length }
+    );
+    const preset = selectedTechnologyPreset();
+    const fixed = new Set(preset?.technologyKeys || []);
+    const presetLocked = selectedTechnologyPresetIsLocked(preset);
+    const currentVoteSummary = state.bootstrap?.voteSummary;
+    const technologyResultLocked = Boolean(
+      currentVoteSummary?.isOpen === false &&
+      state.technologyDate === currentVoteSummary.pollDate
+    );
+    const coreLabel = technologyCategoryLabel(campType);
+    const otherLabel = translateUi("其他科技");
+    for (const item of [...filteredCatalog].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      const card = create("article", "technology-admin-card");
+      card.dataset.fixed = String(fixed.has(item.key));
+      const image = document.createElement(item.iconUrl ? "img" : "span");
+      image.className = "tech-icon technology-admin-icon";
+      if (item.iconUrl) {
+        image.src = item.iconUrl;
+        image.alt = "";
+        image.loading = "lazy";
+      } else image.textContent = item.name.slice(0, 1);
+      const copy = create("div", "technology-admin-copy");
+      copy.append(
+        create("strong", "", item.name),
+        create("small", "", `${categoryLabel(item.category)} · ${technologyRowLabel(effectiveLane(item), campType)}`),
+        create("p", "", item.description || translateUi("暂无科技描述"))
+      );
+      const controls = create("div", "technology-admin-controls");
+      const fixedLabel = create("label", "technology-toggle");
+      const fixedInput = document.createElement("input");
+      fixedInput.type = "checkbox";
+      fixedInput.checked = fixed.has(item.key);
+      fixedInput.disabled = !preset || presetLocked;
+      fixedInput.title = !preset
+        ? "请先新建或选择固定规则"
+        : presetLocked
+          ? "当前投票已锁定，刷新前不能改动命中今天的规则"
+          : "将科技加入当前固定规则";
+      fixedInput.addEventListener("change", () => {
+        if (!preset) return;
+        const keys = new Set(preset.technologyKeys || []);
+        if (fixedInput.checked) {
+          const itemLane = effectiveLane(item);
+          const laneCount = config.catalog.filter((technology) =>
+            keys.has(technology.key) && effectiveLane(technology) === itemLane
+          ).length;
+          const limit = config.limits[itemLane];
+          if (laneCount >= limit) {
+            fixedInput.checked = false;
+            void showAppAlert(formatUi("{lane}最多固定 {limit} 项", {
+              lane: itemLane === "core" ? coreLabel : otherLabel,
+              limit
+            }), { title: "操作" });
+            return;
+          }
+          keys.add(item.key);
+        } else keys.delete(item.key);
+        preset.technologyKeys = [...keys];
+        markTechnologyDirty();
+        renderTechnologyEditor();
+      });
+      fixedLabel.append(fixedInput, document.createTextNode(` ${translateUi("固定到此规则")}`));
+      const voteLabel = create("label", "technology-toggle");
+      const voteInput = document.createElement("input");
+      voteInput.type = "checkbox";
+      voteInput.checked = item.enabledForVoting;
+      voteInput.disabled = technologyResultLocked;
+      voteInput.title = technologyResultLocked
+        ? translateUi("投票截止后至每日刷新前不可修改当前投票配置")
+        : "";
+      voteInput.addEventListener("change", () => {
+        item.enabledForVoting = voteInput.checked;
+        markTechnologyDirty();
+      });
+      voteLabel.append(voteInput, document.createTextNode(` ${translateUi("开放投票")}`));
+      const laneSelect = document.createElement("select");
+      laneSelect.className = "technology-lane-select";
+      const coreOption = document.createElement("option");
+      coreOption.value = "core";
+      coreOption.textContent = technologyRowLabel("core", campType);
+      const otherOption = document.createElement("option");
+      otherOption.value = "general";
+      otherOption.textContent = technologyRowLabel("general", campType);
+      laneSelect.append(coreOption, otherOption);
+      laneSelect.value = effectiveLane(item);
+      laneSelect.disabled = true;
+      laneSelect.title = translateUi("科技所在行由营地科技类型自动决定");
+      controls.append(fixedLabel, voteLabel, laneSelect);
+      card.append(image, copy, controls);
+      root.append(card);
+    }
   }
 
   function renderTechnologyEditor() {
@@ -1317,263 +1855,16 @@
         limitInput.value = String(config.limits[lane]);
       }
     }
-    const campType =
-      state.bootstrap?.configBundle?.campConfig?.currentCampType ||
-      "agriculture";
-    const effectiveLane = (item) =>
-      item.category === campType ? "core" : "general";
-    const coreLabel = technologyCategoryLabel(campType);
-    const otherLabel = translateUi("其他科技");
-    const weekdayRoot = byId("technology-weekdays");
-    weekdayRoot.replaceChildren();
-    const firstDate =
-      state.bootstrap?.voteSummary?.pollDate ||
-      state.bootstrap?.nextTechnologyTargetDate ||
-      identityExpiryDate(new Date());
-    const allowedDates = new Set(
-      Array.from({ length: 7 }, (_, index) => datePlusDays(firstDate, index))
-    );
-    config.fixedByDate ||= {};
-    for (const date of allowedDates) {
-      config.fixedByDate[date] ||= [];
+    ensureTechnologyPresets(config);
+    const campType = state.bootstrap?.configBundle?.campConfig?.currentCampType || "agriculture";
+    const effectiveLane = (item) => item.category === campType ? "core" : "general";
+    if (!state.technologyPresetId || !selectedTechnologyPreset()) {
+      state.technologyPresetId = config.fixedPresets[0]?.id || "";
     }
-    if (!state.technologyDate) state.technologyDate = firstDate;
-    if (state.technologyDate < firstDate) state.technologyDate = firstDate;
-    config.fixedByDate[state.technologyDate] ||= [];
-    const dateInput = byId("technology-fixed-date");
-    if (dateInput) {
-      dateInput.min = firstDate;
-      if (document.activeElement !== dateInput) {
-        dateInput.value = state.technologyDate;
-      }
-    }
-    Array.from({ length: 7 }, (_, index) => {
-      const date = datePlusDays(firstDate, index);
-      const weekday = new Intl.DateTimeFormat(localeTag(), {
-        weekday: "short",
-        timeZone: "UTC"
-      }).format(new Date(`${date}T00:00:00Z`));
-      const name = `${index === 0 ? `${translateUi("次日")} · ` : ""}${date.slice(5)} ${weekday}`;
-      const button = create("button", "weekday-tab", name);
-      button.type = "button";
-      button.dataset.active = String(state.technologyDate === date);
-      button.addEventListener("click", () => {
-        state.technologyDate = date;
-        renderTechnologyEditor();
-      });
-      weekdayRoot.append(button);
-    });
-
-    const fixed = new Set(
-      config.fixedByDate[state.technologyDate] || []
-    );
-    const currentVoteSummary = state.bootstrap?.voteSummary;
-    const technologyResultLocked = Boolean(
-      currentVoteSummary?.isOpen === false &&
-      state.technologyDate === currentVoteSummary.pollDate
-    );
-    const previewRoot = byId("technology-fixed-preview");
-    previewRoot.replaceChildren();
-    const showsCurrentProjection =
-      state.technologyDate === currentVoteSummary?.pollDate;
-    const projectedOrderByLane = new Map(
-      ["core", "general"].map((lane) => [
-        lane,
-        showsCurrentProjection
-          ? (currentVoteSummary?.projectedPlan?.[lane] || []).map(
-              (item) => item.key
-            )
-          : []
-      ])
-    );
-    for (const lane of ["core", "general"]) {
-      const projectedOrder = projectedOrderByLane.get(lane);
-      const projectedKeys = new Set(projectedOrder);
-      const selected = config.catalog
-        .filter((item) =>
-          showsCurrentProjection
-            ? projectedKeys.has(item.key)
-            : fixed.has(item.key) && effectiveLane(item) === lane
-        )
-        .sort((a, b) =>
-          showsCurrentProjection
-          ? projectedOrder.indexOf(a.key) - projectedOrder.indexOf(b.key)
-          : a.sortOrder - b.sortOrder
-        );
-      // The game always exposes six physical slots. The configured limit only
-      // controls how many entries may be selected for this row; the remaining
-      // slots must stay visible so the Agent can inspect them as empty.
-      const limit = config.limits[lane];
-      const visibleSelected = selected.slice(0, limit);
-      const laneRoot = create("section", "technology-fixed-lane");
-      const laneHeader = create("div", "technology-fixed-lane-header");
-      laneHeader.append(
-        create(
-          "strong",
-          "",
-          technologyRowLabel(lane, campType)
-        ),
-        create(
-          "span",
-          "",
-          `${visibleSelected.length} / ${limit}`
-        )
-      );
-      const slots = create("div", "technology-fixed-slots");
-      for (let index = 0; index < TECHNOLOGY_ROW_SLOT_COUNT; index += 1) {
-        const item = visibleSelected[index];
-        const slot = create("div", "technology-fixed-slot");
-        slot.dataset.filled = String(Boolean(item));
-        slot.dataset.source = item
-          ? fixed.has(item.key)
-            ? "fixed"
-            : "vote"
-          : "empty";
-        slot.title = item
-          ? formatUi("{name} · {source}", {
-              name: item.name,
-              source: fixed.has(item.key)
-                ? translateUi("固定科技")
-                : translateUi("投票科技")
-            })
-          : window.MrzhI18n.t("空位");
-        if (item?.iconUrl) {
-          const image = document.createElement("img");
-          image.src = item.iconUrl;
-          image.alt = item.name;
-          image.loading = "lazy";
-          slot.append(image);
-        } else if (item) {
-          slot.append(create("span", "", item.name.slice(0, 1)));
-        } else {
-          slot.append(create("span", "", "+"));
-        }
-        slots.append(slot);
-      }
-      laneRoot.append(laneHeader, slots);
-      previewRoot.append(laneRoot);
-    }
-
-    const root = byId("technology-catalog-grid");
-    root.replaceChildren();
-    byId("technology-empty").hidden = Boolean(config.catalog.length);
-    const normalizedQuery = state.technologyQuery.trim().toLocaleLowerCase();
-    const filteredCatalog = config.catalog.filter((item) => {
-      if (
-        state.technologyCategory !== "all" &&
-        item.category !== state.technologyCategory
-      ) {
-        return false;
-      }
-      if (!normalizedQuery) return true;
-      return [item.name, item.description, item.uiLabel]
-        .filter(Boolean)
-        .some((value) =>
-          String(value).toLocaleLowerCase().includes(normalizedQuery)
-        );
-    });
-    byId("technology-filter-empty").hidden =
-      !config.catalog.length || Boolean(filteredCatalog.length);
-    byId("technology-result-count").textContent = window.MrzhI18n.format(
-      "显示 {count} / {total} 项科技",
-      {
-        count: filteredCatalog.length,
-        total: config.catalog.length
-      }
-    );
-    for (const item of [...filteredCatalog].sort(
-      (a, b) => a.sortOrder - b.sortOrder
-    )) {
-      const card = create("article", "technology-admin-card");
-      card.dataset.fixed = String(fixed.has(item.key));
-      const image = document.createElement(item.iconUrl ? "img" : "span");
-      image.className = "tech-icon technology-admin-icon";
-      if (item.iconUrl) {
-        image.src = item.iconUrl;
-        image.alt = "";
-        image.loading = "lazy";
-      } else {
-        image.textContent = item.name.slice(0, 1);
-      }
-      const copy = create("div", "technology-admin-copy");
-      copy.append(
-        create("strong", "", item.name),
-        create(
-          "small",
-          "",
-          `${categoryLabel(item.category)} · ${technologyRowLabel(effectiveLane(item), campType)}`
-        ),
-        create("p", "", item.description || translateUi("暂无科技描述"))
-      );
-      const controls = create("div", "technology-admin-controls");
-      const fixedLabel = create("label", "technology-toggle");
-      const fixedInput = document.createElement("input");
-      fixedInput.type = "checkbox";
-      fixedInput.checked = fixed.has(item.key);
-      fixedInput.disabled = technologyResultLocked;
-      if (technologyResultLocked) {
-        fixedInput.title = translateUi("投票截止后至每日刷新前不可修改当前固定科技");
-      }
-      fixedInput.addEventListener("change", () => {
-        const keys = new Set(
-          config.fixedByDate[state.technologyDate] || []
-        );
-        if (fixedInput.checked) {
-          const itemLane = effectiveLane(item);
-          const laneCount = config.catalog.filter(
-            (technology) =>
-              keys.has(technology.key) &&
-              effectiveLane(technology) === itemLane
-          ).length;
-          const limit = config.limits[itemLane];
-          if (laneCount >= limit) {
-            fixedInput.checked = false;
-            void showAppAlert(formatUi("{lane}最多固定 {limit} 项", {
-              lane: itemLane === "core" ? coreLabel : otherLabel,
-              limit
-            }), { title: "操作" });
-            return;
-          }
-          keys.add(item.key);
-        } else {
-          keys.delete(item.key);
-        }
-        config.fixedByDate[state.technologyDate] = [...keys];
-        markTechnologyDirty();
-        renderTechnologyEditor();
-      });
-      fixedLabel.append(fixedInput, document.createTextNode(` ${translateUi("固定")}`));
-
-      const voteLabel = create("label", "technology-toggle");
-      const voteInput = document.createElement("input");
-      voteInput.type = "checkbox";
-      voteInput.checked = item.enabledForVoting;
-      voteInput.disabled = technologyResultLocked;
-      if (technologyResultLocked) {
-        voteInput.title = translateUi("投票截止后至每日刷新前不可修改当前投票配置");
-      }
-      voteInput.addEventListener("change", () => {
-        item.enabledForVoting = voteInput.checked;
-        markTechnologyDirty();
-      });
-      voteLabel.append(voteInput, document.createTextNode(` ${translateUi("开放投票")}`));
-
-      const laneSelect = document.createElement("select");
-      laneSelect.className = "technology-lane-select";
-      const coreOption = document.createElement("option");
-      coreOption.value = "core";
-      coreOption.textContent = technologyRowLabel("core", campType);
-      const otherOption = document.createElement("option");
-      otherOption.value = "general";
-      otherOption.textContent = technologyRowLabel("general", campType);
-      laneSelect.append(coreOption, otherOption);
-      laneSelect.value = effectiveLane(item);
-      laneSelect.disabled = true;
-      laneSelect.title = translateUi("科技所在行由营地科技类型自动决定");
-      controls.append(fixedLabel, voteLabel, laneSelect);
-      card.append(image, copy, controls);
-      root.append(card);
-    }
+    renderTechnologyPresetList();
+    renderTechnologyPresetEditor();
+    renderTechnologyPreview(config, campType, effectiveLane);
+    renderTechnologyCatalog(config, campType, effectiveLane);
   }
 
   function categoryLabel(category) {
@@ -2332,6 +2623,24 @@
       state.technologyDraft.limits = {
         core: readRowLimit("technology-core-limit"),
         general: readRowLimit("technology-general-limit")
+      };
+      const emptyPreset = state.technologyDraft.fixedPresets.find(
+        (preset) => !preset.technologyKeys?.length
+      );
+      if (emptyPreset) {
+        throw new Error("每条固定规则至少选择 1 项科技，或删除空规则后再保存");
+      }
+      // The preset list is the canonical source. Clear legacy maps so deleting
+      // a migrated rule cannot leave an invisible weekday/date override behind.
+      state.technologyDraft.fixedByDate = {};
+      state.technologyDraft.fixedByWeekday = {
+        "1": [],
+        "2": [],
+        "3": [],
+        "4": [],
+        "5": [],
+        "6": [],
+        "7": []
       };
       next.technologyConfig = JSON.parse(
         JSON.stringify(state.technologyDraft)
@@ -3150,8 +3459,33 @@
     const value = String(event.target.value || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
     state.technologyDate = value;
-    state.technologyDraft.fixedByDate ||= {};
-    state.technologyDraft.fixedByDate[value] ||= [];
+    renderTechnologyEditor();
+  });
+  byId("technology-add-preset")?.addEventListener("click", () => {
+    if (!state.technologyDraft) return;
+    const preset = {
+      id: createTechnologyPresetId(),
+      mode: "date",
+      date: state.technologyDate || technologyFirstDate(),
+      technologyKeys: []
+    };
+    state.technologyDraft.fixedPresets.push(preset);
+    state.technologyPresetId = preset.id;
+    markTechnologyDirty();
+    renderTechnologyEditor();
+  });
+  byId("technology-delete-preset")?.addEventListener("click", async () => {
+    const preset = selectedTechnologyPreset();
+    if (!preset || selectedTechnologyPresetIsLocked(preset)) return;
+    if (!(await showAppConfirm(
+      `确定删除“${technologyPresetTitle(preset)}”吗？保存后该固定规则将永久移除。`,
+      { title: "删除固定规则", danger: true }
+    ))) return;
+    const presets = state.technologyDraft.fixedPresets;
+    const index = presets.findIndex((item) => item.id === preset.id);
+    if (index >= 0) presets.splice(index, 1);
+    state.technologyPresetId = presets[Math.max(0, index - 1)]?.id || presets[0]?.id || "";
+    markTechnologyDirty();
     renderTechnologyEditor();
   });
   for (const [id, lane] of [

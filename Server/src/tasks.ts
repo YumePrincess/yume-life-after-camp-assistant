@@ -14,6 +14,7 @@ import type {
 } from "./domain";
 import {
   buildTechnologyPlan,
+  fixedTechnologyKeysForDate,
   technologyCatalogWithPrerequisites
 } from "./tech";
 import {
@@ -22,7 +23,6 @@ import {
   nextTechnologyTargetDate,
   technologyEffectiveDateAtDailyReset,
   targetDateForTechnologyRun,
-  weekdayForDateKey,
   zonedDateKey,
   zonedDateTimeToIso
 } from "./time";
@@ -88,11 +88,7 @@ export async function buildVoteSummary(
     );
   const ballots = await listBallots(env, pollDate);
   const fixed = new Set(
-    bundle.technologyConfig.fixedByDate[pollDate] ??
-      bundle.technologyConfig.fixedByWeekday[
-        String(weekdayForDateKey(pollDate))
-      ] ??
-      []
+    fixedTechnologyKeysForDate(bundle.technologyConfig, pollDate)
   );
   const counts = new Map<string, number>();
   for (const ballot of ballots) {
@@ -143,11 +139,7 @@ export async function snapshotTechnologyVoteHistory(
 ): Promise<void> {
   const summary = await buildVoteSummary(env, bundle, now, pollDate);
   const fixedKeys = new Set(
-    bundle.technologyConfig.fixedByDate[pollDate] ??
-      bundle.technologyConfig.fixedByWeekday[
-        String(weekdayForDateKey(pollDate))
-      ] ??
-      []
+    fixedTechnologyKeysForDate(bundle.technologyConfig, pollDate)
   );
   await saveTechnologyVoteHistory(env, {
     pollDate,

@@ -63,7 +63,10 @@ import {
   updateRun,
   type SessionRow
 } from "./db";
-import { normalizeBallotSelections } from "./tech";
+import {
+  fixedTechnologyKeysForDate,
+  normalizeBallotSelections
+} from "./tech";
 import {
   isTaskKey,
   type ConfigBundle,
@@ -91,7 +94,6 @@ import {
   isWithinScheduledTaskPollingWindow,
   nextScheduledTaskPollingWindowStart,
   scheduledTaskClocks,
-  weekdayForDateKey,
   zonedDateTimeToIso,
   zonedDateKey
 } from "./time";
@@ -444,11 +446,7 @@ async function handlePublicApi(
     const rawSelections = [...new Set(body.selections.map((value) => String(value)))];
     const requestedSelections = rawSelections.filter((value) => allowed.has(value));
     const fixed = new Set(
-      bundle.technologyConfig.fixedByDate[summary.pollDate] ??
-        bundle.technologyConfig.fixedByWeekday[
-          String(weekdayForDateKey(summary.pollDate))
-        ] ??
-        []
+      fixedTechnologyKeysForDate(bundle.technologyConfig, summary.pollDate)
     );
     const normalized = normalizeBallotSelections({
       selections: requestedSelections,
@@ -1288,10 +1286,10 @@ async function handleAdminApi(
           [...new Set(Array.isArray(value) ? value.map(String) : [])].sort();
         const effectiveFixed = (config: ConfigBundle) =>
           normalizeKeys(
-            config.technologyConfig.fixedByDate[voteSummary.pollDate] ??
-              config.technologyConfig.fixedByWeekday[
-                String(weekdayForDateKey(voteSummary.pollDate))
-              ]
+            fixedTechnologyKeysForDate(
+              config.technologyConfig,
+              voteSummary.pollDate
+            )
           );
         const votingCatalog = (config: ConfigBundle) =>
           config.technologyConfig.catalog
