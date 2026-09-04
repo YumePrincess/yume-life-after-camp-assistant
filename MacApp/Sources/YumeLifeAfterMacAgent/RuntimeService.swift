@@ -1091,6 +1091,19 @@ actor RuntimeService {
         }
     }
 
+    func shutdown(debugToken: String) async throws {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:8091/shutdown")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 5
+        request.setValue("Bearer \(debugToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            throw RuntimeError.failed(payload?["error"] as? String ?? "HTTP \(status)")
+        }
+    }
+
     func registerAgent(
         baseURL: String,
         agentID: String,

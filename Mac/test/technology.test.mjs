@@ -3,9 +3,54 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   clearAllConfiguredSlots,
+  findTechnologyMatch,
   selectTechnology,
   verifyFinalConfiguredSlots
 } from "../src/workflows/technology.mjs";
+
+test("technology matching ignores parenthetical prerequisites as one generic rule", () => {
+  const region = { left: 60, top: 180, right: 720, bottom: 1040 };
+  const observations = [
+    observation("快速装填", 240, 430),
+    observation("（赤色瓶子）", 325, 430),
+    observation("赤色瓶子", 240, 520)
+  ];
+
+  const mainMatch = findTechnologyMatch(
+    null,
+    observations,
+    "快速装填",
+    region
+  );
+  assert.equal(mainMatch?.text, "快速装填（赤色瓶子）");
+  assert.equal(mainMatch?.y, 430);
+
+  const prerequisiteMatch = findTechnologyMatch(
+    null,
+    observations.slice(0, 2),
+    "赤色瓶子",
+    region
+  );
+  assert.equal(prerequisiteMatch, null);
+
+  const wrappedMatch = findTechnologyMatch(
+    null,
+    [observation("快速装填（赤色\n瓶子）", 240, 430)],
+    "快速装填",
+    region
+  );
+  assert.equal(wrappedMatch?.text, "快速装填（赤色\n瓶子）");
+});
+
+test("technology detail accepts the main title when the prerequisite is omitted", () => {
+  const match = findTechnologyMatch(
+    null,
+    [observation("快速装填", 620, 430)],
+    "快速装填（赤色瓶子）",
+    { left: 520, top: 250, right: 1050, bottom: 850 }
+  );
+  assert.equal(match?.text, "快速装填");
+});
 
 test("1920x1200 technology hitboxes keep the live-device calibration", async () => {
   const config = JSON.parse(

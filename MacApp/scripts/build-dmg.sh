@@ -71,6 +71,9 @@ hdiutil create -quiet -srcfolder "${STAGING}" -volname "${VOLUME_NAME}" -fs HFS+
 ATTACH_OUTPUT=$(hdiutil attach -readwrite -noverify -noautoopen -mountpoint "${MOUNT_POINT}" "${RW_IMAGE}")
 DEVICE=$(echo "${ATTACH_OUTPUT}" | awk '/Apple_HFS/ {print $1; exit}')
 [[ -n "${DEVICE}" ]] || { echo "Could not determine the writable DMG device." >&2; exit 1; }
+if [[ "${YLA_SKIP_FINDER_LAYOUT:-0}" == "1" ]]; then
+  echo "Skipping Finder DMG layout; building a verified installable image without a desktop session."
+else
 LAYOUT_RESULT=$(osascript <<APPLESCRIPT 2>&1 || true
 tell application "Finder"
   tell disk "${MOUNT_NAME}"
@@ -123,6 +126,7 @@ if [[ "${LAYOUT_RESULT}" != "ok" || ! -f "${MOUNT_POINT}/.DS_Store" ]]; then
   hdiutil detach -quiet "${DEVICE}" || hdiutil detach -force "${DEVICE}"
   rm -f -- "${RW_IMAGE}"
   exit 1
+fi
 fi
 
 sync

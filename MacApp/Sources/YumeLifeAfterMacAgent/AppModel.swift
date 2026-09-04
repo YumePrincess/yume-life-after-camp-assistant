@@ -51,6 +51,9 @@ final class AppModel: ObservableObject {
     let browser = AdminBrowser()
     private let runtime = RuntimeService.shared
     private var pollingTask: Task<Void, Never>?
+    // A stop initiated from this still-open App must not be undone if SwiftUI
+    // recreates the root view and runs bootstrap again.
+    private var agentStoppedByUser = false
     private let logPageSize = 250
     private var timezoneConfigured: Bool
     private var cachedLogLinesSource = ""
@@ -203,7 +206,7 @@ final class AppModel: ObservableObject {
                     updateProgress = 0.75
                     updateResult = text("Install Android platform-tools too. The App detects the system adb and does not package it.")
                 }
-            } else if setupCompleted {
+            } else if setupCompleted && !agentStoppedByUser {
                 // Opening the App is also the explicit local-agent start
                 // action. This keeps the web console online after a normal
                 // macOS/App restart without requiring a second manual click.
@@ -243,7 +246,9 @@ final class AppModel: ObservableObject {
     }
 
     func refreshStatusAndLogs(loadLogs: Bool = false) async {
-        if !debugToken.isEmpty {
+        if agentStoppedByUser {
+            health = nil
+        } else if !debugToken.isEmpty {
             // Keep the last successful health snapshot during a short
             // transient launchd/HTTP gap. Clearing it on one failed poll was
             // why a running task briefly appeared as “Agent offline”.
@@ -567,8 +572,20 @@ final class AppModel: ObservableObject {
             case "repair", "update", "uninstall": 300
             default: 180
             }
+            if action == "stop", !debugToken.isEmpty {
+                // Ask the Node runtime to stop its polling loop first. The
+                // launchd unload below remains the final process-level guard,
+                // including when the debug endpoint is already unavailable.
+                try? await runtime.shutdown(debugToken: debugToken)
+            }
             let output = try await runtime.run([action], timeout: timeout)
             statusMessage = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if action == "stop" {
+                agentStoppedByUser = true
+                health = nil
+            } else if ["start", "restart", "install", "repair", "update"].contains(action) {
+                agentStoppedByUser = false
+            }
             if action == "update" {
                 updateSteps.append(text("Dependencies and OCR runtime updated."))
                 updateProgress = 1

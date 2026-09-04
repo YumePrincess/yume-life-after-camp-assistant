@@ -844,6 +844,18 @@ function createDebugServer() {
       response.end(JSON.stringify({ ok: true, interrupted: Boolean(active) }));
       return;
     }
+    if (request.method === "POST" && request.url === "/shutdown") {
+      const interrupted = Boolean(active);
+      stopping = true;
+      active?.controller.abort(new Error("本机调试端点请求停止 Agent"));
+      shutdownController.abort(new Error("本机调试端点请求停止 Agent"));
+      resolvePollWake?.();
+      // The main loop publishes the final offline heartbeat before it closes
+      // the debug server. Waking it here also prevents a scheduled/lazy poll
+      // from surviving until its next long interval.
+      response.end(JSON.stringify({ ok: true, stopping: true, interrupted }));
+      return;
+    }
     if (request.method === "POST" && request.url === "/debug-capture") {
       const body = await readJsonRequest(request);
       config.debug.captureScreenshots = body.enabled === true;

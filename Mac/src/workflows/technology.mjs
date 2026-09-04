@@ -55,9 +55,17 @@ export async function runTechnology(context, command, bundle, signal) {
       await report(
         "info",
         "tech_add",
-        `添加${lane === "core" ? "第一行" : "第二行"}科技：${technology.name}`
+        `添加${lane === "core" ? "第一行" : "第二行"}科技：${technologyMainName(technology.uiLabel || technology.name)}`
       );
-      await selectTechnology(context, lane, slotIndex, technology.uiLabel, signal);
+      // The game selector displays prerequisite technology in parentheses, but
+      // the Agent must search and report only the main technology title.
+      await selectTechnology(
+        context,
+        lane,
+        slotIndex,
+        technology.uiLabel || technology.name,
+        signal
+      );
       index += 1;
       await context.progress(0.2 + (index / Math.max(all.length, 1)) * 0.65, "tech_add");
       if (index < all.length) {
@@ -96,7 +104,7 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
     await report(
       "info",
       "tech_final_slot_check",
-      `安装后点击并读取${laneLabel}第 ${slot.index + 1} 格详情，确认其应为${slot.expectedTechnology ? `“${slot.expectedTechnology.uiLabel}”` : "空"}`
+      `安装后点击并读取${laneLabel}第 ${slot.index + 1} 格详情，确认其应为${slot.expectedTechnology ? `“${technologyMainName(slot.expectedTechnology.uiLabel || slot.expectedTechnology.name)}”` : "空"}`
     );
     // 槽位空图标会随页面状态、动画和光效发生像素变化。最终校验和安装前
     // 的清空检查相同：逐格点击后只由详情里的“卸下”动作确认是否已安装。
@@ -113,7 +121,11 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
       mismatches.push({
         lane: slot.lane,
         slot: slot.index + 1,
-        expectedLabel: slot.expectedTechnology?.uiLabel || null,
+        expectedLabel: slot.expectedTechnology
+          ? technologyMainName(
+              slot.expectedTechnology.uiLabel || slot.expectedTechnology.name
+            )
+          : null,
         expectedFilled,
         detectedFilled: state.occupied
       });
@@ -292,6 +304,7 @@ export async function selectTechnology(
   signal
 ) {
   const { config, ui, vision, adb, report } = context;
+  label = technologyMainName(label) || String(label || "").trim();
   const slot = config.technology.slots[lane][slotIndex];
   if (!slot) throw new Error(`${lane} lane has no slot ${slotIndex + 1}`);
   await ui.tap(slot, signal);
@@ -471,7 +484,8 @@ export async function selectTechnology(
             lane,
             slotIndex,
             point: { x, y },
-            matchedText: restedMatch.text,
+            matchedText: technologyMainName(restedMatch.text),
+            matchedSourceText: restedMatch.text,
             matchedTextX
           }
         );
@@ -674,7 +688,12 @@ function observationCenterInRegion(item, region) {
   );
 }
 
-function findTechnologyMatch(vision, observations, label, region) {
+export function findTechnologyMatch(
+  _vision,
+  observations,
+  label,
+  region
+) {
   const bounds = region || {
     left: 60,
     top: 180,
@@ -691,25 +710,159 @@ function findTechnologyMatch(vision, observations, label, region) {
       y < bounds.bottom
     );
   });
-  return (
-    vision.find(inSelector, label, "exact") ||
-    vision.find(inSelector, label, "includes") ||
-    uniqueFuzzyTechnologyMatch(inSelector, label)
-  );
+  // Treat one visual list row as one candidate. This is important when OCR
+  // returns the main name and its parenthetical prerequisite as two adjacent
+  // observations: the row is evaluated as one technology item, then only the
+  // text before the first parenthesis is compared. The prerequisite can never
+  // be selected on its own.
+  const rows = technologyObservationRows(inSelector);
+  const exact = rows
+    .map((row) => technologyRowMatch(row, label))
+    .find(Boolean);
+  return exact || uniqueFuzzyTechnologyMatch(rows, label);
 }
 
-function uniqueFuzzyTechnologyMatch(observations, label) {
-  const wanted = normalizeTechnologyText(label);
-  if (wanted.length < 4) return null;
-  const candidates = observations.filter((item) => {
-    const text = normalizeTechnologyText(item.text);
-    return (
-      text.length >= 4 &&
-      Math.abs(text.length - wanted.length) <= 1 &&
-      technologyTextDistance(text, wanted) <= 1
-    );
-  });
+function uniqueFuzzyTechnologyMatch(rows, label) {
+  const wanted = technologyNameVariants(label);
+  const candidates = [];
+  for (const row of rows) {
+    for (const text of technologyRowTexts(row)) {
+      const normalized = technologyMainName(text);
+      if (
+        wanted.some(
+          (candidate) =>
+            candidate.length >= 4 &&
+            Math.abs(normalized.length - candidate.length) <= 1 &&
+            technologyTextDistance(normalized, candidate) <= 1
+        )
+      ) {
+        candidates.push(technologyRowObservation(row, text));
+      }
+    }
+  }
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+function technologyObservationRows(observations) {
+  const items = observations
+    .filter((item) => item && String(item.text || "").trim())
+    .map((item) => ({
+      ...item,
+      x: Number(item.x) || 0,
+      y: Number(item.y) || 0,
+      width: Math.max(0, Number(item.width) || 0),
+      height: Math.max(1, Number(item.height) || 1)
+    }))
+    .sort(
+      (left, right) =>
+        left.y + left.height / 2 - (right.y + right.height / 2) ||
+        left.x - right.x
+    );
+  const rows = [];
+  for (const item of items) {
+    const centerY = item.y + item.height / 2;
+    const row = rows.find((candidate) => {
+      const tolerance = Math.max(
+        10,
+        Math.min(36, Math.max(candidate.height, item.height) * 0.75)
+      );
+      return Math.abs(centerY - candidate.centerY) <= tolerance;
+    });
+    if (row) {
+      row.items.push(item);
+      row.centerY =
+        row.items.reduce(
+          (total, value) => total + value.y + value.height / 2,
+          0
+        ) / row.items.length;
+      row.height = Math.max(row.height, item.height);
+    } else {
+      rows.push({ centerY, height: item.height, items: [item] });
+    }
+  }
+  const mergedRows = [];
+  for (const row of rows) {
+    const previous = mergedRows.at(-1);
+    if (previous && hasUnclosedTechnologyParenthesis(previous)) {
+      previous.items.push(...row.items);
+      previous.centerY =
+        previous.items.reduce(
+          (total, value) => total + value.y + value.height / 2,
+          0
+        ) / previous.items.length;
+      previous.height = Math.max(previous.height, row.height);
+    } else {
+      mergedRows.push(row);
+    }
+  }
+  return mergedRows.map((row) => {
+    row.items.sort((left, right) => left.x - right.x);
+    return row;
+  });
+}
+
+function hasUnclosedTechnologyParenthesis(row) {
+  const text = row.items.map((item) => String(item.text || "")).join("");
+  let balance = 0;
+  for (const character of normalizeTechnologyText(text)) {
+    if (character === "(") balance += 1;
+    if (character === ")") balance -= 1;
+  }
+  return balance > 0;
+}
+
+function technologyRowTexts(row) {
+  const joined = row.items
+    .map((item) => String(item.text || "").trim())
+    .join("");
+  const hasParentheticalName = /[（(]/.test(joined);
+  // If a row contains a parenthetical name, only the complete row may match.
+  // This prevents “前置科技” from being treated as a separate technology.
+  if (row.items.length > 1 || hasParentheticalName) return [joined];
+  return [
+    joined,
+    ...row.items.flatMap((item) =>
+      String(item.text || "")
+        .split(/\r?\n/)
+        .map((text) => text.trim())
+        .filter(Boolean)
+    )
+  ].filter((text, index, list) => list.indexOf(text) === index);
+}
+
+function technologyNameVariants(label) {
+  const main = technologyMainName(label);
+  return main ? [main] : [];
+}
+
+function technologyRowMatch(row, label) {
+  const expected = technologyNameVariants(label);
+  for (const text of technologyRowTexts(row)) {
+    const normalized = technologyMainName(text);
+    if (expected.includes(normalized)) {
+      return technologyRowObservation(row, text);
+    }
+  }
+  return null;
+}
+
+function technologyMainName(value) {
+  return normalizeTechnologyText(value).split("(", 1)[0];
+}
+
+function technologyRowObservation(row, text) {
+  const left = Math.min(...row.items.map((item) => item.x));
+  const top = Math.min(...row.items.map((item) => item.y));
+  const right = Math.max(...row.items.map((item) => item.x + item.width));
+  const bottom = Math.max(...row.items.map((item) => item.y + item.height));
+  return {
+    ...row.items[0],
+    text,
+    x: left,
+    y: top,
+    width: Math.max(0, right - left),
+    height: Math.max(1, bottom - top)
+  };
 }
 
 function technologySelectorSignature(observations, region) {
@@ -734,6 +887,8 @@ function normalizeTechnologyText(value) {
   return String(value || "")
     .normalize("NFKC")
     .replace(/\s+/g, "")
+    .replace(/[（【〔［]/g, "(")
+    .replace(/[）】〕］]/g, ")")
     .toLowerCase();
 }
 
