@@ -261,18 +261,18 @@ describe("buildTechnologyPlan", () => {
 });
 
 describe("built-in technology catalog", () => {
-  it("contains the verified 20 agriculture, 16 industry and 18 military items", () => {
+  it("contains the verified 21 agriculture, 16 industry and 18 military items", () => {
     const count = (category: string) =>
       BUILT_IN_TECHNOLOGY_CATALOG.filter(
         (item) => item.category === category
       ).length;
-    expect(BUILT_IN_TECHNOLOGY_CATALOG).toHaveLength(54);
-    expect(count("agriculture")).toBe(20);
+    expect(BUILT_IN_TECHNOLOGY_CATALOG).toHaveLength(55);
+    expect(count("agriculture")).toBe(21);
     expect(count("industry")).toBe(16);
     expect(count("military")).toBe(18);
     expect(
       new Set(BUILT_IN_TECHNOLOGY_CATALOG.map((item) => item.key)).size
-    ).toBe(54);
+    ).toBe(55);
     expect(
       BUILT_IN_TECHNOLOGY_CATALOG.every(
         (item) => item.iconUrl && item.description
@@ -293,7 +293,21 @@ describe("built-in technology catalog", () => {
       [...BUILT_IN_TECHNOLOGY_CATALOG]
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map((item) => item.sortOrder)
-    ).toEqual(Array.from({ length: 54 }, (_, index) => index));
+    ).toEqual(Array.from({ length: 55 }, (_, index) => index));
+    expect(
+      BUILT_IN_TECHNOLOGY_CATALOG.find(
+        (item) => item.key === "tech-c44f0496491a0c867687"
+      )
+    ).toMatchObject({
+      name: "资源收购商",
+      description: "莱文市郊的杰克每天会用500金条收购绿色以上的物资。",
+      category: "agriculture",
+      lane: "core",
+      enabledForVoting: true,
+      sortOrder: 4,
+      uiLabel: "资源收购商",
+      iconUrl: "/images/technology/tech-c44f0496491a0c867687.png"
+    });
   });
 
   it("emits the purchase discount OCR label and asset in the Agent plan", () => {
