@@ -815,8 +815,9 @@
       setTechnologyVoteEnd(camp.voteWindowEnd || "24:00");
       state.technologyDraft = JSON.parse(JSON.stringify(bundle.technologyConfig));
       ensureTechnologyPresets(state.technologyDraft);
-      state.technologyPresetId =
-        state.technologyDraft.fixedPresets[0]?.id || "";
+      // Preset selection is an explicit UI action. Do not silently select the
+      // first saved rule when the technology section is filled or refreshed.
+      state.technologyPresetId = "";
       const limits = state.technologyDraft.limits || {};
       state.technologyDraft.limits = {
         core:
@@ -1349,6 +1350,17 @@
     return `preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
+  function createEmptyTechnologyPreset() {
+    return {
+      id: createTechnologyPresetId(),
+      mode: "date",
+      date: state.technologyDate || technologyFirstDate(),
+      // Always allocate a fresh empty array. A new rule must never inherit
+      // technology keys from the currently selected rule or from the catalog.
+      technologyKeys: []
+    };
+  }
+
   function ensureTechnologyPresets(config) {
     if (Array.isArray(config.fixedPresets)) return config.fixedPresets;
     const presets = [];
@@ -1431,6 +1443,17 @@
     if (feedback) feedback.textContent = translateUi("科技配置尚未保存");
   }
 
+  function discardTechnologyDraft() {
+    const bundle = state.bootstrap?.configBundle;
+    if (!bundle?.technologyConfig) {
+      state.technologyPresetId = "";
+      return;
+    }
+    fillConfig(bundle, ["technology"]);
+    state.dirtySections.delete("technology");
+    updateSaveState();
+  }
+
   function renderTechnologyPresetList() {
     const config = state.technologyDraft;
     const root = byId("technology-preset-list");
@@ -1454,10 +1477,19 @@
         create("span", "technology-preset-count", `${preset.technologyKeys.length} 项`)
       );
       button.append(main, meta);
+      button.setAttribute(
+        "aria-pressed",
+        String(preset.id === state.technologyPresetId)
+      );
       button.addEventListener("click", () => {
-        state.technologyPresetId = preset.id;
-        if (preset.mode === "date" && preset.date) state.technologyDate = preset.date;
-        if (preset.mode !== "date" && preset.startDate) state.technologyDate = preset.startDate;
+        const isSelected = preset.id === state.technologyPresetId;
+        state.technologyPresetId = isSelected ? "" : preset.id;
+        if (!isSelected && preset.mode === "date" && preset.date) {
+          state.technologyDate = preset.date;
+        }
+        if (!isSelected && preset.mode !== "date" && preset.startDate) {
+          state.technologyDate = preset.startDate;
+        }
         renderTechnologyEditor();
       });
       root.append(button);
@@ -1739,7 +1771,11 @@
       { count: filteredCatalog.length, total: config.catalog.length }
     );
     const preset = selectedTechnologyPreset();
-    const fixed = new Set(preset?.technologyKeys || []);
+    const fixed = new Set(
+      preset && Array.isArray(preset.technologyKeys)
+        ? preset.technologyKeys
+        : []
+    );
     const presetLocked = selectedTechnologyPresetIsLocked(preset);
     const currentVoteSummary = state.bootstrap?.voteSummary;
     const technologyResultLocked = Boolean(
@@ -1858,8 +1894,8 @@
     ensureTechnologyPresets(config);
     const campType = state.bootstrap?.configBundle?.campConfig?.currentCampType || "agriculture";
     const effectiveLane = (item) => item.category === campType ? "core" : "general";
-    if (!state.technologyPresetId || !selectedTechnologyPreset()) {
-      state.technologyPresetId = config.fixedPresets[0]?.id || "";
+    if (state.technologyPresetId && !selectedTechnologyPreset()) {
+      state.technologyPresetId = "";
     }
     renderTechnologyPresetList();
     renderTechnologyPresetEditor();
@@ -2056,6 +2092,14 @@
       availableViews.has(view) && canView(view)
         ? view
         : [...availableViews].find((candidate) => canView(candidate)) || "overview";
+    if (state.activeView === "technology" && resolved !== "technology") {
+      if (state.dirtySections.has("technology")) {
+        discardTechnologyDraft();
+      } else {
+        state.technologyPresetId = "";
+        renderTechnologyEditor();
+      }
+    }
     state.activeView = resolved;
     for (const element of document.querySelectorAll("[data-admin-view]")) {
       element.hidden =
@@ -3463,12 +3507,7 @@
   });
   byId("technology-add-preset")?.addEventListener("click", () => {
     if (!state.technologyDraft) return;
-    const preset = {
-      id: createTechnologyPresetId(),
-      mode: "date",
-      date: state.technologyDate || technologyFirstDate(),
-      technologyKeys: []
-    };
+    const preset = createEmptyTechnologyPreset();
     state.technologyDraft.fixedPresets.push(preset);
     state.technologyPresetId = preset.id;
     markTechnologyDirty();
