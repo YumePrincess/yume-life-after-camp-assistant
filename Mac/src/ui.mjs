@@ -2518,12 +2518,49 @@ export class GameUi {
   async openCampPanelViaChat(action, signal) {
     await this.closeMapBeforeCampPanel(action, signal);
     const attempts = Math.max(1, Math.min(6, Number(action.attempts) || 6));
-    const chatReadyTexts = action.chatReadyTexts || [];
+    // Runtime/current preserves the user's config across App updates. Older
+    // installs therefore may still have the pre-Beta-86 action, which did not
+    // contain the explicit channel -> camp navigation fields. Keep the
+    // required navigation stateful and usable even before the Swift migration
+    // has had a chance to backfill those fields.
+    const chatReadyTexts = Array.isArray(action.chatReadyTexts)
+      ? action.chatReadyTexts.filter((text) => String(text).trim())
+      : [];
     const chatReadyRegion = action.chatReadyRegion || {
       left: 1200,
       top: 100,
       right: 1900,
       bottom: 1150
+    };
+    const chatTabText = action.chatTabText || "频道";
+    const chatTabMode = action.chatTabMode || "exact";
+    const chatTabRegion = action.chatTabRegion || {
+      left: 1450,
+      top: 0,
+      right: 1900,
+      bottom: 180
+    };
+    const campChannelText = action.campChannelText || "营地";
+    const campChannelMode = action.campChannelMode || "includes";
+    const campChannelRegion = action.campChannelRegion || {
+      left: 1450,
+      top: 120,
+      right: 1900,
+      bottom: 800
+    };
+    const configuredCampChannelReadyTexts = Array.isArray(
+      action.campChannelReadyTexts
+    )
+      ? action.campChannelReadyTexts.filter((text) => String(text).trim())
+      : [];
+    const campChannelReadyTexts = configuredCampChannelReadyTexts.length
+      ? configuredCampChannelReadyTexts
+      : ["营地频道"];
+    const campChannelReadyRegion = action.campChannelReadyRegion || {
+      left: 700,
+      top: 0,
+      right: 1450,
+      bottom: 180
     };
     const chatReadyMinimum = Math.max(
       1,
@@ -2631,83 +2668,77 @@ export class GameUi {
           "camp_chat_verified",
           "已确认聊天层；将按频道→营地频道→市政厅顺序继续，不重复发送 keyevent 70"
         );
-        const stableChatNavigation =
-          Boolean(action.chatTabText && action.campChannelText);
-        if (stableChatNavigation) {
-          await delay(Number(action.chatCardSettleMs) || 3000, signal);
-          await this.clickText(
-            action.chatTabText,
-            {
-              region: action.chatTabRegion,
-              mode: action.chatTabMode || "exact",
-              timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
-              strictTimeout: true
-            },
+        // Selecting the camp row by its old fixed coordinate is unsafe while
+        // the chat card is still on 私聊: that coordinate is a contact row in
+        // the screenshot reported with this failure. Always complete the
+        // explicit 频道 -> 营地 navigation, including for legacy actions.
+        await delay(Number(action.chatCardSettleMs) || 3000, signal);
+        await this.clickText(
+          chatTabText,
+          {
+            region: chatTabRegion,
+            mode: chatTabMode,
+            timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
+            strictTimeout: true
+          },
+          signal
+        );
+        await this.report(
+          "info",
+          "camp_chat_channel_tab_clicked",
+          `已等待 ${Number(action.chatCardSettleMs) || 3000}ms 并点击聊天顶部“${chatTabText}”`
+        );
+        await delay(Number(action.chatTabSettleMs) || 3000, signal);
+        await this.clickText(
+          campChannelText,
+          {
+            region: campChannelRegion,
+            mode: campChannelMode,
+            timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
+            strictTimeout: true
+          },
+          signal
+        );
+        await delay(Number(action.campChannelSettleMs) || 3000, signal);
+        let channelFrame = await this.vision.captureTransient(
+          `camp-channel-verify-${attempt}`,
+          signal
+        );
+        let channelReady = campChannelReadyTexts.some(
+          (text) =>
+            this.findInRegion(
+              channelFrame.observations,
+              text,
+              campChannelReadyRegion
+            )
+        );
+        if (
+          !channelReady &&
+          typeof this.vision.captureAccurateTransient === "function"
+        ) {
+          channelFrame = await this.vision.captureAccurateTransient(
+            `camp-channel-verify-accurate-${attempt}`,
             signal
           );
-          await this.report(
-            "info",
-            "camp_chat_channel_tab_clicked",
-            `已等待 ${Number(action.chatCardSettleMs) || 3000}ms 并点击聊天顶部“${action.chatTabText}”`
-          );
-          await delay(Number(action.chatTabSettleMs) || 3000, signal);
-          await this.clickText(
-            action.campChannelText,
-            {
-              region: action.campChannelRegion,
-              mode: action.campChannelMode || "includes",
-              timeoutSeconds: Number(action.chatNavigationTimeoutSeconds) || 8,
-              strictTimeout: true
-            },
-            signal
-          );
-          await delay(Number(action.campChannelSettleMs) || 3000, signal);
-          let channelFrame = await this.vision.captureTransient(
-            `camp-channel-verify-${attempt}`,
-            signal
-          );
-          let channelReady = (action.campChannelReadyTexts || ["营地频道"]).some(
+          channelReady = campChannelReadyTexts.some(
             (text) =>
               this.findInRegion(
                 channelFrame.observations,
                 text,
-                action.campChannelReadyRegion
+                campChannelReadyRegion
               )
           );
-          if (
-            !channelReady &&
-            typeof this.vision.captureAccurateTransient === "function"
-          ) {
-            channelFrame = await this.vision.captureAccurateTransient(
-              `camp-channel-verify-accurate-${attempt}`,
-              signal
-            );
-            channelReady = (action.campChannelReadyTexts || ["营地频道"]).some(
-              (text) =>
-                this.findInRegion(
-                  channelFrame.observations,
-                  text,
-                  action.campChannelReadyRegion
-                )
-            );
-          }
-          if (!channelReady) {
-            throw new Error(
-              "CAMP_CHANNEL_NOT_VERIFIED: 点击频道和营地后未确认顶部营地频道"
-            );
-          }
-          await this.report(
-            "info",
-            "camp_channel_verified",
-            "已确认顶部“营地频道”，且市政厅图标所在聊天页已稳定"
-          );
-        } else {
-          await this.tap(
-            action.campChannelButton || { x: 1740, y: 355 },
-            signal
-          );
-          await delay(action.channelDelayMs || 500, signal);
         }
+        if (!channelReady) {
+          throw new Error(
+            "CAMP_CHANNEL_NOT_VERIFIED: 点击频道和营地后未确认顶部营地频道"
+          );
+        }
+        await this.report(
+          "info",
+          "camp_channel_verified",
+          "已确认顶部“营地频道”，且市政厅图标所在聊天页已稳定"
+        );
         await this.report(
           "info",
           "camp_city_hall_click",

@@ -541,10 +541,18 @@ test("dynamic camp content alone never confirms the camp page", () => {
 
 test("accurate Chinese OCR can confirm a camp page missed by fast OCR", async () => {
   const fixture = createUi({
-    fastFrames: [[], []],
+    fastFrames: [
+      [],
+      [],
+      [observation("频道", 1600, 50)],
+      [observation("营地", 1700, 355)],
+      [],
+      []
+    ],
     accurateFrames: [
       [],
       [],
+      [observation("营地频道", 900, 115)],
       [
         observation("营地", 150, 145),
         observation("市长：雨梦", 260, 450)
@@ -555,11 +563,16 @@ test("accurate Chinese OCR can confirm a camp page missed by fast OCR", async ()
     attempts: 1,
     verifySeconds: 1,
     chatDelayMs: 1,
-    channelDelayMs: 1
+    channelDelayMs: 1,
+    chatCardSettleMs: 1,
+    chatTabSettleMs: 1,
+    campChannelSettleMs: 1,
+    chatNavigationTimeoutSeconds: 1
   });
   assert.deepEqual(fixture.taps, [
     { x: 250, y: 1060 },
-    { x: 1740, y: 355 },
+    { x: 1610, y: 60 },
+    { x: 1710, y: 365 },
     { x: 980, y: 65 }
   ]);
   assert.ok(
@@ -589,26 +602,47 @@ test("an already-open camp page is confirmed before any click", async () => {
 test("a map blocking the camp panel is closed before any chat click", async () => {
   const fixture = createUi({
     fastFrames: [
-      [observation("标志查看", 190, 35)],
-      [observation("背包", 120, 900)],
-      [observation("背包", 120, 900)],
-      [
-        observation("量子时代", 330, 330),
-        observation("营地周活跃", 760, 320)
-      ]
-    ]
+      [observation("频道", 1600, 50)],
+      [observation("营地", 1700, 355)]
+    ],
+    transientCapture(label) {
+      if (label === "camp-panel-map-check-1") {
+        return [observation("标志查看", 190, 35)];
+      }
+      if (label === "camp-panel-map-check-2") {
+        return [observation("背包", 120, 900)];
+      }
+      if (label === "camp-panel-before-1") {
+        return [observation("背包", 120, 900)];
+      }
+      if (label.startsWith("camp-channel-verify")) {
+        return [observation("营地频道", 900, 115)];
+      }
+      if (label.startsWith("camp-panel-verify")) {
+        return [
+          observation("量子时代", 330, 330),
+          observation("营地周活跃", 760, 320)
+        ];
+      }
+      return [];
+    }
   });
   await fixture.ui.openCampPanelViaChat({
     attempts: 1,
     chatDelayMs: 1,
     channelDelayMs: 1,
+    chatCardSettleMs: 1,
+    chatTabSettleMs: 1,
+    campChannelSettleMs: 1,
+    chatNavigationTimeoutSeconds: 1,
     verifySeconds: 1
   });
   assert.deepEqual(fixture.keys, []);
   assert.deepEqual(fixture.taps, [
     { x: 1850, y: 70 },
     { x: 250, y: 1060 },
-    { x: 1740, y: 355 },
+    { x: 1610, y: 60 },
+    { x: 1710, y: 365 },
     { x: 980, y: 65 }
   ]);
   assert.ok(
@@ -620,9 +654,16 @@ test("a map blocking the camp panel is closed before any chat click", async () =
 
 test("camp navigation uses direct ADB clicks after the HUD phase", async () => {
   const fixture = createUi({
+    fastFrames: [
+      [observation("频道", 1600, 50)],
+      [observation("营地", 1700, 355)]
+    ],
     transientCapture(label) {
       if (label === "camp-chat-verify-1") {
         return [observation("营地频道", 1660, 180)];
+      }
+      if (label.startsWith("camp-channel-verify")) {
+        return [observation("营地频道", 900, 115)];
       }
       if (label.startsWith("camp-panel-verify")) {
         return [
@@ -650,13 +691,18 @@ test("camp navigation uses direct ADB clicks after the HUD phase", async () => {
     chatReadyMinimumTexts: 1,
     chatDelayMs: 1,
     channelDelayMs: 1,
+    chatCardSettleMs: 1,
+    chatTabSettleMs: 1,
+    campChannelSettleMs: 1,
+    chatNavigationTimeoutSeconds: 1,
     verifySeconds: 1
   });
 
   assert.equal(summons, 0);
   assert.deepEqual(mouseTaps, [
     { x: 250, y: 1060 },
-    { x: 1740, y: 355 },
+    { x: 1610, y: 60 },
+    { x: 1710, y: 365 },
     { x: 980, y: 65 }
   ]);
 });
@@ -715,8 +761,56 @@ test("camp navigation waits and verifies channel then camp before city hall", as
   );
 });
 
+test("legacy camp flow still navigates through channel before using city hall", async () => {
+  const fixture = createUi({
+    fastFrames: [
+      [observation("频道", 1600, 50)],
+      [observation("营地", 1700, 355)]
+    ],
+    transientCapture(label) {
+      if (label === "camp-chat-verify-1") {
+        return [observation("私聊", 1830, 115)];
+      }
+      if (label.startsWith("camp-channel-verify")) {
+        return [observation("营地频道", 900, 115)];
+      }
+      if (label.startsWith("camp-panel-verify")) {
+        return [
+          observation("量子时代", 330, 330),
+          observation("营地周活跃", 760, 320)
+        ];
+      }
+      return [];
+    }
+  });
+
+  await fixture.ui.openCampPanelViaChat({
+    attempts: 1,
+    chatDelayMs: 1,
+    chatCardSettleMs: 1,
+    chatTabSettleMs: 1,
+    campChannelSettleMs: 1,
+    chatNavigationTimeoutSeconds: 1,
+    verifySeconds: 1
+  });
+
+  assert.deepEqual(fixture.taps, [
+    { x: 250, y: 1060 },
+    { x: 1610, y: 60 },
+    { x: 1710, y: 365 },
+    { x: 980, y: 65 }
+  ]);
+  assert.ok(
+    fixture.messages.some((message) => message.includes("聊天顶部“频道”"))
+  );
+});
+
 test("an already-open camp chat skips the chat toggle and clicks city hall", async () => {
   const fixture = createUi({
+    fastFrames: [
+      [observation("频道", 1600, 50)],
+      [observation("营地", 1700, 355)]
+    ],
     transientCapture(label) {
       if (label === "camp-panel-before-1") {
         return [
@@ -731,6 +825,9 @@ test("an already-open camp chat skips the chat toggle and clicks city hall", asy
           observation("营地周活跃", 760, 320)
         ];
       }
+      if (label.startsWith("camp-channel-verify")) {
+        return [observation("营地频道", 900, 115)];
+      }
       return [];
     },
     mumu: null
@@ -743,11 +840,16 @@ test("an already-open camp chat skips the chat toggle and clicks city hall", asy
     chatReadyMinimumTexts: 1,
     chatDelayMs: 1,
     channelDelayMs: 1,
+    chatCardSettleMs: 1,
+    chatTabSettleMs: 1,
+    campChannelSettleMs: 1,
+    chatNavigationTimeoutSeconds: 1,
     verifySeconds: 1
   });
 
   assert.deepEqual(fixture.taps, [
-    { x: 1740, y: 355 },
+    { x: 1610, y: 60 },
+    { x: 1710, y: 365 },
     { x: 980, y: 65 }
   ]);
   assert.ok(
@@ -778,7 +880,18 @@ test("a direct game-mouse entry click does not toggle keyevent 70 on one command
 
 test("camp navigation rechecks the game mouse once after two failed attempts", async () => {
   const fixture = createUi({
+    fastFrames: [
+      [observation("频道", 1600, 50)],
+      [observation("营地", 1700, 355)],
+      [observation("频道", 1600, 50)],
+      [observation("营地", 1700, 355)],
+      [observation("频道", 1600, 50)],
+      [observation("营地", 1700, 355)]
+    ],
     transientCapture(label) {
+      if (label.startsWith("camp-channel-verify")) {
+        return [observation("营地频道", 900, 115)];
+      }
       if (label === "camp-panel-verify-3") {
         return [
           observation("量子时代", 330, 330),
@@ -808,11 +921,15 @@ test("camp navigation rechecks the game mouse once after two failed attempts", a
     attempts: 3,
     chatDelayMs: 1,
     channelDelayMs: 1,
+    chatCardSettleMs: 1,
+    chatTabSettleMs: 1,
+    campChannelSettleMs: 1,
+    chatNavigationTimeoutSeconds: 1,
     verifySeconds: 1
   });
 
   assert.equal(summons, 1);
-  assert.equal(fixture.taps.length, 12);
+  assert.equal(fixture.taps.length, 15);
 });
 
 test("map preparation closes the camp page, collapses chat, then confirms HUD", async () => {

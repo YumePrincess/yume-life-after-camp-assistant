@@ -469,6 +469,45 @@ actor RuntimeService {
             flows[name] = actions
             changed = true
         }
+
+        // Runtime/current keeps the user's config while the bundled runtime
+        // code is replaced. The camp flow was present before the explicit
+        // channel -> camp navigation was introduced, so merely adding missing
+        // flow names leaves older installs on the unsafe fixed-coordinate
+        // private-chat path. Backfill only missing navigation keys and keep
+        // every existing calibration untouched.
+        if var campActions = flows["openCampPanel"] as? [[String: Any]],
+           let templateCampActions = templateFlows["openCampPanel"] as? [[String: Any]],
+           let templateCampAction = templateCampActions.first(where: {
+               $0["op"] as? String == "openCampPanelViaChat"
+           }),
+           let campIndex = campActions.firstIndex(where: {
+               $0["op"] as? String == "openCampPanelViaChat"
+           }) {
+            let navigationKeys = [
+                "chatCardSettleMs",
+                "chatTabText",
+                "chatTabMode",
+                "chatTabRegion",
+                "chatTabSettleMs",
+                "campChannelText",
+                "campChannelMode",
+                "campChannelRegion",
+                "campChannelSettleMs",
+                "campChannelReadyTexts",
+                "campChannelReadyRegion",
+                "chatNavigationTimeoutSeconds",
+                "chatReadyTexts",
+                "chatReadyRegion",
+                "chatReadyMinimumTexts"
+            ]
+            for key in navigationKeys where campActions[campIndex][key] == nil {
+                guard let value = templateCampAction[key] else { continue }
+                campActions[campIndex][key] = value
+                changed = true
+            }
+            flows["openCampPanel"] = campActions
+        }
         if changed {
             object["flows"] = flows
         }
