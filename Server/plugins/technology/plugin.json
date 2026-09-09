@@ -13,6 +13,7 @@
   "permissions": [
     { "key": "admin:technology", "label": "科技管理", "aliases": ["config:write"] },
     { "key": "admin:technology-history", "label": "科技投票历史 · 查询", "aliases": ["technology-history:manage"] },
+    { "key": "admin:daily-vote", "label": "日常投票事项", "aliases": [] },
     { "key": "technology-history:manage", "label": "科技投票历史 · 删除", "aliases": ["admin:technology-history"] },
     { "key": "plugin:technology:run", "label": "执行更新科技", "aliases": ["task:run", "admin:overview", "admin:technology"] }
   ],

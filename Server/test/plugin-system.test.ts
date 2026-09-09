@@ -58,6 +58,7 @@ describe("build-time Worker plugins", () => {
     expect(builtPluginForTask("patrol")?.id).toBe("patrol");
     expect(builtPermissionCatalog().map((item) => item.key)).toContain("admin:smtp");
     expect(builtPermissionCatalog().map((item) => item.key)).toContain("admin:access");
+    expect(builtPermissionCatalog().map((item) => item.key)).toContain("admin:daily-vote");
     expect(builtPermissionCatalog().map((item) => item.key)).toContain("system:admin");
   });
 });

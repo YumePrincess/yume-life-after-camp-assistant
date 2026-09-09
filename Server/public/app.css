@@ -4135,7 +4135,18 @@ select option {
   gap: 14px;
 }
 
+.daily-vote-admin-title-group {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .daily-vote-admin-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 17px;
   font-weight: 760;
 }
@@ -4178,6 +4189,60 @@ select option {
 
 .daily-vote-admin-response code {
   color: var(--accent);
+}
+
+.daily-vote-toolbar {
+  display: block;
+}
+
+.daily-vote-toolbar .technology-history-query {
+  grid-template-columns: minmax(210px, 0.42fr) minmax(0, 1fr);
+  grid-template-areas:
+    "date actions"
+    "status status";
+  align-items: end;
+}
+
+.daily-vote-toolbar-actions {
+  display: flex;
+  min-width: 0;
+  grid-area: actions;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.daily-vote-toolbar-actions .button {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .daily-vote-admin .daily-vote-toolbar {
+    display: block;
+  }
+
+  .daily-vote-toolbar .technology-history-query {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "date"
+      "actions"
+      "status";
+  }
+
+  .daily-vote-toolbar-actions {
+    justify-content: flex-start;
+  }
+
+  .daily-vote-admin-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .daily-vote-admin-actions {
+    justify-content: flex-start;
+  }
 }
 
 .section-savebar {

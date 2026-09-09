@@ -1,5 +1,6 @@
 import { decryptSecret } from "./crypto";
 import { normalizeLocale, type SupportedLocale } from "./locale";
+import { zonedDateTimeToIso } from "./time";
 
 export type DailyVoteKind = "poll" | "draw";
 
@@ -103,6 +104,13 @@ function isoDateTime(value: unknown, field: string): string {
   return parsed.toISOString();
 }
 
+function localDateTimeToIso(value: unknown, field: string, timezone?: string): string {
+  const result = text(value, field, 40);
+  const match = /^(\d{4}-\d{2}-\d{2})T((?:[01]\d|2[0-3]):[0-5]\d)$/.exec(result);
+  if (!match || !timezone) throw new Error(`${field} must use YYYY-MM-DDTHH:mm`);
+  return zonedDateTimeToIso(match[1]!, match[2]!, timezone);
+}
+
 function blocks(value: unknown, field: string, required: boolean): DailyVoteBlock[] {
   if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
   if (value.length > 48 || (required && value.length < 1)) {
@@ -177,7 +185,8 @@ function normalizeLocalizedContent(
 
 export function normalizeDailyVoteInput(
   value: unknown,
-  existing?: DailyVoteItem
+  existing?: DailyVoteItem,
+  timezone?: string
 ): {
   kind: DailyVoteKind;
   localizedContent: DailyVoteLocalizedContent;
@@ -194,8 +203,12 @@ export function normalizeDailyVoteInput(
     source.localizedContent ?? source.content,
     kind
   );
-  const startAt = isoDateTime(source.startAt, "startAt");
-  const endAt = isoDateTime(source.endAt, "endAt");
+  const startAt = source.startAtLocal !== undefined
+    ? localDateTimeToIso(source.startAtLocal, "startAtLocal", timezone)
+    : isoDateTime(source.startAt, "startAt");
+  const endAt = source.endAtLocal !== undefined
+    ? localDateTimeToIso(source.endAtLocal, "endAtLocal", timezone)
+    : isoDateTime(source.endAt, "endAt");
   if (new Date(endAt).getTime() <= new Date(startAt).getTime()) {
     throw new Error("endAt must be later than startAt");
   }

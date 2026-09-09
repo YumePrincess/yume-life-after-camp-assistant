@@ -22,7 +22,7 @@
     plugins: "admin:plugins",
     technology: "admin:technology",
     "technology-history": "admin:technology-history",
-    "daily-vote": "admin:technology",
+    "daily-vote": "admin:daily-vote",
     "identity-applications": "admin:identity-review",
     "identity-codes": "admin:identity-codes",
     smtp: "admin:smtp",
@@ -296,6 +296,7 @@
         "admin:plugins": "Workers 插件",
         "admin:technology": "科技管理",
         "admin:technology-history": "科技投票历史",
+        "admin:daily-vote": "日常投票事项",
         "admin:identity-review": "识别码审批",
         "admin:identity-codes": "身份识别码",
         "admin:smtp": "SMTP 发信",
@@ -1277,8 +1278,9 @@
     if (!value) return "";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
+    const parts = zonedInputParts(date);
     const pad = (part) => String(part).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
   }
 
   function dailyOptionLabel(option) {
@@ -1317,7 +1319,6 @@
         .filter((block) => block.type === "text")
         .map((block) => block.text)
         .join(" ") || window.MrzhI18n.t("未命名事项");
-      heading.append(title, create("span", "daily-vote-kind", item.kind === "draw" ? "抽签事项" : "投票事项"));
       const actions = create("div", "daily-vote-admin-actions");
       const edit = create("button", "button button-quiet button-small", "编辑");
       edit.type = "button";
@@ -1326,7 +1327,9 @@
       remove.type = "button";
       remove.addEventListener("click", () => deleteDailyVoteItemAdmin(item.id));
       actions.append(edit, remove);
-      heading.append(actions);
+      const titleGroup = create("div", "daily-vote-admin-title-group");
+      titleGroup.append(title, create("span", "daily-vote-kind", item.kind === "draw" ? "抽签事项" : "投票事项"));
+      heading.append(titleGroup, actions);
       card.append(heading);
       card.append(create("p", "daily-vote-admin-meta", window.MrzhI18n.format("开放 {start} · 截止 {end}", {
         start: formatDate(item.startAt), end: formatDate(item.endAt)
@@ -1454,8 +1457,8 @@
         ...(existing?.localizedContent || {}),
         "zh-cn": content
       },
-      startAt: new Date(byId("daily-vote-start").value).toISOString(),
-      endAt: new Date(byId("daily-vote-end").value).toISOString(),
+      startAtLocal: byId("daily-vote-start").value,
+      endAtLocal: byId("daily-vote-end").value,
       revealBeforeSeconds: Number(byId("daily-vote-reveal-value").value || 0) * Number(byId("daily-vote-reveal-unit").value || 60),
       ...(kind === "poll"
         ? { maxSelections: Number(byId("daily-vote-max").value || 1) }
@@ -2453,7 +2456,7 @@
       ["#temporary-key-form input, #temporary-key-form button", "keys:manage"],
       ["#manual-identity-code-form input, #manual-identity-code-form select, #manual-identity-code-form button", "identity:manage"],
       ["#smtp-config-form input, #smtp-config-form select, #smtp-config-form button, #smtp-test-form input, #smtp-test-form button", "smtp:manage"],
-      ["#daily-vote-new-poll, #daily-vote-new-draw, #daily-vote-editor input, #daily-vote-editor select, #daily-vote-editor textarea, #daily-vote-editor button", "admin:technology"]
+      ["#daily-vote-new-poll, #daily-vote-new-draw, #daily-vote-editor input, #daily-vote-editor select, #daily-vote-editor textarea, #daily-vote-editor button", "admin:daily-vote"]
     ]) {
       for (const control of document.querySelectorAll(selector)) {
         control.disabled = !hasPermission(permission);
@@ -2462,7 +2465,7 @@
     byId("clear-rate-limits").disabled = !hasPermission("admin:history");
     byId("clear-run-history").disabled = !hasPermission("admin:history");
     for (const control of document.querySelectorAll("#delete-daily-vote-date, #delete-daily-vote-all")) {
-      control.disabled = !hasPermission("admin:technology");
+      control.disabled = !hasPermission("admin:daily-vote");
     }
     const canManageTechnologyHistory = hasPermission("technology-history:manage");
     byId("delete-technology-history-date").hidden = !canManageTechnologyHistory;

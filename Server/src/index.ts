@@ -936,7 +936,11 @@ async function handleAdminApi(
   if (dailyVoteMatch && method === "POST" && !dailyVoteMatch[1]) {
     try {
       const body = await readJsonObject(request, 240_000);
-      const input = normalizeDailyVoteInput(body);
+      const input = normalizeDailyVoteInput(
+        body,
+        undefined,
+        (await getConfigBundle(env)).campConfig.timezone
+      );
       return json({ ok: true, item: await saveDailyVoteItem(env, input) }, 201);
     } catch (error) {
       return problem(errorMessage(error), 400, "daily_vote_invalid");
@@ -958,7 +962,11 @@ async function handleAdminApi(
       const existing = await getDailyVoteItem(env, id);
       if (!existing) return problem("日常投票事项不存在", 404, "daily_vote_not_found");
       const body = await readJsonObject(request, 240_000);
-      const input = normalizeDailyVoteInput(body, existing);
+      const input = normalizeDailyVoteInput(
+        body,
+        existing,
+        (await getConfigBundle(env)).campConfig.timezone
+      );
       return json({ ok: true, item: await updateDailyVoteItem(env, id, input) });
     } catch (error) {
       return problem(errorMessage(error), 400, "daily_vote_invalid");
@@ -2468,7 +2476,7 @@ function permissionForAdminRequest(
   method: string
 ): string | null {
   if (path === "/api/admin/daily-vote" || path.startsWith("/api/admin/daily-vote/")) {
-    return "admin:technology";
+    return "admin:daily-vote";
   }
   if (path.startsWith("/api/admin/plugins/")) return "plugins:manage";
   if (path === "/api/admin/technology-history") {

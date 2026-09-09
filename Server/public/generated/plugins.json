@@ -162,6 +162,11 @@
           ]
         },
         {
+          "key": "admin:daily-vote",
+          "label": "日常投票事项",
+          "aliases": []
+        },
+        {
           "key": "technology-history:manage",
           "label": "科技投票历史 · 删除",
           "aliases": [
