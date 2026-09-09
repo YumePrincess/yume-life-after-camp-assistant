@@ -132,8 +132,22 @@
     return window.MrzhI18n.format("识别码有效期：{date}", { date: expiry });
   }
 
+  function identityRenewalNoticeKey(value) {
+    if (!value) return "";
+    const expiryTime = new Date(value).getTime();
+    if (!Number.isFinite(expiryTime)) return "";
+    const remaining = expiryTime - Date.now();
+    if (remaining > 7 * 24 * 60 * 60 * 1000) return "";
+    return remaining <= 0
+      ? "识别码已过期，请申请延期；延期审批期间，过期识别码可额外投票一次。"
+      : "识别码将在 7 天内到期，请及时申请延期；延期审批期间，过期识别码可额外投票一次。";
+  }
+
   function showVoteSuccessDialog({ kind, data, message }) {
     const isTest = Boolean(data?.publicTestVote);
+    const renewalNoticeKey = isTest
+      ? ""
+      : identityRenewalNoticeKey(data?.identityCodeExpiresAt);
     setText(
       "vote-success-kicker",
       window.MrzhI18n.t(kind === "daily" ? "日常投票" : "科技投票")
@@ -145,11 +159,7 @@
     );
     setText(
       "vote-success-renewal",
-      isTest
-        ? ""
-        : window.MrzhI18n.t(
-            "识别码到期后请申请延期；延期审批期间，过期识别码可额外投票一次。"
-          )
+      renewalNoticeKey ? window.MrzhI18n.t(renewalNoticeKey) : ""
     );
     const renewal = byId("vote-success-renewal");
     if (renewal) renewal.hidden = isTest;
