@@ -1043,6 +1043,181 @@ h2 {
   margin-block: 18px;
 }
 
+.daily-tech-card,
+.daily-items-section,
+.daily-history-section {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.daily-tech-card {
+  padding: 18px;
+  border: 1px solid rgba(235, 184, 97, 0.38);
+  border-radius: 20px;
+  background: rgba(235, 184, 97, 0.035);
+}
+
+.daily-tech-card > .section-heading {
+  margin-top: 0;
+}
+
+.daily-tech-card h3,
+.daily-items-section h3,
+.daily-history-section h3 {
+  margin: 0;
+}
+
+.daily-vote-items,
+.daily-vote-history,
+.daily-history-group {
+  display: grid;
+  gap: 14px;
+}
+
+.daily-vote-item,
+.daily-history-card {
+  display: grid;
+  gap: 13px;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.daily-vote-item-heading,
+.daily-vote-meta,
+.daily-vote-item-action,
+.daily-history-card-title,
+.daily-history-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.daily-vote-item-heading {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.daily-vote-item-title,
+.daily-vote-description,
+.daily-vote-option-content,
+.daily-history-card-title {
+  min-width: 0;
+}
+
+.daily-vote-item-title,
+.daily-vote-description,
+.daily-vote-option-content,
+.daily-history-card-title {
+  display: grid;
+  gap: 5px;
+}
+
+.daily-vote-item-title .daily-rich-text,
+.daily-history-card-title .daily-rich-text {
+  margin: 0;
+  font-weight: 750;
+}
+
+.daily-vote-kind {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid rgba(235, 184, 97, 0.42);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.daily-vote-meta {
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.daily-vote-options {
+  display: grid;
+  gap: 9px;
+}
+
+.daily-vote-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.02);
+  text-align: left;
+}
+
+.daily-vote-option.is-selected {
+  border-color: rgba(235, 184, 97, 0.78);
+  background: rgba(235, 184, 97, 0.1);
+}
+
+.daily-vote-option-count,
+.daily-history-result-count {
+  flex: 0 0 auto;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.daily-rich-image {
+  margin: 0;
+  max-width: min(100%, 520px);
+}
+
+.daily-rich-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.daily-vote-item-action {
+  justify-content: center;
+}
+
+.daily-history-section > .section-heading {
+  align-items: flex-start;
+}
+
+.daily-history-group-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.daily-history-result-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.daily-history-result {
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.daily-history-result.is-fixed,
+.daily-history-result.is-winner {
+  border-color: rgba(235, 184, 97, 0.42);
+  color: var(--accent);
+}
+
+.daily-history-result .daily-rich-text {
+  margin: 0;
+}
+
 .vote-selection-preview {
   display: grid;
   gap: 10px;
@@ -3839,6 +4014,75 @@ select option {
   color: var(--muted);
   font-size: 12px;
   text-align: center;
+}
+
+.daily-vote-admin-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.daily-vote-editor,
+.daily-vote-admin-card {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.daily-vote-admin-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.daily-vote-admin-title {
+  font-size: 17px;
+  font-weight: 760;
+}
+
+.daily-vote-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.daily-vote-admin-meta,
+.daily-vote-admin-subheading {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.daily-vote-admin-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.daily-vote-admin-responses,
+.daily-vote-admin-winners {
+  display: grid;
+  gap: 8px;
+}
+
+.daily-vote-admin-response {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(100px, 0.8fr) minmax(120px, 1fr) minmax(130px, 0.8fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.daily-vote-admin-response code {
+  color: var(--accent);
 }
 
 .section-savebar {

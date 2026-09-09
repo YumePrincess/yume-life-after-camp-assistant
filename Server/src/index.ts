@@ -148,6 +148,21 @@ import {
   isWorkerPluginEnabled,
   setWorkerPluginEnabled
 } from "./plugin-system";
+import {
+  buildPublicDailyVote,
+  deleteDailyVoteItem,
+  deleteDailyVoteHistory,
+  getDailyVoteItem,
+  listAdminDailyVoteItems,
+  normalizeDailyVoteInput,
+  saveDailyVoteItem,
+  saveDailyVoteResponse,
+  updateDailyVoteItem
+} from "./daily-vote";
+
+type PublicDailyVotePayload = Awaited<ReturnType<typeof buildPublicDailyVote>> & {
+  technologyHistory: TechnologyVoteHistory[];
+};
 
 const TERMINAL_RUN_STATES = new Set<RunState>([
   "interrupted",
@@ -357,6 +372,72 @@ async function handlePublicApi(
     !(await isWorkerPluginEnabled(env, "technology"))
   ) {
     return problem("科技插件当前未启用", 404, "plugin_disabled");
+  }
+  if (path === "/api/public/daily-vote" && method === "GET") {
+    return json(
+      await buildPublicDailyVotePayload(
+        env,
+        new URL(request.url).searchParams.get("locale")
+      ),
+      200,
+      cors
+    );
+  }
+  if (path === "/api/public/daily-vote" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 32_000);
+    const identity = await verifyPublicActionIdentity(request, env, cors, body);
+    if (identity instanceof Response) return identity;
+    const itemId = boundedText(body.itemId, "itemId", 80);
+    const item = await getDailyVoteItem(env, itemId);
+    if (!item) return problem("日常投票事项不存在", 404, "daily_vote_not_found");
+    const payload = await buildPublicDailyVotePayload(env, body.locale);
+    const publicItem = payload.items.find((entry) => entry.id === itemId);
+    if (!publicItem) {
+      return problem("该事项当前不在开放时间内", 409, "daily_vote_closed");
+    }
+    const rawSelections = Array.isArray(body.selections)
+      ? [...new Set(body.selections.map((value) => String(value)))]
+      : [];
+    let selections: string[] = [];
+    if (item.kind === "poll") {
+      const allowed = new Set(publicItem.options.map((option) => option.id));
+      selections = rawSelections.filter((value) => allowed.has(value));
+      if (
+        selections.length < 1 ||
+        selections.length > (item.maxSelections ?? 0) ||
+        selections.length !== rawSelections.length
+      ) {
+        return problem(
+          `请选择 1 至 ${item.maxSelections ?? 0} 个选项`,
+          400,
+          "invalid_daily_vote_selections"
+        );
+      }
+    } else if (rawSelections.length > 0) {
+      return problem("抽签事项不需要选择选项", 400, "invalid_daily_draw_selection");
+    }
+    if (!identity.publicTestVote && identity.identityRecord?.ok) {
+      await saveDailyVoteResponse(env, {
+        itemId,
+        identityCodeId: identity.identityRecord.code.id,
+        playerName: identity.identityRecord.code.player_name ?? "",
+        selections
+      });
+    }
+    return json(
+      {
+        ...(await buildPublicDailyVotePayload(env, body.locale)),
+        identityCodeExpiresAt:
+          !identity.publicTestVote && identity.identityRecord?.ok
+            ? identity.identityRecord.code.expires_at
+            : null,
+        publicTestVote: identity.publicTestVote
+      },
+      200,
+      cors
+    );
   }
   if (path === "/api/public/bootstrap" && method === "GET") {
     const payload = await buildPublicBootstrap(
@@ -822,6 +903,66 @@ async function handleAdminApi(
         new URL(request.url).searchParams.get("locale")
       )
     );
+  }
+  const dailyVoteMatch = /^\/api\/admin\/daily-vote(?:\/([^/]+))?$/.exec(path);
+  if (dailyVoteMatch && method === "GET") {
+    const params = new URL(request.url).searchParams;
+    const date = params.get("date")?.trim() || undefined;
+    if (date && !isDateKey(date)) {
+      return problem("日期格式必须为 YYYY-MM-DD", 400, "invalid_daily_vote_date");
+    }
+    const kindValue = params.get("kind");
+    const kind = kindValue === "poll" || kindValue === "draw" ? kindValue : undefined;
+    const items = await listAdminDailyVoteItems(env, { date, kind });
+    return json({
+      items: isDemoSession(session)
+        ? items.map((item, itemIndex) => ({
+            ...item,
+            responses: item.responses.map((response, responseIndex) => ({
+              ...response,
+              id: `demo-daily-response-${itemIndex + 1}-${responseIndex + 1}`,
+              identityCode: "00000000",
+              playerName: "Demo 用户"
+            })),
+            winners: item.winners.map((winner) => ({
+              ...winner,
+              identityCode: "00000000",
+              playerName: "Demo 用户"
+            }))
+          }))
+        : items
+    });
+  }
+  if (dailyVoteMatch && method === "POST" && !dailyVoteMatch[1]) {
+    try {
+      const body = await readJsonObject(request, 240_000);
+      const input = normalizeDailyVoteInput(body);
+      return json({ ok: true, item: await saveDailyVoteItem(env, input) }, 201);
+    } catch (error) {
+      return problem(errorMessage(error), 400, "daily_vote_invalid");
+    }
+  }
+  if (dailyVoteMatch && method === "DELETE" && !dailyVoteMatch[1]) {
+    const date = new URL(request.url).searchParams.get("date")?.trim() || undefined;
+    if (date && !isDateKey(date)) {
+      return problem("日期格式必须为 YYYY-MM-DD", 400, "invalid_daily_vote_date");
+    }
+    return json({ ok: true, deleted: await deleteDailyVoteHistory(env, date) });
+  }
+  if (dailyVoteMatch && (method === "PATCH" || method === "DELETE") && dailyVoteMatch[1]) {
+    const id = decodeURIComponent(dailyVoteMatch[1]);
+    if (method === "DELETE") {
+      return json({ ok: true, deleted: await deleteDailyVoteItem(env, id) });
+    }
+    try {
+      const existing = await getDailyVoteItem(env, id);
+      if (!existing) return problem("日常投票事项不存在", 404, "daily_vote_not_found");
+      const body = await readJsonObject(request, 240_000);
+      const input = normalizeDailyVoteInput(body, existing);
+      return json({ ok: true, item: await updateDailyVoteItem(env, id, input) });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "daily_vote_invalid");
+    }
   }
   const pluginStateMatch = /^\/api\/admin\/plugins\/([^/]+)$/.exec(path);
   if (pluginStateMatch && method === "PATCH") {
@@ -1874,7 +2015,7 @@ async function buildPublicBootstrap(
   await reconcileTerminalRunCommands(env);
   const plugins = await effectiveWorkerPlugins(env);
   const pluginEnabled = new Map(plugins.map((plugin) => [plugin.id, plugin.enabled]));
-  const [voteSummary, staff, members, warnings, recentRuns, memberSummary] = await Promise.all([
+  const [voteSummary, staff, members, warnings, recentRuns, memberSummary, dailyVote] = await Promise.all([
     buildVoteSummary(env, bundle),
     listStaff(env),
     bundle.campConfig.publicMembersEnabled && pluginEnabled.get("member-profile")
@@ -1882,7 +2023,8 @@ async function buildPublicBootstrap(
       : Promise.resolve([]),
     pluginEnabled.get("inactivity") ? listActivityWarnings(env) : Promise.resolve([]),
     listRecentRuns(env, 10),
-    getMemberScanSummary(env)
+    getMemberScanSummary(env),
+    buildPublicDailyVotePayload(env, locale)
   ]);
   return {
     plugins,
@@ -1912,6 +2054,7 @@ async function buildPublicBootstrap(
           String(left.name).localeCompare(String(right.name))
       ),
     voteSummary: localizeVoteSummary(voteSummary, locale),
+    dailyVote,
     staffAssignments: staff,
     members,
     memberSummary: memberSummary ?? (members.length
@@ -1927,6 +2070,82 @@ async function buildPublicBootstrap(
       : null),
     recentRuns: recentRuns.filter(isCurrentFeatureRun).map(publicRun)
   };
+}
+
+async function buildPublicDailyVotePayload(
+  env: Env,
+  locale: unknown
+): Promise<PublicDailyVotePayload> {
+  const bundle = await getConfigBundle(env);
+  const daily = await buildPublicDailyVote(env, locale);
+  let technologyHistory: TechnologyVoteHistory[] = [];
+  if (await isWorkerPluginEnabled(env, "technology")) {
+    await ensureTechnologyVoteHistory(env, bundle);
+    const dates = (await listTechnologyVoteHistory(env)).slice(0, 7);
+    technologyHistory = (
+      await Promise.all(
+        dates.map((entry) => getTechnologyVoteHistory(env, entry.pollDate))
+      )
+    )
+      .filter((entry): entry is TechnologyVoteHistory => Boolean(entry))
+      .map((entry) => localizeTechnologyVoteHistory(entry, locale));
+  }
+  return { ...daily, technologyHistory };
+}
+
+type PublicActionIdentity = {
+  publicTestVote: boolean;
+  identityRecord: Awaited<ReturnType<typeof verifyIdentityCode>> | null;
+};
+
+async function verifyPublicActionIdentity(
+  request: Request,
+  env: Env,
+  cors: Headers,
+  body: Record<string, unknown>
+): Promise<PublicActionIdentity | Response> {
+  const publicTestVote = String(body.identityCode ?? "").trim() === "00000000";
+  if (publicTestVote) {
+    await recordRateLimitAttempt(request, env, PUBLIC_TEST_VOTE_LIMIT);
+    return { publicTestVote, identityRecord: null };
+  }
+  const valueLimited = await rejectIfValueRateLimited(
+    body.identityCode,
+    env,
+    IDENTITY_VALUE_CHECK_LIMIT,
+    cors
+  );
+  if (valueLimited) return valueLimited;
+  const verification = await verifyIdentityCode(env, body.identityCode);
+  if (!verification.ok) {
+    if (verification.reason === "invalid") {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
+        recordValueRateLimitAttempt(
+          body.identityCode,
+          env,
+          IDENTITY_VALUE_CHECK_LIMIT
+        )
+      ]);
+    }
+    const detail =
+      verification.reason === "expired"
+        ? "身份识别码已过期"
+        : verification.reason === "disabled"
+          ? "身份识别码已被禁用"
+          : "身份识别码无效";
+    return json(
+      {
+        title: detail,
+        code: `identity_code_${verification.reason}`,
+        canRenew: verification.canRenew,
+        applicationNumber: verification.applicationNumber ?? null
+      },
+      verification.reason === "expired" ? 409 : 403,
+      cors
+    );
+  }
+  return { publicTestVote, identityRecord: verification };
 }
 
 async function buildAdminBootstrap(
@@ -2248,6 +2467,9 @@ function permissionForAdminRequest(
   path: string,
   method: string
 ): string | null {
+  if (path === "/api/admin/daily-vote" || path.startsWith("/api/admin/daily-vote/")) {
+    return "admin:technology";
+  }
   if (path.startsWith("/api/admin/plugins/")) return "plugins:manage";
   if (path === "/api/admin/technology-history") {
     return method === "DELETE"

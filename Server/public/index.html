@@ -48,7 +48,7 @@
           </a>
           <a class="overview-stat" href="#vote" data-feature-target="vote">
             <strong id="hero-vote-count">—</strong>
-            <span>次日科技投票</span>
+            <span>日常投票</span>
           </a>
         </div>
       </section>
@@ -89,7 +89,7 @@
             <span class="feature-card-icon feature-icon-vote" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="m9 12 2 2 4-4"/><path d="M5 7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v12H5zM2 19h20"/></svg>
             </span>
-            <span class="feature-card-copy"><strong>次日科技投票</strong><small>选择并提交次日科技</small></span>
+            <span class="feature-card-copy"><strong>日常投票</strong><small>科技投票、日常投票与抽签</small></span>
             <span class="feature-card-value" id="feature-vote-count">—</span>
             <span class="feature-card-arrow" aria-hidden="true">›</span>
           </button>
@@ -160,14 +160,11 @@
       <article class="vote-panel feature-panel" id="vote" data-feature-panel="vote" hidden>
         <div class="section-heading">
           <div>
-            <p class="eyebrow">NEXT TECHNOLOGY</p>
-            <h2>次日科技投票</h2>
+            <p class="eyebrow">DAILY VOTING</p>
+            <h2>日常投票</h2>
           </div>
-          <div class="date-badge" id="poll-date">--</div>
+          <div class="date-badge" id="daily-vote-count">0</div>
         </div>
-        <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
-        <p id="vote-limit-description" class="muted vote-limit-description">每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。</p>
-        <p id="vote-window-state" class="vote-window-state">当前未开放</p>
         <div class="identity-vote-row">
           <label class="field identity-code-field">
             <span>身份识别码（必填）</span>
@@ -192,12 +189,44 @@
             忘记识别码
           </button>
         </div>
-        <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
-        <div id="vote-options" class="vote-options" aria-live="polite"></div>
-        <div class="action-row vote-action-row">
-          <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
-          <span id="vote-feedback" class="feedback" role="status"></span>
-        </div>
+        <section class="daily-tech-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">NEXT TECHNOLOGY</p>
+              <h3>科技投票</h3>
+            </div>
+            <div class="date-badge" id="poll-date">--</div>
+          </div>
+          <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
+          <p id="vote-limit-description" class="muted vote-limit-description">每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。</p>
+          <p id="vote-window-state" class="vote-window-state">当前未开放</p>
+          <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
+          <div id="vote-options" class="vote-options" aria-live="polite"></div>
+          <div class="action-row vote-action-row">
+            <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
+            <span id="vote-feedback" class="feedback" role="status"></span>
+          </div>
+        </section>
+        <section class="daily-items-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">OPEN ITEMS</p>
+              <h3>开放事项</h3>
+            </div>
+            <span id="daily-vote-status" class="muted"></span>
+          </div>
+          <div id="daily-vote-items" class="daily-vote-items" aria-live="polite"></div>
+        </section>
+        <section class="daily-history-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">HISTORY</p>
+              <h3>历史投票结果</h3>
+            </div>
+            <span class="muted">科技 7 天 · 事项 14 天</span>
+          </div>
+          <div id="daily-vote-history" class="daily-vote-history"></div>
+        </section>
       </article>
 
       <section class="feature-panel" id="members" data-feature-panel="members" hidden>

@@ -170,6 +170,74 @@ function escapeHtml(value: string): string {
   );
 }
 
+const EMAIL_LOGO_URL = "https://www.yume.zone/img/logo.png";
+
+const EMAIL_BRAND_NAMES: Record<SupportedLocale, string> = {
+  "zh-cn": "明日之后“愿”营地助手",
+  "zh-tw": "明日之後「願」營地助手",
+  en: "LifeAfter “Wish” Camp Assistant",
+  fr: "Assistant du camp « Vœu » LifeAfter",
+  ja: "ライフアフター「願」野営地アシスタント"
+};
+
+function renderYumeEmail(input: {
+  locale: SupportedLocale;
+  title: string;
+  rows: Array<[string, string]>;
+  notes?: string[];
+}): string {
+  const brand = EMAIL_BRAND_NAMES[input.locale];
+  const rowMarkup = input.rows
+    .map(
+      ([key, value]) =>
+        `<tr><td style="padding:14px 16px;border-bottom:1px solid #334155;color:#94a3b8;font-size:13px;vertical-align:top;width:38%;">${escapeHtml(key)}</td><td style="padding:14px 16px;border-bottom:1px solid #334155;color:#f8fafc;font-size:14px;vertical-align:top;word-break:break-word;">${escapeHtml(value)}</td></tr>`
+    )
+    .join("");
+  const notesMarkup = (input.notes ?? [])
+    .map(
+      (note) =>
+        `<p style="margin:12px 0 0;color:#cbd5e1;font-size:13px;line-height:1.7;">${escapeHtml(note)}</p>`
+    )
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="${escapeHtml(input.locale)}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${escapeHtml(input.title)}</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#0f172a;font-family:Arial,'Helvetica Neue',sans-serif;color:#f8fafc;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;padding:32px 16px;background-color:#0f172a;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;background-color:#1e293b;border:1px solid #334155;border-radius:20px;overflow:hidden;">
+            <tr>
+              <td align="center" style="padding:32px 28px 24px;background-color:#172235;">
+                <img src="${EMAIL_LOGO_URL}" alt="${escapeHtml(brand)}" width="48" height="48" style="display:block;width:48px;height:48px;border:0;border-radius:14px;object-fit:cover;">
+                <p style="margin:14px 0 0;color:#cbd5e1;font-size:13px;letter-spacing:.03em;">${escapeHtml(brand)}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px;">
+                <h1 style="margin:0 0 22px;color:#f8fafc;font-size:24px;line-height:1.3;font-weight:700;">${escapeHtml(input.title)}</h1>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border:1px solid #475569;border-radius:14px;overflow:hidden;background-color:#172235;">${rowMarkup}</table>
+                ${notesMarkup}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 28px 24px;border-top:1px solid #334155;">
+                <p style="margin:0;color:#64748b;font-size:12px;line-height:1.6;">${escapeHtml(brand)}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
 const COPY = {
   "zh-cn": {
     approved: "身份识别码申请已通过",
@@ -184,7 +252,8 @@ const COPY = {
     reason: "原因",
     recovered: "身份识别码找回",
     renew: "该识别码已经过期，可在网页或小程序中申请延期。",
-    keep: "请妥善保管识别码，并仅由本人用于科技投票。"
+    usage: "此身份识别码用于日常投票，包括科技投票、投票事项和抽签事项。",
+    keep: "请妥善保管识别码，并仅由本人用于日常投票。"
   },
   "zh-tw": {
     approved: "身分識別碼申請已通過",
@@ -199,7 +268,8 @@ const COPY = {
     reason: "原因",
     recovered: "身分識別碼找回",
     renew: "該識別碼已經過期，可在網頁或小程式中申請延期。",
-    keep: "請妥善保管識別碼，並僅由本人用於科技投票。"
+    usage: "此身分識別碼用於日常投票，包括科技投票、投票事項和抽籤事項。",
+    keep: "請妥善保管識別碼，並僅由本人用於日常投票。"
   },
   en: {
     approved: "Identity code application approved",
@@ -214,7 +284,8 @@ const COPY = {
     reason: "Reason",
     recovered: "Identity code recovery",
     renew: "This code has expired. You may request an extension on the website or mini program.",
-    keep: "Keep this code secure and use it only for your own technology votes."
+    usage: "This identity code is used for daily voting, including technology votes, polls, and draws.",
+    keep: "Keep this code secure and use it only for your own daily votes."
   },
   fr: {
     approved: "Demande de code d’identité approuvée",
@@ -229,7 +300,8 @@ const COPY = {
     reason: "Motif",
     recovered: "Récupération du code d’identité",
     renew: "Ce code a expiré. Vous pouvez demander une prolongation sur le site ou le mini-programme.",
-    keep: "Conservez ce code en sécurité et utilisez-le uniquement pour vos votes."
+    usage: "Ce code d’identité sert aux votes du jour, notamment aux votes technologiques, sondages et tirages au sort.",
+    keep: "Conservez ce code en sécurité et utilisez-le uniquement pour vos votes du jour."
   },
   ja: {
     approved: "本人確認コード申請が承認されました",
@@ -244,7 +316,8 @@ const COPY = {
     reason: "理由",
     recovered: "本人確認コードの再送",
     renew: "このコードは期限切れです。ウェブサイトまたはミニプログラムから延長を申請できます。",
-    keep: "コードを安全に保管し、ご本人の技術投票にのみ使用してください。"
+    usage: "この本人確認コードは、技術投票、投票案件、抽選を含む日常投票に使用します。",
+    keep: "コードを安全に保管し、ご本人の日常投票にのみ使用してください。"
   }
 } as const;
 
@@ -275,18 +348,17 @@ export function identityMail(input: {
     rows.push([copy.expiry, input.expiresAt ?? copy.permanent]);
   }
   if (!input.approved && input.reason) rows.push([copy.reason, input.reason]);
-  const plain = [subject, "", ...rows.map(([key, value]) => `${key}: ${value}`)];
-  if (input.approved) plain.push("", copy.keep);
-  const htmlRows = rows
-    .map(
-      ([key, value]) =>
-        `<tr><th style="text-align:left;padding:8px">${escapeHtml(key)}</th><td style="padding:8px">${escapeHtml(value)}</td></tr>`
-    )
-    .join("");
+  const notes = input.approved ? [copy.usage, copy.keep] : [];
+  const plain = [
+    subject,
+    "",
+    ...rows.map(([key, value]) => `${key}: ${value}`),
+    ...(notes.length ? ["", ...notes] : [])
+  ];
   return {
     subject,
     text: plain.join("\n"),
-    html: `<div style="font-family:system-ui,sans-serif;line-height:1.6"><h1>${escapeHtml(subject)}</h1><table>${htmlRows}</table>${input.approved ? `<p>${escapeHtml(copy.keep)}</p>` : ""}</div>`
+    html: renderYumeEmail({ locale: input.locale, title: subject, rows, notes })
   };
 }
 
@@ -304,7 +376,7 @@ export function identityRecoveryMail(input: {
   if (input.playerName) rows.push([copy.player, input.playerName]);
   rows.push([copy.code, input.code]);
   rows.push([copy.expiry, input.expiresAt ?? copy.permanent]);
-  const notes = [copy.keep, ...(input.expired ? [copy.renew] : [])];
+  const notes = [copy.usage, copy.keep, ...(input.expired ? [copy.renew] : [])];
   return {
     subject: copy.recovered,
     text: [
@@ -314,11 +386,6 @@ export function identityRecoveryMail(input: {
       "",
       ...notes
     ].join("\n"),
-    html: `<div style="font-family:system-ui,sans-serif;line-height:1.6"><h1>${escapeHtml(copy.recovered)}</h1><table>${rows
-      .map(
-        ([key, value]) =>
-          `<tr><th style="text-align:left;padding:8px">${escapeHtml(key)}</th><td style="padding:8px">${escapeHtml(value)}</td></tr>`
-      )
-      .join("")}</table>${notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>`
+    html: renderYumeEmail({ locale: input.locale, title: copy.recovered, rows, notes })
   };
 }

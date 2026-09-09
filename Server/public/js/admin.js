@@ -22,6 +22,7 @@
     plugins: "admin:plugins",
     technology: "admin:technology",
     "technology-history": "admin:technology-history",
+    "daily-vote": "admin:technology",
     "identity-applications": "admin:identity-review",
     "identity-codes": "admin:identity-codes",
     smtp: "admin:smtp",
@@ -51,6 +52,9 @@
     technologyHistory: { dates: [], history: null },
     technologyHistoryLoading: false,
     technologyHistoryLoaded: false,
+    dailyVoteItems: [],
+    dailyVoteLoading: false,
+    dailyVoteEditorItem: null,
     activeView: "overview",
     accessAllowed: false,
     activeEventRunId: null,
@@ -1257,6 +1261,244 @@
     }
   }
 
+  function dailyBlocksFromText(value) {
+    return parsePublicHighlights(value).flatMap((item) => item.blocks);
+  }
+
+  function dailyBlocksToText(blocks) {
+    return (blocks || [])
+      .map((block) => block.type === "image"
+        ? `![${block.alt || ""}](${block.url})`
+        : String(block.text || ""))
+      .join("\n");
+  }
+
+  function dailyLocalDateTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const pad = (part) => String(part).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function dailyOptionLabel(option) {
+    const text = (option?.blocks || [])
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join(" ")
+      .trim();
+    return text || (option?.blocks || []).some((block) => block.type === "image")
+      ? text || window.MrzhI18n.t("图片选项")
+      : window.MrzhI18n.t("未命名选项");
+  }
+
+  function dailyContentForAdmin(item) {
+    return item?.localizedContent?.[window.MrzhI18n.language()] ||
+      item?.localizedContent?.["zh-cn"] ||
+      Object.values(item?.localizedContent || {})[0] ||
+      { titleBlocks: [], descriptionBlocks: [], options: [] };
+  }
+
+  function renderDailyVoteAdmin(payload) {
+    state.dailyVoteItems = payload?.items || [];
+    const root = byId("daily-vote-admin-list");
+    if (!root) return;
+    root.replaceChildren();
+    if (!state.dailyVoteItems.length) {
+      root.append(create("p", "empty-state", "暂无日常投票事项记录。"));
+      return;
+    }
+    for (const item of state.dailyVoteItems) {
+      const content = dailyContentForAdmin(item);
+      const card = create("article", "daily-vote-admin-card");
+      const heading = create("div", "daily-vote-admin-heading");
+      const title = create("div", "daily-vote-admin-title");
+      title.textContent = (content.titleBlocks || [])
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join(" ") || window.MrzhI18n.t("未命名事项");
+      heading.append(title, create("span", "daily-vote-kind", item.kind === "draw" ? "抽签事项" : "投票事项"));
+      const actions = create("div", "daily-vote-admin-actions");
+      const edit = create("button", "button button-quiet button-small", "编辑");
+      edit.type = "button";
+      edit.addEventListener("click", () => openDailyVoteEditor(item));
+      const remove = create("button", "button button-danger button-small", "删除选中记录");
+      remove.type = "button";
+      remove.addEventListener("click", () => deleteDailyVoteItemAdmin(item.id));
+      actions.append(edit, remove);
+      heading.append(actions);
+      card.append(heading);
+      card.append(create("p", "daily-vote-admin-meta", window.MrzhI18n.format("开放 {start} · 截止 {end}", {
+        start: formatDate(item.startAt), end: formatDate(item.endAt)
+      })));
+      if (item.kind === "poll") {
+        const counts = new Map();
+        for (const response of item.responses || []) {
+          for (const optionId of response.selections || []) counts.set(optionId, (counts.get(optionId) || 0) + 1);
+        }
+        const optionList = create("div", "daily-vote-admin-options");
+        for (const option of content.options || []) {
+          optionList.append(create("span", "daily-history-result", `${dailyOptionLabel(option)} · ${counts.get(option.id) || 0} ${window.MrzhI18n.t("票")}`));
+        }
+        card.append(optionList);
+      }
+      const responseList = create("div", "daily-vote-admin-responses");
+      const responseHeading = item.kind === "draw" ? "抽签报名记录" : "投票记录";
+      responseList.append(create("strong", "daily-vote-admin-subheading", responseHeading));
+      if (!(item.responses || []).length) {
+        responseList.append(create("p", "empty-state", "暂无参与记录"));
+      } else {
+        const optionMap = new Map((content.options || []).map((option) => [option.id, dailyOptionLabel(option)]));
+        for (const response of item.responses) {
+          const row = create("div", "daily-vote-admin-response");
+          row.append(
+            create("strong", "", response.playerName || "—"),
+            create("code", "", response.identityCode || "—"),
+            create("span", "muted", (response.selections || []).map((id) => optionMap.get(id) || id).join("、") || "—"),
+            create("time", "muted", formatDate(response.submittedAt))
+          );
+          responseList.append(row);
+        }
+      }
+      card.append(responseList);
+      if (item.kind === "draw") {
+        const winners = create("div", "daily-vote-admin-winners");
+        winners.append(create("strong", "daily-vote-admin-subheading", `中签人员（${item.drawCount || 0} 人）`));
+        for (const winner of item.winners || []) {
+          winners.append(create("div", "daily-vote-admin-response", create("strong", "", `${winner.rank}. ${winner.playerName} · ${winner.identityCode}`)));
+        }
+        card.append(winners);
+      }
+      root.append(card);
+    }
+  }
+
+  async function loadDailyVoteAdmin(date = "") {
+    if (!canView("daily-vote") || state.dailyVoteLoading) return;
+    state.dailyVoteLoading = true;
+    setText("daily-vote-status", window.MrzhI18n.t("正在读取历史记录…"));
+    try {
+      const params = new URLSearchParams({ locale: window.MrzhI18n.language() });
+      if (date) params.set("date", date);
+      renderDailyVoteAdmin(await request(`/api/admin/daily-vote?${params}`));
+      setText("daily-vote-status", window.MrzhI18n.t("记录已载入"));
+    } catch (error) {
+      setText("daily-vote-status", error.message);
+    } finally {
+      state.dailyVoteLoading = false;
+    }
+  }
+
+  function toggleDailyVoteEditorFields() {
+    const isDraw = byId("daily-vote-kind")?.value === "draw";
+    byId("daily-vote-max-field").hidden = isDraw;
+    byId("daily-vote-draw-field").hidden = !isDraw;
+    byId("daily-vote-options-field").hidden = isDraw;
+    byId("daily-vote-options").required = !isDraw;
+  }
+
+  function openDailyVoteEditor(item = null, kind = "poll") {
+    state.dailyVoteEditorItem = item;
+    const source = item || {
+      kind,
+      startAt: "",
+      endAt: "",
+      revealBeforeSeconds: 0,
+      maxSelections: 1,
+      drawCount: 1,
+      localizedContent: { "zh-cn": { titleBlocks: [], descriptionBlocks: [], options: [] } }
+    };
+    const content = dailyContentForAdmin(source);
+    byId("daily-vote-id").value = item?.id || "";
+    byId("daily-vote-kind").value = source.kind;
+    byId("daily-vote-start").value = dailyLocalDateTime(source.startAt);
+    byId("daily-vote-end").value = dailyLocalDateTime(source.endAt);
+    byId("daily-vote-reveal-value").value = source.revealBeforeSeconds ? Math.round(source.revealBeforeSeconds / 3600) : 0;
+    byId("daily-vote-reveal-unit").value = source.revealBeforeSeconds >= 86400 ? "86400" : source.revealBeforeSeconds >= 3600 ? "3600" : "60";
+    byId("daily-vote-max").value = source.maxSelections || 1;
+    byId("daily-vote-draw-count").value = source.drawCount || 1;
+    byId("daily-vote-title-blocks").value = dailyBlocksToText(content.titleBlocks);
+    byId("daily-vote-description-blocks").value = dailyBlocksToText(content.descriptionBlocks);
+    byId("daily-vote-options").value = (content.options || []).map((option) => dailyBlocksToText(option.blocks)).join("\n\n");
+    byId("daily-vote-editor-title").textContent = item ? "编辑日常事项" : source.kind === "draw" ? "新建抽签" : "新建投票";
+    byId("daily-vote-editor").hidden = false;
+    toggleDailyVoteEditorFields();
+    byId("daily-vote-title-blocks").focus();
+  }
+
+  function closeDailyVoteEditor() {
+    state.dailyVoteEditorItem = null;
+    byId("daily-vote-editor").hidden = true;
+  }
+
+  async function saveDailyVoteFromEditor(event) {
+    event.preventDefault();
+    const kind = byId("daily-vote-kind").value;
+    const existing = state.dailyVoteEditorItem;
+    const options = kind === "poll"
+      ? parsePublicHighlights(byId("daily-vote-options").value).map((entry) => ({ id: crypto.randomUUID(), blocks: entry.blocks }))
+      : [];
+    const content = {
+      titleBlocks: dailyBlocksFromText(byId("daily-vote-title-blocks").value),
+      descriptionBlocks: dailyBlocksFromText(byId("daily-vote-description-blocks").value),
+      options
+    };
+    if (existing) {
+      const previous = dailyContentForAdmin(existing);
+      const previousIds = (previous.options || []).map((option) => option.id);
+      options.forEach((option, index) => { option.id = previousIds[index] || option.id; });
+    }
+    const payload = {
+      kind,
+      localizedContent: {
+        ...(existing?.localizedContent || {}),
+        "zh-cn": content
+      },
+      startAt: new Date(byId("daily-vote-start").value).toISOString(),
+      endAt: new Date(byId("daily-vote-end").value).toISOString(),
+      revealBeforeSeconds: Number(byId("daily-vote-reveal-value").value || 0) * Number(byId("daily-vote-reveal-unit").value || 60),
+      ...(kind === "poll"
+        ? { maxSelections: Number(byId("daily-vote-max").value || 1) }
+        : { drawCount: Number(byId("daily-vote-draw-count").value || 1) })
+    };
+    try {
+      await request(existing ? `/api/admin/daily-vote/${encodeURIComponent(existing.id)}` : "/api/admin/daily-vote", {
+        method: existing ? "PATCH" : "POST",
+        body: JSON.stringify(payload)
+      });
+      closeDailyVoteEditor();
+      await loadDailyVoteAdmin(byId("daily-vote-date").value);
+    } catch (error) {
+      byId("daily-vote-editor-feedback").textContent = error.message;
+    }
+  }
+
+  async function deleteDailyVoteItemAdmin(id) {
+    if (!(await showAppConfirm(window.MrzhI18n.t("确认删除选中的日常事项吗？删除后无法恢复。"), { title: "删除选中记录", danger: true }))) return;
+    try {
+      await request(`/api/admin/daily-vote/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await loadDailyVoteAdmin(byId("daily-vote-date").value);
+    } catch (error) {
+      setText("daily-vote-status", error.message);
+    }
+  }
+
+  async function deleteDailyVoteHistoryAdmin(date = "") {
+    const all = !date;
+    if (!(await showAppConfirm(
+      window.MrzhI18n.t(all ? "确认清空全部已结束日常事项吗？清空后无法恢复。" : `确认清空 ${date} 的已结束日常事项吗？`),
+      { title: all ? "清空全部历史" : "清空当天历史", danger: true }
+    ))) return;
+    try {
+      const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
+      const result = await request(`/api/admin/daily-vote${suffix}`, { method: "DELETE" });
+      setText("daily-vote-status", window.MrzhI18n.format("已清空 {count} 条记录。", { count: result.deleted || 0 }));
+      await loadDailyVoteAdmin(date);
+    } catch (error) {
+      setText("daily-vote-status", error.message);
+    }
+  }
+
   function openVoteDetails(option, ballots) {
     byId("vote-detail-title").textContent = option.name;
     byId("vote-detail-summary").textContent =
@@ -2128,6 +2370,9 @@
     ) {
       loadTechnologyHistory();
     }
+    if (resolved === "daily-vote" && canView(resolved)) {
+      loadDailyVoteAdmin(byId("daily-vote-date")?.value || "");
+    }
   }
 
   function render(data, fillSections = []) {
@@ -2207,7 +2452,8 @@
     for (const [selector, permission] of [
       ["#temporary-key-form input, #temporary-key-form button", "keys:manage"],
       ["#manual-identity-code-form input, #manual-identity-code-form select, #manual-identity-code-form button", "identity:manage"],
-      ["#smtp-config-form input, #smtp-config-form select, #smtp-config-form button, #smtp-test-form input, #smtp-test-form button", "smtp:manage"]
+      ["#smtp-config-form input, #smtp-config-form select, #smtp-config-form button, #smtp-test-form input, #smtp-test-form button", "smtp:manage"],
+      ["#daily-vote-new-poll, #daily-vote-new-draw, #daily-vote-editor input, #daily-vote-editor select, #daily-vote-editor textarea, #daily-vote-editor button", "admin:technology"]
     ]) {
       for (const control of document.querySelectorAll(selector)) {
         control.disabled = !hasPermission(permission);
@@ -2215,6 +2461,9 @@
     }
     byId("clear-rate-limits").disabled = !hasPermission("admin:history");
     byId("clear-run-history").disabled = !hasPermission("admin:history");
+    for (const control of document.querySelectorAll("#delete-daily-vote-date, #delete-daily-vote-all")) {
+      control.disabled = !hasPermission("admin:technology");
+    }
     const canManageTechnologyHistory = hasPermission("technology-history:manage");
     byId("delete-technology-history-date").hidden = !canManageTechnologyHistory;
     byId("delete-technology-history-all").hidden = !canManageTechnologyHistory;
@@ -3551,6 +3800,24 @@
   );
   byId("delete-technology-history-all").addEventListener("click", () =>
     deleteTechnologyHistory("")
+  );
+  byId("daily-vote-new-poll")?.addEventListener("click", () =>
+    openDailyVoteEditor(null, "poll")
+  );
+  byId("daily-vote-new-draw")?.addEventListener("click", () =>
+    openDailyVoteEditor(null, "draw")
+  );
+  byId("daily-vote-cancel")?.addEventListener("click", closeDailyVoteEditor);
+  byId("daily-vote-kind")?.addEventListener("change", toggleDailyVoteEditorFields);
+  byId("daily-vote-editor")?.addEventListener("submit", saveDailyVoteFromEditor);
+  byId("refresh-daily-vote")?.addEventListener("click", () =>
+    loadDailyVoteAdmin(byId("daily-vote-date").value)
+  );
+  byId("delete-daily-vote-date")?.addEventListener("click", () =>
+    deleteDailyVoteHistoryAdmin(byId("daily-vote-date").value)
+  );
+  byId("delete-daily-vote-all")?.addEventListener("click", () =>
+    deleteDailyVoteHistoryAdmin("")
   );
   byId("public-content-locale").addEventListener("change", (event) => {
     switchPublicContentLocale(event.target.value);

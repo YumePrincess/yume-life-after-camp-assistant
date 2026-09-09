@@ -51,6 +51,7 @@
             <span class="admin-nav-section-label">TECHNOLOGY</span>
             <a class="admin-nav-item" href="#technology" data-nav-target="technology" data-worker-plugin="technology" hidden>科技管理</a>
             <a class="admin-nav-item" href="#technology-history" data-nav-target="technology-history" data-worker-plugin="technology" hidden>科技投票历史</a>
+            <a class="admin-nav-item" href="#daily-vote" data-nav-target="daily-vote" hidden>日常投票事项</a>
           </div>
           <div class="admin-nav-section" aria-label="ACCESS & MEMBERS">
             <span class="admin-nav-section-label">ACCESS &amp; MEMBERS</span>
@@ -553,6 +554,59 @@
               </div>
             </div>
             <p id="technology-history-empty" class="empty-state">暂无已归档的历史投票结果。</p>
+          </section>
+
+          <section class="panel admin-view daily-vote-admin" data-admin-view="daily-vote" aria-labelledby="daily-vote-admin-title" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">DAILY VOTING</p>
+                <h1 id="daily-vote-admin-title">日常投票事项</h1>
+                <p class="section-intro">创建投票或抽签事项，设置开放时间、提前展示时间，并查看完整参与记录。</p>
+              </div>
+              <div class="action-row">
+                <button id="daily-vote-new-poll" class="button button-primary" type="button">新建投票</button>
+                <button id="daily-vote-new-draw" class="button button-quiet" type="button">新建抽签</button>
+              </div>
+            </div>
+            <div class="technology-history-toolbar daily-vote-toolbar">
+              <div class="technology-history-query">
+                <label class="field technology-history-date-field">
+                  <span>按日期查询</span>
+                  <input id="daily-vote-date" type="date" />
+                </label>
+                <button id="refresh-daily-vote" class="button button-quiet" type="button">查询</button>
+                <button id="delete-daily-vote-date" class="button button-danger" type="button">清空当天历史</button>
+                <button id="delete-daily-vote-all" class="button button-danger button-danger-quiet" type="button">清空全部历史</button>
+                <span id="daily-vote-status" class="muted" aria-live="polite"></span>
+              </div>
+            </div>
+            <form id="daily-vote-editor" class="daily-vote-editor" hidden>
+              <input id="daily-vote-id" type="hidden" />
+              <div class="section-heading">
+                <div>
+                  <span class="field-label">事项编辑</span>
+                  <strong id="daily-vote-editor-title">新建投票</strong>
+                </div>
+                <button id="daily-vote-cancel" class="button button-quiet" type="button">取消</button>
+              </div>
+              <div class="form-grid">
+                <label class="field"><span>事项类型</span><select id="daily-vote-kind"><option value="poll">投票</option><option value="draw">抽签</option></select></label>
+                <label class="field"><span>开放时间</span><input id="daily-vote-start" type="datetime-local" required /></label>
+                <label class="field"><span>截止时间</span><input id="daily-vote-end" type="datetime-local" required /></label>
+                <label class="field"><span>提前显示数值</span><input id="daily-vote-reveal-value" type="number" min="0" value="0" required /></label>
+                <label class="field"><span>提前显示单位</span><select id="daily-vote-reveal-unit"><option value="60">分钟</option><option value="3600">小时</option><option value="86400">天</option></select></label>
+                <label id="daily-vote-max-field" class="field"><span>每人可选票数</span><input id="daily-vote-max" type="number" min="1" value="1" /></label>
+                <label id="daily-vote-draw-field" class="field" hidden><span>抽取人数</span><input id="daily-vote-draw-count" type="number" min="1" value="1" /></label>
+              </div>
+              <label class="field"><span>事项名称（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-title-blocks" rows="3" required></textarea></label>
+              <label class="field"><span>事项描述（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-description-blocks" rows="5"></textarea></label>
+              <label id="daily-vote-options-field" class="field"><span>投票选项（每个选项之间空一行；支持文本和 Markdown 图片）</span><textarea id="daily-vote-options" rows="8"></textarea></label>
+              <div class="section-savebar">
+                <span id="daily-vote-editor-feedback" class="feedback" role="status"></span>
+                <button class="button button-primary" type="submit">保存事项</button>
+              </div>
+            </form>
+            <div id="daily-vote-admin-list" class="daily-vote-admin-list"></div>
           </section>
 
           <section id="temporary-key-panel" class="panel admin-view" data-admin-view="access" hidden>

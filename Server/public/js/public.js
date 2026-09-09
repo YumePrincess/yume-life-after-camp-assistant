@@ -14,6 +14,7 @@
     reissuePlayerName: "",
     voteErrorRenewalCode: "",
     activeFeature: ""
+    ,dailySelections: {}
   };
   const FEATURE_IDS = ["overview", "staff", "warnings", "vote", "members", "runs"];
   const ACTIVE_IDENTITY_CONFLICT =
@@ -177,7 +178,6 @@
 
   function applyPluginVisibility() {
     const sections = {
-      technology: ["vote"],
       inactivity: ["warnings"],
       "member-profile": ["members", "staff"]
     };
@@ -496,6 +496,215 @@
     }
   }
 
+  function renderRichBlocks(root, blocks, emptyText = "") {
+    for (const block of Array.isArray(blocks) ? blocks : []) {
+      if (block?.type === "image" && /^https:\/\//i.test(String(block.url || ""))) {
+        const figure = document.createElement("figure");
+        figure.className = "highlight-image daily-rich-image";
+        const image = document.createElement("img");
+        image.src = block.url;
+        image.alt = block.alt || window.MrzhI18n.t("公告图片");
+        image.loading = "lazy";
+        image.decoding = "async";
+        image.tabIndex = 0;
+        image.setAttribute("role", "button");
+        image.setAttribute("aria-label", window.MrzhI18n.t("点击查看大图"));
+        image.addEventListener("click", () => openImagePreview(block.url, image.alt));
+        image.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openImagePreview(block.url, image.alt);
+          }
+        });
+        figure.append(image);
+        root.append(figure);
+      } else if (block?.type === "text" && String(block.text || "").trim()) {
+        root.append(create("p", "daily-rich-text", block.text));
+      }
+    }
+    if (!root.childElementCount && emptyText) root.append(create("p", "empty-state", emptyText));
+  }
+
+  function dailyDate(value) {
+    return value ? formatDate(value) : "—";
+  }
+
+  function dailyKindName(kind) {
+    return window.MrzhI18n.t(kind === "draw" ? "抽签事项" : "投票事项");
+  }
+
+  function dailySelections(itemId) {
+    const values = state.dailySelections[itemId];
+    return Array.isArray(values) ? values : [];
+  }
+
+  function renderDailyItem(item) {
+    const card = create("article", `daily-vote-item daily-vote-item-${item.kind}`);
+    const heading = create("div", "daily-vote-item-heading");
+    const title = create("div", "daily-vote-item-title");
+    renderRichBlocks(title, item.titleBlocks, window.MrzhI18n.t("未命名事项"));
+    heading.append(title, create("span", "daily-vote-kind", dailyKindName(item.kind)));
+    card.append(heading);
+    const description = create("div", "daily-vote-description");
+    renderRichBlocks(description, item.descriptionBlocks);
+    if (description.childElementCount) card.append(description);
+    const meta = create("div", "daily-vote-meta");
+    meta.append(
+      create("span", "daily-vote-meta-item", window.MrzhI18n.format("开放 {start} · 截止 {end}", {
+        start: dailyDate(item.startAt),
+        end: dailyDate(item.endAt)
+      }))
+    );
+    if (item.kind === "poll") {
+      meta.append(create("span", "daily-vote-meta-item", window.MrzhI18n.format("每人可选 {count} 项", {
+        count: item.maxSelections
+      })));
+    } else {
+      meta.append(create("span", "daily-vote-meta-item", window.MrzhI18n.format("抽取 {count} 人 · 已报名 {participants} 人", {
+        count: item.drawCount,
+        participants: item.participantCount || 0
+      })));
+    }
+    card.append(meta);
+    if (item.kind === "poll") {
+      const selected = new Set(dailySelections(item.id));
+      const options = create("div", "daily-vote-options");
+      for (const option of item.options || []) {
+        const button = create("button", `daily-vote-option${selected.has(option.id) ? " is-selected" : ""}`);
+        button.type = "button";
+        button.disabled = item.isOpen === false;
+        const content = create("span", "daily-vote-option-content");
+        renderRichBlocks(content, option.blocks, window.MrzhI18n.t("未命名选项"));
+        button.append(content, create("strong", "daily-vote-option-count", window.MrzhI18n.format("{count} 票", {
+          count: option.votes || 0
+        })));
+        button.addEventListener("click", () => {
+          const next = new Set(dailySelections(item.id));
+          if (next.has(option.id)) next.delete(option.id);
+          else if (next.size < Number(item.maxSelections || 0)) next.add(option.id);
+          else {
+            setText("daily-vote-status", window.MrzhI18n.format("最多选择 {count} 项", { count: item.maxSelections }));
+            return;
+          }
+          state.dailySelections[item.id] = [...next];
+          renderDailyVote(state.data?.dailyVote || {});
+        });
+        options.append(button);
+      }
+      card.append(options);
+    }
+    const action = create("div", "daily-vote-item-action");
+    const submit = create("button", "button button-primary", item.kind === "draw" ? "提交抽签" : "提交投票");
+    submit.type = "button";
+    submit.disabled = item.isOpen === false;
+    submit.addEventListener("click", () => submitDailyVote(item));
+    action.append(submit);
+    card.append(action);
+    return card;
+  }
+
+  function renderDailyHistory(payload) {
+    const root = byId("daily-vote-history");
+    if (!root) return;
+    root.replaceChildren();
+    const technology = payload?.technologyHistory || [];
+    if (technology.length) {
+      const section = create("section", "daily-history-group");
+      section.append(create("h4", "daily-history-group-title", "科技投票 · 最近 7 天"));
+      for (const item of technology) {
+        const card = create("article", "daily-history-card");
+        card.append(create("strong", "daily-history-card-title", item.pollDate));
+        const result = create("div", "daily-history-result-list");
+        for (const tech of [...(item.projectedPlan?.core || []), ...(item.projectedPlan?.general || [])]) {
+          result.append(create("span", "daily-history-result", window.MrzhI18n.format("{name} · {count} 票", {
+            name: tech.name,
+            count: (item.options || []).find((option) => option.key === tech.key)?.votes || 0
+          })));
+        }
+        for (const fixed of item.fixedTechnologies || []) {
+          result.append(create("span", "daily-history-result is-fixed", window.MrzhI18n.format("{name} · 固定", { name: fixed.name })));
+        }
+        card.append(result);
+        section.append(card);
+      }
+      root.append(section);
+    }
+    for (const [kind, items] of [["poll", payload?.history?.polls || []], ["draw", payload?.history?.draws || []]]) {
+      const section = create("section", "daily-history-group");
+      section.append(create("h4", "daily-history-group-title", kind === "poll" ? "投票事项 · 最近 14 天" : "抽签事项 · 最近 14 天"));
+      if (!items.length) {
+        section.append(create("p", "empty-state", kind === "poll" ? "暂无历史投票事项。" : "暂无历史抽签事项。"));
+      }
+      for (const item of items) {
+        const card = create("article", "daily-history-card");
+        const title = create("div", "daily-history-card-title");
+        renderRichBlocks(title, item.titleBlocks, window.MrzhI18n.t("未命名事项"));
+        card.append(title, create("small", "muted", window.MrzhI18n.format("截止 {date} · 参与 {count} 人", {
+          date: dailyDate(item.endAt), count: item.participantCount || 0
+        })));
+        if (kind === "poll") {
+          const result = create("div", "daily-history-result-list");
+          for (const option of item.options || []) {
+            const optionText = create("span", "daily-history-result");
+            renderRichBlocks(optionText, option.blocks);
+            optionText.append(create("strong", "daily-history-result-count", window.MrzhI18n.format("{count} 票", { count: option.votes || 0 })));
+            result.append(optionText);
+          }
+          card.append(result);
+        } else {
+          const winners = create("div", "daily-history-result-list");
+          for (const winner of item.winners || []) winners.append(create("span", "daily-history-result is-winner", winner.playerName));
+          card.append(winners.childElementCount ? winners : create("p", "empty-state", "暂无中签人员。"));
+        }
+        section.append(card);
+      }
+      root.append(section);
+    }
+    if (!root.childElementCount) root.append(create("p", "empty-state", "暂无历史投票结果。"));
+  }
+
+  function renderDailyVote(payload) {
+    const root = byId("daily-vote-items");
+    if (!root) return;
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    root.replaceChildren();
+    setText("daily-vote-count", String(items.length));
+    setText("daily-vote-status", items.length ? "" : window.MrzhI18n.t("当前没有开放事项。"));
+    for (const item of items) root.append(renderDailyItem(item));
+    renderDailyHistory(payload || {});
+  }
+
+  async function submitDailyVote(item) {
+    const identityCode = byId("identity-code")?.value.trim() || "";
+    if (!/^\d{8}$/.test(identityCode)) {
+      showVoteError(window.MrzhI18n.t("请输入身份识别码。"), window.MrzhI18n.t("日常投票未提交"));
+      return;
+    }
+    const selections = item.kind === "poll" ? dailySelections(item.id) : [];
+    if (item.kind === "poll" && !selections.length) {
+      setText("daily-vote-status", window.MrzhI18n.t("请至少选择一项。"));
+      return;
+    }
+    try {
+      setText("daily-vote-status", window.MrzhI18n.t("正在提交…"));
+      const payload = await request("/api/public/daily-vote", {
+        method: "POST",
+        body: JSON.stringify({
+          itemId: item.id,
+          identityCode,
+          locale: window.MrzhI18n.language(),
+          selections
+        })
+      });
+      state.dailySelections[item.id] = [];
+      if (state.data) state.data.dailyVote = payload;
+      renderDailyVote(payload);
+      setText("daily-vote-status", window.MrzhI18n.t("提交成功，票数已更新。"));
+    } catch (error) {
+      showVoteError(window.MrzhI18n.t(error.message), window.MrzhI18n.t("日常投票未提交"), error.code === "identity_code_expired" && error.canRenew, identityCode);
+    }
+  }
+
   function openImagePreview(url, alt = "营地公告图片") {
     const dialog = byId("image-preview-dialog");
     const image = byId("image-preview");
@@ -683,7 +892,10 @@
       "feature-warning-count",
       String(data.inactivityWarnings?.length || 0)
     );
-    setText("feature-vote-count", String(data.voteSummary?.options?.length || 0));
+    setText(
+      "feature-vote-count",
+      String((data.dailyVote?.items?.length || 0) + (data.voteSummary?.options?.length || 0))
+    );
     setText("feature-members-count", String(totalMemberCount));
     setText("feature-runs-count", String(data.recentRuns?.length || 0));
     const memberSync = (data.recentRuns || []).find(
@@ -701,6 +913,7 @@
     );
     renderHighlights(data.publicOverview?.highlights || []);
     renderVote(data.voteSummary || { options: [] });
+    renderDailyVote(data.dailyVote || {});
     renderStaff(data.staffAssignments || []);
     renderWarnings(
       data.inactivityWarnings || [],
@@ -753,6 +966,19 @@
       renderVote(summary);
     } catch {
       // Initial loading and explicit submission already surface network errors.
+    }
+  }
+
+  async function refreshDailyVote() {
+    if (document.hidden || !state.data) return;
+    try {
+      const payload = await request(
+        `/api/public/daily-vote?t=${Date.now()}&locale=${encodeURIComponent(window.MrzhI18n.language())}`
+      );
+      if (state.data) state.data.dailyVote = payload;
+      renderDailyVote(payload);
+    } catch {
+      // Keep the last successful daily-vote snapshot visible during a transient failure.
     }
   }
 
@@ -1229,5 +1455,8 @@
     load();
   });
   load();
-  window.setInterval(refreshVoteSummary, 10_000);
+  window.setInterval(() => {
+    refreshVoteSummary();
+    refreshDailyVote();
+  }, 10_000);
 })();
