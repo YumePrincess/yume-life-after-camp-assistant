@@ -23,11 +23,6 @@
           <small>LifeAfter “Wish” Camp Assistant</small>
         </span>
       </a>
-      <nav class="public-nav" aria-label="营地信息导航">
-        <a href="#vote" data-feature-target="vote">次日科技投票</a>
-        <a href="#warnings" data-feature-target="warnings">斩杀预警</a>
-        <a href="#members" data-feature-target="members">成员信息与贡献</a>
-      </nav>
       <a class="button button-quiet" href="/admin">管理后台</a>
     </header>
 
@@ -39,7 +34,6 @@
           <p id="announcement" class="hero-copy">正在读取最新公共信息。</p>
           <div class="chips">
             <span class="chip" id="server-name">中国大陆服务器</span>
-            <span class="chip" id="camp-type">科技类型待配置</span>
             <span class="chip" id="sync-state">数据同步中</span>
           </div>
         </div>
@@ -64,12 +58,10 @@
           <div>
             <p class="eyebrow">CAMP SERVICES</p>
             <h2 id="feature-heading">营地功能</h2>
-            <p class="muted">选择一个功能卡片查看详细内容。</p>
           </div>
-          <span class="feature-selection-label" id="feature-selection-label">营地公告</span>
         </div>
-        <div class="feature-grid" role="tablist" aria-label="营地功能">
-          <button class="feature-card is-active" type="button" role="tab" aria-selected="true" aria-controls="overview" data-feature-target="overview">
+        <div class="feature-grid" role="list" aria-label="营地功能">
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="overview">
             <span class="feature-card-icon feature-icon-overview" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15M8 7h8M8 11h7"/></svg>
             </span>
@@ -77,7 +69,7 @@
             <span class="feature-card-value" id="feature-overview-count">—</span>
             <span class="feature-card-arrow" aria-hidden="true">›</span>
           </button>
-          <button class="feature-card" type="button" role="tab" aria-selected="false" aria-controls="staff" data-feature-target="staff">
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="staff">
             <span class="feature-card-icon feature-icon-staff" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             </span>
@@ -85,7 +77,7 @@
             <span class="feature-card-value" id="feature-staff-count">—</span>
             <span class="feature-card-arrow" aria-hidden="true">›</span>
           </button>
-          <button class="feature-card" type="button" role="tab" aria-selected="false" aria-controls="warnings" data-feature-target="warnings">
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="warnings">
             <span class="feature-card-icon feature-icon-warning" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="m10.3 3.3-8 14A2 2 0 0 0 4 20.3h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
             </span>
@@ -93,7 +85,7 @@
             <span class="feature-card-value" id="feature-warning-count">—</span>
             <span class="feature-card-arrow" aria-hidden="true">›</span>
           </button>
-          <button class="feature-card" type="button" role="tab" aria-selected="false" aria-controls="vote" data-feature-target="vote">
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="vote">
             <span class="feature-card-icon feature-icon-vote" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="m9 12 2 2 4-4"/><path d="M5 7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v12H5zM2 19h20"/></svg>
             </span>
@@ -101,7 +93,7 @@
             <span class="feature-card-value" id="feature-vote-count">—</span>
             <span class="feature-card-arrow" aria-hidden="true">›</span>
           </button>
-          <button class="feature-card" type="button" role="tab" aria-selected="false" aria-controls="members" data-feature-target="members">
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="members">
             <span class="feature-card-icon feature-icon-members" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.4-2-6.5-4-8a5 5 0 0 0-.5-8.3"/></svg>
             </span>
@@ -109,7 +101,7 @@
             <span class="feature-card-value" id="feature-members-count">—</span>
             <span class="feature-card-arrow" aria-hidden="true">›</span>
           </button>
-          <button class="feature-card" type="button" role="tab" aria-selected="false" aria-controls="runs" data-feature-target="runs">
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="runs">
             <span class="feature-card-icon feature-icon-runs" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M13 5h8M13 12h8M13 19h8"/><path d="m3 7 2 2 4-4M3 17l2 2 4-4"/></svg>
             </span>
@@ -120,7 +112,17 @@
         </div>
       </section>
 
-      <section id="overview" class="panel feature-panel" data-feature-panel="overview">
+      <dialog id="feature-detail-dialog" class="feature-detail-dialog" aria-labelledby="feature-detail-title">
+        <div class="feature-detail-card">
+          <div class="feature-detail-heading">
+            <div>
+              <p class="eyebrow">FEATURE DETAIL</p>
+            <h2 id="feature-detail-title">功能详情</h2>
+            </div>
+            <button id="close-feature-detail" class="feature-detail-close" type="button" aria-label="关闭">×</button>
+          </div>
+          <div class="feature-detail-body">
+      <section id="overview" class="feature-panel" data-feature-panel="overview" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">CAMP NOTES</p>
@@ -131,7 +133,7 @@
         <div id="highlights" class="highlight-list"></div>
       </section>
 
-      <section class="panel feature-panel" id="staff" data-feature-panel="staff" hidden>
+      <section class="feature-panel" id="staff" data-feature-panel="staff" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">OFFICERS</p>
@@ -142,7 +144,7 @@
         <div id="staff-list" class="staff-grid"></div>
       </section>
 
-      <section class="panel feature-panel" id="warnings" data-feature-panel="warnings" hidden>
+      <section class="feature-panel" id="warnings" data-feature-panel="warnings" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">INACTIVITY WATCH</p>
@@ -155,7 +157,7 @@
         <p id="warning-empty" class="empty-state" hidden>当前没有达到预警线的成员。</p>
       </section>
 
-      <article class="panel vote-panel feature-panel" id="vote" data-feature-panel="vote" hidden>
+      <article class="vote-panel feature-panel" id="vote" data-feature-panel="vote" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">NEXT TECHNOLOGY</p>
@@ -198,7 +200,7 @@
         </div>
       </article>
 
-      <section class="panel feature-panel" id="members" data-feature-panel="members" hidden>
+      <section class="feature-panel" id="members" data-feature-panel="members" hidden>
         <div class="section-heading member-heading">
           <div>
             <p class="eyebrow">MEMBER CONTRIBUTION</p>
@@ -229,7 +231,7 @@
         <p id="member-empty" class="empty-state" hidden>暂时没有成员同步数据。</p>
       </section>
 
-      <section class="panel feature-panel" id="runs" data-feature-panel="runs" hidden>
+      <section class="feature-panel" id="runs" data-feature-panel="runs" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">AUTOMATION</p>
@@ -238,6 +240,9 @@
         </div>
         <div id="run-list" class="run-list"></div>
       </section>
+          </div>
+        </div>
+      </dialog>
     </main>
 
     <dialog id="identity-application-dialog">

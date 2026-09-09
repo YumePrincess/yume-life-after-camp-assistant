@@ -13,7 +13,7 @@
     reissueEmail: "",
     reissuePlayerName: "",
     voteErrorRenewalCode: "",
-    activeFeature: "overview"
+    activeFeature: ""
   };
   const FEATURE_IDS = ["overview", "staff", "warnings", "vote", "members", "runs"];
   const ACTIVE_IDENTITY_CONFLICT =
@@ -25,13 +25,34 @@
     return document.getElementById(id);
   }
 
-  function showFeature(id, { updateHash = true, scroll = true } = {}) {
+  function resetFeatureSelection({ clearHash = true, restoreFocus = false } = {}) {
+    const activeId = state.activeFeature;
+    const activeCard = activeId
+      ? document.querySelector(`.feature-card[data-feature-target="${activeId}"]`)
+      : null;
+    for (const panelId of FEATURE_IDS) {
+      const item = byId(panelId);
+      if (item) item.hidden = true;
+    }
+    for (const card of document.querySelectorAll(".feature-card[data-feature-target]")) {
+      card.classList.remove("is-active");
+      card.setAttribute("aria-expanded", "false");
+    }
+    state.activeFeature = "";
+    if (clearHash) {
+      history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
+    if (restoreFocus && activeCard && !activeCard.hidden) activeCard.focus();
+  }
+
+  function showFeature(id, { updateHash = true } = {}) {
     if (!FEATURE_IDS.includes(id)) return false;
     const panel = byId(id);
     const selectedCard = document.querySelector(
       `.feature-card[data-feature-target="${id}"]`
     );
-    if (!panel || !selectedCard || selectedCard.hidden) return false;
+    const dialog = byId("feature-detail-dialog");
+    if (!panel || !selectedCard || selectedCard.hidden || !dialog) return false;
     for (const panelId of FEATURE_IDS) {
       const item = byId(panelId);
       if (item) item.hidden = panelId !== id;
@@ -39,21 +60,17 @@
     for (const card of document.querySelectorAll(".feature-card[data-feature-target]")) {
       const active = card.dataset.featureTarget === id;
       card.classList.toggle("is-active", active);
-      if (card.getAttribute("role") === "tab") {
-        card.setAttribute("aria-selected", String(active));
-      }
+      card.setAttribute("aria-expanded", String(active));
     }
     state.activeFeature = id;
     setText(
-      "feature-selection-label",
+      "feature-detail-title",
       selectedCard?.querySelector(".feature-card-copy strong")?.textContent || ""
     );
     if (updateHash) {
       history.replaceState(null, "", `#${id}`);
     }
-    if (scroll) {
-      panel.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    if (!dialog.open) dialog.showModal();
     return true;
   }
 
@@ -73,7 +90,16 @@
       const id = window.location.hash.slice(1);
       if (FEATURE_IDS.includes(id)) showFeature(id, { updateHash: false });
     });
-    showFeature("overview", { updateHash: false, scroll: false });
+    byId("close-feature-detail").addEventListener("click", () => {
+      byId("feature-detail-dialog").close();
+    });
+    byId("feature-detail-dialog").addEventListener("click", (event) => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
+    });
+    byId("feature-detail-dialog").addEventListener("close", () => {
+      resetFeatureSelection({ restoreFocus: true });
+    });
+    resetFeatureSelection();
   }
 
   function setText(id, value) {
@@ -122,15 +148,6 @@
 
   function categoryName(value) {
     const source = { military: "军事", agriculture: "农业", industry: "工业" }[value];
-    return source ? window.MrzhI18n.t(source) : value;
-  }
-
-  function technologyCategoryName(value) {
-    const source = {
-      military: "军事科技",
-      agriculture: "农业科技",
-      industry: "工业科技"
-    }[value];
     return source ? window.MrzhI18n.t(source) : value;
   }
 
@@ -389,7 +406,7 @@
           "span",
           "vote-selection-label",
           lane === "core"
-            ? window.MrzhI18n.t("类型科技（第一行）")
+            ? window.MrzhI18n.t("类型科技")
             : window.MrzhI18n.t("其他科技")
         )
       );
@@ -614,7 +631,8 @@
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
-      minute: "2-digit"
+      minute: "2-digit",
+      hour12: false
     }).format(new Date(value));
   }
 
@@ -632,10 +650,6 @@
     setText("site-name", window.MrzhI18n.t(siteName));
     setText("camp-name", data.campConfig?.campName || "未命名营地");
     setText("server-name", data.campConfig?.serverName || "中国大陆服务器");
-    setText(
-      "camp-type",
-      technologyCategoryName(data.campConfig?.currentCampType)
-    );
     setText("announcement", data.publicOverview?.announcement || "");
     setText("timezone-label", data.campConfig?.timezone || "Asia/Shanghai");
     const listedMemberCount = data.members?.length || 0;
@@ -691,14 +705,15 @@
     );
     renderMembers(data.members || []);
     renderRuns(data.recentRuns || []);
-    const requestedFeature = window.location.hash.slice(1);
-    const requestedCard = document.querySelector(
-      `.feature-card[data-feature-target="${requestedFeature}"]`
-    );
-    if (FEATURE_IDS.includes(requestedFeature) && requestedCard && !requestedCard.hidden) {
-      showFeature(requestedFeature, { updateHash: false, scroll: false });
-    } else if (byId(state.activeFeature)?.hidden) {
-      showFeature("overview", { updateHash: false, scroll: false });
+    if (state.activeFeature) {
+      const activeCard = document.querySelector(
+        `.feature-card[data-feature-target="${state.activeFeature}"]`
+      );
+      if (activeCard && !activeCard.hidden) {
+        showFeature(state.activeFeature, { updateHash: false });
+      } else {
+        byId("feature-detail-dialog")?.close();
+      }
     }
   }
 
