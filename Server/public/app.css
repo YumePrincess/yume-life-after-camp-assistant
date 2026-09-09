@@ -437,6 +437,10 @@ a {
   margin-left: 0;
 }
 
+.public-page .site-header > .button {
+  margin-left: auto;
+}
+
 .admin-header-context {
   display: flex;
   min-width: 0;
