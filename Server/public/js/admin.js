@@ -110,7 +110,11 @@
   function create(tag, className, text) {
     const element = document.createElement(tag);
     if (className) element.className = className;
-    if (text !== undefined) element.textContent = translateUi(text);
+    if (text instanceof Node) {
+      element.append(text);
+    } else if (text !== undefined) {
+      element.textContent = translateUi(text);
+    }
     return element;
   }
 

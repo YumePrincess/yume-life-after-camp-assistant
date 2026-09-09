@@ -425,6 +425,36 @@ async function listItems(
   return result.results.map(itemFromRow);
 }
 
+const UINT32_RANGE = 0x1_0000_0000;
+
+function secureRandomUint32(): number {
+  const sample = new Uint32Array(1);
+  crypto.getRandomValues(sample);
+  return sample[0]!;
+}
+
+function randomIndex(maxExclusive: number, randomUint32 = secureRandomUint32): number {
+  if (maxExclusive <= 1) return 0;
+  const limit = UINT32_RANGE - (UINT32_RANGE % maxExclusive);
+  let sample = randomUint32();
+  while (sample >= limit) sample = randomUint32();
+  return sample % maxExclusive;
+}
+
+export function selectRandomDrawWinners<T>(
+  rows: readonly T[],
+  count: number,
+  randomUint32 = secureRandomUint32
+): T[] {
+  const pool = [...rows];
+  const winnerCount = Math.min(Math.max(Math.trunc(count), 0), pool.length);
+  for (let index = 0; index < winnerCount; index += 1) {
+    const target = index + randomIndex(pool.length - index, randomUint32);
+    [pool[index], pool[target]] = [pool[target]!, pool[index]!];
+  }
+  return pool.slice(0, winnerCount);
+}
+
 export async function finalizeEndedDraws(env: Env, now = new Date()): Promise<void> {
   const ended = await listItems(env, "WHERE kind = 'draw' AND end_at <= ?", [now.toISOString()]);
   for (const item of ended) {
@@ -432,14 +462,7 @@ export async function finalizeEndedDraws(env: Env, now = new Date()): Promise<vo
       .bind(item.id).first<{ found: number }>();
     if (existing) continue;
     const responses = await responseRows(env, item.id);
-    const shuffled = responses.slice();
-    for (let index = shuffled.length - 1; index > 0; index -= 1) {
-      const random = new Uint32Array(1);
-      crypto.getRandomValues(random);
-      const target = random[0]! % (index + 1);
-      [shuffled[index], shuffled[target]] = [shuffled[target]!, shuffled[index]!];
-    }
-    const selected = shuffled.slice(0, Math.min(item.drawCount ?? 0, shuffled.length));
+    const selected = selectRandomDrawWinners(responses, item.drawCount ?? 0);
     if (!selected.length) continue;
     const selectedAt = now.toISOString();
     await env.DB.batch(selected.map((row, index) => env.DB.prepare(
