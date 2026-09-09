@@ -740,13 +740,16 @@
           card.append(result);
         } else {
           const winners = create("div", "daily-history-result-list");
-          if ((item.winners || []).length) {
+          const winnerList = Array.isArray(item.winners)
+            ? item.winners.filter(winner => winner && String(winner.playerName || "").trim())
+            : [];
+          if (winnerList.length) {
             card.append(create("p", "daily-history-winner-label", "中签人名单："));
           }
-          for (const winner of item.winners || []) {
+          for (const winner of winnerList) {
             winners.append(create("span", "daily-history-result is-winner", winner.playerName));
           }
-          card.append(winners.childElementCount ? winners : create("p", "empty-state", "暂无中签人员。"));
+          card.append(winners.childElementCount ? winners : create("p", "empty-state", "本次抽签无人报名"));
         }
         section.append(card);
       }
