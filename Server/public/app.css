@@ -649,6 +649,182 @@ a {
   gap: 8px;
 }
 
+.feature-section {
+  padding: 24px;
+}
+
+.feature-heading {
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.feature-heading .muted {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.feature-selection-label {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.feature-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 92px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  color: var(--text);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 62%),
+    color-mix(in srgb, var(--panel-strong) 48%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 10px 22px rgba(31, 41, 55, 0.06);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) ease,
+    background var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+}
+
+.feature-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 62%),
+    color-mix(in srgb, var(--panel-strong) 68%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 14px 28px rgba(31, 41, 55, 0.1);
+  transform: translateY(-2px);
+}
+
+.feature-card:active {
+  transform: scale(0.985);
+}
+
+.feature-card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent 64%),
+    color-mix(in srgb, var(--panel-strong) 70%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 14px 30px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.feature-card:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  outline-offset: 3px;
+}
+
+.feature-card-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 15px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.feature-card-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.feature-card-copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.feature-card-copy strong,
+.feature-card-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feature-card-copy strong {
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.feature-card-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.feature-card-value {
+  align-self: start;
+  min-width: 24px;
+  color: var(--accent);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+  line-height: 1;
+  text-align: right;
+}
+
+.feature-card-arrow {
+  position: absolute;
+  right: 14px;
+  bottom: 11px;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 300;
+  line-height: 1;
+  opacity: 0.82;
+}
+
+.feature-panel:not([hidden]) {
+  animation: feature-panel-in 220ms var(--ease-out);
+}
+
+@keyframes feature-panel-in {
+  from {
+    opacity: 0.45;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .overview-stat {
   display: grid;
   min-width: 0;
@@ -3716,6 +3892,10 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
+  .feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .site-header {
     flex-wrap: wrap;
   }
@@ -3835,6 +4015,20 @@ dialog::backdrop {
 
   .highlight-item {
     grid-column: 1 / -1;
+  }
+
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .feature-selection-label {
+    align-self: flex-start;
   }
 
   .footer-timezone {

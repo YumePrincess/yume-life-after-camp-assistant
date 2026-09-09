@@ -12,8 +12,10 @@
     reissueApplicationNumber: "",
     reissueEmail: "",
     reissuePlayerName: "",
-    voteErrorRenewalCode: ""
+    voteErrorRenewalCode: "",
+    activeFeature: "overview"
   };
+  const FEATURE_IDS = ["overview", "staff", "warnings", "vote", "members", "runs"];
   const ACTIVE_IDENTITY_CONFLICT =
     "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。";
   const EXPIRED_IDENTITY_CONFLICT =
@@ -21,6 +23,57 @@
 
   function byId(id) {
     return document.getElementById(id);
+  }
+
+  function showFeature(id, { updateHash = true, scroll = true } = {}) {
+    if (!FEATURE_IDS.includes(id)) return false;
+    const panel = byId(id);
+    const selectedCard = document.querySelector(
+      `.feature-card[data-feature-target="${id}"]`
+    );
+    if (!panel || !selectedCard || selectedCard.hidden) return false;
+    for (const panelId of FEATURE_IDS) {
+      const item = byId(panelId);
+      if (item) item.hidden = panelId !== id;
+    }
+    for (const card of document.querySelectorAll(".feature-card[data-feature-target]")) {
+      const active = card.dataset.featureTarget === id;
+      card.classList.toggle("is-active", active);
+      if (card.getAttribute("role") === "tab") {
+        card.setAttribute("aria-selected", String(active));
+      }
+    }
+    state.activeFeature = id;
+    setText(
+      "feature-selection-label",
+      selectedCard?.querySelector(".feature-card-copy strong")?.textContent || ""
+    );
+    if (updateHash) {
+      history.replaceState(null, "", `#${id}`);
+    }
+    if (scroll) {
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    return true;
+  }
+
+  function handleFeatureNavigation(event) {
+    const control = event.currentTarget;
+    const id = control.dataset.featureTarget;
+    if (!id) return;
+    event.preventDefault();
+    showFeature(id);
+  }
+
+  function initFeatureNavigation() {
+    for (const control of document.querySelectorAll("[data-feature-target]")) {
+      control.addEventListener("click", handleFeatureNavigation);
+    }
+    window.addEventListener("hashchange", () => {
+      const id = window.location.hash.slice(1);
+      if (FEATURE_IDS.includes(id)) showFeature(id, { updateHash: false });
+    });
+    showFeature("overview", { updateHash: false, scroll: false });
   }
 
   function setText(id, value) {
@@ -115,8 +168,10 @@
       const enabled = pluginEnabled(pluginId);
       for (const id of ids) {
         const section = byId(id);
-        if (section) section.hidden = !enabled;
-        for (const link of document.querySelectorAll(`[href="#${id}"]`)) {
+        if (section && !enabled) section.hidden = true;
+        for (const link of document.querySelectorAll(
+          `[href="#${id}"], [data-feature-target="${id}"]`
+        )) {
           link.hidden = !enabled;
         }
       }
@@ -258,11 +313,7 @@
           "h3",
           "vote-lane-title",
           lane === "core"
-            ? window.MrzhI18n.t(
-                state.data?.campConfig?.currentCampType === "agriculture"
-                  ? "农业科技（第一行）"
-                  : "类型科技（第一行）"
-              )
+            ? window.MrzhI18n.t("类型科技（第一行）")
             : window.MrzhI18n.t("其他科技（第二行）")
         )
       );
@@ -338,11 +389,7 @@
           "span",
           "vote-selection-label",
           lane === "core"
-            ? window.MrzhI18n.t(
-                state.data?.campConfig?.currentCampType === "agriculture"
-                  ? "农业科技"
-                  : "类型科技（第一行）"
-              )
+            ? window.MrzhI18n.t("类型科技（第一行）")
             : window.MrzhI18n.t("其他科技")
         )
       );
@@ -609,6 +656,19 @@
       "hero-vote-count",
       String(data.voteSummary?.ballotCount || 0)
     );
+    const highlightCount = Array.isArray(data.publicOverview?.highlights)
+      ? data.publicOverview.highlights.length
+      : 0;
+    setText("feature-overview-count", String(highlightCount));
+    setText("overview-count", String(highlightCount));
+    setText("feature-staff-count", String(data.staffAssignments?.length || 0));
+    setText(
+      "feature-warning-count",
+      String(data.inactivityWarnings?.length || 0)
+    );
+    setText("feature-vote-count", String(data.voteSummary?.options?.length || 0));
+    setText("feature-members-count", String(totalMemberCount));
+    setText("feature-runs-count", String(data.recentRuns?.length || 0));
     const memberSync = (data.recentRuns || []).find(
       (run) =>
         run.taskKey === "member_profile_sync" &&
@@ -631,6 +691,15 @@
     );
     renderMembers(data.members || []);
     renderRuns(data.recentRuns || []);
+    const requestedFeature = window.location.hash.slice(1);
+    const requestedCard = document.querySelector(
+      `.feature-card[data-feature-target="${requestedFeature}"]`
+    );
+    if (FEATURE_IDS.includes(requestedFeature) && requestedCard && !requestedCard.hidden) {
+      showFeature(requestedFeature, { updateHash: false, scroll: false });
+    } else if (byId(state.activeFeature)?.hidden) {
+      showFeature("overview", { updateHash: false, scroll: false });
+    }
   }
 
   async function load() {
@@ -1136,6 +1205,7 @@
     state.memberQuery = event.target.value || "";
     renderMembers(state.data?.members || []);
   });
+  initFeatureNavigation();
   document.addEventListener("mrzh:languagechange", () => {
     if (state.data) render(state.data);
     load();
