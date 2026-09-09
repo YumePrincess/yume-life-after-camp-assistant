@@ -1086,6 +1086,10 @@ h2 {
   font-weight: 700;
 }
 
+.vote-window-state.is-open {
+  color: var(--green);
+}
+
 .vote-selection-slot {
   display: grid;
   aspect-ratio: 1;
@@ -1358,6 +1362,23 @@ textarea:focus {
   flex-wrap: wrap;
 }
 
+.vote-action-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.vote-action-row #submit-vote {
+  grid-column: 2;
+  justify-self: center;
+}
+
+.vote-action-row .feedback {
+  grid-column: 3;
+  min-width: 0;
+  justify-self: start;
+}
+
 .feedback {
   color: var(--muted);
   font-size: 13px;
@@ -1369,14 +1390,14 @@ textarea:focus {
 
 .highlight-list {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   margin-top: 0;
 }
 
 .highlight-item {
   display: flex;
-  grid-column: span 6;
+  grid-column: 1 / -1;
   min-width: 0;
   padding: 16px;
   overflow: hidden;

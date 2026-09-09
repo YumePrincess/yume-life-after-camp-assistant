@@ -306,10 +306,13 @@
         { limit: voteLimit }
       )
     );
-    setText(
-      "vote-window-state",
-      window.MrzhI18n.t(summary.isOpen === false ? "当前未开放" : "当前可投票")
-    );
+    const voteWindowState = byId("vote-window-state");
+    if (voteWindowState) {
+      voteWindowState.classList.toggle("is-open", summary.isOpen !== false);
+      voteWindowState.textContent = window.MrzhI18n.t(
+        summary.isOpen === false ? "当前未开放" : "当前可投票"
+      );
+    }
     const root = byId("vote-options");
     root.replaceChildren();
     renderVoteSelection(summary);
