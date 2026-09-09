@@ -397,10 +397,18 @@ export async function deleteDailyVoteHistory(
   return result.meta.changes ?? 0;
 }
 
-async function listItems(env: Env, where = "", binds: unknown[] = []): Promise<DailyVoteItem[]> {
+async function listItems(
+  env: Env,
+  where = "",
+  binds: unknown[] = [],
+  limit?: number
+): Promise<DailyVoteItem[]> {
+  const sql = `SELECT * FROM daily_vote_items ${where} ORDER BY start_at DESC, created_at DESC${
+    limit === undefined ? "" : " LIMIT ?"
+  }`;
   const result = await env.DB.prepare(
-    `SELECT * FROM daily_vote_items ${where} ORDER BY start_at DESC, created_at DESC`
-  ).bind(...binds).all<DailyVoteRow>();
+    sql
+  ).bind(...binds, ...(limit === undefined ? [] : [limit])).all<DailyVoteRow>();
   return result.results.map(itemFromRow);
 }
 
@@ -521,7 +529,7 @@ export async function listAdminDailyVoteItems(
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const limit = Math.max(1, Math.min(100, options.limit ?? (options.date ? 100 : 5)));
-  const items = await listItems(env, `${where} LIMIT ?`, [...binds, limit]);
+  const items = await listItems(env, where, binds, limit);
   return Promise.all(items.map(async (item) => {
     const rows = await env.DB.prepare(
       `SELECT r.*, c.code_encrypted FROM daily_vote_responses r

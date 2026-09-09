@@ -165,68 +165,89 @@
           </div>
           <div class="date-badge" id="daily-vote-count">0</div>
         </div>
-        <div class="identity-vote-row">
-          <label class="field identity-code-field">
-            <span>身份识别码（必填）</span>
-            <input
-              id="identity-code"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              placeholder="请输入身份识别码"
-              required
-            />
-          </label>
-          <button id="apply-identity-code" class="button button-quiet" type="button">
-            申请身份识别码
+        <div id="daily-vote-panels" class="daily-vote-panel-list">
+          <button class="daily-vote-panel-card" type="button" data-daily-panel="technology">
+            <span class="daily-vote-panel-icon" aria-hidden="true">✓</span>
+            <span class="daily-vote-panel-copy">
+              <strong>科技投票</strong>
+              <small>选择并提交次日科技</small>
+            </span>
+            <span class="daily-vote-panel-stat"><b id="daily-tech-panel-count">1</b><small>项</small><span aria-hidden="true">›</span></span>
           </button>
-          <button id="renew-identity-code" class="button button-quiet" type="button">
-            申请延长识别码有效期
+          <button class="daily-vote-panel-card" type="button" data-daily-panel="items">
+            <span class="daily-vote-panel-icon" aria-hidden="true">☷</span>
+            <span class="daily-vote-panel-copy">
+              <strong>投票事项与抽签</strong>
+              <small>参与当前开放事项</small>
+            </span>
+            <span class="daily-vote-panel-stat"><b id="daily-items-panel-count">0</b><small>项</small><span aria-hidden="true">›</span></span>
           </button>
-          <button id="reissue-identity-code" class="button button-quiet" type="button">
-            申请更换身份识别码
-          </button>
-          <button id="recover-identity-code" class="button button-quiet" type="button">
-            忘记识别码
+          <button class="daily-vote-panel-card" type="button" data-daily-panel="history">
+            <span class="daily-vote-panel-icon" aria-hidden="true">◷</span>
+            <span class="daily-vote-panel-copy">
+              <strong>历史投票结果</strong>
+              <small>查看最近科技与事项结果</small>
+            </span>
+            <span class="daily-vote-panel-stat"><b id="daily-history-panel-count">0</b><small>条</small><span aria-hidden="true">›</span></span>
           </button>
         </div>
-        <section class="daily-tech-card">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">NEXT TECHNOLOGY</p>
-              <h3>科技投票</h3>
+        <div id="daily-vote-panel-detail" class="daily-vote-panel-detail" hidden>
+          <button id="daily-vote-back" class="button button-quiet daily-vote-back" type="button">‹ 返回日常投票</button>
+          <section class="daily-tech-card" data-daily-panel-content="technology" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">NEXT TECHNOLOGY</p>
+                <h3>科技投票</h3>
+              </div>
+              <div class="date-badge" id="poll-date">--</div>
             </div>
-            <div class="date-badge" id="poll-date">--</div>
-          </div>
-          <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
-          <p id="vote-limit-description" class="muted vote-limit-description">每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。</p>
-          <p id="vote-window-state" class="vote-window-state">当前未开放</p>
-          <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
-          <div id="vote-options" class="vote-options" aria-live="polite"></div>
-          <div class="action-row vote-action-row">
-            <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
-            <span id="vote-feedback" class="feedback" role="status"></span>
-          </div>
-        </section>
-        <section class="daily-items-section">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">OPEN ITEMS</p>
-              <h3>开放事项</h3>
+            <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
+            <p id="vote-limit-description" class="muted vote-limit-description">每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。</p>
+            <p id="vote-window-state" class="vote-window-state">当前未开放</p>
+            <div class="identity-vote-row daily-identity-row">
+              <label class="field identity-code-field">
+                <span>身份识别码（必填）</span>
+                <input
+                  id="identity-code"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  placeholder="请输入身份识别码"
+                  required
+                />
+              </label>
+              <button id="apply-identity-code" class="button button-quiet" type="button">申请身份识别码</button>
+              <button id="renew-identity-code" class="button button-quiet" type="button">申请延长识别码有效期</button>
+              <button id="reissue-identity-code" class="button button-quiet" type="button">申请更换身份识别码</button>
+              <button id="recover-identity-code" class="button button-quiet" type="button">忘记识别码</button>
             </div>
-            <span id="daily-vote-status" class="muted"></span>
-          </div>
-          <div id="daily-vote-items" class="daily-vote-items" aria-live="polite"></div>
-        </section>
-        <section class="daily-history-section">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">HISTORY</p>
-              <h3>历史投票结果</h3>
+            <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
+            <div id="vote-options" class="vote-options" aria-live="polite"></div>
+            <div class="action-row vote-action-row">
+              <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
+              <span id="vote-feedback" class="feedback" role="status"></span>
             </div>
-            <span class="muted">科技 7 天 · 事项 14 天</span>
-          </div>
-          <div id="daily-vote-history" class="daily-vote-history"></div>
-        </section>
+          </section>
+          <section class="daily-items-section" data-daily-panel-content="items" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">OPEN ITEMS</p>
+                <h3>开放事项</h3>
+              </div>
+              <span id="daily-vote-status" class="muted"></span>
+            </div>
+            <div id="daily-vote-items" class="daily-vote-items" aria-live="polite"></div>
+          </section>
+          <section class="daily-history-section" data-daily-panel-content="history" hidden>
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">HISTORY</p>
+                <h3>历史投票结果</h3>
+              </div>
+              <span class="muted">科技 7 天 · 事项 14 天</span>
+            </div>
+            <div id="daily-vote-history" class="daily-vote-history"></div>
+          </section>
+        </div>
       </article>
 
       <section class="feature-panel" id="members" data-feature-panel="members" hidden>

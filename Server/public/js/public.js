@@ -13,8 +13,10 @@
     reissueEmail: "",
     reissuePlayerName: "",
     voteErrorRenewalCode: "",
-    activeFeature: ""
-    ,dailySelections: {}
+    activeFeature: "",
+    dailyPanel: "",
+    dailyIdentityCodes: {},
+    dailySelections: {}
   };
   const FEATURE_IDS = ["overview", "staff", "warnings", "vote", "members", "runs"];
   const ACTIVE_IDENTITY_CONFLICT =
@@ -399,8 +401,9 @@
     }
   }
 
-  function renderVoteSelection(summary) {
-    const root = byId("vote-selection-preview");
+  function renderVoteSelection(summary, target = byId("vote-selection-preview")) {
+    const root = target;
+    if (!root) return;
     root.replaceChildren();
     for (const lane of ["core", "general"]) {
       const row = create("section", "vote-selection-row");
@@ -538,6 +541,42 @@
     return Array.isArray(values) ? values : [];
   }
 
+  function appendDailyIdentityControls(card, itemId) {
+    const row = create("div", "identity-vote-row daily-item-identity-row");
+    const label = document.createElement("label");
+    label.className = "field identity-code-field";
+    label.append(create("span", "", "身份识别码（必填）"));
+    const input = document.createElement("input");
+    input.className = "daily-identity-code";
+    input.inputMode = "numeric";
+    input.autocomplete = "one-time-code";
+    input.placeholder = window.MrzhI18n.t("请输入身份识别码");
+    input.value = state.dailyIdentityCodes[itemId] || "";
+    input.required = true;
+    input.addEventListener("input", () => {
+      state.dailyIdentityCodes[itemId] = input.value;
+    });
+    label.append(input);
+    row.append(label);
+    const actions = [
+      ["申请身份识别码", () => openNewApplication()],
+      ["申请延长识别码有效期", () => {
+        const value = input.value.trim();
+        openRenewalLookup(/^\d{8}$/.test(value) ? value : "");
+      }],
+      ["申请更换身份识别码", () => openReissue(input.value.trim())],
+      ["忘记识别码", () => openIdentityRecovery()]
+    ];
+    for (const [labelText, handler] of actions) {
+      const button = create("button", "button button-quiet", labelText);
+      button.type = "button";
+      button.addEventListener("click", handler);
+      row.append(button);
+    }
+    card.append(row);
+    return input;
+  }
+
   function renderDailyItem(item) {
     const card = create("article", `daily-vote-item daily-vote-item-${item.kind}`);
     const heading = create("div", "daily-vote-item-heading");
@@ -566,6 +605,7 @@
       })));
     }
     card.append(meta);
+    const identityInput = appendDailyIdentityControls(card, item.id);
     if (item.kind === "poll") {
       const selected = new Set(dailySelections(item.id));
       const options = create("div", "daily-vote-options");
@@ -597,7 +637,7 @@
     const submit = create("button", "button button-primary", item.kind === "draw" ? "提交抽签" : "提交投票");
     submit.type = "button";
     submit.disabled = item.isOpen === false;
-    submit.addEventListener("click", () => submitDailyVote(item));
+    submit.addEventListener("click", () => submitDailyVote(item, identityInput));
     action.append(submit);
     card.append(action);
     return card;
@@ -608,27 +648,39 @@
     if (!root) return;
     root.replaceChildren();
     const technology = payload?.technologyHistory || [];
-    if (technology.length) {
-      const section = create("section", "daily-history-group");
-      section.append(create("h4", "daily-history-group-title", "科技投票 · 最近 7 天"));
-      for (const item of technology) {
-        const card = create("article", "daily-history-card");
-        card.append(create("strong", "daily-history-card-title", item.pollDate));
+    const technologySection = create("section", "daily-history-group");
+    technologySection.append(create("h4", "daily-history-group-title", "科技投票 · 最近 7 天"));
+    if (!technology.length) {
+      technologySection.append(create("p", "empty-state", "当天无投票记录"));
+    }
+    for (const item of technology) {
+      const card = create("article", "daily-history-card");
+      card.append(create("strong", "daily-history-card-title", item.pollDate));
+      const fixedTechnologies = Array.isArray(item.fixedTechnologies) ? item.fixedTechnologies : [];
+      const hasRecords = Number(item.ballotCount || 0) > 0 || fixedTechnologies.length > 0;
+      if (hasRecords) {
+        const preview = create("div", "vote-selection-preview daily-history-selection-preview");
+        renderVoteSelection(item, preview);
+        card.append(preview);
+        const fixedKeys = new Set(fixedTechnologies.map((fixed) => fixed.key));
         const result = create("div", "daily-history-result-list");
         for (const tech of [...(item.projectedPlan?.core || []), ...(item.projectedPlan?.general || [])]) {
+          if (fixedKeys.has(tech.key)) continue;
           result.append(create("span", "daily-history-result", window.MrzhI18n.format("{name} · {count} 票", {
             name: tech.name,
             count: (item.options || []).find((option) => option.key === tech.key)?.votes || 0
           })));
         }
-        for (const fixed of item.fixedTechnologies || []) {
+        for (const fixed of fixedTechnologies) {
           result.append(create("span", "daily-history-result is-fixed", window.MrzhI18n.format("{name} · 固定", { name: fixed.name })));
         }
-        card.append(result);
-        section.append(card);
+        if (result.childElementCount) card.append(result);
+      } else {
+        card.append(create("p", "empty-state", "当天无投票记录"));
       }
-      root.append(section);
+      technologySection.append(card);
     }
+    root.append(technologySection);
     for (const [kind, items] of [["poll", payload?.history?.polls || []], ["draw", payload?.history?.draws || []]]) {
       const section = create("section", "daily-history-group");
       section.append(create("h4", "daily-history-group-title", kind === "poll" ? "投票事项 · 最近 14 天" : "抽签事项 · 最近 14 天"));
@@ -667,15 +719,40 @@
     const root = byId("daily-vote-items");
     if (!root) return;
     const items = Array.isArray(payload?.items) ? payload.items : [];
+    const historyCount = (payload?.technologyHistory || []).length +
+      (payload?.history?.polls || []).length +
+      (payload?.history?.draws || []).length;
     root.replaceChildren();
-    setText("daily-vote-count", String(items.length));
+    setText("feature-vote-count", String(items.length + 1));
+    setText("daily-vote-count", String(items.length + 1));
+    setText("daily-tech-panel-count", "1");
+    setText("daily-items-panel-count", String(items.length));
+    setText("daily-history-panel-count", String(historyCount));
     setText("daily-vote-status", items.length ? "" : window.MrzhI18n.t("当前没有开放事项。"));
     for (const item of items) root.append(renderDailyItem(item));
     renderDailyHistory(payload || {});
+    const panelList = byId("daily-vote-panels");
+    const panelDetail = byId("daily-vote-panel-detail");
+    if (panelList) panelList.hidden = Boolean(state.dailyPanel);
+    if (panelDetail) panelDetail.hidden = !state.dailyPanel;
+    for (const panel of document.querySelectorAll("[data-daily-panel-content]")) {
+      panel.hidden = panel.dataset.dailyPanelContent !== state.dailyPanel;
+    }
   }
 
-  async function submitDailyVote(item) {
-    const identityCode = byId("identity-code")?.value.trim() || "";
+  function openDailyPanel(panel) {
+    if (!["technology", "items", "history"].includes(panel)) return;
+    state.dailyPanel = panel;
+    renderDailyVote(state.data?.dailyVote || {});
+  }
+
+  function backDailyPanels() {
+    state.dailyPanel = "";
+    renderDailyVote(state.data?.dailyVote || {});
+  }
+
+  async function submitDailyVote(item, identityInput = byId("identity-code")) {
+    const identityCode = identityInput?.value.trim() || "";
     if (!/^\d{8}$/.test(identityCode)) {
       showVoteError(window.MrzhI18n.t("请输入身份识别码。"), window.MrzhI18n.t("日常投票未提交"));
       return;
@@ -894,7 +971,7 @@
     );
     setText(
       "feature-vote-count",
-      String((data.dailyVote?.items?.length || 0) + (data.voteSummary?.options?.length || 0))
+      String((data.dailyVote?.items?.length || 0) + 1)
     );
     setText("feature-members-count", String(totalMemberCount));
     setText("feature-runs-count", String(data.recentRuns?.length || 0));
@@ -1417,6 +1494,10 @@
   }
 
   byId("submit-vote").addEventListener("click", submitVote);
+  for (const panel of document.querySelectorAll("[data-daily-panel]")) {
+    panel.addEventListener("click", () => openDailyPanel(panel.dataset.dailyPanel));
+  }
+  byId("daily-vote-back").addEventListener("click", backDailyPanels);
   byId("apply-identity-code").addEventListener("click", openNewApplication);
   byId("recover-identity-code").addEventListener("click", openIdentityRecovery);
   byId("renew-identity-code").addEventListener("click", () => {

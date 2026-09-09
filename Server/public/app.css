@@ -1051,6 +1051,101 @@ h2 {
   border-top: 1px solid var(--line);
 }
 
+.daily-vote-panel-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.daily-vote-panel-list[hidden],
+.daily-vote-panel-detail[hidden] {
+  display: none;
+}
+
+.daily-vote-panel-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.025);
+  text-align: left;
+}
+
+.daily-vote-panel-card:hover,
+.daily-vote-panel-card:focus-visible {
+  border-color: rgba(235, 184, 97, 0.62);
+  background: rgba(235, 184, 97, 0.07);
+}
+
+.daily-vote-panel-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(235, 184, 97, 0.48);
+  border-radius: 13px;
+  color: var(--accent);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.daily-vote-panel-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.daily-vote-panel-copy strong {
+  font-size: 15px;
+}
+
+.daily-vote-panel-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-vote-panel-stat {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--accent);
+  text-align: right;
+}
+
+.daily-vote-panel-stat b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.daily-vote-panel-stat span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.daily-vote-panel-detail {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.daily-vote-back {
+  justify-self: start;
+}
+
+.daily-item-identity-row {
+  margin: 0;
+}
+
 .daily-tech-card {
   padding: 18px;
   border: 1px solid rgba(235, 184, 97, 0.38);
