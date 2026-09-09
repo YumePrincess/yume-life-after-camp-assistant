@@ -1368,7 +1368,9 @@
         const winners = create("div", "daily-vote-admin-winners");
         winners.append(create("strong", "daily-vote-admin-subheading", `中签人员（${item.drawCount || 0} 人）`));
         for (const winner of item.winners || []) {
-          winners.append(create("div", "daily-vote-admin-response", create("strong", "", `${winner.rank}. ${winner.playerName} · ${winner.identityCode}`)));
+          const row = create("div", "daily-vote-admin-response");
+          row.append(create("strong", "", `${winner.rank}. ${winner.playerName} · ${winner.identityCode}`));
+          winners.append(row);
         }
         card.append(winners);
       }

@@ -740,7 +740,12 @@
           card.append(result);
         } else {
           const winners = create("div", "daily-history-result-list");
-          for (const winner of item.winners || []) winners.append(create("span", "daily-history-result is-winner", winner.playerName));
+          if ((item.winners || []).length) {
+            card.append(create("p", "daily-history-winner-label", "中签人名单："));
+          }
+          for (const winner of item.winners || []) {
+            winners.append(create("span", "daily-history-result is-winner", winner.playerName));
+          }
           card.append(winners.childElementCount ? winners : create("p", "empty-state", "暂无中签人员。"));
         }
         section.append(card);
