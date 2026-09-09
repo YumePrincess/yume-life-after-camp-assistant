@@ -1400,8 +1400,19 @@
     byId("daily-vote-options").required = !isDraw;
   }
 
+  function localizeDailyVoteError(error) {
+    const raw = error?.message || String(error || "");
+    const translated = window.MrzhI18n?.t ? window.MrzhI18n.t(raw) : raw;
+    if (translated !== raw) return translated;
+    if (/^localizedContent\.[^.]+\.options must contain between 2 and 50 options$/.test(raw)) {
+      return window.MrzhI18n.t("投票选项至少需要 2 个，最多 50 个。");
+    }
+    return raw;
+  }
+
   function openDailyVoteEditor(item = null, kind = "poll") {
     state.dailyVoteEditorItem = item;
+    setText("daily-vote-editor-feedback", "");
     const source = item || {
       kind,
       startAt: "",
@@ -1432,10 +1443,12 @@
   function closeDailyVoteEditor() {
     state.dailyVoteEditorItem = null;
     byId("daily-vote-editor").hidden = true;
+    setText("daily-vote-editor-feedback", "");
   }
 
   async function saveDailyVoteFromEditor(event) {
     event.preventDefault();
+    setText("daily-vote-editor-feedback", "");
     const kind = byId("daily-vote-kind").value;
     const existing = state.dailyVoteEditorItem;
     const options = kind === "poll"
@@ -1472,7 +1485,7 @@
       closeDailyVoteEditor();
       await loadDailyVoteAdmin(byId("daily-vote-date").value);
     } catch (error) {
-      byId("daily-vote-editor-feedback").textContent = error.message;
+      setText("daily-vote-editor-feedback", localizeDailyVoteError(error));
     }
   }
 

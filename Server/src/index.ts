@@ -418,7 +418,25 @@ async function handlePublicApi(
     } else if (rawSelections.length > 0) {
       return problem("抽签事项不需要选择选项", 400, "invalid_daily_draw_selection");
     }
+    let renewalGraceUsed = false;
     if (!identity.publicTestVote && identity.identityRecord?.ok) {
+      const consumed = identity.identityRecord.grace
+        ? await verifyIdentityCode(env, body.identityCode, {
+            consumeRenewalGrace: true
+          })
+        : identity.identityRecord;
+      if (!consumed.ok) {
+        return json(
+          {
+            title: "延期审批期间的一次过期投票机会已使用",
+            code: "identity_code_expired_grace_used",
+            canRenew: false
+          },
+          409,
+          cors
+        );
+      }
+      renewalGraceUsed = identity.identityRecord.grace;
       await saveDailyVoteResponse(env, {
         itemId,
         identityCodeId: identity.identityRecord.code.id,
@@ -433,6 +451,7 @@ async function handlePublicApi(
           !identity.publicTestVote && identity.identityRecord?.ok
             ? identity.identityRecord.code.expires_at
             : null,
+        renewalGraceUsed,
         publicTestVote: identity.publicTestVote
       },
       200,

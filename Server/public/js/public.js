@@ -132,6 +132,31 @@
     return window.MrzhI18n.format("识别码有效期：{date}", { date: expiry });
   }
 
+  function showVoteSuccessDialog({ kind, data, message }) {
+    const isTest = Boolean(data?.publicTestVote);
+    setText(
+      "vote-success-kicker",
+      window.MrzhI18n.t(kind === "daily" ? "日常投票" : "科技投票")
+    );
+    setText("vote-success-message", message);
+    setText(
+      "vote-success-expiry",
+      isTest ? "" : identityExpiryLabel(data?.identityCodeExpiresAt)
+    );
+    setText(
+      "vote-success-renewal",
+      isTest
+        ? ""
+        : window.MrzhI18n.t(
+            "识别码到期后请申请延期；延期审批期间，过期识别码可额外投票一次。"
+          )
+    );
+    const renewal = byId("vote-success-renewal");
+    if (renewal) renewal.hidden = isTest;
+    const dialog = byId("vote-success-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
   async function request(path, options = {}) {
     const response = await fetch(path, {
       ...options,
@@ -777,6 +802,15 @@
       if (state.data) state.data.dailyVote = payload;
       renderDailyVote(payload);
       setText("daily-vote-status", window.MrzhI18n.t("提交成功，票数已更新。"));
+      showVoteSuccessDialog({
+        kind: "daily",
+        data: payload,
+        message: payload.publicTestVote
+          ? window.MrzhI18n.t("测试成功，本次提交不计票。")
+          : payload.renewalGraceUsed
+            ? window.MrzhI18n.t("投票已提交；本次已使用延期审批期间唯一一次过期投票机会。")
+            : window.MrzhI18n.t("提交成功，票数已更新。")
+      });
     } catch (error) {
       showVoteError(window.MrzhI18n.t(error.message), window.MrzhI18n.t("日常投票未提交"), error.code === "identity_code_expired" && error.canRenew, identityCode);
     }
@@ -1094,13 +1128,17 @@
       feedback.textContent = summary.voteWithdrawn
         ? window.MrzhI18n.t("投票已撤回，当前不计入投票人数。")
         : window.MrzhI18n.t("投票已保存，可在截止前再次修改。");
-      setText(
-        "vote-success-expiry",
-        summary.publicTestVote
-          ? window.MrzhI18n.t("测试成功，本次提交不计票。")
-          : identityExpiryLabel(summary.identityCodeExpiresAt)
-      );
-      byId("vote-success-dialog").showModal();
+      showVoteSuccessDialog({
+        kind: "technology",
+        data: summary,
+        message: summary.voteWithdrawn
+          ? window.MrzhI18n.t("投票已撤回，当前不计入投票人数。")
+          : summary.publicTestVote
+            ? window.MrzhI18n.t("测试成功，本次提交不计票。")
+            : summary.renewalGraceUsed
+              ? window.MrzhI18n.t("投票已提交；本次已使用延期审批期间唯一一次过期投票机会。")
+              : window.MrzhI18n.t("投票已保存，可在截止前再次修改。")
+      });
     } catch (error) {
       const message =
         error.code === "rate_limited" ||
