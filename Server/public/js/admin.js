@@ -3349,7 +3349,11 @@
       const row = document.createElement("tr");
       for (const value of [
         item.application_number,
-        item.request_type === "renewal" ? "延期" : "新申请",
+        item.request_type === "renewal"
+          ? "延期"
+          : item.request_type === "reissue"
+            ? "重新发行"
+            : "新申请",
         item.player_name,
         item.email,
         item.locale,

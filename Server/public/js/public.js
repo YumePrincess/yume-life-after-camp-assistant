@@ -1441,8 +1441,8 @@
     setText("identity-email-label", window.MrzhI18n.t("申请时预留的邮箱"));
     setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
     setText("submit-identity-application", window.MrzhI18n.t("提交更换申请"));
-    byId("identity-email").value = preview.email;
-    byId("identity-player-name").value = preview.playerName;
+    byId("identity-email").value = lookup.email || preview.email;
+    byId("identity-player-name").value = lookup.playerName || preview.playerName;
     setText("identity-application-feedback", "");
   }
 
@@ -1576,7 +1576,9 @@
                 body: JSON.stringify({
                   ...common,
                   identityCode: state.reissueCode,
-                  applicationNumber: state.reissueApplicationNumber
+                  applicationNumber: state.reissueApplicationNumber,
+                  lookupEmail: state.reissueEmail,
+                  lookupPlayerName: state.reissuePlayerName
                 })
               })
           : state.identityMode === "recovery"

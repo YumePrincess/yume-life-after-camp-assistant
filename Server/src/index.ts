@@ -875,6 +875,8 @@ async function handlePublicApi(
       const result = await submitReissue(env, {
           identityCode: body.identityCode,
           applicationNumber: body.applicationNumber,
+          lookupEmail: body.lookupEmail,
+          lookupPlayerName: body.lookupPlayerName,
           email: body.email,
           playerName: body.playerName,
           locale: body.locale

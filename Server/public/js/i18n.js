@@ -2082,6 +2082,10 @@
       "填写申请编号或身份识别码任一项，然后核对原申请信息。":
         "Enter either the application number or identity code, then verify the original application details.",
       "下一步：核对信息": "Next: verify details",
+      "填写的信息未指向同一份识别码记录":
+        "The information provided does not identify the same identity-code record.",
+      "相同邮箱或玩家名称已有状态为有效的身份识别码":
+        "The same email or player name is already linked to an active identity code.",
       "请填写申请编号或身份识别码":
         "Enter an application number or identity code.",
       "申请重新发行识别码": "Request code reissue",
@@ -2252,6 +2256,10 @@
       "填写申请编号或身份识别码任一项，然后核对原申请信息。":
         "Saisissez le numéro de demande ou le code d’identité, puis vérifiez les informations de la demande d’origine.",
       "下一步：核对信息": "Suivant : vérifier les informations",
+      "填写的信息未指向同一份识别码记录":
+        "Les informations saisies ne correspondent pas au même enregistrement de code d’identité.",
+      "相同邮箱或玩家名称已有状态为有效的身份识别码":
+        "Cette adresse e-mail ou ce nom de joueur est déjà associé à un code d’identité actif.",
       "请填写申请编号或身份识别码":
         "Saisissez un numéro de demande ou un code d’identité.",
       "申请重新发行识别码": "Demander la réémission du code",
@@ -2415,6 +2423,10 @@
       "填写申请编号或身份识别码任一项，然后核对原申请信息。":
         "申請番号または本人確認コードのいずれかを入力し、元の申請情報を確認してください。",
       "下一步：核对信息": "次へ：情報を確認",
+      "填写的信息未指向同一份识别码记录":
+        "入力した情報は同じ本人確認コードの記録を指していません。",
+      "相同邮箱或玩家名称已有状态为有效的身份识别码":
+        "同じメールアドレスまたはプレイヤー名に、すでに有効な本人確認コードが紐づいています。",
       "请填写申请编号或身份识别码":
         "申請番号または本人確認コードを入力してください。",
       "申请重新发行识别码": "コードの再発行を申請",
@@ -2578,6 +2590,10 @@
       "填写申请编号或身份识别码任一项，然后核对原申请信息。":
         "請填寫申請編號或身分識別碼任一項，然後核對原申請資訊。",
       "下一步：核对信息": "下一步：核對資訊",
+      "填写的信息未指向同一份识别码记录":
+        "填寫的資訊未指向同一筆身分識別碼記錄。",
+      "相同邮箱或玩家名称已有状态为有效的身份识别码":
+        "相同信箱或玩家名稱已經綁定有效的身分識別碼。",
       "请填写申请编号或身份识别码":
         "請填寫申請編號或身分識別碼。",
       "申请重新发行识别码": "申請重新發行識別碼",

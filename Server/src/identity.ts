@@ -524,6 +524,8 @@ export async function submitRenewal(
     identityCode: input.identityCode,
     applicationNumber: input.applicationNumber
   });
+  const email = cleanEmail(input.email);
+  const playerName = cleanPlayerName(input.playerName);
   if (code.status === "disabled") throw new Error("身份识别码已被禁用");
   if (!isIdentityRenewalWindowOpen(code.expires_at)) {
     throw new Error("仅可在识别码有效期届满前7天内申请延期");
@@ -531,15 +533,14 @@ export async function submitRenewal(
   if (application.request_type === "renewal" && application.status === "rejected") {
     throw new Error("该延期申请已被拒绝，不能再次申请");
   }
-  if (
-    cleanEmail(input.email) !== application.email.toLowerCase() ||
-    cleanPlayerName(input.playerName) !== application.player_name
-  ) {
-    throw new Error("核对信息与原申请不一致");
-  }
+  await assertNoOtherActiveIdentityCode(env, {
+    email,
+    playerName,
+    excludeId: code.id
+  });
   await assertNoPendingIdentityApplication(env, {
-    email: application.email,
-    playerName: application.player_name,
+    email,
+    playerName,
     excludeId: application.id
   });
   if (application.request_type === "renewal" && application.status === "pending") {
@@ -549,11 +550,18 @@ export async function submitRenewal(
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE identity_code_applications SET
-        request_type = 'renewal', status = 'pending', locale = ?, submitted_at = ?,
+        request_type = 'renewal', email = ?, player_name = ?, status = 'pending',
+        locale = ?, submitted_at = ?,
         reviewed_at = NULL, reviewed_by = NULL, rejection_reason = NULL,
         email_sent_at = NULL, last_email_error = NULL
        WHERE id = ?`
-    ).bind(normalizeLocale(input.locale), submittedAt, application.id),
+    ).bind(
+      email,
+      playerName,
+      normalizeLocale(input.locale),
+      submittedAt,
+      application.id
+    ),
     env.DB.prepare(
       `UPDATE identity_codes SET renewal_grace_vote_used_at = NULL, updated_at = ?
        WHERE id = ?`
@@ -609,10 +617,12 @@ async function codeForReissue(
   }
   if (code) {
     if (
-      (email && code.email?.toLowerCase() !== email) ||
-      (playerName &&
-        identityPlayerNameKey(code.player_name) !==
-          identityPlayerNameKey(playerName))
+      !applicationNumber &&
+      !identityCode &&
+      ((email && code.email?.toLowerCase() !== email) ||
+        (playerName &&
+          identityPlayerNameKey(code.player_name) !==
+            identityPlayerNameKey(playerName)))
     ) {
       throw new Error("填写的信息未指向同一份识别码记录");
     }
@@ -699,12 +709,19 @@ export async function submitReissue(
   input: {
     identityCode: unknown;
     applicationNumber: unknown;
+    lookupEmail?: unknown;
+    lookupPlayerName?: unknown;
     email: unknown;
     playerName: unknown;
     locale: unknown;
   }
 ): Promise<{ applicationNumber: string; status: "pending" }> {
-  const code = await codeForReissue(env, input);
+  const code = await codeForReissue(env, {
+    identityCode: input.identityCode,
+    applicationNumber: input.applicationNumber,
+    email: input.lookupEmail ?? input.email,
+    playerName: input.lookupPlayerName ?? input.playerName
+  });
   const application = await ensureApplicationForCode(env, code);
   if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
   if (
@@ -719,9 +736,16 @@ export async function submitReissue(
   ) {
     throw new Error("该申请已被拒绝，请重新申请身份识别码");
   }
+  const email = cleanEmail(input.email);
+  const playerName = cleanPlayerName(input.playerName);
+  await assertNoOtherActiveIdentityCode(env, {
+    email,
+    playerName,
+    excludeId: code.id
+  });
   await assertNoPendingIdentityApplication(env, {
-    email: application.email,
-    playerName: application.player_name,
+    email,
+    playerName,
     excludeId: application.id
   });
   const submittedAt = now();
@@ -733,11 +757,14 @@ export async function submitReissue(
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE identity_code_applications SET
-        request_type = 'reissue', status = 'pending', locale = ?, submitted_at = ?,
+        request_type = 'reissue', email = ?, player_name = ?, status = 'pending',
+        locale = ?, submitted_at = ?,
         identity_code_id = ?, reviewed_at = NULL, reviewed_by = NULL,
         rejection_reason = NULL, email_sent_at = NULL, last_email_error = NULL
        WHERE id = ?`
     ).bind(
+      email,
+      playerName,
       normalizeLocale(input.locale),
       submittedAt,
       code.id,
@@ -927,9 +954,18 @@ export async function approveIdentityApplication(
     });
     await env.DB.batch([
       env.DB.prepare(
-        `UPDATE identity_codes SET expires_at = ?, status = 'active', disabled_at = NULL,
-         renewal_grace_vote_used_at = NULL, updated_at = ? WHERE id = ?`
-      ).bind(expiresAt, reviewedAt, application.identity_code_id),
+        `UPDATE identity_codes SET
+         email = ?, player_name = ?, locale = ?, expires_at = ?, status = 'active',
+         disabled_at = NULL, renewal_grace_vote_used_at = NULL, updated_at = ?
+         WHERE id = ?`
+      ).bind(
+        application.email,
+        application.player_name,
+        application.locale,
+        expiresAt,
+        reviewedAt,
+        application.identity_code_id
+      ),
       env.DB.prepare(
         `UPDATE identity_code_applications SET status = 'approved', reviewed_at = ?,
          reviewed_by = ?, rejection_reason = NULL WHERE id = ?`
