@@ -136,7 +136,10 @@
       root.classList.remove("is-open");
       root.setAttribute("aria-hidden", "true");
       window.setTimeout(() => {
-        if (!appModalState.resolve) root.hidden = true;
+        if (!appModalState.resolve) {
+          if (root.open) root.close();
+          root.hidden = true;
+        }
       }, 180);
     }
     if (resolve) resolve(value);
@@ -187,6 +190,7 @@
     confirm.classList.toggle("button-primary", options.danger !== true);
     root.hidden = false;
     root.setAttribute("aria-hidden", "false");
+    if (!root.open) root.showModal();
     appModalState.mode = mode;
     appModalState.restoreFocus = document.activeElement;
     return new Promise((resolve) => {
@@ -253,6 +257,10 @@
         event.preventDefault();
         closeAppModal(appModalInputValue());
       }
+    });
+    root.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeAppModal(appModalState.mode === "prompt" ? null : false);
     });
   }
 
