@@ -68,6 +68,12 @@ export interface AdminDailyVoteItem extends DailyVoteItem {
   winners: Array<{ playerName: string; identityCode: string; rank: number }>;
 }
 
+export interface AdminDailyVotePage {
+  page: number;
+  total: number;
+  items: AdminDailyVoteItem[];
+}
+
 const LOCALES: SupportedLocale[] = ["zh-cn", "zh-tw", "en", "fr", "ja"];
 const MAX_CONTENT_BYTES = 240_000;
 
@@ -553,9 +559,11 @@ export async function saveDailyVoteResponse(
 
 export async function listAdminDailyVoteItems(
   env: Env,
-  options: { date?: string; kind?: DailyVoteKind; limit?: number } = {}
-): Promise<AdminDailyVoteItem[]> {
-  await finalizeEndedDraws(env);
+  options: { date?: string; kind?: DailyVoteKind; page?: number } = {}
+): Promise<AdminDailyVotePage> {
+  const now = new Date();
+  await finalizeEndedDraws(env, now);
+  const nowIso = now.toISOString();
   const clauses: string[] = [];
   const binds: unknown[] = [];
   if (options.kind) { clauses.push("kind = ?"); binds.push(options.kind); }
@@ -563,10 +571,63 @@ export async function listAdminDailyVoteItems(
     clauses.push("(substr(start_at, 1, 10) = ? OR substr(end_at, 1, 10) = ?)");
     binds.push(options.date, options.date);
   }
-  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-  const limit = Math.max(1, Math.min(100, options.limit ?? (options.date ? 100 : 5)));
-  const items = await listItems(env, where, binds, limit);
-  return Promise.all(items.map(async (item) => {
+  const where = (extra: string[] = []) => {
+    const all = [...clauses, ...extra];
+    return all.length ? `WHERE ${all.join(" AND ")}` : "";
+  };
+  const requestedPage = Number.isFinite(options.page)
+    ? Math.trunc(options.page ?? 1)
+    : 1;
+  const pageSize = 10;
+  let page: number;
+  let total: number;
+  let items: DailyVoteItem[];
+  if (options.date) {
+    const dateWhere = where();
+    const count = await env.DB.prepare(
+      `SELECT COUNT(*) AS total FROM daily_vote_items ${dateWhere}`
+    ).bind(...binds).first<{ total: number }>();
+    total = Number(count?.total ?? 0);
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    page = Math.min(pages, Math.max(1, requestedPage));
+    const result = await env.DB.prepare(
+      `SELECT * FROM daily_vote_items ${dateWhere}
+       ORDER BY start_at DESC, created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, pageSize, (page - 1) * pageSize).all<DailyVoteRow>();
+    items = result.results.map(itemFromRow);
+  } else {
+    const unfinishedWhere = where(["end_at > ?"]);
+    const finishedWhere = where(["end_at <= ?"]);
+    const count = await env.DB.prepare(
+      `WITH recent_finished AS (
+         SELECT id FROM daily_vote_items ${finishedWhere}
+         ORDER BY start_at DESC, created_at DESC LIMIT 10
+       )
+       SELECT COUNT(*) AS total FROM (
+         SELECT id FROM daily_vote_items ${unfinishedWhere}
+         UNION ALL
+         SELECT id FROM recent_finished
+       ) selected`
+    ).bind(...binds, nowIso, ...binds, nowIso).first<{ total: number }>();
+    total = Number(count?.total ?? 0);
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    page = Math.min(pages, Math.max(1, requestedPage));
+    const result = await env.DB.prepare(
+      `WITH recent_finished AS (
+         SELECT * FROM daily_vote_items ${finishedWhere}
+         ORDER BY start_at DESC, created_at DESC LIMIT 10
+       ), selected AS (
+         SELECT * FROM daily_vote_items ${unfinishedWhere}
+         UNION ALL
+         SELECT * FROM recent_finished
+       )
+       SELECT * FROM selected
+       ORDER BY start_at DESC, created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...binds, nowIso, ...binds, nowIso, pageSize, (page - 1) * pageSize)
+      .all<DailyVoteRow>();
+    items = result.results.map(itemFromRow);
+  }
+  const enriched = await Promise.all(items.map(async (item) => {
     const rows = await env.DB.prepare(
       `SELECT r.*, c.code_encrypted FROM daily_vote_responses r
        LEFT JOIN identity_codes c ON c.id = r.identity_code_id
@@ -587,4 +648,5 @@ export async function listAdminDailyVoteItems(
       winners: await winnerRows(env, item.id)
     };
   }));
+  return { page, total, items: enriched };
 }

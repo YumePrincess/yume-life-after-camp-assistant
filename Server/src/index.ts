@@ -932,10 +932,16 @@ async function handleAdminApi(
     }
     const kindValue = params.get("kind");
     const kind = kindValue === "poll" || kindValue === "draw" ? kindValue : undefined;
-    const items = await listAdminDailyVoteItems(env, { date, kind });
+    const pageValue = Number(params.get("page") ?? 1);
+    const result = await listAdminDailyVoteItems(env, {
+      date,
+      kind,
+      page: Number.isFinite(pageValue) ? pageValue : 1
+    });
     return json({
+      ...result,
       items: isDemoSession(session)
-        ? items.map((item, itemIndex) => ({
+        ? result.items.map((item, itemIndex) => ({
             ...item,
             responses: item.responses.map((response, responseIndex) => ({
               ...response,
@@ -949,7 +955,7 @@ async function handleAdminApi(
               playerName: "Demo 用户"
             }))
           }))
-        : items
+        : result.items
     });
   }
   if (dailyVoteMatch && method === "POST" && !dailyVoteMatch[1]) {

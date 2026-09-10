@@ -31,7 +31,7 @@ describe("identity-code vote invalidation", () => {
     vi.useRealTimers();
   });
 
-  it("cancels the current poll ballot in the same D1 batch as the code", async () => {
+  it("cancels same-day technology and daily votes in the same D1 batch as the code", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-31T04:00:00.000Z"));
 
@@ -75,12 +75,18 @@ describe("identity-code vote invalidation", () => {
       expiresAt: null
     });
 
-    expect(batched).toHaveLength(2);
+    expect(batched).toHaveLength(3);
     expect(batched[0]?.sql).toContain("UPDATE identity_codes");
     expect(batched[1]?.sql).toContain("DELETE FROM tech_ballots");
     expect(batched[1]?.params).toEqual([
       "identity-1",
       "2026-08-01",
+      "2026-07-30T16:00:00.000Z",
+      "2026-07-31T16:00:00.000Z"
+    ]);
+    expect(batched[2]?.sql).toContain("DELETE FROM daily_vote_responses");
+    expect(batched[2]?.params).toEqual([
+      "identity-1",
       "2026-07-30T16:00:00.000Z",
       "2026-07-31T16:00:00.000Z"
     ]);

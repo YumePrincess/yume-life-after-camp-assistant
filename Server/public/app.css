@@ -4177,25 +4177,21 @@ select option {
   gap: 8px;
 }
 
-.daily-vote-admin-responses,
-.daily-vote-admin-winners {
-  display: grid;
-  gap: 8px;
+.daily-vote-admin-option {
+  cursor: pointer;
+  font: inherit;
+  background: transparent;
+  text-align: left;
 }
 
-.daily-vote-admin-response {
-  display: grid;
-  grid-template-columns: minmax(100px, 0.7fr) minmax(100px, 0.8fr) minmax(120px, 1fr) minmax(130px, 0.8fr);
-  align-items: center;
+.daily-vote-admin-details {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  font-size: 12px;
 }
 
-.daily-vote-admin-response code {
-  color: var(--accent);
+.daily-vote-admin-detail-button {
+  min-height: 38px;
 }
 
 .daily-vote-toolbar {

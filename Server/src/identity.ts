@@ -71,11 +71,11 @@ function now(): string {
   return new Date().toISOString();
 }
 
-async function currentBallotInvalidation(
+async function currentVoteInvalidations(
   env: Env,
   identityCodeId: string,
   at = new Date()
-): Promise<D1PreparedStatement> {
+): Promise<D1PreparedStatement[]> {
   const bundle = await getConfigBundle(env);
   const timezone = bundle.automationConfig.timezone;
   const pollDate = nextTechnologyTargetDate(
@@ -91,11 +91,18 @@ async function currentBallotInvalidation(
     "00:00",
     timezone
   );
-  return env.DB.prepare(
-    `DELETE FROM tech_ballots
-     WHERE voter_id = ?
-       AND (poll_date = ? OR (updated_at >= ? AND updated_at < ?))`
-  ).bind(identityCodeId, pollDate, localDayStart, localDayEnd);
+  return [
+    env.DB.prepare(
+      `DELETE FROM tech_ballots
+       WHERE voter_id = ?
+         AND (poll_date = ? OR (updated_at >= ? AND updated_at < ?))`
+    ).bind(identityCodeId, pollDate, localDayStart, localDayEnd),
+    env.DB.prepare(
+      `DELETE FROM daily_vote_responses
+       WHERE identity_code_id = ?
+         AND updated_at >= ? AND updated_at < ?`
+    ).bind(identityCodeId, localDayStart, localDayEnd)
+  ];
 }
 
 async function localizedExpiry(
@@ -718,7 +725,7 @@ export async function submitReissue(
     excludeId: application.id
   });
   const submittedAt = now();
-  const invalidateCurrentBallot = await currentBallotInvalidation(
+  const invalidateCurrentVotes = await currentVoteInvalidations(
     env,
     code.id,
     new Date(submittedAt)
@@ -740,7 +747,7 @@ export async function submitReissue(
       `UPDATE identity_codes SET status = 'disabled', disabled_at = ?,
        updated_at = ? WHERE id = ?`
     ).bind(submittedAt, submittedAt, code.id),
-    invalidateCurrentBallot
+    ...invalidateCurrentVotes
   ]);
   return {
     applicationNumber: application.application_number,
@@ -939,7 +946,7 @@ export async function approveIdentityApplication(
       excludeId: application.identity_code_id
     });
     const generated = await generateCode(env);
-    const invalidateCurrentBallot = await currentBallotInvalidation(
+    const invalidateCurrentVotes = await currentVoteInvalidations(
       env,
       application.identity_code_id,
       new Date(reviewedAt)
@@ -965,7 +972,7 @@ export async function approveIdentityApplication(
         `UPDATE identity_code_applications SET status = 'approved',
          reviewed_at = ?, reviewed_by = ?, rejection_reason = NULL WHERE id = ?`
       ).bind(reviewedAt, input.reviewedBy, application.id),
-      invalidateCurrentBallot
+      ...invalidateCurrentVotes
     ]);
     code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
       .bind(application.identity_code_id)
@@ -1059,15 +1066,13 @@ export async function rejectIdentityApplication(
          updated_at = ? WHERE id = ?`
       ).bind(reviewedAt, reviewedAt, application.identity_code_id)
     );
-    if (application.request_type === "reissue") {
-      statements.push(
-        await currentBallotInvalidation(
-          env,
-          application.identity_code_id,
-          new Date(reviewedAt)
-        )
-      );
-    }
+    statements.push(
+      ...(await currentVoteInvalidations(
+        env,
+        application.identity_code_id,
+        new Date(reviewedAt)
+      ))
+    );
   }
   await env.DB.batch(statements);
   try {
@@ -1393,7 +1398,7 @@ export async function updateIdentityCode(
   ];
   if (status === "disabled") {
     statements.push(
-      await currentBallotInvalidation(env, input.id, new Date(timestamp))
+      ...(await currentVoteInvalidations(env, input.id, new Date(timestamp)))
     );
   }
   await env.DB.batch(statements);
@@ -1497,7 +1502,7 @@ export async function reissueIdentityCode(
       input.reissuedBy,
       code.id
     ),
-    await currentBallotInvalidation(env, code.id, new Date(timestamp))
+    ...(await currentVoteInvalidations(env, code.id, new Date(timestamp)))
   ]);
   const updated = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
     .bind(code.id)

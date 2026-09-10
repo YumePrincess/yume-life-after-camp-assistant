@@ -53,6 +53,8 @@
     technologyHistoryLoading: false,
     technologyHistoryLoaded: false,
     dailyVoteItems: [],
+    dailyVotePage: 1,
+    dailyVoteTotal: 0,
     dailyVoteLoading: false,
     dailyVoteEditorItem: null,
     activeView: "overview",
@@ -1307,14 +1309,14 @@
 
   function renderDailyVoteAdmin(payload) {
     state.dailyVoteItems = payload?.items || [];
+    state.dailyVotePage = Number(payload?.page) || 1;
+    state.dailyVoteTotal = Number(payload?.total) || 0;
     const root = byId("daily-vote-admin-list");
     if (!root) return;
     root.replaceChildren();
     if (!state.dailyVoteItems.length) {
       root.append(create("p", "empty-state", "暂无日常投票事项记录。"));
-      return;
-    }
-    for (const item of state.dailyVoteItems) {
+    } else for (const item of state.dailyVoteItems) {
       const content = dailyContentForAdmin(item);
       const card = create("article", "daily-vote-admin-card");
       const heading = create("div", "daily-vote-admin-heading");
@@ -1345,51 +1347,91 @@
         }
         const optionList = create("div", "daily-vote-admin-options");
         for (const option of content.options || []) {
-          optionList.append(create("span", "daily-history-result", `${dailyOptionLabel(option)} · ${counts.get(option.id) || 0} ${window.MrzhI18n.t("票")}`));
+          const optionButton = create(
+            "button",
+            "daily-history-result daily-vote-admin-option",
+            window.MrzhI18n.format("{option} · {count} 票", {
+              option: dailyOptionLabel(option),
+              count: counts.get(option.id) || 0
+            })
+          );
+          optionButton.type = "button";
+          optionButton.title = window.MrzhI18n.t("查看该选项的投票人详情");
+          optionButton.addEventListener("click", () =>
+            openDailyVoteDetails(
+              dailyOptionLabel(option),
+              window.MrzhI18n.format(
+                "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。",
+                { count: counts.get(option.id) || 0 }
+              ),
+              (item.responses || [])
+                .filter((response) => (response.selections || []).includes(option.id))
+                .map((response) => ({
+                  identityCode: response.identityCode,
+                  playerName: response.playerName,
+                  votedAt: response.submittedAt
+                }))
+            )
+          );
+          optionList.append(optionButton);
         }
         card.append(optionList);
-      }
-      const responseList = create("div", "daily-vote-admin-responses");
-      const responseHeading = item.kind === "draw" ? "抽签报名记录" : "投票记录";
-      responseList.append(create("strong", "daily-vote-admin-subheading", responseHeading));
-      if (!(item.responses || []).length) {
-        responseList.append(create("p", "empty-state", "暂无参与记录"));
       } else {
-        const optionMap = new Map((content.options || []).map((option) => [option.id, dailyOptionLabel(option)]));
-        for (const response of item.responses) {
-          const row = create("div", "daily-vote-admin-response");
-          row.append(
-            create("strong", "", response.playerName || "—"),
-            create("code", "", response.identityCode || "—"),
-            create("span", "muted", (response.selections || []).map((id) => optionMap.get(id) || id).join("、") || "—"),
-            create("time", "muted", formatDate(response.submittedAt))
-          );
-          responseList.append(row);
-        }
-      }
-      card.append(responseList);
-      if (item.kind === "draw") {
-        const winners = create("div", "daily-vote-admin-winners");
-        winners.append(create("strong", "daily-vote-admin-subheading", `中签人员（${item.drawCount || 0} 人）`));
-        for (const winner of item.winners || []) {
-          const row = create("div", "daily-vote-admin-response");
-          row.append(create("strong", "", `${winner.rank}. ${winner.playerName} · ${winner.identityCode}`));
-          winners.append(row);
-        }
-        card.append(winners);
+        const detailActions = create("div", "daily-vote-admin-details");
+        const participants = create("button", "button button-quiet daily-vote-admin-detail-button", "抽签参与人员");
+        participants.type = "button";
+        participants.addEventListener("click", () =>
+          openDailyVoteDetails(
+            "抽签参与人员",
+            window.MrzhI18n.format(
+              "共 {count} 人报名；同一识别码重复报名时仅保留最后一次提交。",
+              { count: (item.responses || []).length }
+            ),
+            (item.responses || []).map((response) => ({
+              identityCode: response.identityCode,
+              playerName: response.playerName,
+              votedAt: response.submittedAt
+            }))
+          )
+        );
+        const winners = create("button", "button button-quiet daily-vote-admin-detail-button", "抽签中签人员");
+        winners.type = "button";
+        winners.addEventListener("click", () =>
+          openDailyVoteDetails(
+            "抽签中签人员",
+            window.MrzhI18n.format("共 {count} 人中签。", { count: (item.winners || []).length }),
+            (item.winners || []).map((winner) => ({
+              identityCode: winner.identityCode,
+              playerName: `${winner.rank}. ${winner.playerName}`
+            }))
+          )
+        );
+        detailActions.append(participants, winners);
+        card.append(detailActions);
       }
       root.append(card);
     }
+    const pages = Math.max(1, Math.ceil(state.dailyVoteTotal / 10));
+    setText("daily-vote-page", `${state.dailyVotePage} / ${pages}`);
+    byId("daily-vote-prev").disabled = state.dailyVotePage <= 1;
+    byId("daily-vote-next").disabled = state.dailyVotePage >= pages;
+    byId("daily-vote-jump").max = String(pages);
+    byId("daily-vote-jump").value = String(state.dailyVotePage);
   }
 
-  async function loadDailyVoteAdmin(date = "") {
+  async function loadDailyVoteAdmin(date = "", page = state.dailyVotePage) {
     if (!canView("daily-vote") || state.dailyVoteLoading) return;
     state.dailyVoteLoading = true;
     setText("daily-vote-status", window.MrzhI18n.t("正在读取历史记录…"));
     try {
-      const params = new URLSearchParams({ locale: window.MrzhI18n.language() });
+      const requestedPage = Number(page);
+      const params = new URLSearchParams({
+        locale: window.MrzhI18n.language(),
+        page: String(Number.isFinite(requestedPage) ? Math.max(1, Math.trunc(requestedPage)) : 1)
+      });
       if (date) params.set("date", date);
-      renderDailyVoteAdmin(await request(`/api/admin/daily-vote?${params}`));
+      const payload = await request(`/api/admin/daily-vote?${params}`);
+      renderDailyVoteAdmin(payload);
       setText("daily-vote-status", window.MrzhI18n.t("记录已载入"));
     } catch (error) {
       setText("daily-vote-status", error.message);
@@ -1522,26 +1564,42 @@
   }
 
   function openVoteDetails(option, ballots) {
-    byId("vote-detail-title").textContent = option.name;
-    byId("vote-detail-summary").textContent =
+    renderVoteDetails(
+      option.name,
       window.MrzhI18n.format(
         "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。",
         { count: ballots.length }
-      );
+      ),
+      ballots
+    );
+    byId("vote-detail-dialog").showModal();
+  }
+
+  function renderVoteDetails(title, summary, entries) {
+    byId("vote-detail-title").textContent = window.MrzhI18n.t(title);
+    byId("vote-detail-summary").textContent = summary;
     const root = byId("vote-detail-list");
     root.replaceChildren();
-    if (!ballots.length) {
+    if (!entries.length) {
       root.append(create("p", "empty-state", window.MrzhI18n.t("暂无投票记录")));
     } else {
-      for (const ballot of ballots) {
+      for (const entry of entries) {
         const item = create("article", "vote-detail-item");
-        const identity = create("code", "vote-detail-code", ballot.identityCode || "—");
-        const player = create("strong", "vote-detail-player", ballot.playerName || "—");
-        const time = create("time", "muted", formatVoteDate(ballot.votedAt));
+        const identity = create("code", "vote-detail-code", entry.identityCode || "—");
+        const player = create("strong", "vote-detail-player", entry.playerName || "—");
+        const time = create(
+          "time",
+          "muted",
+          formatVoteDate(entry.votedAt || entry.submittedAt || entry.selectedAt)
+        );
         item.append(identity, player, time);
         root.append(item);
       }
     }
+  }
+
+  function openDailyVoteDetails(title, summary, entries) {
+    renderVoteDetails(title, summary, entries);
     byId("vote-detail-dialog").showModal();
   }
 
@@ -3833,7 +3891,16 @@
   byId("daily-vote-kind")?.addEventListener("change", toggleDailyVoteEditorFields);
   byId("daily-vote-editor")?.addEventListener("submit", saveDailyVoteFromEditor);
   byId("refresh-daily-vote")?.addEventListener("click", () =>
-    loadDailyVoteAdmin(byId("daily-vote-date").value)
+    loadDailyVoteAdmin(byId("daily-vote-date").value, 1)
+  );
+  byId("daily-vote-prev")?.addEventListener("click", () =>
+    loadDailyVoteAdmin(byId("daily-vote-date").value, state.dailyVotePage - 1)
+  );
+  byId("daily-vote-next")?.addEventListener("click", () =>
+    loadDailyVoteAdmin(byId("daily-vote-date").value, state.dailyVotePage + 1)
+  );
+  byId("daily-vote-jump-button")?.addEventListener("click", () =>
+    loadDailyVoteAdmin(byId("daily-vote-date").value, Number(byId("daily-vote-jump").value))
   );
   byId("delete-daily-vote-date")?.addEventListener("click", () =>
     deleteDailyVoteHistoryAdmin(byId("daily-vote-date").value)

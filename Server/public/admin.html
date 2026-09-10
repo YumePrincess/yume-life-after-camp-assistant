@@ -561,7 +561,7 @@
               <div>
                 <p class="eyebrow">DAILY VOTING</p>
                 <h1 id="daily-vote-admin-title">日常投票事项</h1>
-                <p class="section-intro">创建投票或抽签事项，设置开放时间、提前展示时间，并查看完整参与记录。</p>
+                <p class="section-intro">创建投票或抽签事项，默认显示全部未结束事项和最近10条已结束事项；按日期查询时每页显示10条。</p>
               </div>
               <div class="action-row">
                 <button id="daily-vote-new-poll" class="button button-primary" type="button">新建投票</button>
@@ -609,6 +609,13 @@
               </div>
             </form>
             <div id="daily-vote-admin-list" class="daily-vote-admin-list"></div>
+            <div class="pagination daily-vote-pagination">
+              <button id="daily-vote-prev" class="button button-quiet" type="button">上一页</button>
+              <span id="daily-vote-page">1 / 1</span>
+              <label class="jump-field"><span>跳至</span><input id="daily-vote-jump" type="number" min="1" value="1" /></label>
+              <button id="daily-vote-jump-button" class="button button-quiet" type="button">跳页</button>
+              <button id="daily-vote-next" class="button button-quiet" type="button">下一页</button>
+            </div>
           </section>
 
           <section id="temporary-key-panel" class="panel admin-view" data-admin-view="access" hidden>
