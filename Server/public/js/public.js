@@ -828,7 +828,6 @@
       (payload?.history?.draws || []).length;
     root.replaceChildren();
     setText("feature-vote-count", String(dailyVoteFeatureCount(payload)));
-    setText("daily-vote-count", String(dailyVoteFeatureCount(payload)));
     setText("daily-tech-panel-count", "1");
     setText("daily-items-panel-count", String(items.length));
     setText("daily-history-panel-count", String(historyCount));
