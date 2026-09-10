@@ -16,9 +16,11 @@
     activeFeature: "",
     dailyPanel: "",
     dailyIdentityCodes: {},
-    dailySelections: {}
+    dailySelections: {},
+    identityCodeEdited: false
   };
   const FEATURE_IDS = ["overview", "staff", "warnings", "vote", "members", "runs"];
+  const IDENTITY_CODE_STORAGE_KEY = "mrzh.identity-code";
   const ACTIVE_IDENTITY_CONFLICT =
     "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。";
   const EXPIRED_IDENTITY_CONFLICT =
@@ -26,6 +28,57 @@
 
   function byId(id) {
     return document.getElementById(id);
+  }
+
+  function dailyVoteFeatureCount(payload) {
+    return (Array.isArray(payload?.items) ? payload.items.length : 0) + 1;
+  }
+
+  function rememberedIdentityCode() {
+    try {
+      const value = window.localStorage.getItem(IDENTITY_CODE_STORAGE_KEY) || "";
+      return /^\d{8}$/.test(value) ? value : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function syncRememberedIdentityCodeInputs(code, { force = false } = {}) {
+    if (!/^\d{8}$/.test(code)) return;
+    const identityInput = byId("identity-code");
+    if (identityInput && (force || (!state.identityCodeEdited && !identityInput.value.trim()))) {
+      identityInput.value = code;
+    }
+    for (const input of document.querySelectorAll(".daily-identity-code")) {
+      const itemId = input.dataset.dailyItemId;
+      const hasState = itemId && Object.prototype.hasOwnProperty.call(state.dailyIdentityCodes, itemId);
+      if (force || (!hasState && !input.value.trim())) {
+        input.value = code;
+        if (itemId) state.dailyIdentityCodes[itemId] = code;
+      }
+    }
+  }
+
+  function hydrateRememberedIdentityCodeInputs() {
+    syncRememberedIdentityCodeInputs(rememberedIdentityCode());
+  }
+
+  function rememberIdentityCode(value) {
+    const code = String(value || "").trim();
+    if (!/^\d{8}$/.test(code)) return;
+    try {
+      window.localStorage.setItem(IDENTITY_CODE_STORAGE_KEY, code);
+    } catch {
+      // Private browsing or an embedded webview may deny localStorage access.
+    }
+    state.identityCodeEdited = false;
+    syncRememberedIdentityCodeInputs(code, { force: true });
+  }
+
+  function syncDailyFeatureBackButton() {
+    const button = byId("back-daily-vote");
+    if (!button) return;
+    button.hidden = state.activeFeature !== "vote" || !state.dailyPanel;
   }
 
   function resetFeatureSelection({ clearHash = true, restoreFocus = false } = {}) {
@@ -42,6 +95,8 @@
       card.setAttribute("aria-expanded", "false");
     }
     state.activeFeature = "";
+    state.dailyPanel = "";
+    syncDailyFeatureBackButton();
     if (clearHash) {
       history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     }
@@ -56,6 +111,7 @@
     );
     const dialog = byId("feature-detail-dialog");
     if (!panel || !selectedCard || selectedCard.hidden || !dialog) return false;
+    if (id !== "vote") state.dailyPanel = "";
     for (const panelId of FEATURE_IDS) {
       const item = byId(panelId);
       if (item) item.hidden = panelId !== id;
@@ -66,6 +122,7 @@
       card.setAttribute("aria-expanded", String(active));
     }
     state.activeFeature = id;
+    syncDailyFeatureBackButton();
     setText(
       "feature-detail-title",
       selectedCard?.querySelector(".feature-card-copy strong")?.textContent || ""
@@ -96,6 +153,7 @@
     byId("close-feature-detail").addEventListener("click", () => {
       byId("feature-detail-dialog").close();
     });
+    byId("back-daily-vote").addEventListener("click", backDailyPanels);
     byId("feature-detail-dialog").addEventListener("click", (event) => {
       if (event.target === event.currentTarget) event.currentTarget.close();
     });
@@ -583,10 +641,13 @@
     label.append(create("span", "", "身份识别码（必填）"));
     const input = document.createElement("input");
     input.className = "daily-identity-code";
+    input.dataset.dailyItemId = itemId;
     input.inputMode = "numeric";
     input.autocomplete = "one-time-code";
     input.placeholder = window.MrzhI18n.t("请输入身份识别码");
-    input.value = state.dailyIdentityCodes[itemId] || "";
+    const hasState = Object.prototype.hasOwnProperty.call(state.dailyIdentityCodes, itemId);
+    input.value = hasState ? state.dailyIdentityCodes[itemId] : rememberedIdentityCode();
+    if (!hasState && input.value) state.dailyIdentityCodes[itemId] = input.value;
     input.required = true;
     input.addEventListener("input", () => {
       state.dailyIdentityCodes[itemId] = input.value;
@@ -766,8 +827,8 @@
       (payload?.history?.polls || []).length +
       (payload?.history?.draws || []).length;
     root.replaceChildren();
-    setText("feature-vote-count", String(items.length + 1));
-    setText("daily-vote-count", String(items.length + 1));
+    setText("feature-vote-count", String(dailyVoteFeatureCount(payload)));
+    setText("daily-vote-count", String(dailyVoteFeatureCount(payload)));
     setText("daily-tech-panel-count", "1");
     setText("daily-items-panel-count", String(items.length));
     setText("daily-history-panel-count", String(historyCount));
@@ -781,6 +842,9 @@
     for (const panel of document.querySelectorAll("[data-daily-panel-content]")) {
       panel.hidden = panel.dataset.dailyPanelContent !== state.dailyPanel;
     }
+    setText("hero-vote-count", String(dailyVoteFeatureCount(payload)));
+    setText("feature-vote-count", String(dailyVoteFeatureCount(payload)));
+    syncDailyFeatureBackButton();
   }
 
   function openDailyPanel(panel) {
@@ -816,6 +880,7 @@
           selections
         })
       });
+      rememberIdentityCode(identityCode);
       state.dailySelections[item.id] = [];
       if (state.data) state.data.dailyVote = payload;
       renderDailyVote(payload);
@@ -1021,10 +1086,7 @@
       "feature-warning-count",
       String(data.inactivityWarnings?.length || 0)
     );
-    setText(
-      "feature-vote-count",
-      String((data.dailyVote?.items?.length || 0) + 1)
-    );
+    setText("feature-vote-count", String(dailyVoteFeatureCount(data.dailyVote)));
     setText("feature-members-count", String(totalMemberCount));
     setText("feature-runs-count", String(data.recentRuns?.length || 0));
     const memberSync = (data.recentRuns || []).find(
@@ -1140,6 +1202,7 @@
           selections: [...state.selections]
         })
       });
+      rememberIdentityCode(identityCode);
       state.selections.clear();
       if (state.data) state.data.voteSummary = summary;
       renderVote(summary);
@@ -1550,10 +1613,13 @@
   }
 
   byId("submit-vote").addEventListener("click", submitVote);
+  byId("identity-code").addEventListener("input", () => {
+    state.identityCodeEdited = true;
+  });
+  hydrateRememberedIdentityCodeInputs();
   for (const panel of document.querySelectorAll("[data-daily-panel]")) {
     panel.addEventListener("click", () => openDailyPanel(panel.dataset.dailyPanel));
   }
-  byId("daily-vote-back").addEventListener("click", backDailyPanels);
   byId("apply-identity-code").addEventListener("click", openNewApplication);
   byId("recover-identity-code").addEventListener("click", openIdentityRecovery);
   byId("renew-identity-code").addEventListener("click", () => {
