@@ -2126,7 +2126,10 @@
       "提交申请": "Submit application",
       "正在提交…": "Submitting…",
       "申请编号：{number}": "Application number: {number}",
+      "申请已提交": "Application submitted",
       "申请已提交，申请编号：{number}。": "Application submitted. Application number: {number}.",
+      "申请已成功提交，预计于48小时内完成审核，请留意邮箱的审核结果邮件。":
+        "Your application was submitted successfully. It is expected to be reviewed within 48 hours; please watch for the result by email.",
       "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。":
         "Extension submitted under {number}. Voting remains normal until the original expiry; after expiry, one extra vote is allowed while approval is pending.",
       "小号及非本营地成员不得申请，否则申请将被审批拒绝。":
@@ -2136,6 +2139,8 @@
       "玩家名称中的符号可以省略填写。": "Symbols in a player name may be omitted.",
       "玩家名称只有符号的，请联系市长人工申请。":
         "If the player name contains only symbols, contact the mayor for a manual application.",
+      "提交申请后预计于48小时内完成审核，请留意邮箱的审核结果邮件。":
+        "After submitting, the application is expected to be reviewed within 48 hours. Please watch for the result by email.",
       "身份识别码审批": "Identity-code approvals",
       "审批新申请及延期申请；每页显示10条。": "Review new and extension requests; 10 per page.",
       "身份识别码": "Identity codes",
@@ -2184,6 +2189,13 @@
       "审批身份识别码": "Review identity code",
       "发行有效期至": "Valid until",
       "拒绝原因（可选）": "Rejection reason (optional)",
+      "拒绝申请": "Reject application",
+      "请填写拒绝理由，该理由将写入用户收到的拒绝通知邮件。":
+        "Enter a rejection reason. It will be included in the rejection email sent to the user.",
+      "拒绝理由（必填）": "Rejection reason (required)",
+      "请输入拒绝理由": "Enter the rejection reason",
+      "请填写拒绝理由": "Please enter a rejection reason.",
+      "确认拒绝": "Confirm rejection",
       "通过并发送邮件": "Approve and send email",
       "拒绝并发送通知": "Reject and send notice",
       "营地公告列表（公告之间空一行；公告内可换行）":
@@ -2284,7 +2296,10 @@
       "提交申请": "Envoyer la demande",
       "正在提交…": "Envoi…",
       "申请编号：{number}": "Numéro de demande : {number}",
+      "申请已提交": "Demande envoyée",
       "申请已提交，申请编号：{number}。": "Demande envoyée. Numéro : {number}.",
+      "申请已成功提交，预计于48小时内完成审核，请留意邮箱的审核结果邮件。":
+        "Votre demande a bien été envoyée. Elle devrait être examinée sous 48 heures ; consultez l’e-mail contenant le résultat.",
       "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。":
         "Prolongation envoyée sous le numéro {number}. Le vote reste normal jusqu’à l’expiration initiale ; après expiration, un vote supplémentaire est autorisé pendant l’examen.",
       "小号及非本营地成员不得申请，否则申请将被审批拒绝。":
@@ -2294,6 +2309,8 @@
       "玩家名称中的符号可以省略填写。": "Les symboles du nom peuvent être omis.",
       "玩家名称只有符号的，请联系市长人工申请。":
         "Si le nom ne contient que des symboles, contactez le maire.",
+      "提交申请后预计于48小时内完成审核，请留意邮箱的审核结果邮件。":
+        "Après l’envoi, la demande devrait être examinée sous 48 heures. Consultez l’e-mail contenant le résultat.",
       "身份识别码审批": "Approbation des codes",
       "审批新申请及延期申请；每页显示10条。": "Examinez les nouvelles demandes et prolongations, 10 par page.",
       "身份识别码": "Codes d’identité",
@@ -2337,6 +2354,13 @@
       "审批身份识别码": "Examiner le code",
       "发行有效期至": "Valable jusqu’au",
       "拒绝原因（可选）": "Motif du refus (facultatif)",
+      "拒绝申请": "Refuser la demande",
+      "请填写拒绝理由，该理由将写入用户收到的拒绝通知邮件。":
+        "Saisissez le motif du refus ; il sera inclus dans l’e-mail envoyé à l’utilisateur.",
+      "拒绝理由（必填）": "Motif du refus (obligatoire)",
+      "请输入拒绝理由": "Saisissez le motif du refus",
+      "请填写拒绝理由": "Saisissez un motif de refus.",
+      "确认拒绝": "Confirmer le refus",
       "通过并发送邮件": "Approuver et envoyer",
       "拒绝并发送通知": "Refuser et notifier",
       "营地公告列表（公告之间空一行；公告内可换行）":
@@ -2435,7 +2459,10 @@
       "提交申请": "申請を送信",
       "正在提交…": "送信中…",
       "申请编号：{number}": "申請番号：{number}",
+      "申请已提交": "申請しました",
       "申请已提交，申请编号：{number}。": "申請しました。申請番号：{number}。",
+      "申请已成功提交，预计于48小时内完成审核，请留意邮箱的审核结果邮件。":
+        "申請を送信しました。48時間以内を目安に審査します。審査結果はメールでお知らせしますので、ご確認ください。",
       "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。":
         "申請番号 {number} で延長を申請しました。元の期限までは通常どおり投票でき、期限後は審査中に1回だけ追加投票できます。",
       "小号及非本营地成员不得申请，否则申请将被审批拒绝。":
@@ -2445,6 +2472,8 @@
       "玩家名称中的符号可以省略填写。": "プレイヤー名の記号は省略できます。",
       "玩家名称只有符号的，请联系市长人工申请。":
         "名前が記号のみの場合は市長に手動申請を依頼してください。",
+      "提交申请后预计于48小时内完成审核，请留意邮箱的审核结果邮件。":
+        "申請後、48時間以内を目安に審査します。審査結果はメールでお知らせしますので、ご確認ください。",
       "身份识别码审批": "本人確認コード審査",
       "审批新申请及延期申请；每页显示10条。": "新規・延長申請を1ページ10件ずつ審査します。",
       "身份识别码": "本人確認コード",
@@ -2488,6 +2517,13 @@
       "审批身份识别码": "本人確認コードを審査",
       "发行有效期至": "有効期限",
       "拒绝原因（可选）": "却下理由（任意）",
+      "拒绝申请": "申請を却下",
+      "请填写拒绝理由，该理由将写入用户收到的拒绝通知邮件。":
+        "却下理由を入力してください。入力内容はユーザーへの却下通知メールに記載されます。",
+      "拒绝理由（必填）": "却下理由（必須）",
+      "请输入拒绝理由": "却下理由を入力",
+      "请填写拒绝理由": "却下理由を入力してください。",
+      "确认拒绝": "却下を確認",
       "通过并发送邮件": "承認してメール送信",
       "拒绝并发送通知": "却下して通知",
       "营地公告列表（公告之间空一行；公告内可换行）":
@@ -2586,7 +2622,10 @@
       "提交申请": "提交申請",
       "正在提交…": "正在提交…",
       "申请编号：{number}": "申請編號：{number}",
+      "申请已提交": "申請已提交",
       "申请已提交，申请编号：{number}。": "申請已提交，申請編號：{number}。",
+      "申请已成功提交，预计于48小时内完成审核，请留意邮箱的审核结果邮件。":
+        "申請已成功送出，預計於 48 小時內完成審核，請留意信箱中的審核結果郵件。",
       "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。":
         "延期申請已提交，申請編號：{number}。原有效期內可正常投票；過期後審批期間可額外投票一次。",
       "小号及非本营地成员不得申请，否则申请将被审批拒绝。":
@@ -2596,6 +2635,8 @@
       "玩家名称中的符号可以省略填写。": "玩家名稱中的符號可以省略填寫。",
       "玩家名称只有符号的，请联系市长人工申请。":
         "玩家名稱只有符號的，請聯絡市長人工申請。",
+      "提交申请后预计于48小时内完成审核，请留意邮箱的审核结果邮件。":
+        "提交申請後預計於 48 小時內完成審核，請留意信箱中的審核結果郵件。",
       "身份识别码审批": "身分識別碼審批",
       "审批新申请及延期申请；每页显示10条。": "審批新申請及延期申請；每頁顯示10筆。",
       "身份识别码": "身分識別碼",
@@ -2639,6 +2680,13 @@
       "审批身份识别码": "審批身分識別碼",
       "发行有效期至": "發行有效期至",
       "拒绝原因（可选）": "拒絕原因（可選）",
+      "拒绝申请": "拒絕申請",
+      "请填写拒绝理由，该理由将写入用户收到的拒绝通知邮件。":
+        "請填寫拒絕理由，此理由會寫入寄給使用者的拒絕通知郵件。",
+      "拒绝理由（必填）": "拒絕理由（必填）",
+      "请输入拒绝理由": "請輸入拒絕理由",
+      "请填写拒绝理由": "請填寫拒絕理由。",
+      "确认拒绝": "確認拒絕",
       "通过并发送邮件": "通過並寄送郵件",
       "拒绝并发送通知": "拒絕並寄送通知",
       "营地公告列表（公告之间空一行；公告内可换行）":

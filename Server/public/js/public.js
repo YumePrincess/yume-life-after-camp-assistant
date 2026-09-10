@@ -208,7 +208,7 @@
       : identityRenewalNoticeKey(data?.identityCodeExpiresAt);
     setText(
       "vote-success-kicker",
-      window.MrzhI18n.t(kind === "daily" ? "日常投票" : "科技投票")
+      kind === "daily" ? "DAILY VOTING" : "TECHNOLOGY VOTE"
     );
     setText("vote-success-message", message);
     setText(
@@ -1259,6 +1259,21 @@
     if (!dialog.open) dialog.showModal();
   }
 
+  function showIdentityApplicationSuccess(message) {
+    setText("identity-application-success-title", window.MrzhI18n.t("申请已提交"));
+    setText("identity-application-success-message", message);
+    setText(
+      "identity-application-success-notice",
+      window.MrzhI18n.t(
+        "申请已成功提交，预计于48小时内完成审核，请留意邮箱的审核结果邮件。"
+      )
+    );
+    const applicationDialog = byId("identity-application-dialog");
+    if (applicationDialog?.open) applicationDialog.close();
+    const dialog = byId("identity-application-success-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
   function openNewApplication() {
     state.identityMode = "new";
     state.renewalCode = "";
@@ -1576,21 +1591,24 @@
               method: "POST",
               body: JSON.stringify(common)
             });
-      feedback.textContent =
-        state.identityMode === "recovery"
-          ? window.MrzhI18n.t(
-              result.expired
-                ? "识别码已发送至预留邮箱；该识别码已过期，可以申请延期。"
-                : "识别码已发送至预留邮箱。"
-            )
-          : window.MrzhI18n.format(
-              state.identityMode === "renewal"
-                ? "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。"
-                : state.identityMode === "reissue"
-                  ? "更换申请已提交，申请编号：{number}。旧识别码已作废。"
-                : "申请已提交，申请编号：{number}。",
-              { number: result.applicationNumber }
-            );
+      if (state.identityMode === "recovery") {
+        feedback.textContent = window.MrzhI18n.t(
+          result.expired
+            ? "识别码已发送至预留邮箱；该识别码已过期，可以申请延期。"
+            : "识别码已发送至预留邮箱。"
+        );
+      } else {
+        const applicationMessage = window.MrzhI18n.format(
+          state.identityMode === "renewal"
+            ? "延期申请已提交，申请编号：{number}。原有效期内可正常投票；过期后审批期间可额外投票一次。"
+            : state.identityMode === "reissue"
+              ? "更换申请已提交，申请编号：{number}。旧识别码已作废。"
+            : "申请已提交，申请编号：{number}。",
+          { number: result.applicationNumber }
+        );
+        feedback.textContent = applicationMessage;
+        showIdentityApplicationSuccess(applicationMessage);
+      }
     } catch (error) {
       const message =
         error.code === "rate_limited" ||

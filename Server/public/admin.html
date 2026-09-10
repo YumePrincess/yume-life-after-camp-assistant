@@ -760,7 +760,7 @@
       >
         <div class="app-modal-heading">
           <div>
-            <p id="app-modal-eyebrow" class="eyebrow">操作</p>
+            <p id="app-modal-eyebrow" class="eyebrow">ACTION</p>
             <h2 id="app-modal-title">确认操作</h2>
           </div>
           <button id="app-modal-close" class="button button-quiet" type="button" data-app-modal-dismiss>
@@ -771,6 +771,7 @@
         <label id="app-modal-input-field" class="field app-modal-input-field" hidden>
           <span id="app-modal-input-label">有效期</span>
           <input id="app-modal-input" autocomplete="off" />
+          <textarea id="app-modal-textarea" rows="4" maxlength="500" hidden></textarea>
         </label>
         <div class="app-modal-actions">
           <button id="app-modal-cancel" class="button button-quiet" type="button" data-app-modal-dismiss>
@@ -863,7 +864,6 @@
           <label class="field"><span>发行有效期至</span><input id="identity-review-expiry" type="date" /></label>
           <label class="field field-checkbox"><input id="identity-review-permanent" type="checkbox" /><span>永久有效</span></label>
         </div>
-        <label id="identity-rejection-field" class="field" hidden><span>拒绝原因（可选）</span><textarea id="identity-rejection-reason" rows="3"></textarea></label>
         <div class="action-row">
           <button id="identity-review-approve" class="button button-primary" type="button">通过并发送邮件</button>
           <button id="identity-review-reject" class="button button-danger" type="button">拒绝并发送通知</button>

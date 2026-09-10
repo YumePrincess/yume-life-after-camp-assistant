@@ -43,4 +43,20 @@ describe("identity email templates", () => {
     expect(message.html).toContain("background-color:#1e293b");
     expect(message.html).toContain("border-radius:20px");
   });
+
+  it("includes the administrator rejection reason in rejection emails", () => {
+    for (const locale of locales) {
+      const message = identityMail({
+        locale,
+        approved: false,
+        requestType: "new",
+        applicationNumber: "APP-123",
+        playerName: "玩家",
+        reason: "不符合营地成员条件"
+      });
+
+      expect(message.text).toContain("不符合营地成员条件");
+      expect(message.html).toContain("不符合营地成员条件");
+    }
+  });
 });

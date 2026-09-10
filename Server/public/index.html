@@ -335,6 +335,7 @@
           <li>忘记玩家名称请查询后再来申请，填写不实信息将被审批拒绝。</li>
           <li>玩家名称中的符号可以省略填写。</li>
           <li>玩家名称只有符号的，如果无法完整准确填写玩家名称，请联系市长人工申请。</li>
+          <li>提交申请后预计于48小时内完成审核，请留意邮箱的审核结果邮件。</li>
         </ol>
         <ol id="identity-recovery-rules" class="identity-rules" hidden>
           <li>请输入申请时预留的信息（至少一条）。</li>
@@ -347,6 +348,7 @@
           <li>新发行的识别码的有效期以审批为准。</li>
           <li>申请更换身份识别码请输入申请编号、玩家名称、申请时预留的邮箱、旧识别码的其中一项。</li>
           <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
+          <li>提交申请后预计于48小时内完成审核，请留意邮箱的审核结果邮件。</li>
         </ol>
         <ol id="identity-renewal-lookup-rules" class="identity-rules" hidden>
           <li>填写申请编号或身份识别码任一项，然后核对原申请信息。</li>
@@ -368,6 +370,16 @@
           id="identity-application-error-message"
           class="application-number identity-conflict-message"
         ></p>
+        <button class="button button-primary" value="close">关闭</button>
+      </form>
+    </dialog>
+
+    <dialog id="identity-application-success-dialog" class="compact-dialog">
+      <form method="dialog" class="dialog-card vote-success-card">
+        <p class="eyebrow">IDENTITY CODE</p>
+        <h2 id="identity-application-success-title">申请已提交</h2>
+        <p id="identity-application-success-message" class="identity-application-success-copy"></p>
+        <p id="identity-application-success-notice" class="muted"></p>
         <button class="button button-primary" value="close">关闭</button>
       </form>
     </dialog>

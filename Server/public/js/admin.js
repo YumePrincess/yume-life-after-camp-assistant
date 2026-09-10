@@ -154,20 +154,31 @@
     const mode = options.mode || "confirm";
     const inputField = byId("app-modal-input-field");
     const input = byId("app-modal-input");
+    const textarea = byId("app-modal-textarea");
     const confirm = byId("app-modal-confirm");
     const cancel = byId("app-modal-cancel");
-    byId("app-modal-eyebrow").textContent = translateUi(options.eyebrow || "操作");
+    byId("app-modal-eyebrow").textContent = translateUi(options.eyebrow || "ACTION");
     byId("app-modal-title").textContent = translateUi(options.title || "确认操作");
     byId("app-modal-message").textContent = options.message || "";
     inputField.hidden = mode !== "prompt";
     if (mode === "prompt") {
       byId("app-modal-input-label").textContent = translateUi(options.inputLabel || "有效期");
-      input.value = options.inputValue || "";
-      input.placeholder = options.inputPlaceholder || "";
-      input.type = options.inputType || "text";
+      const control = options.multiline && textarea ? textarea : input;
+      input.hidden = control !== input;
+      if (textarea) textarea.hidden = control !== textarea;
+      control.value = options.inputValue || "";
+      control.placeholder = options.inputPlaceholder || "";
+      if (control === input) input.type = options.inputType || "text";
+      if (options.maxLength) control.maxLength = options.maxLength;
     } else {
       input.value = "";
       input.placeholder = "";
+      input.hidden = false;
+      if (textarea) {
+        textarea.value = "";
+        textarea.placeholder = "";
+        textarea.hidden = true;
+      }
     }
     cancel.hidden = options.showCancel === false;
     confirm.textContent = translateUi(options.confirmLabel || "确认");
@@ -182,7 +193,9 @@
       appModalState.resolve = resolve;
       window.requestAnimationFrame(() => {
         root.classList.add("is-open");
-        if (mode === "prompt") input.focus();
+        if (mode === "prompt") {
+          (options.multiline && textarea ? textarea : input).focus();
+        }
         else confirm.focus();
       });
     });
@@ -206,6 +219,13 @@
     return openAppModal({ ...options, mode: "prompt", message });
   }
 
+  function appModalInputValue() {
+    const textarea = byId("app-modal-textarea");
+    const input = byId("app-modal-input");
+    const control = textarea && !textarea.hidden ? textarea : input;
+    return control ? control.value.trim() : "";
+  }
+
   function installAppModal() {
     const root = byId("app-modal");
     if (!root) return;
@@ -216,7 +236,7 @@
       if (event.target.closest("#app-modal-confirm")) {
         closeAppModal(
           appModalState.mode === "prompt"
-            ? byId("app-modal-input").value.trim()
+            ? appModalInputValue()
             : true
         );
       }
@@ -225,9 +245,13 @@
       if (event.key === "Escape") {
         event.preventDefault();
         closeAppModal(appModalState.mode === "prompt" ? null : false);
-      } else if (event.key === "Enter" && appModalState.mode === "prompt") {
+      } else if (
+        event.key === "Enter" &&
+        appModalState.mode === "prompt" &&
+        event.target.id !== "app-modal-textarea"
+      ) {
         event.preventDefault();
-        closeAppModal(byId("app-modal-input").value.trim());
+        closeAppModal(appModalInputValue());
       }
     });
   }
@@ -3403,7 +3427,6 @@
     }
     byId("identity-review-expiry").value = identityExpiryDate();
     byId("identity-review-permanent").checked = false;
-    byId("identity-rejection-reason").value = "";
     setText("identity-review-feedback", "");
     byId("identity-review-dialog").showModal();
   }
@@ -3412,17 +3435,39 @@
     const item = state.selectedIdentityApplication;
     if (!item) return;
     const feedback = byId("identity-review-feedback");
+    let body;
+    if (action === "approve") {
+      body = {
+        permanent: byId("identity-review-permanent").checked,
+        expiresOn: byId("identity-review-permanent").checked
+          ? null
+          : byId("identity-review-expiry").value
+      };
+    } else {
+      const reason = await showAppPrompt(
+        window.MrzhI18n.t(
+          "请填写拒绝理由，该理由将写入用户收到的拒绝通知邮件。"
+        ),
+        {
+          title: "拒绝申请",
+          inputLabel: "拒绝理由（必填）",
+          inputPlaceholder: "请输入拒绝理由",
+          maxLength: 500,
+          multiline: true,
+          confirmLabel: "确认拒绝",
+          cancelLabel: "取消",
+          danger: true
+        }
+      );
+      if (reason === null) return;
+      if (!reason) {
+        feedback.textContent = window.MrzhI18n.t("请填写拒绝理由");
+        return;
+      }
+      body = { reason };
+    }
     feedback.textContent = "正在处理并发送邮件…";
     try {
-      const body =
-        action === "approve"
-          ? {
-              permanent: byId("identity-review-permanent").checked,
-              expiresOn: byId("identity-review-permanent").checked
-                ? null
-                : byId("identity-review-expiry").value
-            }
-          : { reason: byId("identity-rejection-reason").value.trim() };
       const result = await request(
         `/api/admin/identity-applications/${encodeURIComponent(item.id)}/${action}`,
         { method: "POST", body: JSON.stringify(body) }

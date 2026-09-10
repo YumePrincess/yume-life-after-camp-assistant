@@ -1036,6 +1036,9 @@ export async function rejectIdentityApplication(
   env: Env,
   input: { id: string; reason: string; reviewedBy: string }
 ): Promise<{ emailSent: boolean; emailError: string | null }> {
+  const reason =
+    typeof input.reason === "string" ? input.reason.trim().slice(0, 500) : "";
+  if (!reason) throw new Error("请填写拒绝理由");
   const application = await env.DB.prepare(
     "SELECT * FROM identity_code_applications WHERE id = ?"
   )
@@ -1051,7 +1054,7 @@ export async function rejectIdentityApplication(
     ).bind(
       reviewedAt,
       input.reviewedBy,
-      input.reason.slice(0, 500) || null,
+      reason,
       input.id
     )
   ];
@@ -1078,7 +1081,7 @@ export async function rejectIdentityApplication(
   try {
     await sendApplicationMail(env, application, {
       approved: false,
-      reason: input.reason
+      reason
     });
     await recordMailResult(env, application.id, application.identity_code_id, null);
     return { emailSent: true, emailError: null };
