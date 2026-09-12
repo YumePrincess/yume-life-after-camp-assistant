@@ -100,8 +100,20 @@ async function currentVoteInvalidations(
     env.DB.prepare(
       `DELETE FROM daily_vote_responses
        WHERE identity_code_id = ?
-         AND updated_at >= ? AND updated_at < ?`
-    ).bind(identityCodeId, localDayStart, localDayEnd)
+         AND item_id IN (
+           SELECT item.id
+           FROM daily_vote_items item
+           WHERE item.end_at > ?
+              OR (
+                item.kind = 'draw'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM daily_draw_winners winner
+                  WHERE winner.item_id = item.id
+                )
+              )
+         )`
+    ).bind(identityCodeId, at.toISOString())
   ];
 }
 
