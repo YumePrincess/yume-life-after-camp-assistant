@@ -1425,6 +1425,178 @@ test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", a
   ]);
 });
 
+test("Ctrl+Tab opens and verifies the patrol team card before any flag coordinate fallback", async () => {
+  const combinations = [];
+  const taps = [];
+  const reports = [];
+  const config = patrolConfig();
+  config.patrolTeamUi.flagKeyPrimary = true;
+  config.patrolTeamUi.flagKeyAttempts = 6;
+  config.patrolTeamUi.flagClickAttempts = 2;
+  const context = {
+    config,
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      }
+    },
+    adb: {
+      async keyCombination(codes) {
+        combinations.push(codes);
+      },
+      async key() {},
+      async mouseSwipe() {}
+    },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return {
+            path: "hud.png",
+            observations: [
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080)
+            ]
+          };
+        }
+        if (label === "patrol-team-flag-key-1") {
+          return {
+            path: "flag-card.png",
+            observations: [observation("创建队伍", 120, 160)]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: observationsFor(label)
+        };
+      },
+      async captureAccurateTransient() {
+        return { path: null, observations: [] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step, message) {
+      reports.push({ step, message });
+    }
+  };
+
+  await createPatrolTeam(context);
+
+  assert.deepEqual(combinations, [["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"]]);
+  assert.deepEqual(taps, [
+    { x: 220, y: 180 },
+    { x: 470, y: 820 },
+    { x: 1419, y: 891 }
+  ]);
+  assert.ok(reports.some(({ step }) => step === "patrol_flag_key_card_verified"));
+  assert.ok(!reports.some(({ step }) => step === "patrol_flag_click"));
+});
+
+test("Ctrl+Tab does not accept the task guide and closes it before retrying", async () => {
+  const combinations = [];
+  const taps = [];
+  const flows = [];
+  const reports = [];
+  const config = patrolConfig();
+  config.patrolTeamUi.flagKeyPrimary = true;
+  config.patrolTeamUi.flagKeyAttempts = 2;
+  config.flows = {
+    closeTaskGuideOverlay: [
+      {
+        op: "closeTaskGuideOverlay",
+        texts: ["任务", "当前", "导航", "追踪"],
+        region: { left: 0, top: 0, right: 960, bottom: 1200 },
+        minimumTexts: 3,
+        dismissPoint: { x: 1600, y: 600 },
+        maxAttempts: 2,
+        intervalMs: 1
+      }
+    ]
+  };
+  const context = {
+    config,
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async executeFlow(name) {
+        flows.push(name);
+        if (name === "closeTaskGuideOverlay") {
+          taps.push({ x: 1600, y: 600 });
+        }
+      }
+    },
+    adb: {
+      async keyCombination(codes) {
+        combinations.push(codes);
+      },
+      async key() {},
+      async mouseSwipe() {}
+    },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return {
+            path: "hud.png",
+            observations: [
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080)
+            ]
+          };
+        }
+        if (label === "patrol-team-flag-key-1") {
+          return {
+            path: "task-card.png",
+            observations: [
+              observation("任务", 120, 120),
+              observation("当前", 120, 180),
+              observation("导航", 120, 240),
+              observation("追踪", 120, 300)
+            ]
+          };
+        }
+        if (label === "patrol-task-guide-overlay-closed") {
+          return {
+            path: "flag-card.png",
+            observations: [observation("创建队伍", 120, 160)]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: observationsFor(label)
+        };
+      },
+      async captureAccurateTransient() {
+        return { path: null, observations: [] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step, message) {
+      reports.push({ step, message });
+    }
+  };
+
+  await createPatrolTeam(context);
+
+  assert.deepEqual(combinations, [["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"]]);
+  assert.deepEqual(taps, [
+    { x: 1600, y: 600 },
+    { x: 220, y: 180 },
+    { x: 470, y: 820 },
+    { x: 1419, y: 891 }
+  ]);
+  assert.deepEqual(flows, ["closeTaskGuideOverlay"]);
+});
+
 test("patrol category fallback reuses the contribution-list ADB mouse swipe", async () => {
   const taps = [];
   const swipes = [];

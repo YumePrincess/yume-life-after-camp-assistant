@@ -789,16 +789,148 @@ export async function createPatrolTeam(context, signal) {
       );
     if (!flagReady && !hudReady) {
       throw new Error(
-        "PATROL_FLAG_NOT_VISIBLE: 未识别到 CtrlQ，且底部频道 HUD 锚点不足，禁止点击游戏世界"
+        "PATROL_FLAG_NOT_VISIBLE: 未识别到旗帜快捷入口，且底部频道 HUD 锚点不足，禁止点击游戏世界"
       );
     }
+
+    const flagKeyPrimary = controls.flagKeyPrimary === true;
+    // The left HUD action list is dynamic. In the patrol screenshots the
+    // historical (48,327) point can land on the task/collection card, which
+    // opens the task guide instead of the team flag. Prefer the stable
+    // Ctrl+Tab shortcut and verify the resulting card before considering any
+    // coordinate click. Older configs can opt out while they are migrated;
+    // the shipped config enables this path.
+    if (flagKeyPrimary) {
+      const flagKeyAttempts = Math.max(
+        1,
+        Math.min(6, Number(controls.flagKeyAttempts) || 6)
+      );
+      const flagKeyCodes = Array.isArray(controls.flagKeyCombination) &&
+        controls.flagKeyCombination.length >= 2
+        ? controls.flagKeyCombination
+        : ["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"];
+      const flagKeySettleMs = Math.max(
+        200,
+        Number(controls.flagKeySettleMs) || 1_200
+      );
+      for (let attempt = 1; attempt <= flagKeyAttempts; attempt += 1) {
+        await report(
+          attempt === 1 ? "info" : "warning",
+          "patrol_flag_key_cycle",
+          `正在发送 Ctrl+Tab 切换旗帜队伍卡片，第 ${attempt}/${flagKeyAttempts} 次；按键后只接受队伍卡片关键词，不接受任务导航卡片`
+        );
+        await adb.keyCombination(flagKeyCodes, signal, {
+          holdMs: controls.comboHoldMs || 120
+        });
+        await sleep(flagKeySettleMs, signal);
+        screen = await capturePatrolScreen(
+          vision,
+          `patrol-team-flag-key-${attempt}`,
+          signal
+        );
+        const screenAfterOverlayClose = await closePatrolTaskGuideOverlayIfVisible(
+          context,
+          screen,
+          signal,
+          "Ctrl+Tab 切换后"
+        );
+        if (screenAfterOverlayClose !== screen) {
+          screen = screenAfterOverlayClose;
+          await report(
+            "warning",
+            "patrol_flag_key_task_overlay_closed",
+            "Ctrl+Tab 后识别到任务导航卡片；已关闭右半屏安全空白处，继续识别队伍卡片，不将任务卡片视为成功"
+          );
+        }
+        const teamCardEvidence = await findAnyPatrolTextWithAccurateRegion(
+          vision,
+          screen,
+          screen.observations,
+          patrolFlagCardVerificationTexts(controls),
+          patrolFlagCardVerificationRegion(controls),
+          `patrol-team-flag-key-${attempt}-card-verification`,
+          signal
+        );
+        if (!teamCardEvidence) {
+          await report(
+            "warning",
+            "patrol_flag_key_card_unverified",
+            `Ctrl+Tab 第 ${attempt}/${flagKeyAttempts} 次后未在旗帜队伍卡片区域识别到创建队伍/加入队伍/自动匹配/队员信息；继续下一次按键`
+          );
+          continue;
+        }
+        await report(
+          "info",
+          "patrol_flag_key_card_verified",
+          `Ctrl+Tab 第 ${attempt}/${flagKeyAttempts} 次后已在旗帜队伍卡片区域识别到“${teamCardEvidence.text}”；停止重复按键并继续队伍状态判断`
+        );
+        createMenuMatch = await findPatrolTextWithAccurateRegion(
+          vision,
+          screen,
+          screen.observations,
+          "创建队伍",
+          controls.teamMenuRegion,
+          `patrol-team-flag-key-${attempt}-create-entry`,
+          signal
+        );
+        menuOpen = Boolean(createMenuMatch);
+        creatorOpen = patrolCreatorOpen(
+          vision,
+          screen.observations,
+          controls
+        );
+        if (menuOpen || creatorOpen) break;
+
+        const existing = await resolveExistingPatrolTeam(
+          context,
+          screen,
+          signal
+        );
+        if (existing.mode === "existing-valid-route") {
+          await report(
+            "info",
+            "patrol_existing_route_detected",
+            "Ctrl+Tab 后确认现有队伍持有有效营地巡逻路线；不进入创建队伍流程"
+          );
+          return "existing-valid-route";
+        }
+        screen = existing.screen || screen;
+        if (existing.mode === "existing-invalid-left") {
+          screen = await recoverPatrolCreateEntryAfterExistingTeamLeave(
+            context,
+            screen,
+            signal
+          );
+        }
+        createMenuMatch = await findPatrolTextWithAccurateRegion(
+          vision,
+          screen,
+          screen.observations,
+          "创建队伍",
+          controls.teamMenuRegion,
+          `patrol-team-flag-key-${attempt}-create-entry-after-existing`,
+          signal
+        );
+        menuOpen = Boolean(createMenuMatch);
+        creatorOpen = patrolCreatorOpen(
+          vision,
+          screen.observations,
+          controls
+        );
+        if (menuOpen || creatorOpen) break;
+      }
+    }
+
     const flagClickAttempts = Math.max(
       2,
       Math.min(6, Number(controls.flagClickAttempts) || 6)
     );
+    // A coordinate tap is deliberately a fallback. This prevents the
+    // dynamic task-list point from being the first action and gives the
+    // keyboard path up to six verified opportunities to open the right card.
     for (
       let attempt = 1;
-      attempt <= flagClickAttempts;
+      !menuOpen && !creatorOpen && attempt <= flagClickAttempts;
       attempt += 1
     ) {
       const preFlagColor = await ensurePatrolFlagClickColor(
@@ -1004,13 +1136,18 @@ export async function createPatrolTeam(context, signal) {
       );
       return "existing-valid-route";
     }
+    const legacyComboFallbackEnabled =
+      controls.legacyComboFallbackEnabled !== false && !flagKeyPrimary;
     const comboAttempts = Math.max(
       1,
       Math.min(6, Number(controls.comboFallbackAttempts) || 6)
     );
     for (
       let attempt = 0;
-      !menuOpen && !creatorOpen && attempt < comboAttempts;
+      legacyComboFallbackEnabled &&
+      !menuOpen &&
+      !creatorOpen &&
+      attempt < comboAttempts;
       attempt += 1
     ) {
       await report(
@@ -1099,7 +1236,9 @@ export async function createPatrolTeam(context, signal) {
     }
     if (!menuOpen && !creatorOpen) {
       throw new Error(
-        `PATROL_TEAM_MENU_DID_NOT_OPEN: 旗帜点击及 ${comboAttempts} 次逐次 Ctrl+Q 备用后仍未识别到“创建队伍”，禁止继续点击`
+        flagKeyPrimary
+          ? `PATROL_TEAM_MENU_DID_NOT_OPEN: Ctrl+Tab 旗帜卡片识别及 ${flagClickAttempts} 次点击备用后仍未识别到队伍卡片，禁止继续点击`
+          : `PATROL_TEAM_MENU_DID_NOT_OPEN: 旗帜点击及 ${comboAttempts} 次逐次 Ctrl+Q 备用后仍未识别到“创建队伍”，禁止继续点击`
       );
     }
   }
@@ -1452,18 +1591,8 @@ async function verifyPatrolFlagSelectionAfterClick(
       vision,
       screen,
       screen.observations,
-    controls.flagTeamCardVerificationTexts || [
-      "创建队伍",
-      "加入队伍",
-      "自动匹配",
-      "取消匹配"
-      ],
-      controls.flagTeamCardVerificationRegion || controls.teamMenuRegion || {
-        left: 70,
-        top: 100,
-        right: 900,
-        bottom: 650
-      },
+      patrolFlagCardVerificationTexts(controls),
+      patrolFlagCardVerificationRegion(controls),
       `patrol-flag-team-card-text-${clickAttempt}-${readAttempt}`,
       signal
     );
@@ -1693,6 +1822,37 @@ function taskGuideOverlayMarkerCount(vision, observations, action) {
   return texts.filter((text) => hasTextInRegion(vision, observations, text, region)).length;
 }
 
+function patrolFlagCardVerificationTexts(controls) {
+  return mergePatrolTexts(
+    controls?.flagCardVerificationTexts ||
+      controls?.flagTeamCardVerificationTexts,
+    [
+      "创建队伍",
+      "加入队伍",
+      "自动匹配",
+      "取消匹配",
+      "当前队员信息",
+      "当前队员",
+      "队员信息",
+      "暂无队员加入",
+      "等待队员加入"
+    ]
+  );
+}
+
+function patrolFlagCardVerificationRegion(controls) {
+  return (
+    controls?.flagCardVerificationRegion ||
+    controls?.flagTeamCardVerificationRegion ||
+    controls?.teamMenuRegion || {
+      left: 70,
+      top: 100,
+      right: 900,
+      bottom: 650
+    }
+  );
+}
+
 async function patrolTeamCardColorState(context, screen, signal) {
   const controls = context.config?.patrolTeamUi || {};
   const color = controls.teamCardColor;
@@ -1915,6 +2075,9 @@ function inspectExistingPatrolTeamState(vision, observations, controls) {
       "自动匹配",
       "取消匹配",
       "暂无队员加入",
+      "当前队员信息",
+      "当前队员",
+      "队员信息",
       "调整",
       "离开队伍"
     ],
@@ -1927,7 +2090,10 @@ function inspectExistingPatrolTeamState(vision, observations, controls) {
       "自动匹配",
       "取消匹配",
       "暂无队员加入",
-      "等待队员加入"
+      "等待队员加入",
+      "当前队员信息",
+      "当前队员",
+      "队员信息"
     ],
     cardRegion
   );
@@ -1945,7 +2111,10 @@ function inspectExistingPatrolTeamState(vision, observations, controls) {
       "自动匹配",
       "取消匹配",
       "暂无队员加入",
-      "等待队员加入"
+      "等待队员加入",
+      "当前队员信息",
+      "当前队员",
+      "队员信息"
     ],
     cardRegion
   );

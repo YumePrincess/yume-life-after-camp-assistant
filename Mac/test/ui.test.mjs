@@ -1020,7 +1020,10 @@ test("1920x1200 map flow closes every overlay and opens map with M after input f
         observation("收起", 1700, 1040)
       ],
       [observation("背包", 120, 900)],
-      [observation("标志查看", 260, 150)]
+      [
+        observation("标志查看", 260, 150),
+        observation("查看庄园", 520, 150)
+      ]
     ]
   });
   await fixture.ui.ensureMapOpen({
@@ -1042,7 +1045,10 @@ test("M is the primary map action and still requires map OCR", async () => {
     fastFrames: [
       [observation("背包", 120, 900)],
       [],
-      [observation("标志查看", 260, 150)]
+      [
+        observation("标志查看", 260, 150),
+        observation("查看庄园", 520, 150)
+      ]
     ]
   });
   await fixture.ui.ensureMapOpen({
@@ -1063,7 +1069,10 @@ test("map opening never falls back to a calibrated mouse click after M", async (
     fastFrames: [
       [observation("背包", 120, 900)],
       [],
-      [observation("标志查看", 260, 150)]
+      [
+        observation("标志查看", 260, 150),
+        observation("查看庄园", 520, 150)
+      ]
     ]
   });
 
@@ -1085,12 +1094,15 @@ test("map opening never falls back to a calibrated mouse click after M", async (
   );
 });
 
-test("a model map prediction never unlocks destination clicks without the top-left marker", async () => {
+test("a model map prediction never unlocks destination clicks without two map keywords", async () => {
   const fixture = createUi({
     fastFrames: [
       [observation("背包", 120, 900)],
       [],
-      [observation("标志查看", 260, 150)]
+      [
+        observation("标志查看", 260, 150),
+        observation("查看庄园", 520, 150)
+      ]
     ],
     generalAdvice: {
       state: "map",
@@ -1115,7 +1127,7 @@ test("a model map prediction never unlocks destination clicks without the top-le
   );
   assert.ok(
     fixture.messages.some((message) =>
-      message.includes("已通过地图固定文字确认")
+      message.includes("（2 项）确认地图页面打开")
     )
   );
 });
@@ -1145,18 +1157,21 @@ test("map opening retries M after the OCR verification window", async () => {
   ]);
   assert.ok(
     fixture.messages.some((message) =>
-      message.includes("仍未在左上角 OCR 识别“标志查看”")
+      message.includes("至少 2 个地图关键词")
     )
   );
 });
 
-test("a non-marker map text never confirms map opening", async () => {
+test("two map keywords confirm map opening on the estate tab", async () => {
   const fixture = createUi({
     fastFrames: [
       [observation("背包", 120, 900)],
-      [observation("查看庄园", 260, 150)],
-      [observation("标志查看", 900, 150)],
-      [observation("标志查看", 260, 150)]
+      [
+        observation("查看庄园", 520, 150),
+        observation("中心花园", 650, 420),
+        observation("我的庄园", 220, 180),
+        observation("坐标", 220, 1080)
+      ]
     ]
   });
   await fixture.ui.ensureMapOpen({
@@ -1167,6 +1182,11 @@ test("a non-marker map text never confirms map opening", async () => {
     mapOpenPollMs: 1
   });
   assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+  assert.ok(
+    fixture.messages.some((message) =>
+      message.includes("查看庄园、中心花园、我的庄园、坐标")
+    )
+  );
 });
 
 test("map preparation permits only a high-confidence AI safe close control", async () => {
@@ -1233,7 +1253,10 @@ test("unknown HUD never triggers blind back clicks before opening the map", asyn
 test("an accurately recognized open map is never mistaken for an X overlay", async () => {
   const fixture = createUi({
     fastFrames: [[]],
-    accurateFrames: [[observation("标志查看", 260, 150)]],
+    accurateFrames: [[
+      observation("标志查看", 260, 150),
+      observation("查看庄园", 520, 150)
+    ]],
     overlayAdvice: {
       control: "close_x",
       confidence: 0.99,
@@ -1879,7 +1902,13 @@ test("open team panel requires a verified card click and never configures a flag
       op: "openTeamPanelGuarded",
       cardPoint: { x: 350, y: 150 },
       requiredCardTexts: ["自动匹配", "取消匹配"],
-      memberStateTexts: ["暂无队员加入", "等待队员加入"],
+      memberStateTexts: [
+        "暂无队员加入",
+        "等待队员加入",
+        "当前队员信息",
+        "当前队员",
+        "队员信息"
+      ],
       panelTexts: [
         "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
         "目标", "更换队伍", "招募"
@@ -2096,6 +2125,31 @@ test("city-hall data tasks use the same held-W approach fallback as patrol", asy
     assert.equal(teleport.target.approachFallbackHoldMs, 800);
     assert.equal(teleport.target.approachFallbackIntervalMs, 2000);
     assert.equal(teleport.fallback.name, "中心出入口");
+  }
+});
+
+test("all map teleport flows require two independent map keywords", async () => {
+  const expected = [
+    "标志查看",
+    "查看庄园",
+    "可快捷前往地标",
+    "中心花园",
+    "我的庄园",
+    "坐标"
+  ];
+  for (const file of ["config.json", "config.example.json"]) {
+    const config = JSON.parse(
+      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
+    );
+    for (const flowName of [
+      "teleportNoticeBoard",
+      "teleportCityHall",
+      "teleportCentralExit"
+    ]) {
+      const [teleport] = config.flows[flowName];
+      assert.deepEqual(teleport.mapVerificationTexts, expected);
+      assert.equal(teleport.mapVerificationMinimumMatches, 2);
+    }
   }
 });
 

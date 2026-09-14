@@ -126,6 +126,53 @@ test("stable HUD sends the game-mouse key once after login, not before it", asyn
   assert.deepEqual(fixture.taps, [{ x: 960, y: 945 }]);
 });
 
+test("deterministic HUD evidence wins over a stale unknown-model recovery request", async () => {
+  const fixture = createFixture(
+    [
+      ["登录游戏"],
+      ["加载中"],
+      ["加载中"],
+      ["加载中"],
+      ["加载中"],
+      ["加载中"],
+      ["加载中"],
+      ["加载中"],
+      ["背包"],
+      ["背包"],
+      ["背包"]
+    ],
+    {
+      state: "unknown",
+      action: "wait",
+      confidence: 0.99,
+      evidence: "登录后场景不明确"
+    },
+    [],
+    "shadow",
+    {
+      readyStableFrames: 3,
+      readyStableMs: 0,
+      postLoginMinimumWaitMs: 0,
+      loadingQuietMs: 0
+    }
+  );
+  fixture.context.vision.advisor.config.unknownRecoveryDelaySeconds = 5;
+  fixture.context.vision.advisor.config.unknownRecoveryMatches = 1;
+  let recoveryCalls = 0;
+  fixture.context.ui.executeFlow = async () => {
+    recoveryCalls += 1;
+  };
+  const hudCalls = [];
+  fixture.context.ui.summonGameMouseAfterHud = async (_signal, attempts) => {
+    hudCalls.push(attempts);
+  };
+
+  await waitForGameReady(fixture.context);
+
+  assert.equal(recoveryCalls, 0);
+  assert.deepEqual(hudCalls, [6]);
+});
+
 test("login without a stable world HUD stops at the post-login hard timeout", async () => {
   const fixture = createFixture([["登录游戏"]]);
   fixture.context.config.timeouts.postLoginHudTimeoutSeconds = 1;
@@ -824,7 +871,8 @@ function createFixture(
         taps.push(point);
       },
       async afterAction() {},
-      async keyIfAnyText() {}
+      async keyIfAnyText() {},
+      async summonGameMouseAfterHud() {}
     },
     vision,
     async report(_level, _step, message) {

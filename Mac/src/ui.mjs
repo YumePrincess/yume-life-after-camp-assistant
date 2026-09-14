@@ -868,17 +868,60 @@ export class GameUi {
   }
 
   findMapVerificationMarker(observations, action) {
-    // 地图是否打开只能由左上角的“标志查看”确认。地图中的地点、
-    // 庄园等文字会在其他界面出现，不能作为放行后续点击的依据。
-    const markerText =
-      action.mapVerificationText || action.mapModeText || "标志查看";
+    // 地图有“标志查看”和“查看庄园”两种页签，且 OCR 可能只识别到
+    // 左侧列表或底部坐标。使用多个互相独立的地图关键词交叉确认，避免
+    // 某一个页签文字被遮挡时把已经打开的地图误报为 HUD。
+    const defaultTexts = [
+      "标志查看",
+      "查看庄园",
+      "可快捷前往地标",
+      "中心花园",
+      "我的庄园",
+      "坐标"
+    ];
+    const verificationTexts = [
+      ...(Array.isArray(action.mapVerificationTexts)
+        ? action.mapVerificationTexts
+        : []),
+      ...(Array.isArray(action.mapReadyTexts) ? action.mapReadyTexts : []),
+      action.mapVerificationText,
+      action.mapModeText,
+      action.mapEstateTabText,
+      ...defaultTexts
+    ]
+      .map((text) => String(text || "").trim())
+      .filter((text, index, values) => text && values.indexOf(text) === index);
     const markerRegion = action.mapVerificationRegion || {
       left: 0,
       top: 0,
-      right: 700,
-      bottom: 260
+      right: Number(this.config.adb?.screenWidth) || 1920,
+      bottom: Number(this.config.adb?.screenHeight) || 1200
     };
-    return this.findInRegion(observations, markerText, markerRegion);
+    const matches = verificationTexts
+      .map((text) => ({
+        text,
+        match: this.findInRegion(observations, text, markerRegion, "includes")
+      }))
+      .filter((item) => item.match);
+    const minimumMatches = Math.max(
+      1,
+      Number(action.mapVerificationMinimumMatches) || 2
+    );
+    if (matches.length < minimumMatches) return null;
+    const preferredText =
+      action.mapVerificationText || action.mapModeText || "标志查看";
+    const preferred =
+      matches.find((item) => item.text === preferredText) || matches[0];
+    return {
+      ...preferred.match,
+      text: preferred.text,
+      mapEvidence: matches.map((item) => ({
+        text: item.text,
+        match: item.match
+      })),
+      mapEvidenceTexts: matches.map((item) => item.text),
+      mapVerificationMinimumMatches: minimumMatches
+    };
   }
 
   async keyUntilText(action, signal) {
@@ -973,7 +1016,10 @@ export class GameUi {
     ];
     const memberStateTexts = action.memberStateTexts || [
       "暂无队员加入",
-      "等待队员加入"
+      "等待队员加入",
+      "当前队员信息",
+      "当前队员",
+      "队员信息"
     ];
     const panelRegion = action.panelRegion || {
       left: 0,
@@ -2243,7 +2289,7 @@ export class GameUi {
         retry ? "warning" : "info",
         retry ? "map_open_key_retry" : "map_open_key",
         retry
-          ? `等待 ${timeoutMs / 1000} 秒仍未在左上角 OCR 识别“标志查看”，重新发送 M 键打开地图（${mapKeyAttempts}/${mapKeyRetryAttempts}）`
+          ? `等待 ${timeoutMs / 1000} 秒仍未识别至少 2 个地图关键词，重新发送 M 键打开地图（${mapKeyAttempts}/${mapKeyRetryAttempts}）`
           : "正在通过 ADB 复位游戏输入后发送 M 键打开地图；不会先点击右上角以免误开相机",
         { key: mapKey, focusPoint: mapButton || null, attempt: mapKeyAttempts }
       );
@@ -2271,9 +2317,9 @@ export class GameUi {
         await this.report(
           "info",
           "map_open_verified",
-          `已通过地图固定文字确认页面打开：${verified.text}`
+          `已通过 ${verified.mapEvidenceTexts.join("、")}（${verified.mapVerificationMinimumMatches} 项）确认地图页面打开`
         );
-        return { marker: verified };
+        return { marker: verified, evidence: verified.mapEvidence };
       }
       if (
         typeof this.vision.captureAccurateTransient === "function" &&
@@ -2291,9 +2337,12 @@ export class GameUi {
           await this.report(
             "info",
             "map_open_verified_accurate",
-            `已通过高精度 OCR 确认地图页面打开：${accurateVerified.text}`
+            `已通过高精度 OCR 识别 ${accurateVerified.mapEvidenceTexts.join("、")}（${accurateVerified.mapVerificationMinimumMatches} 项），确认地图页面打开`
           );
-          return { marker: accurateVerified };
+          return {
+            marker: accurateVerified,
+            evidence: accurateVerified.mapEvidence
+          };
         }
       }
       if (
@@ -2306,8 +2355,15 @@ export class GameUi {
           "teleport-map-advisor",
           {
             expectedState: "map",
-            taskHint: `确认营地地图是否已打开；可见文字通常包括${(
-              [action.mapVerificationText || action.mapModeText || "标志查看"]
+            taskHint: `确认营地地图是否已打开；以下地图关键词中至少识别两个：${(
+              action.mapVerificationTexts || [
+                "标志查看",
+                "查看庄园",
+                "可快捷前往地标",
+                "中心花园",
+                "我的庄园",
+                "坐标"
+              ]
             ).join("、")}`,
             ocrTexts: verification.observations.map((item) => item.text)
           },
@@ -2344,7 +2400,7 @@ export class GameUi {
       }
     } while (Date.now() < deadline);
     throw new Error(
-      "MAP_DID_NOT_OPEN: 未识别到“标志查看/查看庄园”，已停止后续地点与快速前往点击"
+      "MAP_DID_NOT_OPEN: 地图关键词中未识别到至少两个（标志查看、查看庄园、可快捷前往地标、中心花园、我的庄园、坐标），已停止后续地点与快速前往点击"
     );
   }
 

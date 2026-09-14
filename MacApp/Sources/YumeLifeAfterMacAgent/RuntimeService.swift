@@ -521,7 +521,32 @@ actor RuntimeService {
             "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
             "目标", "更换队伍", "招募"
         ]
+        let mapVerificationTexts = [
+            "标志查看", "查看庄园", "可快捷前往地标", "中心花园", "我的庄园", "坐标"
+        ]
         var patrolFlows = object["flows"] as? [String: Any] ?? [:]
+        for flowName in ["teleportNoticeBoard", "teleportCityHall", "teleportCentralExit"] {
+            guard var actions = patrolFlows[flowName] as? [[String: Any]] else { continue }
+            for index in actions.indices where actions[index]["op"] as? String == "teleportWithFallback" {
+                var verificationTexts = actions[index]["mapVerificationTexts"] as? [String] ?? []
+                for text in mapVerificationTexts where !verificationTexts.contains(text) {
+                    verificationTexts.append(text)
+                    changed = true
+                }
+                actions[index]["mapVerificationTexts"] = verificationTexts
+                if (actions[index]["mapVerificationMinimumMatches"] as? NSNumber)?.intValue != 2 {
+                    actions[index]["mapVerificationMinimumMatches"] = 2
+                    changed = true
+                }
+                if actions[index]["mapVerificationRegion"] == nil {
+                    actions[index]["mapVerificationRegion"] = [
+                        "left": 0, "top": 0, "right": 1920, "bottom": 1200
+                    ]
+                    changed = true
+                }
+            }
+            patrolFlows[flowName] = actions
+        }
         for flowName in ["openTeamPanel", "openPatrolTeamPanelAfterAccept"] {
             guard var actions = patrolFlows[flowName] as? [[String: Any]] else { continue }
             for index in actions.indices where actions[index]["op"] as? String == "openTeamPanelGuarded" {
@@ -532,6 +557,13 @@ actor RuntimeService {
                 if (actions[index]["minimumPanelTexts"] as? NSNumber)?.intValue != 4 {
                     actions[index]["minimumPanelTexts"] = 4
                     changed = true
+                }
+                if var memberStateTexts = actions[index]["memberStateTexts"] as? [String] {
+                    for text in ["当前队员信息", "当前队员", "队员信息"] where !memberStateTexts.contains(text) {
+                        memberStateTexts.append(text)
+                        changed = true
+                    }
+                    actions[index]["memberStateTexts"] = memberStateTexts
                 }
             }
             patrolFlows[flowName] = actions
@@ -641,14 +673,58 @@ actor RuntimeService {
             patrol["flagClickColorReadRetries"] = 6
             changed = true
         }
+        if patrol["flagKeyPrimary"] == nil {
+            patrol["flagKeyPrimary"] = true
+            changed = true
+        }
+        if patrol["flagKeyCombination"] == nil {
+            patrol["flagKeyCombination"] = ["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"]
+            changed = true
+        }
+        if patrol["flagKeyAttempts"] == nil {
+            patrol["flagKeyAttempts"] = 6
+            changed = true
+        }
+        if patrol["flagKeySettleMs"] == nil {
+            patrol["flagKeySettleMs"] = 1_200
+            changed = true
+        }
+        if patrol["flagCardVerificationTexts"] == nil {
+            patrol["flagCardVerificationTexts"] = [
+                "创建队伍", "加入队伍", "自动匹配", "取消匹配",
+                "当前队员信息", "当前队员", "队员信息", "暂无队员加入", "等待队员加入"
+            ]
+            changed = true
+        }
+        if patrol["flagCardVerificationRegion"] == nil {
+            patrol["flagCardVerificationRegion"] = [
+                "left": 70, "top": 100, "right": 900, "bottom": 650
+            ]
+            changed = true
+        }
+        if patrol["legacyComboFallbackEnabled"] == nil {
+            patrol["legacyComboFallbackEnabled"] = false
+            changed = true
+        }
+        if var flagReadyTexts = patrol["flagReadyTexts"] as? [String] {
+            for text in ["CtrlTab", "Ctrl Tab"] where !flagReadyTexts.contains(text) {
+                flagReadyTexts.append(text)
+                changed = true
+            }
+            patrol["flagReadyTexts"] = flagReadyTexts
+        }
         if patrol["existingTeamCardTexts"] == nil {
             patrol["existingTeamCardTexts"] = [
-                "营地巡逻任务", "保卫古籍", "自动匹配", "暂无队员加入", "调整", "离开队伍"
+                "营地巡逻任务", "保卫古籍", "自动匹配", "取消匹配", "暂无队员加入",
+                "当前队员信息", "当前队员", "队员信息", "调整", "离开队伍"
             ]
             changed = true
         }
         if patrol["existingTeamStatusTexts"] == nil {
-            patrol["existingTeamStatusTexts"] = ["自动匹配", "暂无队员加入", "等待队员加入"]
+            patrol["existingTeamStatusTexts"] = [
+                "自动匹配", "取消匹配", "暂无队员加入", "等待队员加入",
+                "当前队员信息", "当前队员", "队员信息"
+            ]
             changed = true
         }
         if let statuses = patrol["existingTeamStatusTexts"] as? [String],
@@ -658,8 +734,19 @@ actor RuntimeService {
             }
             changed = true
         }
+        for key in ["existingTeamStatusTexts", "existingTeamMemberStatusTexts"] {
+            guard var statuses = patrol[key] as? [String] else { continue }
+            for text in ["取消匹配", "当前队员信息", "当前队员", "队员信息"] where !statuses.contains(text) {
+                statuses.append(text)
+                changed = true
+            }
+            patrol[key] = statuses
+        }
         if patrol["existingTeamMemberStatusTexts"] == nil {
-            patrol["existingTeamMemberStatusTexts"] = ["自动匹配", "暂无队员加入", "等待队员加入"]
+            patrol["existingTeamMemberStatusTexts"] = [
+                "自动匹配", "取消匹配", "暂无队员加入", "等待队员加入",
+                "当前队员信息", "当前队员", "队员信息"
+            ]
             changed = true
         }
         if patrol["teamMemberSlotRegions"] == nil {

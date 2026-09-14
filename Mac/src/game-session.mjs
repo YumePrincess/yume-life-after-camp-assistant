@@ -640,6 +640,13 @@ export async function waitForGameReady(context, signal) {
   let readySince = 0;
   let readyStabilizingReported = false;
   let readyAccurateChannelSeen = false;
+  // The local-model recovery request is asynchronous and can become stale
+  // while OCR is already seeing the world HUD. Keep that deterministic HUD
+  // evidence alive long enough for the normal multi-frame readiness check to
+  // finish; otherwise patrol can jump to the recovery flow before the one-off
+  // game-mouse initialization below is reached.
+  let lastHudEvidenceAt = 0;
+  let unknownRecoveryDeferralReported = false;
   let lastLoadingEvidenceAt = 0;
   let lastReadyDiagnosticsAt = 0;
   let lastVoiceChannelPromptOcrAt = 0;
@@ -1097,12 +1104,21 @@ export async function waitForGameReady(context, signal) {
         }
       );
     }
-    if (
-      (readyMatches.length >= readyMinimumTexts || channelHudReady) &&
+    const hudEvidenceCandidate =
       !blocksReady &&
-      postLoginWaitSatisfied &&
-      loadingQuietSatisfied
-    ) {
+      (readyMatches.length >= readyMinimumTexts || channelHudReady);
+    if (hudEvidenceCandidate) {
+      lastHudEvidenceAt = Date.now();
+      // A deterministic HUD candidate supersedes an older unknown-model
+      // recovery request. A later model callback may set it again, so the
+      // recovery branch below also observes the same stabilization grace.
+      unknownAfterLoginCount = 0;
+      unknownRecoveryRequested = false;
+      unknownRecoveryDeferralReported = false;
+    }
+    const hudReadyCandidate =
+      hudEvidenceCandidate && postLoginWaitSatisfied && loadingQuietSatisfied;
+    if (hudReadyCandidate) {
       readyStreak += 1;
       readySince ||= Date.now();
       readyAccurateChannelSeen ||= accurateChannelCandidate;
@@ -1179,7 +1195,12 @@ export async function waitForGameReady(context, signal) {
         // The stable HUD is the only unconditional game-mouse toggle point.
         // The lower-right fist icon is diagnostic only: some MuMu/game states
         // do not render it even though keyevent 70 was accepted.
-        await ui.summonGameMouseAfterHud?.(
+        if (typeof ui.summonGameMouseAfterHud !== "function") {
+          throw new Error(
+            "GAME_MOUSE_HUD_INIT_UNAVAILABLE: 稳定世界 HUD 后缺少 keyevent 70 初始化流程，禁止开始任务"
+          );
+        }
+        await ui.summonGameMouseAfterHud(
           signal,
           Number(config.adb?.gameMouseHudReleaseAttempts) || 6
         );
@@ -1515,20 +1536,44 @@ export async function waitForGameReady(context, signal) {
       !context.positionIndependent &&
       !context.skipUnknownRecovery
     ) {
-      unknownRecoveryAttempted = true;
-      unknownRecoveryRequested = false;
-      await report(
-        "warning",
-        "local_model_unknown_recovery",
-        "AI 连续无法确认当前登录后场景，正在传送到中心出入口恢复已知位置；随后继续当前任务的目标传送"
+      const configuredHudGraceSeconds = Number(
+        advisorConfig?.unknownRecoveryHudGraceSeconds
       );
-      await ui.executeFlow("teleportCentralExit", {}, signal);
-      await report(
-        "info",
-        "local_model_unknown_recovered",
-        "已回到中心出入口，当前任务将继续前往所需场所"
+      const hudStabilizationGraceMs = Math.max(
+        5_000,
+        (Number.isFinite(configuredHudGraceSeconds)
+          ? configuredHudGraceSeconds
+          : Number(advisorConfig?.unknownRecoveryDelaySeconds) || 8) * 1_000
       );
-      return;
+      const hudStabilizationInProgress =
+        readyStreak > 0 ||
+        (lastHudEvidenceAt > 0 &&
+          Date.now() - lastHudEvidenceAt < hudStabilizationGraceMs);
+      if (hudStabilizationInProgress) {
+        if (!unknownRecoveryDeferralReported) {
+          unknownRecoveryDeferralReported = true;
+          await report(
+            "info",
+            "local_model_unknown_recovery_deferred",
+            "已检测到确定性世界 HUD，等待 HUD 连续稳定确认；暂不执行 AI 未知场景恢复"
+          );
+        }
+      } else {
+        unknownRecoveryAttempted = true;
+        unknownRecoveryRequested = false;
+        await report(
+          "warning",
+          "local_model_unknown_recovery",
+          "AI 连续无法确认当前登录后场景，正在传送到中心出入口恢复已知位置；随后继续当前任务的目标传送"
+        );
+        await ui.executeFlow("teleportCentralExit", {}, signal);
+        await report(
+          "info",
+          "local_model_unknown_recovered",
+          "已回到中心出入口，当前任务将继续前往所需场所"
+        );
+        return;
+      }
     }
     if (actionableAdvice?.state === "hud") {
       guardedAdvice = null;
