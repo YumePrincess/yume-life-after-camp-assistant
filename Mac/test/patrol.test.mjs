@@ -365,8 +365,9 @@ test("patrol team creation follows only region-verified live-device steps", asyn
       }
     },
     adb: {
+      async keyCombination() {},
       async key() {
-        throw new Error("voice prompt was not present");
+        throw new Error("unexpected single key event");
       },
       async mouseSwipe() {
         reports.push("patrol_camp_affairs_swipe");
@@ -401,15 +402,14 @@ test("patrol team creation follows only region-verified live-device steps", asyn
   await createPatrolTeam(context);
 
   assert.deepEqual(taps, [
-    { x: 48, y: 327 },
     { x: 220, y: 180 },
     { x: 470, y: 820 },
     { x: 1419, y: 891 }
   ]);
-  assert.ok(sleeps.filter((ms) => ms === 2_000).length >= 2);
+  assert.ok(sleeps.filter((ms) => ms === 700).length >= 2);
   assert.ok(reports.includes("patrol_camp_affairs_swipe"));
   assert.ok(reports.includes("patrol_camp_affairs_scroll_selected"));
-  assert.ok(reports.includes("patrol_flag_click"));
+  assert.ok(reports.includes("patrol_flag_key_cycle"));
   assert.ok(reports.includes("patrol_team_created_verified"));
 });
 
@@ -422,7 +422,7 @@ test("patrol creation refuses a world click when the flag anchor is absent", asy
         taps.push(point);
       }
     },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture() {
         return { path: "unknown.png", observations: [] };
@@ -442,7 +442,7 @@ test("patrol creation refuses a world click when the flag anchor is absent", asy
   assert.deepEqual(taps, []);
 });
 
-test("two bottom channel anchors safely permit the calibrated flag click", async () => {
+test("two bottom channel anchors permit the Ctrl+Tab-only flag card flow", async () => {
   const taps = [];
   const context = {
     config: patrolConfig(),
@@ -451,7 +451,7 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
         taps.push(point);
       }
     },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label === "patrol-team-entry") {
@@ -463,7 +463,7 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
             ]
           };
         }
-        if (label === "patrol-team-menu-open") {
+        if (label === "patrol-team-flag-key-1") {
           return {
             path: "menu.png",
             observations: [observation("创建队伍", 120, 160)]
@@ -524,7 +524,7 @@ test("two bottom channel anchors safely permit the calibrated flag click", async
   };
 
   await createPatrolTeam(context);
-  assert.deepEqual(taps[0], { x: 48, y: 327 });
+  assert.deepEqual(taps[0], { x: 220, y: 180 });
 });
 
 test("no-team flag menu prioritizes create entry over stale auto-match text", async () => {
@@ -542,8 +542,8 @@ test("no-team flag menu prioritizes create entry over stale auto-match text", as
       }
     },
     adb: {
+      async keyCombination() {},
       async key() {}, async mouseSwipe() {},
-      async keyCombination() {}
     },
     vision: {
       async capture(label) {
@@ -584,8 +584,7 @@ test("no-team flag menu prioritizes create entry over stale auto-match text", as
 
   await createPatrolTeam(context);
 
-  assert.deepEqual(taps.slice(0, 2), [
-    { x: 48, y: 327 },
+  assert.deepEqual(taps.slice(0, 1), [
     { x: 220, y: 180 }
   ]);
   assert.ok(!flows.includes("openTeamPanel"));
@@ -603,10 +602,23 @@ test("patrol create-menu retries the same ADB click without toggling mouse state
       }
     },
     adb: {
+      async keyCombination() {},
       async key() {}
     },
     vision: {
-      async capture() {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return {
+            path: "hud.png",
+            observations: [observation("CtrlQ", 20, 300)]
+          };
+        }
+        if (label.startsWith("patrol-team-flag-key-")) {
+          return {
+            path: "flag-card.png",
+            observations: [observation("创建队伍", 120, 160)]
+          };
+        }
         return {
           path: "menu.png",
           observations: [observation("创建队伍", 120, 160)]
@@ -634,13 +646,13 @@ test("patrol create-menu retries the same ADB click without toggling mouse state
   assert.equal(mouseTapCount, 6);
 });
 
-test("patrol flag click is attempted through the shared ADB clicker", async () => {
+test("patrol flag entry never clicks the calibrated flag coordinate", async () => {
   const config = patrolConfig();
   const taps = [];
   const context = {
     config,
     ui: { async tap(point) { taps.push(point); } },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return {
@@ -662,7 +674,7 @@ test("patrol flag click is attempted through the shared ADB clicker", async () =
   };
 
   await createPatrolTeam(context);
-  assert.deepEqual(taps[0], { x: 48, y: 327 });
+  assert.deepEqual(taps[0], { x: 220, y: 180 });
 });
 
 test("existing teams use the leave probe and cancel a valid-route confirmation", async () => {
@@ -678,6 +690,7 @@ test("existing teams use the leave probe and cancel a valid-route confirmation",
       }
     },
     adb: {
+      async keyCombination() {},
       async key(keyCode) {
         keys.push(keyCode);
       },
@@ -703,6 +716,28 @@ test("existing teams use the leave probe and cancel a valid-route confirmation",
               observation("巡逻任务尚未完成，现在退出队伍视为放弃任务，是否退出？", 800, 520),
               observation("取消(Esc)", 800, 700),
               observation("确定(F)", 1080, 700)
+            ]
+          };
+        }
+        if (label === "patrol-team-entry") {
+          return {
+            path: "hud-with-stale-team-ocr.png",
+            observations: [
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080),
+              observation("调整", 1450, 300),
+              observation("离开队伍", 1500, 1080)
+            ]
+          };
+        }
+        if (label.startsWith("patrol-team-flag-key-")) {
+          return {
+            path: "team-panel.png",
+            observations: [
+              observation("目标：营地事务>营地巡逻任务", 200, 20),
+              observation("自动匹配", 650, 600),
+              observation("调整", 1450, 300),
+              observation("离开队伍", 1500, 1080)
             ]
           };
         }
@@ -748,6 +783,7 @@ test("valid-route confirmation retries cancel up to three times before sharing",
       }
     },
     adb: {
+      async keyCombination() {},
       async key(keyCode) {
         keys.push(keyCode);
       },
@@ -783,6 +819,25 @@ test("valid-route confirmation retries cancel up to three times before sharing",
               observation("巡逻任务尚未完成，现在退出队伍视为放弃任务，是否退出？", 800, 520),
               observation("取消(Esc)", 800, 700),
               observation("确定(F)", 1080, 700)
+            ]
+          };
+        }
+        if (label === "patrol-team-entry") {
+          return {
+            path: "hud-with-stale-team-ocr.png",
+            observations: [
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080)
+            ]
+          };
+        }
+        if (label.startsWith("patrol-team-flag-key-")) {
+          return {
+            path: "team-panel.png",
+            observations: [
+              observation("自动匹配", 650, 600),
+              observation("调整", 1450, 300),
+              observation("离开队伍", 1500, 1080)
             ]
           };
         }
@@ -826,7 +881,7 @@ test("route and task progress alone never masquerade as an existing team", async
         taps.push(point);
       }
     },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label === "patrol-team-entry") {
@@ -859,11 +914,12 @@ test("route and task progress alone never masquerade as an existing team", async
   };
 
   await createPatrolTeam(context);
-  assert.deepEqual(taps[0], { x: 48, y: 327 });
+  assert.deepEqual(taps[0], { x: 220, y: 180 });
 });
 
-test("a yellow flag is treated as an already-open team card before any flag click", async () => {
+test("an existing team is inspected only after Ctrl+Tab exposes its card", async () => {
   const taps = [];
+  const combinations = [];
   const config = patrolConfig();
   config.patrolTeamUi.teamCardColor = {
     enabled: true,
@@ -888,13 +944,30 @@ test("a yellow flag is treated as an already-open team card before any flag clic
       },
       async executeFlow() {}
     },
+    adb: {
+      async keyCombination(codes) {
+        combinations.push(codes);
+      }
+    },
     vision: {
       async capture(label) {
         return {
           path: `${label}.png`,
           observations:
             label === "patrol-team-entry"
-              ? [observation("CtrlQ", 20, 300), observation("自动匹配", 180, 180)]
+              ? [
+                  observation("综合", 20, 1080),
+                  observation("营地", 200, 1080),
+                  observation("自动匹配", 180, 180)
+                ]
+              : label.startsWith("patrol-team-flag-key-")
+                ? [
+                    observation("自动匹配", 180, 180),
+                    observation("巡逻路线进度 01:31:06", 200, 100),
+                    observation("我的任务进度 0/4", 200, 150),
+                    observation("调整", 1450, 300),
+                    observation("离开队伍", 1500, 1080)
+                  ]
               : label === "patrol-existing-team-panel"
                 ? [
                     observation("自动匹配", 180, 180),
@@ -928,13 +1001,14 @@ test("a yellow flag is treated as an already-open team card before any flag clic
   };
 
   assert.equal(await createPatrolTeam(context), "existing-valid-route");
+  assert.deepEqual(combinations, [["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"]]);
   assert.deepEqual(taps, [
     { x: 1570, y: 1100 },
     { x: 870, y: 720 }
   ]);
 });
 
-test("only a yellow task icon with a non-yellow team flag permits the flag click", async () => {
+test("Ctrl+Tab ignores the legacy color probe and opens the create entry", async () => {
   const taps = [];
   const config = patrolConfig();
   config.patrolTeamUi.teamCardColor = {
@@ -956,7 +1030,7 @@ test("only a yellow task icon with a non-yellow team flag permits the flag click
   const context = {
     config,
     ui: { async tap(point) { taps.push(point); } },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return { path: `${label}.png`, observations: observationsFor(label) };
@@ -978,10 +1052,10 @@ test("only a yellow task icon with a non-yellow team flag permits the flag click
   };
 
   await createPatrolTeam(context);
-  assert.deepEqual(taps[0], { x: 48, y: 327 });
+  assert.deepEqual(taps[0], { x: 220, y: 180 });
 });
 
-test("a failed flag click is re-released and retried until the flag turns yellow", async () => {
+test("Ctrl+Tab entry does not perform flag-coordinate retries", async () => {
   const taps = [];
   const rechecks = [];
   const sleeps = [];
@@ -1013,7 +1087,7 @@ test("a failed flag click is re-released and retried until the flag turns yellow
         rechecks.push(reason);
       }
     },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return {
@@ -1046,14 +1120,14 @@ test("a failed flag click is re-released and retried until the flag turns yellow
 
   await createPatrolTeam(context);
   assert.deepEqual(taps.slice(0, 2), [
-    { x: 48, y: 327 },
-    { x: 48, y: 327 }
+    { x: 220, y: 180 },
+    { x: 470, y: 820 }
   ]);
   assert.equal(rechecks.length, 0);
-  assert.ok(sleeps.filter((ms) => ms === 2000).length >= 2);
+  assert.ok(sleeps.some((ms) => ms <= 700));
 });
 
-test("an ambiguous initial color may click once but still requires post-click verification", async () => {
+test("an unavailable color probe cannot force a flag click", async () => {
   const taps = [];
   const config = patrolConfig();
   config.patrolTeamUi.teamCardColor = {
@@ -1072,7 +1146,7 @@ test("an ambiguous initial color may click once but still requires post-click ve
   const context = {
     config,
     ui: { async tap(point) { taps.push(point); } },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return {
@@ -1104,17 +1178,15 @@ test("an ambiguous initial color may click once but still requires post-click ve
     async report() {}
   };
 
-  await assert.rejects(
-    createPatrolTeam(context),
-    /PATROL_FLAG_CLICK_NOT_VERIFIED/
-  );
+  await createPatrolTeam(context);
   assert.deepEqual(taps, [
-    { x: 48, y: 327 },
-    { x: 48, y: 327 }
+    { x: 220, y: 180 },
+    { x: 470, y: 820 },
+    { x: 1419, y: 891 }
   ]);
 });
 
-test("post-click team-card OCR accepts a yellow flag when color sampling is unreliable", async () => {
+test("Ctrl+Tab card OCR is sufficient when color sampling is unreliable", async () => {
   const taps = [];
   const reports = [];
   const config = patrolConfig();
@@ -1140,7 +1212,7 @@ test("post-click team-card OCR accepts a yellow flag when color sampling is unre
   const context = {
     config,
     ui: { async tap(point) { taps.push(point); } },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         return {
@@ -1165,9 +1237,9 @@ test("post-click team-card OCR accepts a yellow flag when color sampling is unre
 
   await createPatrolTeam(context);
 
-  assert.deepEqual(taps[0], { x: 48, y: 327 });
-  assert.ok(reports.includes("patrol_flag_click_text_verified"));
-  assert.equal(reports.includes("patrol_flag_click_color_unverified"), false);
+  assert.deepEqual(taps[0], { x: 220, y: 180 });
+  assert.ok(reports.includes("patrol_flag_key_card_verified"));
+  assert.equal(reports.includes("patrol_flag_click"), false);
 });
 
 test("an existing camp patrol route switches its top objective to book defense before sharing", async () => {
@@ -1218,6 +1290,7 @@ test("an existing camp patrol route switches its top objective to book defense b
 
 test("an existing team without a patrol route is left before a fresh team is created", async () => {
   const taps = [];
+  let flagCardReads = 0;
   const context = {
     config: patrolConfig(),
     ui: {
@@ -1225,18 +1298,35 @@ test("an existing team without a patrol route is left before a fresh team is cre
         taps.push(point);
       }
     },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label === "patrol-team-entry") {
           return {
-            path: "existing-team.png",
+            path: "hud-with-stale-team-ocr.png",
             observations: [
-              observation("目标：营地事务>营地巡逻任务", 200, 20),
-              observation("等待队员加入", 650, 600),
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080),
               observation("调整", 1450, 300),
               observation("离开队伍", 1500, 1080)
             ]
+          };
+        }
+        if (
+          label.startsWith("patrol-team-flag-key-") ||
+          label === "patrol-existing-team-panel"
+        ) {
+          flagCardReads += label.startsWith("patrol-team-flag-key-") ? 1 : 0;
+          return {
+            path: "existing-team-card.png",
+            observations: label.startsWith("patrol-team-flag-key-") && flagCardReads > 1
+              ? [observation("创建队伍", 120, 160)]
+              : [
+                  observation("自动匹配", 180, 180),
+                  observation("等待队员加入", 650, 600),
+                  observation("调整", 1450, 300),
+                  observation("离开队伍", 1500, 1080)
+                ]
           };
         }
         if (label.includes("after-leave")) {
@@ -1267,7 +1357,6 @@ test("an existing team without a patrol route is left before a fresh team is cre
   assert.equal(await createPatrolTeam(context), "created");
   assert.deepEqual(taps, [
     { x: 1570, y: 1100 },
-    { x: 48, y: 327 },
     { x: 220, y: 180 },
     { x: 470, y: 820 },
     { x: 1419, y: 891 }
@@ -1276,6 +1365,7 @@ test("an existing team without a patrol route is left before a fresh team is cre
 
 test("post-exit OCR is not used as a second state decision before fresh creation", async () => {
   const taps = [];
+  let flagCardReads = 0;
   const flows = [];
   const reports = [];
   const context = {
@@ -1291,18 +1381,35 @@ test("post-exit OCR is not used as a second state decision before fresh creation
         flows.push(name);
       }
     },
-    adb: { async key() {}, async mouseSwipe() {} },
+    adb: { async keyCombination() {}, async key() {}, async mouseSwipe() {} },
     vision: {
       async capture(label) {
         if (label === "patrol-team-entry") {
           return {
-            path: "existing-team-stale.png",
+            path: "hud-with-stale-team-ocr.png",
             observations: [
-              observation("目标：营地事务>营地巡逻任务", 200, 20),
-              observation("等待队员加入", 650, 600),
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080),
               observation("调整", 1450, 300),
               observation("离开队伍", 1500, 1080)
             ]
+          };
+        }
+        if (
+          label.startsWith("patrol-team-flag-key-") ||
+          label === "patrol-existing-team-panel"
+        ) {
+          flagCardReads += label.startsWith("patrol-team-flag-key-") ? 1 : 0;
+          return {
+            path: "existing-team-card.png",
+            observations: label.startsWith("patrol-team-flag-key-") && flagCardReads > 1
+              ? [observation("创建队伍", 120, 160)]
+              : [
+                  observation("自动匹配", 180, 180),
+                  observation("等待队员加入", 650, 600),
+                  observation("调整", 1450, 300),
+                  observation("离开队伍", 1500, 1080)
+                ]
           };
         }
         if (
@@ -1351,14 +1458,13 @@ test("post-exit OCR is not used as a second state decision before fresh creation
   assert.ok(reports.includes("patrol_existing_team_left"));
   assert.deepEqual(taps, [
     { x: 1570, y: 1100 },
-    { x: 48, y: 327 },
     { x: 220, y: 180 },
     { x: 470, y: 820 },
     { x: 1419, y: 891 }
   ]);
 });
 
-test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", async () => {
+test("Ctrl+Tab retries only the card switch and stops when verified", async () => {
   const taps = [];
   const combinations = [];
   const context = {
@@ -1382,16 +1488,18 @@ test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", a
             observations: [observation("CtrlQ", 20, 300)]
           };
         }
-        if (label === "patrol-team-menu-open") {
+        if (label === "patrol-team-flag-key-1") {
           return { path: "miss.png", observations: [] };
+        }
+        if (label === "patrol-team-flag-key-2") {
+          return {
+            path: "flag-card.png",
+            observations: [observation("创建队伍", 120, 160)]
+          };
         }
         return {
           path: `${label}.png`,
-          observations: observationsFor(
-            label === "patrol-team-menu-key-fallback-1"
-              ? "patrol-team-menu-open"
-              : label
-          )
+          observations: observationsFor(label)
         };
       },
       async captureAccurateTransient() {
@@ -1411,14 +1519,16 @@ test("a missed flag click falls back to Ctrl+Q and stops once the menu opens", a
 
   await createPatrolTeam(context);
 
-  assert.equal(combinations.length, 1);
+  assert.equal(combinations.length, 2);
+  assert.deepEqual(combinations, [
+    ["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"],
+    ["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"]
+  ]);
   assert.deepEqual(combinations[0], [
     "KEYCODE_CTRL_LEFT",
-    "KEYCODE_Q"
+    "KEYCODE_TAB"
   ]);
   assert.deepEqual(taps, [
-    { x: 48, y: 327 },
-    { x: 48, y: 327 },
     { x: 220, y: 180 },
     { x: 470, y: 820 },
     { x: 1419, y: 891 }
@@ -1434,6 +1544,7 @@ test("Ctrl+Tab opens and verifies the patrol team card before any flag coordinat
   config.patrolTeamUi.flagKeyAttempts = 6;
   config.patrolTeamUi.flagClickAttempts = 2;
   const context = {
+    executionMode: "scheduled",
     config,
     ui: {
       async tap(point) {
@@ -1494,6 +1605,88 @@ test("Ctrl+Tab opens and verifies the patrol team card before any flag coordinat
   ]);
   assert.ok(reports.some(({ step }) => step === "patrol_flag_key_card_verified"));
   assert.ok(!reports.some(({ step }) => step === "patrol_flag_click"));
+});
+
+test("scheduled patrol skips stale pre-flag team-panel OCR and sends Ctrl+Tab first", async () => {
+  const combinations = [];
+  const taps = [];
+  const flows = [];
+  const reports = [];
+  const config = patrolConfig();
+  config.patrolTeamUi.flagKeyPrimary = true;
+  config.patrolTeamUi.flagKeyAttempts = 6;
+  config.patrolTeamUi.flagClickAttempts = 2;
+  const context = {
+    config,
+    ui: {
+      async tap(point) {
+        taps.push(point);
+      },
+      async executeFlow(name) {
+        flows.push(name);
+        throw new Error(`stale pre-flag OCR must not open ${name}`);
+      }
+    },
+    adb: {
+      async keyCombination(codes) {
+        combinations.push(codes);
+      },
+      async key() {},
+      async mouseSwipe() {}
+    },
+    vision: {
+      async capture(label) {
+        if (label === "patrol-team-entry") {
+          return {
+            path: "scheduled-hud-with-stale-team-ocr.png",
+            observations: [
+              observation("综合", 20, 1080),
+              observation("营地", 200, 1080),
+              // These are the false positives from the first scheduled run.
+              observation("调整", 1450, 300),
+              observation("离开队伍", 1500, 1080)
+            ]
+          };
+        }
+        if (label === "patrol-team-flag-key-1") {
+          return {
+            path: "scheduled-flag-card.png",
+            observations: [observation("创建队伍", 120, 160)]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: observationsFor(label)
+        };
+      },
+      async captureAccurateTransient() {
+        return { path: null, observations: [] };
+      },
+      find(observations, query, mode) {
+        return observations.find((item) =>
+          mode === "exact" ? item.text === query : item.text.includes(query)
+        );
+      }
+    },
+    async sleep() {},
+    async report(_level, step) {
+      reports.push(step);
+    }
+  };
+
+  await createPatrolTeam(context);
+
+  assert.deepEqual(combinations, [["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"]]);
+  assert.deepEqual(flows, []);
+  assert.deepEqual(taps, [
+    { x: 220, y: 180 },
+    { x: 470, y: 820 },
+    { x: 1419, y: 891 }
+  ]);
+  assert.equal(reports.includes("patrol_existing_team_preflag_skipped"), false);
+  assert.equal(reports.includes("patrol_existing_team_open"), false);
+  assert.ok(reports.includes("patrol_flag_key_card_verified"));
+  assert.ok(!reports.includes("patrol_flag_click"));
 });
 
 test("Ctrl+Tab does not accept the task guide and closes it before retrying", async () => {
@@ -1604,6 +1797,7 @@ test("patrol category fallback reuses the contribution-list ADB mouse swipe", as
     config: patrolConfig(),
     ui: { async tap(point) { taps.push(point); } },
     adb: {
+      async keyCombination() {},
       async mouseTap() {},
       async mouseSwipe(from, to, durationMs) {
         swipes.push({ from, to, durationMs });
@@ -1615,7 +1809,7 @@ test("patrol category fallback reuses the contribution-list ADB mouse swipe", as
         if (label === "patrol-team-entry") {
           return { path: "hud.png", observations: [observation("CtrlQ", 20, 300)] };
         }
-        if (label === "patrol-team-menu-open") {
+        if (label === "patrol-team-flag-key-1") {
           return { path: "menu.png", observations: [observation("创建队伍", 120, 160)] };
         }
         if (label.startsWith("patrol-team-creator-open-")) {
@@ -1690,14 +1884,13 @@ test("patrol category fallback reuses the contribution-list ADB mouse swipe", as
     }
   ]);
   assert.deepEqual(taps, [
-    { x: 48, y: 327 },
     { x: 220, y: 180 },
     { x: 470, y: 820 },
     { x: 1419, y: 891 }
   ]);
 });
 
-test("Ctrl+Q fallback is sent one at a time until the second recognition succeeds", async () => {
+test("Ctrl+Tab is sent one at a time until the second recognition succeeds", async () => {
   const combinations = [];
   const reports = [];
   const context = {
@@ -1718,11 +1911,7 @@ test("Ctrl+Q fallback is sent one at a time until the second recognition succeed
             observations: [observation("CtrlQ", 20, 300)]
           };
         }
-        if (
-          label === "patrol-team-menu-open" ||
-          label === "patrol-team-menu-open-2" ||
-          label === "patrol-team-menu-key-fallback-1"
-        ) {
+        if (label === "patrol-team-flag-key-1") {
           return { path: `${label}.png`, observations: [] };
         }
         return {
@@ -1754,13 +1943,15 @@ test("Ctrl+Q fallback is sent one at a time until the second recognition succeed
   await createPatrolTeam(context);
 
   assert.equal(combinations.length, 2);
-  assert.ok(reports.some((message) => message.includes("第 2/6 次 Ctrl+Q")));
+  assert.ok(reports.some((message) => message.includes("第 2/10 次")));
 });
 
-test("Ctrl+Q fallback stops after six recognition attempts", async () => {
+test("Ctrl+Tab stops after ten unverified recognition attempts", async () => {
   const combinations = [];
+  const config = patrolConfig();
+  config.patrolTeamUi.flagKeyAttempts = 10;
   const context = {
-    config: patrolConfig(),
+    config,
     ui: { async tap() {} },
     adb: {
       async keyCombination(codes) {
@@ -1795,9 +1986,9 @@ test("Ctrl+Q fallback stops after six recognition attempts", async () => {
 
   await assert.rejects(
     createPatrolTeam(context),
-    /6 次逐次 Ctrl\+Q 备用/
+    /Ctrl\+Tab 最多 10 次/
   );
-  assert.equal(combinations.length, 6);
+  assert.equal(combinations.length, 10);
 });
 
 test("patrol share uses calibrated recruit and camp-channel points and verifies success", async () => {
@@ -1875,7 +2066,7 @@ test("patrol share uses calibrated recruit and camp-channel points and verifies 
     { x: 343, y: 1128 },
     { x: 420, y: 890 }
   ]);
-  assert.ok(sleeps.includes(1_500));
+  assert.ok(sleeps.includes(1_000));
   assert.ok(reports.includes("patrol_share_camp_channel_verified"));
   assert.ok(reports.includes("patrol_share_success_immediate"));
   assert.ok(reports.includes("patrol_share_success"));
@@ -2700,6 +2891,9 @@ function observationsFor(label) {
   if (label === "patrol-team-entry") {
     return [observation("CtrlQ", 20, 300)];
   }
+  if (label.startsWith("patrol-team-flag-key-")) {
+    return [observation("创建队伍", 120, 160)];
+  }
   if (label === "patrol-team-menu-open") {
     return [observation("创建队伍", 120, 160)];
   }
@@ -2741,6 +2935,7 @@ function patrolUiConfig() {
     flagReadyTexts: ["CtrlQ", "Ctrl Q"],
     flagReadyRegion: { left: 0, top: 260, right: 130, bottom: 390 },
     teamMenuRegion: { left: 70, top: 115, right: 360, bottom: 365 },
+    flagTeamCardVerificationRegion: { left: 70, top: 100, right: 900, bottom: 650 },
     createMenuPoint: { x: 220, y: 180 },
     creatorTitleRegion: { left: 350, top: 235, right: 1565, bottom: 325 },
     campAffairsPoint: { x: 480, y: 906 },

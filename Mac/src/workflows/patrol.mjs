@@ -692,75 +692,32 @@ export async function createPatrolTeam(context, signal) {
   if (!controls) {
     throw new Error("PATROL_TEAM_UI_NOT_CONFIGURED");
   }
-  const settleMs = Math.max(800, Number(controls.stepSettleMs) || 1_200);
-  const flagClickSettleMs = Math.max(
-    2_000,
-    Number(controls.flagClickSettleMs) || 2_000
-  );
-  const createMenuWaitMs = Math.max(
-    2_000,
-    Number(controls.createMenuWaitMs) || 2_000
-  );
-  const patrolTargetWaitMs = Math.max(
-    2_000,
-    Number(controls.patrolTargetWaitMs) || 2_000
-  );
-  const campAffairsWaitMs = Math.max(
-    2_000,
-    Number(controls.campAffairsWaitMs) || 2_000
-  );
-  const flagClickColorReadRetries = Math.max(
-    6,
-    Number(controls.flagClickColorReadRetries) || 6
-  );
+  const settleMs = Math.max(300, Number(controls.stepSettleMs) || 500);
+  const createMenuWaitMs = Math.max(400, Number(controls.createMenuWaitMs) || 700);
+  const patrolTargetWaitMs = Math.max(400, Number(controls.patrolTargetWaitMs) || 700);
+  const campAffairsWaitMs = Math.max(400, Number(controls.campAffairsWaitMs) || 700);
   const sleep = context.sleep || delay;
   let screen = await capturePatrolScreen(
     vision,
     "patrol-team-entry",
     signal
   );
-  const initialExisting = await resolveExistingPatrolTeam(
+  // The screen after teleport is only the world HUD. It must never be used
+  // to infer an existing team or an already-open card. Every patrol run,
+  // including the first scheduled run and retries, starts with Ctrl+Tab and
+  // verifies the flag/team card before any team-state decision.
+  screen = await closePatrolTaskGuideOverlayIfVisible(
     context,
     screen,
     signal,
-    { beforeFlagExpansion: true }
+    "巡逻旗帜 Ctrl+Tab 前"
   );
-  if (initialExisting.mode === "existing-valid-route") {
-    await report(
-      "info",
-      "patrol_existing_route_detected",
-      "已确认当前队伍卡片右侧存在“巡逻路线进度”和“我的任务进度”；复用现有巡逻路线"
-    );
-    return "existing-valid-route";
-  }
-  screen = initialExisting.screen || screen;
-  if (initialExisting.mode === "existing-invalid-left") {
-    screen = await recoverPatrolCreateEntryAfterExistingTeamLeave(
-      context,
-      screen,
-      signal
-    );
-  } else {
-    screen = await closePatrolTaskGuideOverlayIfVisible(
-      context,
-      screen,
-      signal,
-      "巡逻旗帜点击前"
-    );
-  }
 
-  let createMenuMatch = findTextInRegion(
-    vision,
-    screen.observations,
-    "创建队伍",
-    controls.teamMenuRegion
-  );
-  let menuOpen = Boolean(createMenuMatch);
-  let creatorOpen = patrolCreatorOpen(
-    vision,
-    screen.observations,
-    controls
-  );
+  // Do not accept matching text from the initial HUD as a card. The first
+  // verified card can only come from the Ctrl+Tab cycle below.
+  let createMenuMatch = null;
+  let menuOpen = false;
+  let creatorOpen = false;
   if (!menuOpen && !creatorOpen) {
     const flagReady = controls.flagReadyTexts.some((text) =>
       hasTextInRegion(
@@ -793,27 +750,27 @@ export async function createPatrolTeam(context, signal) {
       );
     }
 
-    const flagKeyPrimary = controls.flagKeyPrimary === true;
-    // The left HUD action list is dynamic. In the patrol screenshots the
-    // historical (48,327) point can land on the task/collection card, which
-    // opens the task guide instead of the team flag. Prefer the stable
-    // Ctrl+Tab shortcut and verify the resulting card before considering any
-    // coordinate click. Older configs can opt out while they are migrated;
-    // the shipped config enables this path.
-    if (flagKeyPrimary) {
-      const flagKeyAttempts = Math.max(
-        1,
-        Math.min(6, Number(controls.flagKeyAttempts) || 6)
+    const flagKeyAttempts = Math.max(
+      1,
+      Math.min(10, Number(controls.flagKeyAttempts) || 10)
+    );
+    if (typeof adb?.keyCombination !== "function") {
+      throw new Error(
+        "PATROL_CTRL_TAB_UNAVAILABLE: 巡逻旗帜入口已固定为 Ctrl+Tab，但当前 ADB 未提供组合键能力"
       );
-      const flagKeyCodes = Array.isArray(controls.flagKeyCombination) &&
-        controls.flagKeyCombination.length >= 2
-        ? controls.flagKeyCombination
-        : ["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"];
-      const flagKeySettleMs = Math.max(
-        200,
-        Number(controls.flagKeySettleMs) || 1_200
-      );
-      for (let attempt = 1; attempt <= flagKeyAttempts; attempt += 1) {
+    }
+    // The historical flag coordinate can land on the task/collection card.
+    // Coordinate flag clicks are intentionally removed: Ctrl+Tab is the only
+    // way to enter the flag/team card, and every switch is OCR-verified.
+    const flagKeyCodes = Array.isArray(controls.flagKeyCombination) &&
+      controls.flagKeyCombination.length >= 2
+      ? controls.flagKeyCombination
+      : ["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"];
+    const flagKeySettleMs = Math.max(
+      150,
+      Number(controls.flagKeySettleMs) || 600
+    );
+    for (let attempt = 1; attempt <= flagKeyAttempts; attempt += 1) {
         await report(
           attempt === 1 ? "info" : "warning",
           "patrol_flag_key_cycle",
@@ -879,7 +836,16 @@ export async function createPatrolTeam(context, signal) {
           screen.observations,
           controls
         );
-        if (menuOpen || creatorOpen) break;
+        if (menuOpen || creatorOpen) {
+          await report(
+            "info",
+            "patrol_create_entry_verified_after_flag",
+            menuOpen
+              ? "Ctrl+Tab 后已确认左侧“创建队伍”入口；继续标准创建流程"
+              : "Ctrl+Tab 后已确认队伍目标创建页已打开，继续标准创建流程"
+          );
+          break;
+        }
 
         const existing = await resolveExistingPatrolTeam(
           context,
@@ -918,327 +884,10 @@ export async function createPatrolTeam(context, signal) {
           controls
         );
         if (menuOpen || creatorOpen) break;
-      }
-    }
-
-    const flagClickAttempts = Math.max(
-      2,
-      Math.min(6, Number(controls.flagClickAttempts) || 6)
-    );
-    // A coordinate tap is deliberately a fallback. This prevents the
-    // dynamic task-list point from being the first action and gives the
-    // keyboard path up to six verified opportunities to open the right card.
-    for (
-      let attempt = 1;
-      !menuOpen && !creatorOpen && attempt <= flagClickAttempts;
-      attempt += 1
-    ) {
-      const preFlagColor = await ensurePatrolFlagClickColor(
-        context,
-        screen,
-        signal,
-        { allowAmbiguousDefault: true }
-      );
-      const flagAlreadySelected = Boolean(preFlagColor?.teamCardSelected);
-      if (
-        attempt >= 3 &&
-        !flagAlreadySelected
-      ) {
-        const retryReason = `巡逻旗帜点击后色块未确认黄色，第 ${attempt} 次点击前尝试通过 key70 释放游戏鼠标`;
-        if (typeof ui.recheckGameMouseForRetry === "function") {
-          await ui.recheckGameMouseForRetry(signal, retryReason);
-        } else if (typeof ui.sendGameKey === "function") {
-          await report("warning", "patrol_flag_mouse_key70_retry", retryReason);
-          await ui.sendGameKey(70, signal);
-        } else if (typeof adb?.key === "function") {
-          await report("warning", "patrol_flag_mouse_key70_retry", retryReason);
-          await adb.key(70, signal);
-        }
-      }
-      if (flagAlreadySelected) {
-        await report(
-          "info",
-          "patrol_flag_already_selected",
-          "点击旗帜前已确认队伍旗帜色块为黄色；判定已处于创建队伍/队伍卡片，不重复点击旗帜，直接读取当前入口"
-        );
-      } else {
-        await report(
-          "info",
-          attempt === 1
-            ? "patrol_flag_click"
-            : "patrol_flag_mouse_focus_retry",
-          attempt === 1
-            ? `已确认${flagReady ? "旗帜快捷键提示" : `底部 ${channelReadyCount} 个频道 HUD`}锚点；沿用 HUD 后状态直接执行 ADB 触屏点击 (${controls.flagButton.x},${controls.flagButton.y})`
-            : `旗帜点击后仍未出现队伍菜单；第 ${attempt} 次点击前仅因前两次失败才重检游戏鼠标状态 (${controls.flagButton.x},${controls.flagButton.y})`
-        );
-        await tapPatrolMouse(ui, controls.flagButton, signal, { gameMouse: true });
-        await sleep(flagClickSettleMs, signal);
-        screen = await capturePatrolScreen(
-          vision,
-          attempt === 1
-            ? "patrol-team-menu-open"
-            : `patrol-team-menu-open-${attempt}`,
-          signal
-        );
-        const screenAfterOverlayClose = await closePatrolTaskGuideOverlayIfVisible(
-          context,
-          screen,
-          signal,
-          "旗帜点击后"
-        );
-        if (screenAfterOverlayClose !== screen) {
-          screen = screenAfterOverlayClose;
-          await report(
-            "warning",
-            "patrol_flag_overlay_blocked",
-            "旗帜点击后出现任务导航遮挡；已先关闭右侧安全空白处的遮挡，不再在遮挡上重复点击旗帜"
-          );
-        }
-        const flagColorAfterClick = await verifyPatrolFlagSelectionAfterClick(
-          context,
-          screen,
-          signal,
-          {
-            clickAttempt: attempt,
-            colorReadRetries: flagClickColorReadRetries,
-            settleMs: flagClickSettleMs
-          }
-        );
-        screen = flagColorAfterClick.screen || screen;
-        if (
-          flagColorAfterClick.enabled &&
-          !flagColorAfterClick.teamCardSelected &&
-          !flagColorAfterClick.teamCardTextVerified
-        ) {
-          await report(
-            "warning",
-            "patrol_flag_click_color_unverified",
-            `第 ${attempt}/${flagClickAttempts} 次点击后未确认队伍旗帜图标变为黄色（state=${flagColorAfterClick.state}; 任务图标=${flagColorAfterClick.taskCardSelected ? "黄色" : "非黄色"}; 队伍旗帜图标=${flagColorAfterClick.teamCardSelected ? "黄色/已选中" : "非黄色/未选中"}）；禁止进入队伍判断`
-          );
-          if (attempt < flagClickAttempts) {
-            await report(
-              "warning",
-              "patrol_flag_click_color_retry",
-              "疑似游戏鼠标释放失败；下一次点击前重新执行游戏鼠标释放流程"
-            );
-            continue;
-          }
-          throw new Error(
-            "PATROL_FLAG_CLICK_NOT_VERIFIED: 点击旗帜后未确认队伍旗帜图标变为黄色，已停止后续队伍判断"
-          );
-        }
-      }
-      // The expanded flag menu has two mutually exclusive entry states:
-      // a no-team menu exposes “创建队伍”, while an existing team exposes
-      // the team-card evidence such as “自动匹配”.  Check the create entry
-      // first.  Otherwise stale/generic “自动匹配” OCR can make the no-team
-      // menu look like an existing team and incorrectly open the team panel.
-      createMenuMatch = await findPatrolTextWithAccurateRegion(
-        vision,
-        screen,
-        screen.observations,
-        "创建队伍",
-        controls.teamMenuRegion,
-        `patrol-team-menu-open-${attempt}-create-entry-priority`,
-        signal
-      );
-      menuOpen = Boolean(createMenuMatch);
-      creatorOpen = patrolCreatorOpen(
-        vision,
-        screen.observations,
-        controls
-      );
-      if (menuOpen || creatorOpen) {
-        await report(
-          "info",
-          "patrol_create_entry_verified_after_flag",
-          menuOpen
-            ? "旗帜展开后已优先确认左侧“创建队伍”入口；判定为无有效队伍，继续标准创建流程"
-            : "旗帜展开后已确认队伍目标创建页已打开，继续标准创建流程"
-        );
-        break;
-      }
-      const existing = await resolveExistingPatrolTeam(
-        context,
-        screen,
-        signal
-      );
-      if (existing.mode === "existing-valid-route") {
-        await report(
-          "info",
-          "patrol_existing_route_detected",
-          "点击旗帜后确认现有队伍持有有效营地巡逻路线；不进入创建队伍流程"
-        );
-        return "existing-valid-route";
-      }
-      screen = existing.screen || screen;
-      if (existing.mode === "existing-invalid-left") {
-        screen = await recoverPatrolCreateEntryAfterExistingTeamLeave(
-          context,
-          screen,
-          signal
-        );
-      }
-      createMenuMatch = await findPatrolTextWithAccurateRegion(
-        vision,
-        screen,
-        screen.observations,
-        "创建队伍",
-        controls.teamMenuRegion,
-        `patrol-team-menu-open-${attempt}-create-entry`,
-        signal
-      );
-      menuOpen = Boolean(createMenuMatch);
-      creatorOpen = patrolCreatorOpen(
-        vision,
-        screen.observations,
-        controls
-      );
-      if (!creatorOpen) {
-        await patrolAiDiagnose(
-          vision,
-          report,
-          "patrol-creator",
-          "队伍创建流程：确认是否已打开标题为“队伍目标”的创建页面，并且右下角可见“创建队伍”按钮。只有这两个要素都清晰可见时返回 target_text_visible。",
-          screen.observations,
-          signal
-        );
-      }
-      const anyTeamPanel = (
-        controls.focusAcquiredTexts || [
-          "创建队伍",
-          "自动匹配",
-          "取消匹配",
-          "暂无队员加入",
-          "调整",
-          "离开队伍"
-        ]
-      ).some((text) =>
-        hasTextInRegion(
-          vision,
-          screen.observations,
-          text,
-          controls.focusAcquiredRegion ||
-            { left: 0, top: 0, right: 620, bottom: 1180 }
-        )
-      );
-      if (menuOpen || creatorOpen || anyTeamPanel) break;
-    }
-    if (
-      !menuOpen &&
-      !creatorOpen &&
-      inspectExistingPatrolTeamState(vision, screen.observations, controls).validRoute
-    ) {
-      await report(
-        "info",
-        "patrol_existing_route_detected",
-        "旗帜入口重试后确认现有队伍仍持有有效营地巡逻路线；不进入创建队伍流程"
-      );
-      return "existing-valid-route";
-    }
-    const legacyComboFallbackEnabled =
-      controls.legacyComboFallbackEnabled !== false && !flagKeyPrimary;
-    const comboAttempts = Math.max(
-      1,
-      Math.min(6, Number(controls.comboFallbackAttempts) || 6)
-    );
-    for (
-      let attempt = 0;
-      legacyComboFallbackEnabled &&
-      !menuOpen &&
-      !creatorOpen &&
-      attempt < comboAttempts;
-      attempt += 1
-    ) {
-      await report(
-        "warning",
-        "patrol_flag_key_fallback",
-        `旗帜点击后未打开队伍入口，正在执行第 ${attempt + 1}/${comboAttempts} 次 Ctrl+Q 备用；每次按键后先识别，已打开时不再重复以免折叠`
-      );
-      await adb.keyCombination(
-        ["KEYCODE_CTRL_LEFT", "KEYCODE_Q"],
-        signal,
-        { holdMs: controls.comboHoldMs || 120 }
-      );
-      await sleep(settleMs, signal);
-      screen = await capturePatrolScreen(
-        vision,
-        `patrol-team-menu-key-fallback-${attempt + 1}`,
-        signal
-      );
-      screen = await closePatrolTaskGuideOverlayIfVisible(
-        context,
-        screen,
-        signal,
-        "Ctrl+Q 入口点击后"
-      );
-      createMenuMatch = await findPatrolTextWithAccurateRegion(
-        vision,
-        screen,
-        screen.observations,
-        "创建队伍",
-        controls.teamMenuRegion,
-        `patrol-team-menu-key-fallback-${attempt + 1}-create-entry-priority`,
-        signal
-      );
-      menuOpen = Boolean(createMenuMatch);
-      creatorOpen = patrolCreatorOpen(
-        vision,
-        screen.observations,
-        controls
-      );
-      if (menuOpen || creatorOpen) {
-        await report(
-          "info",
-          "patrol_create_entry_verified_after_key_fallback",
-          menuOpen
-            ? "Ctrl+Q 后已优先确认左侧“创建队伍”入口；继续标准创建流程"
-            : "Ctrl+Q 后已确认队伍目标创建页已打开，继续标准创建流程"
-        );
-        break;
-      }
-      const existing = await resolveExistingPatrolTeam(
-        context,
-        screen,
-        signal
-      );
-      if (existing.mode === "existing-valid-route") {
-        await report(
-          "info",
-          "patrol_existing_route_detected",
-          "Ctrl+Q 后确认现有队伍持有有效营地巡逻路线；不进入创建队伍流程"
-        );
-        return "existing-valid-route";
-      }
-      screen = existing.screen || screen;
-      if (existing.mode === "existing-invalid-left") {
-        screen = await recoverPatrolCreateEntryAfterExistingTeamLeave(
-          context,
-          screen,
-          signal
-        );
-      }
-      createMenuMatch = await findPatrolTextWithAccurateRegion(
-        vision,
-        screen,
-        screen.observations,
-        "创建队伍",
-        controls.teamMenuRegion,
-        `patrol-team-menu-key-fallback-${attempt + 1}-create-entry`,
-        signal
-      );
-      menuOpen = Boolean(createMenuMatch);
-      creatorOpen = patrolCreatorOpen(
-        vision,
-        screen.observations,
-        controls
-      );
     }
     if (!menuOpen && !creatorOpen) {
       throw new Error(
-        flagKeyPrimary
-          ? `PATROL_TEAM_MENU_DID_NOT_OPEN: Ctrl+Tab 旗帜卡片识别及 ${flagClickAttempts} 次点击备用后仍未识别到队伍卡片，禁止继续点击`
-          : `PATROL_TEAM_MENU_DID_NOT_OPEN: 旗帜点击及 ${comboAttempts} 次逐次 Ctrl+Q 备用后仍未识别到“创建队伍”，禁止继续点击`
+        `PATROL_TEAM_MENU_DID_NOT_OPEN: Ctrl+Tab 最多 ${flagKeyAttempts} 次仍未识别到旗帜队伍卡片，禁止执行旗帜点击或继续队伍判断`
       );
     }
   }
@@ -1378,7 +1027,7 @@ export async function createPatrolTeam(context, signal) {
         "patrol_target_ocr_reread",
         `第 ${attempt}/${patrolTargetReadAttempts} 次 OCR 未同时确认左侧“营地事务”和右侧“营地巡逻任务”；保持当前页面原地重读`
       );
-      await sleep(1_000, signal);
+      await sleep(500, signal);
       screen = await capturePatrolScreen(
         vision,
         `patrol-camp-affairs-selected-reread-${attempt + 1}`,
@@ -1655,8 +1304,7 @@ async function verifyPatrolFlagSelectionAfterClick(
 async function resolveExistingPatrolTeam(
   context,
   screen,
-  signal,
-  { beforeFlagExpansion = false } = {}
+  signal
 ) {
   const { config, ui, vision, report } = context;
   const controls = config?.patrolTeamUi || {};
@@ -1666,26 +1314,6 @@ async function resolveExistingPatrolTeam(
     current,
     signal
   );
-  // The first screen after teleport is still the normal HUD. Its task list
-  // can contain generic words such as “自动匹配” or stale progress text, but
-  // it has not yet shown the flag's team-card menu. Never classify that HUD as
-  // an existing team before the flag is expanded. A genuinely open team
-  // panel, or a calibrated yellow flag icon, is the only pre-expansion
-  // exception.
-  if (
-    beforeFlagExpansion &&
-    !state.panel &&
-    !state.colorEvidence?.teamCardSelected
-  ) {
-    if (state.hasTeam) {
-      await report(
-        "info",
-        "patrol_existing_team_preflag_ignored",
-        "旗帜队伍卡片尚未展开；忽略当前 HUD 的队伍候选文字，先点击旗帜再确认是否已有队伍"
-      );
-    }
-    return { mode: "none", screen: current };
-  }
   if (!state.hasTeam) {
     return { mode: "none", screen: current };
   }
@@ -1789,7 +1417,7 @@ async function closePatrolTaskGuideOverlayIfVisible(
     `${reason}检测到左半屏任务导航遮挡（${taskGuideMarkers} 个特征字），先点击右半屏安全空白位置关闭遮挡`
   );
   await ui.executeFlow("closeTaskGuideOverlay", {}, signal);
-  await sleep(500, signal);
+  await sleep(300, signal);
   const recovered = await capturePatrolScreen(
     vision,
     "patrol-task-guide-overlay-closed",
@@ -2266,8 +1894,8 @@ async function scanExistingPatrolDancePages(context, initialScreen, signal) {
   );
   const sleep = context.sleep || delay;
   const settleMs = Math.max(
-    2_000,
-    Number(controls.existingTeamDancePageSettleMs) || 2_000
+    500,
+    Number(controls.existingTeamDancePageSettleMs) || 1_000
   );
   let screen = initialScreen;
   for (let page = 1; page <= maxPages; page += 1) {
@@ -2483,8 +2111,8 @@ async function confirmPatrolLeaveDialog(
     bottom: 850
   };
   const settleMs = Math.max(
-    2_000,
-    Number(controls.leaveTeamSettleMs) || 2_000
+    500,
+    Number(controls.leaveTeamSettleMs) || 700
   );
   const findMatches = (currentScreen) => {
     const observations = currentScreen?.observations || [];
@@ -2904,8 +2532,8 @@ export async function sharePatrolTeam(context, signal) {
   // “招募”打开的频道列表有入场动画。等待 1.5 秒后再 OCR，
   // 否则会把尚未稳定的列表当成可点击状态。
   const recruitMenuWaitMs = Math.max(
-    1_500,
-    Number(controls.recruitMenuWaitMs) || 1_500
+    700,
+    Number(controls.recruitMenuWaitMs) || 1_000
   );
   let screen = await capturePatrolScreen(
     vision,

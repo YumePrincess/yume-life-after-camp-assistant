@@ -1457,7 +1457,7 @@ test("destination approach uses only five held-W rounds and never drags the joys
     approachIntervalMs: 250,
     approachFallbackKey: "KEYCODE_W",
     approachFallbackMaxRounds: 5,
-    approachFallbackHoldMs: 800,
+    approachFallbackHoldMs: 700,
     approachFallbackIntervalMs: 250,
     readyTexts: ["营地巡逻"],
     readyRegion: { left: 1180, top: 300, right: 1920, bottom: 1050 }
@@ -1469,7 +1469,7 @@ test("destination approach uses only five held-W rounds and never drags the joys
   assert.deepEqual(fixture.keys, Array.from({ length: 5 }, () => "KEYCODE_W"));
   assert.deepEqual(
     fixture.holds,
-    Array.from({ length: 5 }, () => ({ code: "KEYCODE_W", durationMs: 800 }))
+    Array.from({ length: 5 }, () => ({ code: "KEYCODE_W", durationMs: 700 }))
   );
 });
 
@@ -2122,7 +2122,7 @@ test("city-hall data tasks use the same held-W approach fallback as patrol", asy
     const [teleport] = config.flows.teleportCityHall;
     assert.equal(teleport.target.approachFallbackKey, "KEYCODE_W");
     assert.equal(teleport.target.approachFallbackMaxRounds, 5);
-    assert.equal(teleport.target.approachFallbackHoldMs, 800);
+    assert.equal(teleport.target.approachFallbackHoldMs, 700);
     assert.equal(teleport.target.approachFallbackIntervalMs, 2000);
     assert.equal(teleport.fallback.name, "中心出入口");
   }
