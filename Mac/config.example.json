@@ -21,6 +21,9 @@
     "instanceName": "Life After CN Auto",
     "instanceIndex": 3,
     "startManagerInBackground": true,
+    "managerProbeTimeoutMs": 10000,
+    "managerStartTimeoutSeconds": 45,
+    "managerRestartAttempts": 1,
     "stopEmulatorAfterTask": true,
     "keepRunningOnTaskError": false,
     "adbReadyTimeoutSeconds": 180,
@@ -281,6 +284,30 @@
       }
   },
   "patrolTeamUi": {
+    "teamPanelDisplayRecovery": {
+      "enabled": true,
+      "probePoints": [
+        { "x": 300, "y": 105 },
+        { "x": 620, "y": 105 },
+        { "x": 1000, "y": 105 },
+        { "x": 1420, "y": 105 },
+        { "x": 300, "y": 1030 },
+        { "x": 620, "y": 1030 },
+        { "x": 1000, "y": 1030 },
+        { "x": 1420, "y": 1030 }
+      ],
+      "probeRadius": 18,
+      "minimumSamples": 6,
+      "minimumGrayscaleRatio": 0.75,
+      "maximumSaturation": 0.12,
+      "maximumChannelSpread": 0.12,
+      "minimumLuminanceRange": 0.35,
+      "minimumHighContrastSamples": 2,
+      "minimumLuminanceDeviation": 0.12,
+      "minimumDarkLuminance": 0.15,
+      "minimumBrightLuminance": 0.75,
+      "maxRecoveriesPerWait": 2
+    },
     "flagButton": { "x": 48, "y": 327 },
     "flagKeyPrimary": true,
     "flagKeyCombination": ["KEYCODE_CTRL_LEFT", "KEYCODE_TAB"],

@@ -10,7 +10,8 @@ import {
   sharePatrolTeam,
   shareActivePatrolUntilDeadline,
   startHardPatrolWithRetry,
-  dailyDeadlineAt
+  dailyDeadlineAt,
+  patrolTeamPanelDisplayCorrupted
 } from "../src/workflows/patrol.mjs";
 
 test("patrol daily deadline is resolved in the configured timezone", () => {
@@ -2739,6 +2740,65 @@ test("patrol team becomes full when all three member cards are occupied", async 
   );
   assert.equal(full, true);
   assert.ok(reports.includes("patrol_team_full_verified"));
+});
+
+test("patrol team panel recovery detects grayscale high-contrast rendering", async () => {
+  const result = await patrolTeamPanelDisplayCorrupted(
+    {
+      config: {
+        patrolTeamUi: {
+          teamPanelDisplayRecovery: {
+            minimumSamples: 6,
+            minimumHighContrastSamples: 2
+          }
+        }
+      },
+      vision: {
+        async probe() {
+          return [
+            { meanRed: 0.04, meanGreen: 0.04, meanBlue: 0.04, meanSaturation: 0, luminanceDeviation: 0.2 },
+            { meanRed: 0.06, meanGreen: 0.06, meanBlue: 0.06, meanSaturation: 0, luminanceDeviation: 0.2 },
+            { meanRed: 0.08, meanGreen: 0.08, meanBlue: 0.08, meanSaturation: 0, luminanceDeviation: 0.2 },
+            { meanRed: 0.1, meanGreen: 0.1, meanBlue: 0.1, meanSaturation: 0, luminanceDeviation: 0.2 },
+            { meanRed: 0.82, meanGreen: 0.82, meanBlue: 0.82, meanSaturation: 0, luminanceDeviation: 0.2 },
+            { meanRed: 0.86, meanGreen: 0.86, meanBlue: 0.86, meanSaturation: 0, luminanceDeviation: 0.2 },
+            { meanRed: 0.9, meanGreen: 0.9, meanBlue: 0.9, meanSaturation: 0, luminanceDeviation: 0.2 },
+            { meanRed: 0.94, meanGreen: 0.94, meanBlue: 0.94, meanSaturation: 0, luminanceDeviation: 0.2 }
+          ];
+        }
+      },
+      async report() {}
+    },
+    { frame: { path: "grayscale-team-panel.png" } }
+  );
+
+  assert.equal(result.detected, true);
+  assert.equal(result.state, "corrupted");
+  assert.equal(result.grayscaleSamples, 8);
+});
+
+test("patrol team panel recovery leaves a normally colored panel untouched", async () => {
+  const result = await patrolTeamPanelDisplayCorrupted(
+    {
+      config: { patrolTeamUi: { teamPanelDisplayRecovery: {} } },
+      vision: {
+        async probe() {
+          return Array.from({ length: 8 }, (_, index) => ({
+            meanRed: 0.3 + index * 0.02,
+            meanGreen: 0.45,
+            meanBlue: 0.7,
+            meanSaturation: 0.35,
+            luminanceDeviation: 0.2
+          }));
+        }
+      },
+      async report() {}
+    },
+    { frame: { path: "normal-team-panel.png" } }
+  );
+
+  assert.equal(result.detected, false);
+  assert.equal(result.state, "normal");
 });
 
 test("an out-of-camp member is removed from the leftmost member slot by OCR", async () => {

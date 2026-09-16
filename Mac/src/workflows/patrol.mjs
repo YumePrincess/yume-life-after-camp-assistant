@@ -156,6 +156,53 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
         signal
       );
     }
+    const displayRecovery = await patrolTeamPanelDisplayCorrupted(
+      context,
+      screen,
+      signal
+    );
+    if (displayRecovery.detected) {
+      const controls = context.config?.patrolTeamUi?.teamPanelDisplayRecovery || {};
+      const maxRecoveries = Math.max(
+        1,
+        Math.min(3, Number(controls.maxRecoveriesPerWait) || 2)
+      );
+      context.patrolTeamPanelDisplayRecoveryCount =
+        (context.patrolTeamPanelDisplayRecoveryCount || 0) + 1;
+      if (context.patrolTeamPanelDisplayRecoveryCount > maxRecoveries) {
+        throw new Error(
+          `PATROL_TEAM_PANEL_DISPLAY_RECOVERY_LIMIT: 队伍面板异常画面已连续恢复 ${maxRecoveries} 次仍未恢复正常色彩`
+        );
+      }
+      await report(
+        "warning",
+        "patrol_team_panel_display_recovery",
+        `检测到队伍面板黑白/高对比度异常画面，正在关闭队伍面板并通过 HUD 队伍卡片重新打开（第 ${context.patrolTeamPanelDisplayRecoveryCount}/${maxRecoveries} 次）`,
+        { displayRecovery, attempt: context.patrolTeamPanelDisplayRecoveryCount, maxAttempts: maxRecoveries }
+      );
+      await ui.executeFlow("closePatrolTeamPanelBeforeAccept", {}, signal);
+      await ui.executeFlow("openTeamPanel", {}, signal);
+      screen = await capturePatrolScreen(
+        vision,
+        "patrol-team-size-after-display-recovery",
+        signal
+      );
+      const recoveredDisplay = await patrolTeamPanelDisplayCorrupted(
+        context,
+        screen,
+        signal
+      );
+      if (recoveredDisplay.detected) {
+        await report(
+          "warning",
+          "patrol_team_panel_display_recovery_pending",
+          "队伍面板重开后仍检测到黑白/高对比度画面，本轮继续按恢复次数保护重试",
+          { displayRecovery: recoveredDisplay }
+        );
+      }
+    } else if (displayRecovery.state === "normal") {
+      context.patrolTeamPanelDisplayRecoveryCount = 0;
+    }
     const full = await patrolTeamIsFull(
       context,
       screen.frame,
@@ -3270,6 +3317,140 @@ async function capturePatrolScreen(vision, label, signal) {
     }
   }
   return { frame, observations };
+}
+
+export async function patrolTeamPanelDisplayCorrupted(
+  context,
+  screen,
+  signal
+) {
+  const controls = context.config?.patrolTeamUi?.teamPanelDisplayRecovery;
+  if (controls?.enabled === false) {
+    return { enabled: false, detected: false, state: "disabled" };
+  }
+  if (!screen?.frame?.path || typeof context.vision?.probe !== "function") {
+    return { enabled: true, detected: false, state: "unavailable" };
+  }
+  const config = controls || {};
+  const points = Array.isArray(config.probePoints) && config.probePoints.length >= 4
+    ? config.probePoints
+    : [
+        { x: 300, y: 105 },
+        { x: 620, y: 105 },
+        { x: 1000, y: 105 },
+        { x: 1420, y: 105 },
+        { x: 300, y: 1030 },
+        { x: 620, y: 1030 },
+        { x: 1000, y: 1030 },
+        { x: 1420, y: 1030 }
+      ];
+  let probes;
+  try {
+    probes = await context.vision.probe(
+      screen.frame.path,
+      points,
+      Math.max(4, Number(config.probeRadius) || 18),
+      signal
+    );
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    await context.report(
+      "warning",
+      "patrol_team_panel_display_probe_failed",
+      "队伍面板异常色彩探测失败；本轮不盲目重开队伍面板",
+      { reason: error?.message || String(error) }
+    );
+    return { enabled: true, detected: false, state: "unavailable" };
+  }
+  const samples = (Array.isArray(probes) ? probes : []).map((probe) => {
+    const red = Number(probe?.meanRed);
+    const green = Number(probe?.meanGreen);
+    const blue = Number(probe?.meanBlue);
+    const saturation = Number(probe?.meanSaturation);
+    const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+    return {
+      red,
+      green,
+      blue,
+      saturation,
+      luminance,
+      luminanceDeviation: Number(probe?.luminanceDeviation),
+      valid: [red, green, blue, saturation, luminance].every(Number.isFinite)
+    };
+  }).filter((sample) => sample.valid);
+  const minimumSamples = Math.max(
+    4,
+    Math.min(points.length, Number(config.minimumSamples) || 6)
+  );
+  if (samples.length < minimumSamples) {
+    return {
+      enabled: true,
+      detected: false,
+      state: "insufficient",
+      sampleCount: samples.length,
+      minimumSamples
+    };
+  }
+  const maximumSaturation = Number.isFinite(Number(config.maximumSaturation))
+    ? Number(config.maximumSaturation)
+    : 0.12;
+  const maximumChannelSpread = Number.isFinite(Number(config.maximumChannelSpread))
+    ? Number(config.maximumChannelSpread)
+    : 0.12;
+  const grayscaleSamples = samples.filter(
+    (sample) =>
+      sample.saturation <= maximumSaturation &&
+      Math.max(sample.red, sample.green, sample.blue) -
+        Math.min(sample.red, sample.green, sample.blue) <= maximumChannelSpread
+  );
+  const luminances = samples.map((sample) => sample.luminance);
+  const luminanceRange = Math.max(...luminances) - Math.min(...luminances);
+  const minimumLuminanceRange = Math.max(
+    0.1,
+    Number(config.minimumLuminanceRange) || 0.35
+  );
+  const minimumHighContrastSamples = Math.max(
+    0,
+    Number(config.minimumHighContrastSamples) || 2
+  );
+  const minimumDarkLuminance = Math.max(
+    0,
+    Math.min(0.5, Number(config.minimumDarkLuminance) || 0.15)
+  );
+  const minimumBrightLuminance = Math.min(
+    1,
+    Math.max(0.5, Number(config.minimumBrightLuminance) || 0.75)
+  );
+  const highContrastSamples = samples.filter(
+    (sample) =>
+      (Number.isFinite(sample.luminanceDeviation) &&
+        sample.luminanceDeviation >=
+          (Number(config.minimumLuminanceDeviation) || 0.12)) ||
+      sample.luminance <= minimumDarkLuminance ||
+      sample.luminance >= minimumBrightLuminance
+  );
+  const grayscaleRatio = grayscaleSamples.length / samples.length;
+  const minimumGrayscaleRatio = Math.min(
+    1,
+    Math.max(0.5, Number(config.minimumGrayscaleRatio) || 0.75)
+  );
+  const detected =
+    grayscaleSamples.length >= minimumSamples &&
+    grayscaleRatio >= minimumGrayscaleRatio &&
+    luminanceRange >= minimumLuminanceRange &&
+    highContrastSamples.length >= minimumHighContrastSamples;
+  return {
+    enabled: true,
+    detected,
+    state: detected ? "corrupted" : "normal",
+    sampleCount: samples.length,
+    grayscaleSamples: grayscaleSamples.length,
+    grayscaleRatio,
+    luminanceRange,
+    highContrastSamples: highContrastSamples.length,
+    minimumSamples,
+    minimumGrayscaleRatio
+  };
 }
 
 function patrolTeamCreated(vision, observations, controls) {

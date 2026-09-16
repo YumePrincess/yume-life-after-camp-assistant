@@ -175,6 +175,16 @@ actor RuntimeService {
             var object = try JSONSerialization.jsonObject(with: Data(contentsOf: config)) as! [String: Any]
             var server = object["server"] as? [String: Any] ?? [:]
             var changed = false
+            var mumu = object["mumu"] as? [String: Any] ?? [:]
+            for (key, value) in [
+                "managerProbeTimeoutMs": 10_000,
+                "managerStartTimeoutSeconds": 45,
+                "managerRestartAttempts": 1
+            ] as [String: Any] where mumu[key] == nil {
+                mumu[key] = value
+                changed = true
+            }
+            object["mumu"] = mumu
             if migrateMissingFlowDefinitions(
                 &object,
                 from: runtime.appending(path: "config.example.json")
@@ -242,11 +252,10 @@ actor RuntimeService {
                 }
             }
             object["vision"] = vision
-            var mumu = object["mumu"] as? [String: Any] ?? [:]
             if mumu.removeValue(forKey: "hostMouseUnlock") != nil {
                 changed = true
-                object["mumu"] = mumu
             }
+            object["mumu"] = mumu
             var adb = object["adb"] as? [String: Any] ?? [:]
             if adb["binary"] as? String != "adb" {
                 adb["binary"] = "adb"
@@ -517,6 +526,36 @@ actor RuntimeService {
     private func migratePatrolSettings(_ object: inout [String: Any]) -> Bool {
         var changed = false
         var patrol = object["patrolTeamUi"] as? [String: Any] ?? [:]
+        let teamPanelDisplayRecoveryDefaults: [String: Any] = [
+            "enabled": true,
+            "probePoints": [
+                ["x": 300, "y": 105], ["x": 620, "y": 105],
+                ["x": 1000, "y": 105], ["x": 1420, "y": 105],
+                ["x": 300, "y": 1030], ["x": 620, "y": 1030],
+                ["x": 1000, "y": 1030], ["x": 1420, "y": 1030]
+            ],
+            "probeRadius": 18,
+            "minimumSamples": 6,
+            "minimumGrayscaleRatio": 0.75,
+            "maximumSaturation": 0.12,
+            "maximumChannelSpread": 0.12,
+            "minimumLuminanceRange": 0.35,
+            "minimumHighContrastSamples": 2,
+            "minimumLuminanceDeviation": 0.12,
+            "minimumDarkLuminance": 0.15,
+            "minimumBrightLuminance": 0.75,
+            "maxRecoveriesPerWait": 2
+        ]
+        if var displayRecovery = patrol["teamPanelDisplayRecovery"] as? [String: Any] {
+            for (key, value) in teamPanelDisplayRecoveryDefaults where displayRecovery[key] == nil {
+                displayRecovery[key] = value
+                changed = true
+            }
+            patrol["teamPanelDisplayRecovery"] = displayRecovery
+        } else {
+            patrol["teamPanelDisplayRecovery"] = teamPanelDisplayRecoveryDefaults
+            changed = true
+        }
         let teamPanelVerificationTexts = [
             "调整", "离开队伍", "静音", "闭麦", "2D模式", "3D模式",
             "目标", "更换队伍", "招募"

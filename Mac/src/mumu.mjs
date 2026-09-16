@@ -1,9 +1,12 @@
 import { runFile, delay } from "./process.mjs";
 
 export class MumuLifecycle {
-  constructor(config, adb) {
+  constructor(config, adb, dependencies = {}) {
     this.config = config;
     this.adb = adb;
+    this.run = dependencies.runFile || runFile;
+    this.sleep = dependencies.delay || delay;
+    this.now = dependencies.now || Date.now;
     this.startedForTask = false;
     this.resolvedInstance = null;
   }
@@ -72,7 +75,7 @@ export class MumuLifecycle {
     const instance = await this.resolveInstance(signal);
 
     await this.adb.stopGame().catch(() => undefined);
-    await runFile(
+    await this.run(
       "/usr/bin/pkill",
       [
         "-KILL",
@@ -81,11 +84,11 @@ export class MumuLifecycle {
       ],
       { timeoutMs: 10_000, signal }
     ).catch(() => undefined);
-    await runFile("/usr/bin/killall", ["-KILL", appName], {
+    await this.run("/usr/bin/killall", ["-KILL", appName], {
       timeoutMs: 10_000,
       signal
     }).catch(() => undefined);
-    await delay(hardRestartDelaySeconds * 1000, signal);
+    await this.sleep(hardRestartDelaySeconds * 1000, signal);
     this.resolvedInstance = null;
     await this.ensureManagerRunning(signal);
     const resolved = await this.resolveInstance(signal, { refresh: true });
@@ -129,7 +132,7 @@ export class MumuLifecycle {
       45_000
     ).catch(async () => {
       await this.ensureManagerRunning();
-      await delay(2_000);
+      await this.sleep(2_000);
       await this.toolJson(
         ["close", String(instance.index)],
         undefined,
@@ -144,27 +147,78 @@ export class MumuLifecycle {
   }
 
   async ensureManagerRunning(signal) {
-    const { appName, appPath, toolPath } = this.config.mumu;
-    try {
-      await this.toolJson(["port"], signal, 5_000);
-      return;
-    } catch {
-      await runFile(
-        "/usr/bin/open",
-        ["-gj", "-a", appPath || appName],
-        { timeoutMs: 20_000, signal }
-      );
-      const deadline = Date.now() + 30_000;
-      while (Date.now() < deadline) {
+    const {
+      appName,
+      appPath,
+      toolPath,
+      managerProbeTimeoutMs = 10_000,
+      managerStartTimeoutSeconds = 45,
+      managerRestartAttempts = 1
+    } = this.config.mumu;
+    const probeTimeoutMs = Math.max(5_000, Number(managerProbeTimeoutMs) || 10_000);
+    const startTimeoutMs = Math.max(
+      10_000,
+      (Number(managerStartTimeoutSeconds) || 45) * 1_000
+    );
+    const restartAttempts = Math.max(
+      0,
+      Math.min(3, Number(managerRestartAttempts) || 1)
+    );
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= restartAttempts; attempt += 1) {
+      try {
+        await this.toolJson(["port"], signal, probeTimeoutMs);
+        return;
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        lastError = error;
+      }
+
+      // `open -gj` is intentionally the first recovery step: it is safe when
+      // MuMu is merely starting. If the existing manager process owns a dead
+      // or wedged server port, opening the app again is a no-op on macOS, so a
+      // later attempt must terminate that exact manager process before launch.
+      if (attempt > 0) {
+        await this.run("/usr/bin/killall", ["-KILL", appName], {
+          timeoutMs: 10_000,
+          signal
+        }).catch((error) => {
+          if (signal?.aborted) throw error;
+          lastError = error;
+        });
+      }
+      try {
+        await this.run(
+          "/usr/bin/open",
+          ["-gj", "-a", appPath || appName],
+          { timeoutMs: 20_000, signal }
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        lastError = error;
+      }
+
+      const deadline = this.now() + startTimeoutMs;
+      while (this.now() < deadline) {
         try {
-          await this.toolJson(["port"], signal, 5_000);
+          await this.toolJson(["port"], signal, probeTimeoutMs);
           return;
-        } catch {
-          await delay(1_000, signal);
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          lastError = error;
+          await this.sleep(
+            Math.min(1_000, Math.max(100, deadline - this.now())),
+            signal
+          );
         }
       }
-      throw new Error(`MuMu manager did not start: ${toolPath}`);
     }
+
+    throw new Error(
+      `MuMu manager did not start: ${toolPath} (${lastError?.message || "manager port unavailable"})`,
+      { cause: lastError || undefined }
+    );
   }
 
   async waitForRunningInstance(index, timeoutSeconds, signal) {
@@ -182,7 +236,7 @@ export class MumuLifecycle {
       ) {
         return normalizeInstance(instance);
       }
-      await delay(1_500, signal);
+      await this.sleep(1_500, signal);
     }
     throw new Error(`MuMu container ${index} did not become running`);
   }
@@ -198,7 +252,7 @@ export class MumuLifecycle {
       } catch (error) {
         lastError = error;
       }
-      await delay(1_000, signal);
+      await this.sleep(1_000, signal);
     }
     throw new Error(
       `MuMu manager port opened but device list was not ready within ${timeoutSeconds}s: ${lastError?.message || "unknown error"}`
@@ -211,7 +265,7 @@ export class MumuLifecycle {
   }
 
   async toolJson(args, signal, timeoutMs = 15_000) {
-    const result = await runFile(this.config.mumu.toolPath, args, {
+    const result = await this.run(this.config.mumu.toolPath, args, {
       timeoutMs,
       signal
     });

@@ -2748,10 +2748,22 @@
       const data = await request(
         `/api/admin/bootstrap?t=${Date.now()}&locale=${encodeURIComponent(window.MrzhI18n.language())}`
       );
+      // The technology editor is a local draft, not a read-only projection of
+      // the latest bootstrap response.  While that view is open, replacing it
+      // every ten seconds clears the selected rule and all unsaved technology
+      // choices. Keep the live bootstrap (agents, votes, history, etc.) fresh,
+      // but let the editor be replaced only by an explicit full refresh or by
+      // its save/discard flow.
+      const preserveTechnologyEditor =
+        !forceAll &&
+        state.activeView === "technology" &&
+        state.technologyDraft !== null;
       const sections = forceAll
         ? CONFIG_SECTIONS
         : CONFIG_SECTIONS.filter(
-            (section) => !state.dirtySections.has(section)
+            (section) =>
+              !state.dirtySections.has(section) &&
+              !(section === "technology" && preserveTechnologyEditor)
           );
       render(data, sections);
     } catch (error) {
