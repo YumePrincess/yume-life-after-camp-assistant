@@ -26,6 +26,19 @@
     liveDirty: false
   };
   const FEATURE_IDS = ["overview", "staff", "warnings", "vote", "members", "runs"];
+  const FEATURE_DETAIL_KICKERS = {
+    overview: "CAMP NOTES",
+    staff: "OFFICERS",
+    warnings: "INACTIVITY WATCH",
+    vote: "DAILY VOTING",
+    members: "MEMBER CONTRIBUTION",
+    runs: "AUTOMATION"
+  };
+  const DAILY_PANEL_KICKERS = {
+    technology: "NEXT TECHNOLOGY",
+    items: "OPEN ITEMS",
+    history: "HISTORY"
+  };
   const IDENTITY_CODE_STORAGE_KEY = "mrzh.identity-code";
   const ACTIVE_IDENTITY_CONFLICT =
     "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。";
@@ -34,6 +47,14 @@
 
   function byId(id) {
     return document.getElementById(id);
+  }
+
+  function syncFeatureDetailKicker() {
+    const kicker =
+      state.activeFeature === "vote" && state.dailyPanel
+        ? DAILY_PANEL_KICKERS[state.dailyPanel] || FEATURE_DETAIL_KICKERS.vote
+        : FEATURE_DETAIL_KICKERS[state.activeFeature] || "FEATURE DETAIL";
+    setText("feature-detail-kicker", kicker);
   }
 
   function dailyVoteFeatureCount(payload) {
@@ -102,6 +123,7 @@
     }
     state.activeFeature = "";
     state.dailyPanel = "";
+    syncFeatureDetailKicker();
     syncDailyFeatureBackButton();
     if (clearHash) {
       history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
@@ -128,6 +150,7 @@
       card.setAttribute("aria-expanded", String(active));
     }
     state.activeFeature = id;
+    syncFeatureDetailKicker();
     syncDailyFeatureBackButton();
     setText(
       "feature-detail-title",
@@ -865,6 +888,7 @@
     for (const panel of document.querySelectorAll("[data-daily-panel-content]")) {
       panel.hidden = panel.dataset.dailyPanelContent !== state.dailyPanel;
     }
+    if (state.activeFeature === "vote") syncFeatureDetailKicker();
     setText("hero-vote-count", String(dailyVoteFeatureCount(payload)));
     setText("feature-vote-count", String(dailyVoteFeatureCount(payload)));
     syncDailyFeatureBackButton();
@@ -1751,6 +1775,7 @@
   initFeatureNavigation();
   document.addEventListener("mrzh:languagechange", () => {
     if (state.data) render(state.data);
+    syncFeatureDetailKicker();
     load();
   });
   document.addEventListener("visibilitychange", () => {
