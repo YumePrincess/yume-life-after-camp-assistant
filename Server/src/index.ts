@@ -2869,6 +2869,9 @@ function permissionForAdminRequest(
   if (path.startsWith("/api/admin/identity-applications")) {
     return method === "GET" ? "admin:identity-review" : "identity:review";
   }
+  if (path.startsWith("/api/admin/identity-profile-change-requests")) {
+    return method === "GET" ? "admin:identity-review" : "identity:review";
+  }
   if (path.startsWith("/api/admin/identity-codes")) {
     return method === "GET" ? "admin:identity-codes" : "identity:manage";
   }

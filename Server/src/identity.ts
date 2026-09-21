@@ -48,6 +48,29 @@ export interface IdentityApplicationRow {
   last_email_error: string | null;
 }
 
+export interface IdentityReviewItem {
+  id: string;
+  record_type: "application" | "profile_change";
+  application_number: string | null;
+  request_type: "new" | "renewal" | "reissue" | "profile_change";
+  email: string | null;
+  player_name: string | null;
+  locale: SupportedLocale;
+  status: "pending" | "approved" | "rejected";
+  identity_code_id: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  rejection_reason: string | null;
+  email_sent_at: string | null;
+  last_email_error: string | null;
+  profile_kind: "player_name" | "email" | null;
+  current_player_name: string | null;
+  current_email: string | null;
+  requested_player_name: string | null;
+  requested_email: string | null;
+}
+
 export interface IdentityCodeRow {
   id: string;
   code_hash: string;
@@ -1630,7 +1653,7 @@ export async function reviewIdentityProfileChangeRequest(
 export async function listIdentityApplications(
   env: Env,
   input: { page: number; search: string; status: string }
-): Promise<{ items: IdentityApplicationRow[]; page: number; pageSize: 10; total: number }> {
+): Promise<{ items: IdentityReviewItem[]; page: number; pageSize: 10; total: number }> {
   const page = Math.max(1, Math.floor(input.page));
   const clauses: string[] = [];
   const bindings: unknown[] = [];
@@ -1646,18 +1669,69 @@ export async function listIdentityApplications(
     bindings.push(input.status);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const reviewItems = `
+    WITH review_items AS (
+      SELECT
+        'application' AS record_type,
+        a.id,
+        a.application_number,
+        a.request_type,
+        a.email,
+        a.player_name,
+        a.locale,
+        a.status,
+        a.identity_code_id,
+        a.submitted_at,
+        a.reviewed_at,
+        a.reviewed_by,
+        a.rejection_reason,
+        a.email_sent_at,
+        a.last_email_error,
+        NULL AS profile_kind,
+        NULL AS current_player_name,
+        NULL AS current_email,
+        NULL AS requested_player_name,
+        NULL AS requested_email
+      FROM identity_code_applications a
+      UNION ALL
+      SELECT
+        'profile_change' AS record_type,
+        r.id,
+        a.application_number,
+        'profile_change' AS request_type,
+        CASE WHEN r.kind = 'email' THEN COALESCE(r.requested_email, c.email) ELSE c.email END AS email,
+        CASE WHEN r.kind = 'player_name' THEN COALESCE(r.requested_player_name, c.player_name) ELSE c.player_name END AS player_name,
+        COALESCE(a.locale, c.locale, 'zh-cn') AS locale,
+        r.status,
+        r.identity_code_id,
+        r.submitted_at,
+        r.reviewed_at,
+        r.reviewed_by,
+        r.rejection_reason,
+        NULL AS email_sent_at,
+        NULL AS last_email_error,
+        r.kind AS profile_kind,
+        c.player_name AS current_player_name,
+        c.email AS current_email,
+        r.requested_player_name,
+        r.requested_email
+      FROM identity_profile_change_requests r
+      JOIN identity_codes c ON c.id = r.identity_code_id
+      LEFT JOIN identity_code_applications a ON a.id = c.application_id
+    )
+  `;
   const totalRow = await env.DB.prepare(
-    `SELECT COUNT(*) AS total FROM identity_code_applications ${where}`
+    `${reviewItems} SELECT COUNT(*) AS total FROM review_items ${where}`
   )
     .bind(...bindings)
     .first<{ total: number }>();
   const result = await env.DB.prepare(
-    `SELECT * FROM identity_code_applications ${where}
+    `${reviewItems} SELECT * FROM review_items ${where}
      ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, submitted_at DESC
      LIMIT 10 OFFSET ?`
   )
     .bind(...bindings, (page - 1) * 10)
-    .all<IdentityApplicationRow>();
+    .all<IdentityReviewItem>();
   return { items: result.results, page, pageSize: 10, total: totalRow?.total ?? 0 };
 }
 

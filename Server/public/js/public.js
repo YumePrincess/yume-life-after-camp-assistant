@@ -1940,9 +1940,6 @@
   byId("identity-password-reset-form").addEventListener("submit", requestPasswordReset);
   byId("identity-password-verify-form").addEventListener("submit", verifyPasswordReset);
   byId("identity-password-set-form").addEventListener("submit", setPasswordReset);
-  byId("identity-reset-cancel").addEventListener("click", () => {
-    byId("identity-password-reset-dialog").close();
-  });
   byId("close-identity-password-reset").addEventListener("click", () => {
     byId("identity-password-reset-dialog").close();
   });

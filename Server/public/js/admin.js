@@ -74,7 +74,6 @@
     runActionMenu: null,
     identityApplications: { page: 1, total: 0, items: [] },
     identityCodes: { page: 1, total: 0, items: [] },
-    identityProfileChanges: { page: 1, total: 0, items: [] },
     temporaryKeys: { page: 1, total: 0, items: [] },
     identityApplicationSearch: "",
     identityApplicationStatus: "",
@@ -2519,7 +2518,6 @@
     }
     if (resolved === "identity-codes" && canView(resolved)) {
       loadIdentityCodes();
-      loadIdentityProfileChanges();
     }
     if (resolved === "smtp" && canView(resolved)) {
       loadSmtpConfig();
@@ -3462,11 +3460,13 @@
       const row = document.createElement("tr");
       for (const value of [
         item.application_number,
-        item.request_type === "renewal"
-          ? "延期"
-          : item.request_type === "reissue"
-            ? "重新发行"
-            : "新申请",
+        item.record_type === "profile_change"
+          ? "资料变更"
+          : item.request_type === "renewal"
+            ? "延期"
+            : item.request_type === "reissue"
+              ? "重新发行"
+              : "新申请",
         item.player_name,
         item.email,
         item.locale,
@@ -3524,32 +3524,63 @@
 
   function openIdentityReview(item) {
     state.selectedIdentityApplication = item;
+    const isProfileChange = item.record_type === "profile_change";
     setText(
       "identity-review-title",
-      item.request_type === "renewal"
-        ? "审批延期申请"
-        : item.request_type === "reissue"
-          ? "审批重新发行申请"
-          : "审批身份识别码"
+      isProfileChange
+        ? "审批资料变更"
+        : item.request_type === "renewal"
+          ? "审批延期申请"
+          : item.request_type === "reissue"
+            ? "审批重新发行申请"
+            : "审批身份识别码"
     );
     const detail = byId("identity-review-detail");
     detail.replaceChildren();
-    for (const [label, value] of [
-      ["申请编号", item.application_number],
-      ["玩家名称", item.player_name],
-      ["接收邮箱", item.email],
-      ["邮件语言", item.locale],
-      [
-        "申请类型",
-        item.request_type === "renewal"
-          ? "延期"
-          : item.request_type === "reissue"
-            ? "重新发行"
-            : "新申请"
-      ]
-    ]) {
+    const detailRows = isProfileChange
+      ? [
+          ["申请编号", item.application_number || "—"],
+          ["资料类型", item.profile_kind === "email" ? "绑定/修改邮箱" : "修改玩家名称"],
+          [
+            "当前资料",
+            item.profile_kind === "email"
+              ? item.current_email || "—"
+              : item.current_player_name || "—"
+          ],
+          [
+            "申请变更为",
+            item.profile_kind === "email"
+              ? item.requested_email || "—"
+              : item.requested_player_name || "—"
+          ],
+          ["提交时间", formatDate(item.submitted_at)]
+        ]
+      : [
+          ["申请编号", item.application_number],
+          ["玩家名称", item.player_name],
+          ["接收邮箱", item.email],
+          ["邮件语言", item.locale],
+          [
+            "申请类型",
+            item.request_type === "renewal"
+              ? "延期"
+              : item.request_type === "reissue"
+                ? "重新发行"
+                : "新申请"
+          ]
+        ];
+    for (const [label, value] of detailRows) {
       detail.append(create("dt", "", label), create("dd", "", value));
     }
+    byId("identity-approval-expiry").hidden = isProfileChange;
+    setText(
+      "identity-review-approve",
+      isProfileChange ? "批准并应用" : "通过并发送邮件"
+    );
+    setText(
+      "identity-review-reject",
+      isProfileChange ? "拒绝" : "拒绝并发送通知"
+    );
     byId("identity-review-expiry").value = identityExpiryDate();
     byId("identity-review-permanent").checked = false;
     setText("identity-review-feedback", "");
@@ -3559,15 +3590,18 @@
   async function reviewIdentity(action) {
     const item = state.selectedIdentityApplication;
     if (!item) return;
+    const isProfileChange = item.record_type === "profile_change";
     const feedback = byId("identity-review-feedback");
     let body;
     if (action === "approve") {
-      body = {
-        permanent: byId("identity-review-permanent").checked,
-        expiresOn: byId("identity-review-permanent").checked
-          ? null
-          : byId("identity-review-expiry").value
-      };
+      body = isProfileChange
+        ? {}
+        : {
+            permanent: byId("identity-review-permanent").checked,
+            expiresOn: byId("identity-review-permanent").checked
+              ? null
+              : byId("identity-review-expiry").value
+          };
     } else {
       const reason = await showAppPrompt(
         window.MrzhI18n.t(
@@ -3591,21 +3625,29 @@
       }
       body = { reason };
     }
-    feedback.textContent = "正在处理并发送邮件…";
+    feedback.textContent = isProfileChange ? "正在处理…" : "正在处理并发送邮件…";
     try {
+      const endpoint = isProfileChange
+        ? "/api/admin/identity-profile-change-requests"
+        : "/api/admin/identity-applications";
       const result = await request(
-        `/api/admin/identity-applications/${encodeURIComponent(item.id)}/${action}`,
+        `${endpoint}/${encodeURIComponent(item.id)}/${action}`,
         { method: "POST", body: JSON.stringify(body) }
       );
       byId("identity-review-dialog").close();
-      byId("save-state").textContent =
-        result.emailSent
-          ? action === "approve"
-            ? "申请已通过并发送邮件"
-            : "申请已拒绝并发送通知"
-          : `申请已处理，但邮件发送失败：${result.emailError}`;
-      await loadIdentityApplications();
-      await loadIdentityCodes();
+      if (isProfileChange) {
+        byId("save-state").textContent =
+          action === "approve" ? "资料变更已批准并应用" : "资料变更已拒绝";
+      } else {
+        byId("save-state").textContent =
+          result.emailSent
+            ? action === "approve"
+              ? "申请已通过并发送邮件"
+              : "申请已拒绝并发送通知"
+            : `申请已处理，但邮件发送失败：${result.emailError}`;
+      }
+      await loadIdentityApplications(1);
+      if (canView("identity-codes")) await loadIdentityCodes();
     } catch (error) {
       feedback.textContent = error.message;
     }
@@ -3621,109 +3663,6 @@
     try {
       state.identityCodes = await request(`/api/admin/identity-codes?${params}`);
       renderIdentityCodes();
-    } catch (error) {
-      byId("save-state").textContent = error.message;
-    }
-  }
-
-  async function loadIdentityProfileChanges(page = state.identityProfileChanges.page) {
-    if (!canView("identity-codes")) return;
-    const params = new URLSearchParams({
-      page: String(Math.max(1, page)),
-      status: "pending"
-    });
-    try {
-      state.identityProfileChanges = await request(
-        `/api/admin/identity-profile-change-requests?${params}`
-      );
-      renderIdentityProfileChanges();
-    } catch (error) {
-      byId("save-state").textContent = error.message;
-    }
-  }
-
-  function renderIdentityProfileChanges() {
-    const root = byId("identity-profile-change-list");
-    if (!root) return;
-    root.replaceChildren();
-    const payload = state.identityProfileChanges;
-    if (!payload.items.length) {
-      root.append(create("p", "empty-state", "当前没有待审核的身份资料变更。"));
-      return;
-    }
-    for (const item of payload.items) {
-      const card = create("article", "identity-profile-change-card");
-      const heading = create("div", "section-heading");
-      const headingCopy = create("div");
-      headingCopy.append(
-        create(
-          "p",
-          "eyebrow",
-          item.kind === "email" ? "EMAIL CHANGE" : "PLAYER NAME CHANGE"
-        ),
-        create(
-          "h3",
-          "",
-          item.kind === "email" ? "绑定/修改邮箱" : "修改玩家名称"
-        )
-      );
-      heading.append(headingCopy, create("span", "muted", formatDate(item.submitted_at)));
-      card.append(heading);
-      const detail = create("dl", "member-detail");
-      for (const [label, value] of [
-        ["识别码记录", item.identity_code_id],
-        ["当前资料", item.kind === "email" ? item.current_email || "—" : item.current_player_name || "—"],
-        ["申请变更为", item.kind === "email" ? item.requested_email || "—" : item.requested_player_name || "—"]
-      ]) {
-        detail.append(create("dt", "", label), create("dd", "", value));
-      }
-      const actions = create("div", "action-row");
-      const approve = create("button", "button button-primary", "批准并应用");
-      approve.type = "button";
-      approve.addEventListener("click", () => reviewIdentityProfileChange(item, "approve"));
-      const reject = create("button", "button button-danger button-danger-quiet", "拒绝");
-      reject.type = "button";
-      reject.addEventListener("click", () => reviewIdentityProfileChange(item, "reject"));
-      actions.append(approve, reject);
-      card.append(detail, actions);
-      root.append(card);
-    }
-  }
-
-  async function reviewIdentityProfileChange(item, action) {
-    if (!(await showAppConfirm(
-      action === "approve"
-        ? "确认批准这项身份资料变更并立即应用？"
-        : "确认拒绝这项身份资料变更？",
-      { title: action === "approve" ? "批准资料变更" : "拒绝资料变更", danger: action === "reject" }
-    ))) return;
-    let body = {};
-    if (action === "reject") {
-      const reason = await showAppPrompt("请输入拒绝理由，该理由将保留在审核记录中。", {
-        title: "拒绝资料变更",
-        inputLabel: "拒绝理由（必填）",
-        inputPlaceholder: "请输入拒绝理由",
-        maxLength: 500,
-        multiline: true,
-        confirmLabel: "确认拒绝",
-        cancelLabel: "取消",
-        danger: true
-      });
-      if (reason === null) return;
-      if (!reason) {
-        byId("save-state").textContent = window.MrzhI18n.t("请填写拒绝理由");
-        return;
-      }
-      body = { reason };
-    }
-    try {
-      await request(
-        `/api/admin/identity-profile-change-requests/${encodeURIComponent(item.id)}/${action}`,
-        { method: "POST", body: JSON.stringify(body) }
-      );
-      byId("save-state").textContent =
-        action === "approve" ? "资料变更已批准并应用" : "资料变更已拒绝";
-      await Promise.all([loadIdentityProfileChanges(1), loadIdentityCodes()]);
     } catch (error) {
       byId("save-state").textContent = error.message;
     }
@@ -4372,9 +4311,6 @@
   );
   byId("identity-code-jump-button").addEventListener("click", () =>
     loadIdentityCodes(Number(byId("identity-code-jump").value))
-  );
-  byId("refresh-identity-profile-changes").addEventListener("click", () =>
-    loadIdentityProfileChanges(1)
   );
   byId("identity-password-reset-cancel").addEventListener("click", () =>
     byId("identity-password-reset-dialog").close()

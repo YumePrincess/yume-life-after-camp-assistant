@@ -925,6 +925,16 @@ a {
   outline-offset: 3px;
 }
 
+.feature-detail-back svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
 .feature-detail-close {
   display: grid;
   width: 40px;
@@ -1132,6 +1142,16 @@ h2 {
   color: var(--accent);
   font-size: 22px;
   line-height: 1;
+}
+
+.daily-vote-panel-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .daily-vote-panel-copy {
@@ -2297,14 +2317,23 @@ td {
 }
 
 .identity-password-reset-dialog {
-  width: min(620px, calc(100% - 28px));
-  max-height: min(82vh, 760px);
+  width: min(820px, calc(100% - 28px));
+  max-height: min(80vh, 760px);
   overflow: visible;
 }
 
 .identity-password-reset-dialog .identity-password-reset-card {
-  max-height: min(82vh, 760px);
+  max-height: min(80vh, 760px);
   overflow: auto;
+}
+
+.identity-password-reset-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.identity-password-reset-form > .identity-rules,
+.identity-password-reset-form > .action-row {
+  grid-column: 1 / -1;
 }
 
 .identity-password-reset-card .identity-rules {

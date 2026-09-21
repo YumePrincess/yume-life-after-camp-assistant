@@ -119,7 +119,9 @@
               <h2 id="feature-detail-title">功能详情</h2>
             </div>
             <div class="feature-detail-heading-actions">
-              <button id="back-daily-vote" class="feature-detail-back" type="button" aria-label="返回日常投票" hidden>‹</button>
+              <button id="back-daily-vote" class="feature-detail-back" type="button" aria-label="返回日常投票" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6" /></svg>
+              </button>
               <button id="close-feature-detail" class="feature-detail-close" type="button" aria-label="关闭">×</button>
             </div>
           </div>
@@ -159,7 +161,9 @@
       <article class="vote-panel feature-panel" id="vote" data-feature-panel="vote" hidden>
         <div id="daily-vote-panels" class="daily-vote-panel-list">
           <button class="daily-vote-panel-card" type="button" data-daily-panel="identity">
-            <span class="daily-vote-panel-icon" aria-hidden="true">⌁</span>
+            <span class="daily-vote-panel-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" /><path d="m9 12 2 2 4-4" /></svg>
+            </span>
             <span class="daily-vote-panel-copy">
               <strong>身份识别码</strong>
               <small>登录、申请与找回身份识别码</small>
@@ -409,14 +413,14 @@
           </div>
           <button id="close-identity-password-reset" class="button button-quiet" type="button">关闭</button>
         </div>
-        <form id="identity-password-reset-form" class="form-grid">
+        <form id="identity-password-reset-form" class="form-grid identity-password-reset-form">
           <label class="field"><span>申请编号</span><input id="identity-reset-application" maxlength="40" /></label>
           <label class="field"><span>申请时预留邮箱</span><input id="identity-reset-email" type="email" maxlength="254" /></label>
           <label class="field"><span>身份识别码</span><input id="identity-reset-code" inputmode="numeric" maxlength="8" /></label>
           <ol class="identity-rules">
             <li>申请找回密码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
           </ol>
-          <div class="action-row"><button class="button button-primary" type="submit">发送验证码</button><button id="identity-reset-cancel" class="button button-quiet" type="button">返回登录</button></div>
+          <div class="action-row"><button class="button button-primary" type="submit">发送验证码</button></div>
         </form>
         <form id="identity-password-verify-form" class="form-grid" hidden>
           <label class="field"><span>验证码（10分钟内有效）</span><input id="identity-reset-otp" inputmode="numeric" maxlength="6" /></label>
