@@ -36,8 +36,13 @@ export function json(
   });
 }
 
-export function problem(message: string, status = 400, code = "bad_request"): Response {
-  return json({ error: message, code }, status);
+export function problem(
+  message: string,
+  status = 400,
+  code = "bad_request",
+  headers: HeadersInit = {}
+): Response {
+  return json({ error: message, code }, status, headers);
 }
 
 export function redirect(location: string, headers: HeadersInit = {}): Response {

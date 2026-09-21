@@ -2818,6 +2818,114 @@
   for (const [language, additions] of Object.entries(identityTranslations)) {
     Object.assign(translations[language], additions);
   }
+  const identityAccountTranslations = {
+    "zh-cn": {
+      "身份识别码": "身份识别码",
+      "登录、申请与找回身份识别码": "登录、申请与找回身份识别码",
+      "状态": "状态",
+      "登录、申请与找回身份识别码": "登录、申请与找回身份识别码",
+      "投票前请在此登录身份识别码账户。": "投票前请在此登录身份识别码账户。",
+      "未登录": "未登录",
+      "身份识别码（必填）": "身份识别码（必填）",
+      "密码": "密码",
+      "登录身份识别码": "登录身份识别码",
+      "忘记密码": "忘记密码",
+      "申请延长有效期": "申请延长有效期",
+      "身份识别码已登录，可以提交投票。": "身份识别码已登录，可以提交投票。",
+      "请先在身份识别码卡片登录，登录后即可投票。": "请先在身份识别码卡片登录，登录后即可投票。",
+      "请输入有效的身份识别码和密码。": "请输入有效的身份识别码和密码。",
+      "登录成功。": "登录成功。",
+      "正在验证…": "正在验证…",
+      "忘记识别码": "忘记识别码",
+      "修改玩家名称": "修改玩家名称",
+      "绑定/修改邮箱": "绑定/修改邮箱",
+      "退出身份识别码账号": "退出身份识别码账号",
+      "已登录": "已登录",
+      "未填写玩家名称": "未填写玩家名称",
+      "未绑定邮箱": "未绑定邮箱",
+      "永久有效": "永久有效",
+      "有效期至 {date}": "有效期至 {date}",
+      "已退出身份识别码账号。": "已退出身份识别码账号。",
+      "玩家名称已更新。": "玩家名称已更新。",
+      "请输入新的玩家名称": "请输入新的玩家名称",
+      "请输入新的邮箱地址": "请输入新的邮箱地址",
+      "请输入旧邮箱收到的验证码": "请输入旧邮箱收到的验证码",
+      "请输入新邮箱收到的验证码": "请输入新邮箱收到的验证码",
+      "邮箱已更新。": "邮箱已更新。",
+      "忘记密码": "忘记密码",
+      "申请找回密码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。": "申请找回密码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。",
+      "申请编号": "申请编号",
+      "申请时预留邮箱": "申请时预留邮箱",
+      "发送验证码": "发送验证码",
+      "返回登录": "返回登录",
+      "验证码已发送到预留邮箱。": "验证码已发送到预留邮箱。",
+      "验证验证码": "验证验证码",
+      "验证通过，请设置新密码。": "验证通过，请设置新密码。",
+      "密码设置成功，请返回登录。": "密码设置成功，请返回登录。",
+      "设置新密码": "设置新密码",
+      "验证码已发送到邮箱，请填写后再次提交。": "验证码已发送到邮箱，请填写后再次提交。",
+      "验证邮箱并提交申请": "验证邮箱并提交申请",
+      "验证邮箱并提交更换申请": "验证邮箱并提交更换申请",
+      "邮箱验证码（10分钟内有效）": "邮箱验证码（10分钟内有效）",
+      "验证码验证通过后才会继续提交申请。": "验证码验证通过后才会继续提交申请。",
+      "密码必须为12至64位且不能包含空格": "密码必须为12至64位且不能包含空格",
+      "密码必须同时包含大写字母、小写字母、数字和特殊符号": "密码必须同时包含大写字母、小写字母、数字和特殊符号",
+      "密码过于简单，请避免常见密码或重复字符": "密码过于简单，请避免常见密码或重复字符",
+      "密码过于简单，请避免连续字符": "密码过于简单，请避免连续字符",
+      "密码不能包含身份识别码、玩家名称或邮箱用户名": "密码不能包含身份识别码、玩家名称或邮箱用户名",
+      "玩家名称变更已提交，审核通过后生效。": "玩家名称变更已提交，审核通过后生效。",
+      "邮箱变更已提交，审核通过后生效。": "邮箱变更已提交，审核通过后生效。",
+      "已有资料变更申请待审核，请等待审核完成后再提交": "已有资料变更申请待审核，请等待审核完成后再提交",
+      "新的玩家名称不能与当前名称相同": "新的玩家名称不能与当前名称相同",
+      "请填写邮箱和玩家名称。": "请填写邮箱和玩家名称。",
+      "请至少填写申请编号、申请时预留邮箱或旧识别码中的一项。": "请至少填写申请编号、申请时预留邮箱或旧识别码中的一项。",
+      "请核对申请时预留邮箱": "请核对申请时预留邮箱"
+    },
+    en: {
+      "身份识别码": "Identity code", "登录、申请与找回身份识别码": "Log in, apply for, or recover an identity code", "状态": "Status", "投票前请在此登录身份识别码账户。": "Log in to your identity-code account here before voting.", "未登录": "Signed out", "密码": "Password", "登录身份识别码": "Sign in to identity code", "忘记密码": "Forgot password", "申请延长有效期": "Extend validity", "身份识别码已登录，可以提交投票。": "Identity code signed in; you can vote.", "请先在身份识别码卡片登录，登录后即可投票。": "Sign in from the identity-code card before voting.", "请输入有效的身份识别码和密码。": "Enter a valid identity code and password.", "登录成功。": "Signed in.", "正在验证…": "Verifying…", "忘记识别码": "Forgot identity code", "修改玩家名称": "Change player name", "绑定/修改邮箱": "Bind/change email", "退出身份识别码账号": "Sign out identity code", "已登录": "Signed in", "未填写玩家名称": "No player name", "未绑定邮箱": "No email bound", "永久有效": "Never expires", "有效期至 {date}": "Valid until {date}", "已退出身份识别码账号。": "Identity-code account signed out.", "玩家名称已更新。": "Player name updated.", "请输入新的玩家名称": "Enter the new player name", "请输入新的邮箱地址": "Enter the new email address", "请输入旧邮箱收到的验证码": "Enter the code sent to the old email", "请输入新邮箱收到的验证码": "Enter the code sent to the new email", "邮箱已更新。": "Email updated.", "申请编号": "Application number", "申请时预留邮箱": "Email saved with the application", "发送验证码": "Send verification code", "返回登录": "Back to sign in", "验证码已发送到预留邮箱。": "A verification code was sent to the saved email.", "验证验证码": "Verify code", "验证通过，请设置新密码。": "Verified. Set a new password.", "密码设置成功，请返回登录。": "Password set. Return to sign in.", "设置新密码": "Set new password", "验证码已发送到邮箱，请填写后再次提交。": "A code was sent by email. Enter it and submit again.", "验证邮箱并提交申请": "Verify email and submit application", "验证邮箱并提交更换申请": "Verify email and submit replacement", "邮箱验证码（10分钟内有效）": "Email code (valid for 10 minutes)", "验证码验证通过后才会继续提交申请。": "The application continues only after verification.", "密码必须为12至64位且不能包含空格": "Password must be 12–64 characters with no spaces.", "密码必须同时包含大写字母、小写字母、数字和特殊符号": "Password must include uppercase, lowercase, a number, and a special character.", "密码过于简单，请避免常见密码或重复字符": "Password is too simple; avoid common passwords or repeated characters.", "密码过于简单，请避免连续字符": "Password is too simple; avoid sequential characters.", "密码不能包含身份识别码、玩家名称或邮箱用户名": "Password cannot contain the identity code, player name, or email username.", "玩家名称变更已提交，审核通过后生效。": "The player-name change is pending review.", "邮箱变更已提交，审核通过后生效。": "The email change is pending review.", "已有资料变更申请待审核，请等待审核完成后再提交": "A profile change is already pending review.", "新的玩家名称不能与当前名称相同": "The new player name must be different.", "请填写邮箱和玩家名称。": "Enter an email and player name.", "请至少填写申请编号、申请时预留邮箱或旧识别码中的一项。": "Enter an application number, saved email, or old identity code.", "请核对申请时预留邮箱": "Check the email saved with the application."
+    },
+    "zh-tw": {
+      "身份识别码": "身分識別碼", "登录、申请与找回身份识别码": "登入、申請與找回身分識別碼", "状态": "狀態", "投票前请在此登录身份识别码账户。": "投票前請在此登入身分識別碼帳戶。", "未登录": "未登入", "密码": "密碼", "登录身份识别码": "登入身分識別碼", "忘记密码": "忘記密碼", "申请延长有效期": "申請延長有效期", "身份识别码已登录，可以提交投票。": "身分識別碼已登入，可以提交投票。", "请先在身份识别码卡片登录，登录后即可投票。": "請先在身分識別碼卡片登入，登入後即可投票。", "请输入有效的身份识别码和密码。": "請輸入有效的身分識別碼與密碼。", "登录成功。": "登入成功。", "正在验证…": "驗證中…", "忘记识别码": "忘記身分識別碼", "修改玩家名称": "修改玩家名稱", "绑定/修改邮箱": "綁定／修改信箱", "退出身份识别码账号": "登出身分識別碼帳戶", "已登录": "已登入", "未填写玩家名称": "未填寫玩家名稱", "未绑定邮箱": "未綁定信箱", "永久有效": "永久有效", "有效期至 {date}": "有效期至 {date}", "已退出身份识别码账号。": "已登出身分識別碼帳戶。", "玩家名称已更新。": "玩家名稱已更新。", "请输入新的玩家名称": "請輸入新的玩家名稱", "请输入新的邮箱地址": "請輸入新的信箱地址", "请输入旧邮箱收到的验证码": "請輸入舊信箱收到的驗證碼", "请输入新邮箱收到的验证码": "請輸入新信箱收到的驗證碼", "邮箱已更新。": "信箱已更新。", "申请编号": "申請編號", "申请时预留邮箱": "申請時預留信箱", "发送验证码": "傳送驗證碼", "返回登录": "返回登入", "验证码已发送到预留邮箱。": "驗證碼已傳送到預留信箱。", "验证验证码": "驗證驗證碼", "验证通过，请设置新密码。": "驗證通過，請設定新密碼。", "密码设置成功，请返回登录。": "密碼設定成功，請返回登入。", "设置新密码": "設定新密碼", "验证码已发送到邮箱，请填写后再次提交。": "驗證碼已傳送到信箱，請填寫後再次提交。", "验证邮箱并提交申请": "驗證信箱並提交申請", "验证邮箱并提交更换申请": "驗證信箱並提交更換申請", "邮箱验证码（10分钟内有效）": "信箱驗證碼（10分鐘內有效）", "验证码验证通过后才会继续提交申请。": "驗證碼通過後才會繼續提交申請。", "密码必须为12至64位且不能包含空格": "密碼必須為12至64位且不可包含空格", "密码必须同时包含大写字母、小写字母、数字和特殊符号": "密碼必須同時包含大寫字母、小寫字母、數字與特殊符號", "密码过于简单，请避免常见密码或重复字符": "密碼過於簡單，請避免常見密碼或重複字元", "密码过于简单，请避免连续字符": "密碼過於簡單，請避免連續字元", "密码不能包含身份识别码、玩家名称或邮箱用户名": "密碼不可包含身分識別碼、玩家名稱或信箱使用者名稱", "玩家名称变更已提交，审核通过后生效。": "玩家名稱變更已提交，審核通過後生效。", "邮箱变更已提交，审核通过后生效。": "信箱變更已提交，審核通過後生效。", "已有资料变更申请待审核，请等待审核完成后再提交": "已有資料變更申請待審核，請等待審核完成後再提交", "新的玩家名称不能与当前名称相同": "新的玩家名稱不可與目前名稱相同", "请填写邮箱和玩家名称。": "請填寫信箱與玩家名稱。", "请至少填写申请编号、申请时预留邮箱或旧识别码中的一项。": "請至少填寫申請編號、申請時預留信箱或舊身分識別碼其中一項。", "请核对申请时预留邮箱": "請核對申請時預留信箱。"
+    },
+    fr: {
+      "身份识别码": "Code d’identité", "登录、申请与找回身份识别码": "Se connecter, demander ou récupérer un code d’identité", "状态": "État", "投票前请在此登录身份识别码账户。": "Connectez-vous ici avant de voter.", "未登录": "Déconnecté", "密码": "Mot de passe", "登录身份识别码": "Se connecter", "忘记密码": "Mot de passe oublié", "申请延长有效期": "Prolonger la validité", "身份识别码已登录，可以提交投票。": "Code connecté ; vous pouvez voter.", "请先在身份识别码卡片登录，登录后即可投票。": "Connectez-vous depuis la carte du code avant de voter.", "请输入有效的身份识别码和密码。": "Saisissez un code et un mot de passe valides.", "登录成功。": "Connexion réussie.", "正在验证…": "Vérification…", "忘记识别码": "Code oublié", "修改玩家名称": "Modifier le nom", "绑定/修改邮箱": "Associer/modifier l’e-mail", "退出身份识别码账号": "Se déconnecter", "已登录": "Connecté", "未填写玩家名称": "Nom non renseigné", "未绑定邮箱": "Aucun e-mail associé", "永久有效": "Sans expiration", "有效期至 {date}": "Valable jusqu’au {date}", "已退出身份识别码账号。": "Compte déconnecté.", "玩家名称已更新。": "Nom mis à jour.", "请输入新的玩家名称": "Saisissez le nouveau nom", "请输入新的邮箱地址": "Saisissez la nouvelle adresse e-mail", "请输入旧邮箱收到的验证码": "Code reçu sur l’ancien e-mail", "请输入新邮箱收到的验证码": "Code reçu sur le nouvel e-mail", "邮箱已更新。": "E-mail mis à jour.", "申请编号": "Numéro de demande", "申请时预留邮箱": "E-mail de la demande", "发送验证码": "Envoyer le code", "返回登录": "Retour à la connexion", "验证码已发送到预留邮箱。": "Un code a été envoyé à l’e-mail enregistré.", "验证验证码": "Vérifier le code", "验证通过，请设置新密码。": "Vérifié. Définissez un nouveau mot de passe.", "密码设置成功，请返回登录。": "Mot de passe défini. Revenez à la connexion.", "设置新密码": "Définir le mot de passe", "验证码已发送到邮箱，请填写后再次提交。": "Un code a été envoyé. Saisissez-le puis renvoyez le formulaire.", "验证邮箱并提交申请": "Vérifier l’e-mail et envoyer", "验证邮箱并提交更换申请": "Vérifier l’e-mail et envoyer le remplacement", "邮箱验证码（10分钟内有效）": "Code e-mail (valable 10 minutes)", "验证码验证通过后才会继续提交申请。": "La demande continue après vérification.", "密码必须为12至64位且不能包含空格": "Le mot de passe doit contenir 12 à 64 caractères sans espaces.", "密码必须同时包含大写字母、小写字母、数字和特殊符号": "Il doit contenir une majuscule, une minuscule, un chiffre et un caractère spécial.", "密码过于简单，请避免常见密码或重复字符": "Mot de passe trop simple ; évitez les mots de passe courants ou les répétitions.", "密码过于简单，请避免连续字符": "Mot de passe trop simple ; évitez les caractères consécutifs.", "密码不能包含身份识别码、玩家名称或邮箱用户名": "Il ne peut pas contenir le code, le nom du joueur ou l’identifiant e-mail.", "玩家名称变更已提交，审核通过后生效。": "Le changement de nom est en attente d’examen.", "邮箱变更已提交，审核通过后生效。": "Le changement d’e-mail est en attente d’examen.", "已有资料变更申请待审核，请等待审核完成后再提交": "Une modification est déjà en attente d’examen.", "新的玩家名称不能与当前名称相同": "Le nouveau nom doit être différent.", "请填写邮箱和玩家名称。": "Saisissez l’e-mail et le nom.", "请至少填写申请编号、申请时预留邮箱或旧识别码中的一项。": "Saisissez un numéro, l’e-mail enregistré ou l’ancien code.", "请核对申请时预留邮箱": "Vérifiez l’e-mail enregistré."
+    },
+    ja: {
+      "身份识别码": "本人確認コード", "登录、申请与找回身份识别码": "本人確認コードのログイン・申請・再取得", "状态": "状態", "投票前请在此登录身份识别码账户。": "投票前にここで本人確認コードへログインしてください。", "未登录": "未ログイン", "密码": "パスワード", "登录身份识别码": "本人確認コードでログイン", "忘记密码": "パスワードを忘れた", "申请延长有效期": "有効期限を延長", "身份识别码已登录，可以提交投票。": "ログイン済みです。投票できます。", "请先在身份识别码卡片登录，登录后即可投票。": "投票前に本人確認コードカードからログインしてください。", "请输入有效的身份识别码和密码。": "有効なコードとパスワードを入力してください。", "登录成功。": "ログインしました。", "正在验证…": "確認中…", "忘记识别码": "コードを忘れた", "修改玩家名称": "プレイヤー名を変更", "绑定/修改邮箱": "メールを登録・変更", "退出身份识别码账号": "コードからログアウト", "已登录": "ログイン済み", "未填写玩家名称": "プレイヤー名未設定", "未绑定邮箱": "メール未登録", "永久有效": "無期限", "有效期至 {date}": "有効期限 {date}", "已退出身份识别码账号。": "ログアウトしました。", "玩家名称已更新。": "プレイヤー名を更新しました。", "请输入新的玩家名称": "新しいプレイヤー名を入力", "请输入新的邮箱地址": "新しいメールアドレスを入力", "请输入旧邮箱收到的验证码": "旧メールに届いたコードを入力", "请输入新邮箱收到的验证码": "新メールに届いたコードを入力", "邮箱已更新。": "メールを更新しました。", "申请编号": "申請番号", "申请时预留邮箱": "申請時の登録メール", "发送验证码": "確認コードを送信", "返回登录": "ログインに戻る", "验证码已发送到预留邮箱。": "登録メールに確認コードを送信しました。", "验证验证码": "コードを確認", "验证通过，请设置新密码。": "確認できました。新しいパスワードを設定してください。", "密码设置成功，请返回登录。": "パスワードを設定しました。ログインに戻ってください。", "设置新密码": "新しいパスワードを設定", "验证码已发送到邮箱，请填写后再次提交。": "コードを送信しました。入力して再送信してください。", "验证邮箱并提交申请": "メールを確認して申請", "验证邮箱并提交更换申请": "メールを確認して交換申請", "邮箱验证码（10分钟内有效）": "メール確認コード（10分間有効）", "验证码验证通过后才会继续提交申请。": "確認後に申請を続行できます。", "密码必须为12至64位且不能包含空格": "パスワードは12～64文字で、空白は使用できません。", "密码必须同时包含大写字母、小写字母、数字和特殊符号": "大文字・小文字・数字・特殊記号をすべて含めてください。", "密码过于简单，请避免常见密码或重复字符": "簡単すぎるパスワードや繰り返し文字は避けてください。", "密码过于简单，请避免连续字符": "連続する文字は避けてください。", "密码不能包含身份识别码、玩家名称或邮箱用户名": "コード、プレイヤー名、メールのユーザー名は含められません。", "玩家名称变更已提交，审核通过后生效。": "プレイヤー名の変更を申請しました。承認後に反映されます。", "邮箱变更已提交，审核通过后生效。": "メール変更を申請しました。承認後に反映されます。", "已有资料变更申请待审核，请等待审核完成后再提交": "変更申請が審査中です。完了まで再申請できません。", "新的玩家名称不能与当前名称相同": "新しい名前は現在と異なる必要があります。", "请填写邮箱和玩家名称。": "メールとプレイヤー名を入力してください。", "请至少填写申请编号、申请时预留邮箱或旧识别码中的一项。": "申請番号、登録メール、旧コードのいずれかを入力してください。", "请核对申请时预留邮箱": "登録メールを確認してください。"
+    }
+  };
+  for (const [language, additions] of Object.entries(identityAccountTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+  const identityStaticTranslations = {
+    en: {
+      "新密码（12-64位）": "New password (12–64 characters)",
+      "验证码（10分钟内有效）": "Verification code (valid for 10 minutes)",
+      "密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "Use uppercase, lowercase, a number, and a special character. Avoid common, sequential, or repeated characters, and do not include your identity code, player name, or email username.",
+      "申请更换识别码": "Request code replacement"
+    },
+    "zh-tw": {
+      "新密码（12-64位）": "新密碼（12–64 個字元）",
+      "验证码（10分钟内有效）": "驗證碼（10 分鐘內有效）",
+      "密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "密碼需同時包含大寫字母、小寫字母、數字與特殊符號；不可使用常見密碼、連續或重複字元，也不可包含身分識別碼、玩家名稱或信箱使用者名稱。",
+      "申请更换识别码": "申請更換身分識別碼"
+    },
+    fr: {
+      "新密码（12-64位）": "Nouveau mot de passe (12 à 64 caractères)",
+      "验证码（10分钟内有效）": "Code de vérification (valable 10 minutes)",
+      "密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "Utilisez une majuscule, une minuscule, un chiffre et un caractère spécial. Évitez les mots de passe courants, séquentiels ou répétés, ainsi que le code, le nom ou l’identifiant e-mail.",
+      "申请更换识别码": "Demander le remplacement du code"
+    },
+    ja: {
+      "新密码（12-64位）": "新しいパスワード（12～64文字）",
+      "验证码（10分钟内有效）": "確認コード（10分間有効）",
+      "密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "大文字・小文字・数字・特殊記号を含め、一般的なパスワードや連続・反復文字、コード・プレイヤー名・メール名は使用しないでください。",
+      "申请更换识别码": "本人確認コードを交換申請"
+    }
+  };
+  for (const [language, additions] of Object.entries(identityStaticTranslations)) {
+    Object.assign(translations[language], additions);
+  }
   const adminKeyTranslations = {
     en: {
       "确认操作": "Confirm action",
@@ -3565,12 +3673,12 @@
       "zh-cn": {
         prefix: `版权所有 © ${year} `,
         company: "美国雨梦互联网有限公司",
-        suffix: " 保留所有权利。本页面为在中国大陆使用而设计。"
+        suffix: " 保留所有权利。"
       },
       "zh-tw": {
-        prefix: `版權所有 © ${year} `,
-        company: "美國雨夢網際網路有限公司",
-        suffix: "。保留所有權利。"
+        prefix: `Copyright © ${year} `,
+        company: "Yume Internet LLC",
+        suffix: ". All Rights Reserved."
       },
       en: {
         prefix: `Copyright © ${year} `,
@@ -3580,12 +3688,12 @@
       fr: {
         prefix: `Copyright © ${year} `,
         company: "Yume Internet LLC",
-        suffix: ". Tous droits réservés."
+        suffix: ". All Rights Reserved."
       },
       ja: {
         prefix: `Copyright © ${year} `,
         company: "Yume Internet LLC",
-        suffix: "。無断転載を禁じます。"
+        suffix: ". All Rights Reserved."
       }
     }[language];
     if (!localized) return;

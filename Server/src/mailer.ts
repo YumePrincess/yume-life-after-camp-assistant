@@ -187,6 +187,10 @@ function renderYumeEmail(input: {
   notes?: string[];
 }): string {
   const brand = EMAIL_BRAND_NAMES[input.locale];
+  const copyrightYear = new Date().getUTCFullYear();
+  const footerCompany = input.locale === "zh-cn" ? "美国雨梦互联网有限公司" : "Yume Internet LLC";
+  const footerPrefix = input.locale === "zh-cn" ? `版权所有 © ${copyrightYear} ` : `Copyright © ${copyrightYear} `;
+  const footerSuffix = input.locale === "zh-cn" ? " 保留所有权利。" : ". All Rights Reserved.";
   const rowMarkup = input.rows
     .map(
       ([key, value]) =>
@@ -207,10 +211,10 @@ function renderYumeEmail(input: {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${escapeHtml(input.title)}</title>
   </head>
-  <body style="margin:0;padding:0;background-color:#0f172a;font-family:Arial,'Helvetica Neue',sans-serif;color:#f8fafc;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;padding:32px 16px;background-color:#0f172a;">
+  <body bgcolor="#0f172a" style="margin:0;padding:0;background-color:#0f172a;font-family:Arial,'Helvetica Neue',sans-serif;color:#f8fafc;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0f172a" style="width:100%;min-height:100vh;background-color:#0f172a;">
       <tr>
-        <td align="center">
+        <td align="center" bgcolor="#0f172a" style="background-color:#0f172a;padding:32px 16px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;background-color:#1e293b;border:1px solid #334155;border-radius:20px;overflow:hidden;">
             <tr>
               <td align="center" style="padding:32px 28px 24px;background-color:#172235;">
@@ -220,14 +224,14 @@ function renderYumeEmail(input: {
             </tr>
             <tr>
               <td style="padding:28px;">
-                <h1 style="margin:0 0 22px;color:#f8fafc;font-size:24px;line-height:1.3;font-weight:700;">${escapeHtml(input.title)}</h1>
+                <h1 style="margin:0 0 22px;color:#f8fafc;font-size:24px;line-height:1.3;font-weight:700;text-align:center;">${escapeHtml(input.title)}</h1>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border:1px solid #475569;border-radius:14px;overflow:hidden;background-color:#172235;">${rowMarkup}</table>
                 ${notesMarkup}
               </td>
             </tr>
             <tr>
-              <td style="padding:18px 28px 24px;border-top:1px solid #334155;">
-                <p style="margin:0;color:#64748b;font-size:12px;line-height:1.6;">${escapeHtml(brand)}</p>
+              <td align="center" style="padding:18px 28px 24px;border-top:1px solid #334155;">
+                <p style="margin:0;color:#64748b;font-size:12px;line-height:1.6;text-align:center;">${escapeHtml(footerPrefix)}<a href="https://www.yume.zone/" style="color:#94a3b8;text-decoration:underline;">${escapeHtml(footerCompany)}</a>${escapeHtml(footerSuffix)}</p>
               </td>
             </tr>
           </table>
@@ -251,6 +255,10 @@ const COPY = {
     permanent: "永久有效",
     reason: "原因",
     recovered: "身份识别码找回",
+    password: "初始密码",
+    passwordReset: "身份识别码密码重置",
+    emailChange: "身份识别码邮箱变更验证",
+    verificationCode: "验证码",
     renew: "该识别码已经过期，可在网页或小程序中申请延期。",
     usage: "此身份识别码用于日常投票，包括科技投票、投票事项和抽签事项。",
     keep: "请妥善保管识别码，并仅由本人用于日常投票。"
@@ -267,6 +275,10 @@ const COPY = {
     permanent: "永久有效",
     reason: "原因",
     recovered: "身分識別碼找回",
+    password: "初始密碼",
+    passwordReset: "身分識別碼密碼重置",
+    emailChange: "身分識別碼信箱變更驗證",
+    verificationCode: "驗證碼",
     renew: "該識別碼已經過期，可在網頁或小程式中申請延期。",
     usage: "此身分識別碼用於日常投票，包括科技投票、投票事項和抽籤事項。",
     keep: "請妥善保管識別碼，並僅由本人用於日常投票。"
@@ -283,6 +295,10 @@ const COPY = {
     permanent: "No expiration",
     reason: "Reason",
     recovered: "Identity code recovery",
+    password: "Initial password",
+    passwordReset: "Identity code password reset",
+    emailChange: "Identity code email change verification",
+    verificationCode: "Verification code",
     renew: "This code has expired. You may request an extension on the website or mini program.",
     usage: "This identity code is used for daily voting, including technology votes, polls, and draws.",
     keep: "Keep this code secure and use it only for your own daily votes."
@@ -299,6 +315,10 @@ const COPY = {
     permanent: "Validité permanente",
     reason: "Motif",
     recovered: "Récupération du code d’identité",
+    password: "Mot de passe initial",
+    passwordReset: "Réinitialisation du mot de passe du code d’identité",
+    emailChange: "Vérification du changement d’adresse e-mail",
+    verificationCode: "Code de vérification",
     renew: "Ce code a expiré. Vous pouvez demander une prolongation sur le site ou le mini-programme.",
     usage: "Ce code d’identité sert aux votes du jour, notamment aux votes technologiques, sondages et tirages au sort.",
     keep: "Conservez ce code en sécurité et utilisez-le uniquement pour vos votes du jour."
@@ -315,6 +335,10 @@ const COPY = {
     permanent: "無期限",
     reason: "理由",
     recovered: "本人確認コードの再送",
+    password: "初期パスワード",
+    passwordReset: "本人確認コードのパスワード再設定",
+    emailChange: "本人確認コードのメールアドレス変更確認",
+    verificationCode: "確認コード",
     renew: "このコードは期限切れです。ウェブサイトまたはミニプログラムから延長を申請できます。",
     usage: "この本人確認コードは、技術投票、投票案件、抽選を含む日常投票に使用します。",
     keep: "コードを安全に保管し、ご本人の日常投票にのみ使用してください。"
@@ -328,6 +352,7 @@ export function identityMail(input: {
   applicationNumber: string;
   playerName: string;
   code?: string;
+  password?: string;
   expiresAt?: string | null;
   reason?: string | null;
 }): { subject: string; text: string; html: string } {
@@ -345,6 +370,7 @@ export function identityMail(input: {
   ];
   if (input.approved && input.code) {
     rows.push([copy.code, input.code]);
+    if (input.password) rows.push([copy.password, input.password]);
     rows.push([copy.expiry, input.expiresAt ?? copy.permanent]);
   }
   if (!input.approved && input.reason) rows.push([copy.reason, input.reason]);
@@ -353,12 +379,92 @@ export function identityMail(input: {
     subject,
     "",
     ...rows.map(([key, value]) => `${key}: ${value}`),
-    ...(notes.length ? ["", ...notes] : [])
+    ...(notes.length ? ["", ...notes] : []),
+    "",
+    input.locale === "zh-cn"
+      ? `版权所有 © ${new Date().getUTCFullYear()} 美国雨梦互联网有限公司 保留所有权利。`
+      : `Copyright © ${new Date().getUTCFullYear()} Yume Internet LLC. All Rights Reserved.`
   ];
   return {
     subject,
     text: plain.join("\n"),
     html: renderYumeEmail({ locale: input.locale, title: subject, rows, notes })
+  };
+}
+
+export function identityPasswordResetMail(input: {
+  locale: SupportedLocale;
+  playerName: string | null;
+  code: string;
+  otp?: string;
+  initialPassword?: string;
+}): { subject: string; text: string; html: string } {
+  const copy = COPY[input.locale];
+  const rows: Array<[string, string]> = [
+    [copy.code, input.code]
+  ];
+  if (input.otp) rows.push([copy.verificationCode, input.otp]);
+  if (input.initialPassword) rows.push([copy.password, input.initialPassword]);
+  const notes = [
+    ...(input.otp ? ["验证码有效期为10分钟，请勿向他人透露。"] : []),
+    input.initialPassword
+      ? "这是新的识别码密码，请妥善保管。"
+      : "验证码验证通过后即可设置新的识别码密码。"
+  ];
+  return {
+    subject: input.initialPassword ? copy.passwordReset : copy.passwordReset,
+    text: [copy.passwordReset, "", ...rows.map(([key, value]) => `${key}: ${value}`), "", ...notes].join("\n"),
+    html: renderYumeEmail({ locale: input.locale, title: copy.passwordReset, rows, notes })
+  };
+}
+
+export function identityEmailChangeMail(input: {
+  locale: SupportedLocale;
+  otp: string;
+  newEmail: string;
+}): { subject: string; text: string; html: string } {
+  const copy = COPY[input.locale];
+  const rows: Array<[string, string]> = [
+    [copy.verificationCode, input.otp],
+    ["新邮箱", input.newEmail]
+  ];
+  const notes = ["验证码有效期为10分钟，请勿向他人透露。"];
+  return {
+    subject: copy.emailChange,
+    text: [copy.emailChange, "", ...rows.map(([key, value]) => `${key}: ${value}`), "", ...notes].join("\n"),
+    html: renderYumeEmail({ locale: input.locale, title: copy.emailChange, rows, notes })
+  };
+}
+
+export function identityApplicationVerificationMail(input: {
+  locale: SupportedLocale;
+  otp: string;
+  purpose: "new" | "reissue";
+}): { subject: string; text: string; html: string } {
+  const copy = COPY[input.locale];
+  const subject = input.locale === "zh-cn"
+    ? "身份识别码申请邮箱验证码"
+    : input.locale === "zh-tw"
+      ? "身分識別碼申請信箱驗證碼"
+      : input.locale === "ja"
+        ? "本人確認コード申請メール確認コード"
+        : input.locale === "fr"
+          ? "Code de vérification de la demande de code d’identité"
+          : "Identity code application verification code";
+  const note = input.locale === "zh-cn"
+    ? "验证码有效期为10分钟，请勿向他人透露。验证通过后才能继续提交申请。"
+    : input.locale === "zh-tw"
+      ? "驗證碼有效期為10分鐘，請勿向他人透露。驗證通過後才能繼續提交申請。"
+      : input.locale === "ja"
+        ? "確認コードの有効期限は10分です。確認後に申請を続行できます。"
+        : input.locale === "fr"
+          ? "Le code est valable 10 minutes. La demande pourra continuer après vérification."
+          : "The verification code is valid for 10 minutes. You can continue the application after verification.";
+  const rows: Array<[string, string]> = [[copy.verificationCode, input.otp]];
+  return {
+    subject,
+    text: [subject, "", ...rows.map(([key, value]) => `${key}: ${value}`), "", note].join("\n"),
+    html: renderYumeEmail({ locale: input.locale, title: subject, rows, notes: [note] })
   };
 }
 

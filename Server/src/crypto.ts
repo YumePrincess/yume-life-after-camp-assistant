@@ -87,3 +87,75 @@ export async function keyedHash(
   );
   return base64Url(new Uint8Array(digest));
 }
+
+const PASSWORD_HASH_ALGORITHM = "pbkdf2-sha256";
+const PASSWORD_HASH_ITERATIONS = 120_000;
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  let difference = left.byteLength ^ right.byteLength;
+  const length = Math.max(left.byteLength, right.byteLength);
+  for (let index = 0; index < length; index += 1) {
+    difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
+  }
+  return difference === 0;
+}
+
+async function passwordBits(
+  password: string,
+  salt: Uint8Array,
+  iterations: number
+): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: salt as unknown as BufferSource,
+      iterations,
+      hash: "SHA-256"
+    },
+    key,
+    256
+  );
+  return new Uint8Array(bits);
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const digest = await passwordBits(password, salt, PASSWORD_HASH_ITERATIONS);
+  return [
+    PASSWORD_HASH_ALGORITHM,
+    String(PASSWORD_HASH_ITERATIONS),
+    base64Url(salt),
+    base64Url(digest)
+  ].join("$");
+}
+
+export async function verifyPassword(
+  password: string,
+  encoded: string | null | undefined
+): Promise<boolean> {
+  try {
+    const [algorithm, iterationValue, saltValue, digestValue] = String(encoded || "").split("$");
+    const iterations = Number(iterationValue);
+    if (
+      algorithm !== PASSWORD_HASH_ALGORITHM ||
+      !Number.isInteger(iterations) ||
+      iterations < 100_000 ||
+      iterations > 1_000_000 ||
+      !saltValue ||
+      !digestValue
+    ) {
+      return false;
+    }
+    const actual = await passwordBits(password, fromBase64Url(saltValue), iterations);
+    return equalBytes(actual, fromBase64Url(digestValue));
+  } catch {
+    return false;
+  }
+}

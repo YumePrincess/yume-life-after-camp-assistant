@@ -104,22 +104,35 @@ import {
 import { localizeTechnology } from "../plugins/technology/localizations";
 import {
   approveIdentityApplication,
+  confirmIdentityEmailChange,
+  consumeIdentityApplicationVerification,
   createIdentityApplication,
   createManualIdentityCode,
+  identityAccount,
   listIdentityApplications,
   listIdentityCodes,
+  listIdentityProfileChangeRequests,
   listVoteBallotDetails,
   reissueIdentityCode,
   reissuePreview,
   recoverIdentityCode,
   rejectIdentityApplication,
+  requestIdentityEmailChange,
+  requestIdentityApplicationVerification,
+  requestIdentityPasswordReset,
+  resetIdentityCodePassword,
+  verifyIdentityPasswordReset,
   renewalPreview,
   resendIdentityCode,
+  reviewIdentityProfileChangeRequest,
+  setIdentityPassword,
   submitReissue,
   submitRenewal,
+  updateIdentityPlayerName,
   updateIdentityCode,
   updateIdentityCodeInformation,
-  verifyIdentityCode
+  verifyIdentityPassword,
+  verifyIdentityApplicationVerification,
 } from "./identity";
 import {
   demoSmtpConfig,
@@ -199,13 +212,6 @@ const IDENTITY_VALUE_CHECK_LIMIT: RateLimitPolicy = {
   blockSeconds: 30 * 60
 };
 
-const PUBLIC_TEST_VOTE_LIMIT: RateLimitPolicy = {
-  scope: "public-test-vote",
-  maximum: 5,
-  windowSeconds: 10 * 60,
-  blockSeconds: 30 * 60
-};
-
 const IDENTITY_RECOVERY_LIMIT: RateLimitPolicy = {
   scope: "identity-recovery",
   maximum: 10,
@@ -216,6 +222,20 @@ const IDENTITY_RECOVERY_LIMIT: RateLimitPolicy = {
 const IDENTITY_RECOVERY_TARGET_LIMIT: RateLimitPolicy = {
   scope: "identity-recovery-target",
   maximum: 6,
+  windowSeconds: 30 * 60,
+  blockSeconds: 60 * 60
+};
+
+const IDENTITY_PASSWORD_LIMIT: RateLimitPolicy = {
+  scope: "identity-password",
+  maximum: 8,
+  windowSeconds: 30 * 60,
+  blockSeconds: 60 * 60
+};
+
+const IDENTITY_PASSWORD_TARGET_LIMIT: RateLimitPolicy = {
+  scope: "identity-password-target",
+  maximum: 5,
   windowSeconds: 30 * 60,
   blockSeconds: 60 * 60
 };
@@ -503,11 +523,13 @@ async function handlePublicApi(
       return problem("抽签事项不需要选择选项", 400, "invalid_daily_draw_selection");
     }
     let renewalGraceUsed = false;
-    if (!identity.publicTestVote && identity.identityRecord?.ok) {
+    if (identity.identityRecord?.ok) {
       const consumed = identity.identityRecord.grace
-        ? await verifyIdentityCode(env, body.identityCode, {
-            consumeRenewalGrace: true
-          })
+        ? await verifyIdentityPassword(
+            env,
+            { identityCode: body.identityCode, password: body.identityPassword },
+            { consumeRenewalGrace: true }
+          )
         : identity.identityRecord;
       if (!consumed.ok) {
         return json(
@@ -531,16 +553,210 @@ async function handlePublicApi(
     return json(
       {
         ...(await buildPublicDailyVotePayload(env, body.locale)),
-        identityCodeExpiresAt:
-          !identity.publicTestVote && identity.identityRecord?.ok
-            ? identity.identityRecord.code.expires_at
-            : null,
+        identityCodeExpiresAt: identity.identityRecord.code.expires_at,
         renewalGraceUsed,
-        publicTestVote: identity.publicTestVote
+        publicTestVote: false
       },
       200,
       cors
     );
+  }
+  if (path === "/api/public/identity-application-verification" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_APPLICATION_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 12_000);
+    const action = typeof body.action === "string" ? body.action : "request";
+    const target = identityLookupFingerprint({
+      action,
+      purpose: body.purpose,
+      email: body.email,
+      identityCode: body.identityCode,
+      applicationNumber: body.applicationNumber,
+      challengeId: body.challengeId
+    });
+    const targetLimited = await rejectIfValueRateLimited(
+      target,
+      env,
+      IDENTITY_VALUE_CHECK_LIMIT,
+      cors
+    );
+    if (targetLimited) return targetLimited;
+    try {
+      const result = action === "request"
+        ? await requestIdentityApplicationVerification(env, {
+            purpose: body.purpose,
+            email: body.email,
+            playerName: body.playerName,
+            identityCode: body.identityCode,
+            applicationNumber: body.applicationNumber,
+            locale: body.locale
+          })
+        : action === "verify"
+          ? await verifyIdentityApplicationVerification(env, {
+              challengeId: body.challengeId,
+              otp: body.otp,
+              purpose: body.purpose
+            })
+          : null;
+      if (!result) return problem("申请验证码操作无效", 400, "identity_application_verification_invalid", cors);
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_APPLICATION_LIMIT),
+        clearValueRateLimitAttempts(target, env, IDENTITY_VALUE_CHECK_LIMIT)
+      ]);
+      return json(result, 200, cors);
+    } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_APPLICATION_LIMIT),
+        recordValueRateLimitAttempt(target, env, IDENTITY_VALUE_CHECK_LIMIT)
+      ]);
+      return problem(errorMessage(error), 400, "identity_application_verification_failed", cors);
+    }
+  }
+  if (path === "/api/public/identity-login" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_PASSWORD_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 8_000);
+    const target = identityLookupFingerprint({ identityCode: body.identityCode });
+    const targetLimited = await rejectIfValueRateLimited(
+      target,
+      env,
+      IDENTITY_PASSWORD_TARGET_LIMIT,
+      cors
+    );
+    if (targetLimited) return targetLimited;
+    try {
+      const account = await identityAccount(env, {
+        identityCode: body.identityCode,
+        password: body.identityPassword
+      });
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_PASSWORD_LIMIT),
+        clearValueRateLimitAttempts(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
+      ]);
+      return json(account, 200, cors);
+    } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_PASSWORD_LIMIT),
+        recordValueRateLimitAttempt(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
+      ]);
+      const message = errorMessage(error);
+      return problem(
+        message,
+        message.includes("尚未设置密码") ? 409 : 401,
+        message.includes("尚未设置密码")
+          ? "identity_password_required"
+          : "identity_login_failed",
+        cors
+      );
+    }
+  }
+  if (path === "/api/public/identity-password-reset" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_PASSWORD_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 12_000);
+    const action = typeof body.action === "string" ? body.action : "request";
+    const target = identityLookupFingerprint({
+      action,
+      applicationNumber: body.applicationNumber,
+      email: body.email,
+      identityCode: body.identityCode,
+      challengeId: body.challengeId
+    });
+    const targetLimited = await rejectIfValueRateLimited(
+      target,
+      env,
+      IDENTITY_PASSWORD_TARGET_LIMIT,
+      cors
+    );
+    if (targetLimited) return targetLimited;
+    try {
+      let result: unknown;
+      if (action === "request") {
+        result = await requestIdentityPasswordReset(env, {
+          applicationNumber: body.applicationNumber,
+          email: body.email,
+          identityCode: body.identityCode
+        });
+      } else if (action === "verify") {
+        result = await verifyIdentityPasswordReset(env, {
+          challengeId: body.challengeId,
+          otp: body.otp
+        });
+      } else if (action === "set") {
+        await setIdentityPassword(env, {
+          challengeId: body.challengeId,
+          resetToken: body.resetToken,
+          password: body.password
+        });
+        result = { ok: true };
+      } else {
+        return problem("密码找回操作无效", 400, "identity_password_reset_invalid", cors);
+      }
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_PASSWORD_LIMIT),
+        clearValueRateLimitAttempts(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
+      ]);
+      return json(result, 200, cors);
+    } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_PASSWORD_LIMIT),
+        recordValueRateLimitAttempt(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
+      ]);
+      return problem(errorMessage(error), 400, "identity_password_reset_failed", cors);
+    }
+  }
+  if (path === "/api/public/identity-profile" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_PASSWORD_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 12_000);
+    const action = typeof body.action === "string" ? body.action : "";
+    const target = identityLookupFingerprint({
+      action,
+      identityCode: body.identityCode,
+      changeId: body.changeId
+    });
+    const targetLimited = await rejectIfValueRateLimited(
+      target,
+      env,
+      IDENTITY_PASSWORD_TARGET_LIMIT,
+      cors
+    );
+    if (targetLimited) return targetLimited;
+    try {
+      let result: unknown;
+      if (action === "update-name") {
+        result = await updateIdentityPlayerName(env, {
+          identityCode: body.identityCode,
+          password: body.identityPassword,
+          playerName: body.playerName
+        });
+      } else if (action === "request-email-change") {
+        result = await requestIdentityEmailChange(env, {
+          identityCode: body.identityCode,
+          password: body.identityPassword,
+          newEmail: body.newEmail
+        });
+      } else if (action === "confirm-email-change") {
+        result = await confirmIdentityEmailChange(env, {
+          changeId: body.changeId,
+          oldOtp: body.oldOtp,
+          newOtp: body.newOtp
+        });
+      } else {
+        return problem("身份资料操作无效", 400, "identity_profile_invalid", cors);
+      }
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_PASSWORD_LIMIT),
+        clearValueRateLimitAttempts(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
+      ]);
+      return json(result, 200, cors);
+    } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_PASSWORD_LIMIT),
+        recordValueRateLimitAttempt(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
+      ]);
+      return problem(errorMessage(error), 400, "identity_profile_failed", cors);
+    }
   }
   if (path === "/api/public/bootstrap" && method === "GET") {
     const payload = await buildPublicBootstrap(
@@ -564,56 +780,9 @@ async function handlePublicApi(
     const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
     if (limited) return limited;
     const body = await readJsonObject(request, 32_000);
-    const publicTestVote = String(body.identityCode ?? "").trim() === "00000000";
-    let identityRecord: Awaited<ReturnType<typeof verifyIdentityCode>> | null = null;
-    if (publicTestVote) {
-      const testLimited = await rejectIfRateLimited(
-        request,
-        env,
-        PUBLIC_TEST_VOTE_LIMIT,
-        cors
-      );
-      if (testLimited) return testLimited;
-      await recordRateLimitAttempt(request, env, PUBLIC_TEST_VOTE_LIMIT);
-    } else {
-      const valueLimited = await rejectIfValueRateLimited(
-        body.identityCode,
-        env,
-        IDENTITY_VALUE_CHECK_LIMIT,
-        cors
-      );
-      if (valueLimited) return valueLimited;
-      const verification = await verifyIdentityCode(env, body.identityCode);
-      identityRecord = verification;
-      if (!verification.ok) {
-        if (verification.reason === "invalid") {
-          await Promise.all([
-            recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
-            recordValueRateLimitAttempt(
-              body.identityCode,
-              env,
-              IDENTITY_VALUE_CHECK_LIMIT
-            )
-          ]);
-        }
-        const detail =
-          verification.reason === "expired"
-            ? "身份识别码已过期"
-            : verification.reason === "disabled"
-              ? "身份识别码已被禁用"
-              : "身份识别码无效";
-        return json(
-          {
-            title: detail,
-            code: `identity_code_${verification.reason}`,
-            canRenew: verification.canRenew,
-            applicationNumber: verification.applicationNumber ?? null
-          },
-          verification.reason === "expired" ? 409 : 403,
-          cors
-        );
-      }
-    }
+    const identity = await verifyPublicActionIdentity(request, env, cors, body);
+    if (identity instanceof Response) return identity;
+    const identityRecord = identity.identityRecord;
     if (!Array.isArray(body.selections)) {
       return problem("selections must be an array", 400);
     }
@@ -660,9 +829,12 @@ async function handlePublicApi(
       );
     }
     let renewalGraceUsed = false;
-    if (!publicTestVote && identityRecord?.ok) {
+    if (identityRecord.ok) {
       const consumed = identityRecord.grace
-        ? await verifyIdentityCode(env, body.identityCode, {
+        ? await verifyIdentityPassword(env, {
+            identityCode: body.identityCode,
+            password: body.identityPassword
+          }, {
             consumeRenewalGrace: true
           })
         : identityRecord;
@@ -689,12 +861,9 @@ async function handlePublicApi(
       {
         ...localizeVoteSummary(await buildVoteSummary(env, bundle), body.locale),
         renewalGraceUsed,
-        identityCodeExpiresAt:
-          !publicTestVote && identityRecord?.ok
-            ? identityRecord.code.expires_at
-            : null,
+        identityCodeExpiresAt: identityRecord.code.expires_at,
         voteWithdrawn: isWithdrawal,
-        publicTestVote
+        publicTestVote: false
       },
       200,
       cors
@@ -710,6 +879,13 @@ async function handlePublicApi(
     if (limited) return limited;
     try {
       const body = await readJsonObject(request, 16_000);
+      await consumeIdentityApplicationVerification(env, {
+        challengeId: body.verificationId,
+        verificationToken: body.verificationToken,
+        purpose: "new",
+        email: body.email,
+        playerName: body.playerName
+      });
       const result = await createIdentityApplication(env, {
           email: body.email,
           playerName: body.playerName,
@@ -719,7 +895,7 @@ async function handlePublicApi(
       return json(result, 201, cors);
     } catch (error) {
       await recordRateLimitAttempt(request, env, IDENTITY_APPLICATION_LIMIT);
-      return problem(errorMessage(error), 400, "identity_application_invalid");
+      return problem(errorMessage(error), 400, "identity_application_invalid", cors);
     }
   }
   if (path === "/api/public/identity-code-recovery" && method === "POST") {
@@ -894,8 +1070,7 @@ async function handlePublicApi(
     const reissueLookupValue = identityLookupFingerprint({
       email: body.email,
       identityCode: body.identityCode,
-      applicationNumber: body.applicationNumber,
-      playerName: body.playerName
+      applicationNumber: body.applicationNumber
     });
     const valueLimited = await rejectIfValueRateLimited(
       reissueLookupValue,
@@ -908,8 +1083,7 @@ async function handlePublicApi(
       const result = await reissuePreview(env, {
           identityCode: body.identityCode,
           applicationNumber: body.applicationNumber,
-          email: body.email,
-          playerName: body.playerName
+          email: body.email
         });
       await Promise.all([
         clearRateLimitAttempts(request, env, IDENTITY_CHECK_LIMIT),
@@ -945,8 +1119,7 @@ async function handlePublicApi(
     const reissueLookupValue = identityLookupFingerprint({
       email: body.email,
       identityCode: body.identityCode,
-      applicationNumber: body.applicationNumber,
-      playerName: body.playerName
+      applicationNumber: body.applicationNumber
     });
     const valueLimited = await rejectIfValueRateLimited(
       reissueLookupValue,
@@ -956,13 +1129,20 @@ async function handlePublicApi(
     );
     if (valueLimited) return valueLimited;
     try {
+      await consumeIdentityApplicationVerification(env, {
+        challengeId: body.verificationId,
+        verificationToken: body.verificationToken,
+        purpose: "reissue",
+        email: body.lookupEmail ?? body.email,
+        identityCode: body.identityCode
+      });
       const result = await submitReissue(env, {
+          // The email challenge is consumed before the reissue request is created.
+          // It is bound to the old identity code and its reserved email.
           identityCode: body.identityCode,
           applicationNumber: body.applicationNumber,
           lookupEmail: body.lookupEmail,
-          lookupPlayerName: body.lookupPlayerName,
           email: body.email,
-          playerName: body.playerName,
           locale: body.locale
         });
       await Promise.all([
@@ -1043,12 +1223,12 @@ async function handleAdminApi(
             responses: item.responses.map((response, responseIndex) => ({
               ...response,
               id: `demo-daily-response-${itemIndex + 1}-${responseIndex + 1}`,
-              identityCode: "00000000",
+              identityCode: "••••••••",
               playerName: "Demo 用户"
             })),
             winners: item.winners.map((winner) => ({
               ...winner,
-              identityCode: "00000000",
+              identityCode: "••••••••",
               playerName: "Demo 用户"
             }))
           }))
@@ -1279,6 +1459,34 @@ async function handleAdminApi(
       return problem(errorMessage(error), 400, `identity_${action}_failed`);
     }
   }
+  if (path === "/api/admin/identity-profile-change-requests" && method === "GET") {
+    const url = new URL(request.url);
+    return json(await listIdentityProfileChangeRequests(env, {
+      page: Number(url.searchParams.get("page") ?? 1),
+      status: url.searchParams.get("status")?.trim() ?? "pending"
+    }));
+  }
+  const profileChangeMatch =
+    /^\/api\/admin\/identity-profile-change-requests\/([^/]+)\/(approve|reject)$/.exec(path);
+  if (profileChangeMatch && method === "POST") {
+    const requestId = profileChangeMatch[1];
+    const action = profileChangeMatch[2];
+    if (!requestId || (action !== "approve" && action !== "reject")) {
+      return problem("资料变更申请不存在", 404);
+    }
+    try {
+      const body = await readJsonObject(request, 8_000);
+      await reviewIdentityProfileChangeRequest(env, {
+        id: requestId,
+        action,
+        reviewedBy: session.email,
+        reason: typeof body.reason === "string" ? body.reason : undefined
+      });
+      return json({ ok: true });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_profile_change_review_failed");
+    }
+  }
   if (path === "/api/admin/identity-codes" && method === "GET") {
     const url = new URL(request.url);
     const demo = isDemoSession(session);
@@ -1289,14 +1497,18 @@ async function handleAdminApi(
         status: url.searchParams.get("status")?.trim() ?? "",
         includeCode: canManageIdentity
       });
+    const safeResult = {
+      ...result,
+      items: result.items.map(({ password_hash, password_set_at, password_updated_at, ...item }) => item)
+    };
     return json(
       demo
-        ? demoIdentityCodes(result)
+        ? demoIdentityCodes(safeResult as IdentityCodesResult)
         : canManageIdentity
-        ? result
+        ? safeResult
         : {
-            ...result,
-            items: result.items.map((item) => ({
+            ...safeResult,
+            items: safeResult.items.map((item) => ({
               ...item,
               code: "••••••••"
             }))
@@ -1327,7 +1539,7 @@ async function handleAdminApi(
     }
   }
   const identityCodeMatch =
-    /^\/api\/admin\/identity-codes\/([^/]+)(?:\/(resend|information|reissue))?$/.exec(path);
+    /^\/api\/admin\/identity-codes\/([^/]+)(?:\/(resend|information|reissue|reset-password))?$/.exec(path);
   if (identityCodeMatch && !identityCodeMatch[2] && method === "PATCH") {
     const codeId = identityCodeMatch[1];
     if (!codeId) return problem("识别码不存在", 404);
@@ -1402,6 +1614,15 @@ async function handleAdminApi(
       );
     } catch (error) {
       return problem(errorMessage(error), 400, "identity_code_reissue_failed");
+    }
+  }
+  if (identityCodeMatch?.[2] === "reset-password" && method === "POST") {
+    const codeId = identityCodeMatch[1];
+    if (!codeId) return problem("识别码不存在", 404);
+    try {
+      return json(await resetIdentityCodePassword(env, codeId));
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_code_password_reset_failed");
     }
   }
   if (path === "/api/admin/temp-keys" && method === "GET") {
@@ -2224,8 +2445,10 @@ async function buildPublicDailyVotePayload(
 }
 
 type PublicActionIdentity = {
-  publicTestVote: boolean;
-  identityRecord: Awaited<ReturnType<typeof verifyIdentityCode>> | null;
+  identityRecord: Extract<
+    Awaited<ReturnType<typeof verifyIdentityPassword>>,
+    { ok: true }
+  >;
 };
 
 async function verifyPublicActionIdentity(
@@ -2234,11 +2457,6 @@ async function verifyPublicActionIdentity(
   cors: Headers,
   body: Record<string, unknown>
 ): Promise<PublicActionIdentity | Response> {
-  const publicTestVote = String(body.identityCode ?? "").trim() === "00000000";
-  if (publicTestVote) {
-    await recordRateLimitAttempt(request, env, PUBLIC_TEST_VOTE_LIMIT);
-    return { publicTestVote, identityRecord: null };
-  }
   const valueLimited = await rejectIfValueRateLimited(
     body.identityCode,
     env,
@@ -2246,7 +2464,10 @@ async function verifyPublicActionIdentity(
     cors
   );
   if (valueLimited) return valueLimited;
-  const verification = await verifyIdentityCode(env, body.identityCode);
+  const verification = await verifyIdentityPassword(env, {
+    identityCode: body.identityCode,
+    password: body.identityPassword
+  });
   if (!verification.ok) {
     if (verification.reason === "invalid") {
       await Promise.all([
@@ -2258,24 +2479,45 @@ async function verifyPublicActionIdentity(
         )
       ]);
     }
+    if (verification.reason === "invalid_password") {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_PASSWORD_LIMIT),
+        recordValueRateLimitAttempt(
+          body.identityCode,
+          env,
+          IDENTITY_PASSWORD_TARGET_LIMIT
+        )
+      ]);
+    }
     const detail =
       verification.reason === "expired"
         ? "身份识别码已过期"
         : verification.reason === "disabled"
           ? "身份识别码已被禁用"
+          : verification.reason === "password_required"
+            ? "该身份识别码尚未设置密码，请先使用忘记密码功能"
+            : verification.reason === "invalid_password"
+              ? "身份识别码或密码错误"
           : "身份识别码无效";
     return json(
       {
         title: detail,
-        code: `identity_code_${verification.reason}`,
+        code:
+          verification.reason === "password_required"
+            ? "identity_password_required"
+            : verification.reason === "invalid_password"
+              ? "identity_password_invalid"
+              : `identity_code_${verification.reason}`,
         canRenew: verification.canRenew,
         applicationNumber: verification.applicationNumber ?? null
       },
-      verification.reason === "expired" ? 409 : 403,
+      verification.reason === "expired" || verification.reason === "password_required"
+        ? 409
+        : 403,
       cors
     );
   }
-  return { publicTestVote, identityRecord: verification };
+  return { identityRecord: verification };
 }
 
 async function buildAdminBootstrap(
@@ -2477,7 +2719,7 @@ function demoVoteBallots(items: VoteBallotsResult): VoteBallotsResult {
   return items.map((item) => ({
     ...item,
     voterId: "demo-voter",
-    identityCode: "00000000",
+    identityCode: "••••••••",
     playerName: "Demo 用户"
   }));
 }
@@ -2501,8 +2743,8 @@ function demoIdentityApplications(
     items: result.items.map((item, index) => ({
       ...item,
       id: `demo-application-${index + 1}`,
-      application_number: "00000000",
-      email: "test@demo.com",
+      application_number: "DEMO-APPLICATION",
+      email: "demo@example.invalid",
       player_name: "Demo 用户",
       identity_code_id: null,
       reviewed_by: null,
@@ -2518,13 +2760,13 @@ function demoIdentityCodes(result: IdentityCodesResult): IdentityCodesResult {
     items: result.items.map((item, index) => ({
       ...item,
       id: `demo-code-${index + 1}`,
-      code: "00000000",
+      code: "••••••••",
       code_hash: "demo",
       code_encrypted: "",
       application_id: null,
-      application_number: "00000000",
+      application_number: "DEMO-APPLICATION",
       player_name: "Demo 用户",
-      email: "test@demo.com",
+      email: "demo@example.invalid",
       created_by: "demo",
       last_email_error: null
     }))
@@ -2539,7 +2781,7 @@ function demoTemporaryKeys(result: TemporaryKeysResult): TemporaryKeysResult {
       id: `demo-key-${index + 1}`,
       name: "Demo Access Key",
       permissions_json: JSON.stringify(["demo:preview"]),
-      created_by: "test@demo.com"
+      created_by: "demo"
     }))
   };
 }

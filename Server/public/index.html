@@ -34,7 +34,6 @@
           <p id="announcement" class="hero-copy">正在读取最新公共信息。</p>
           <div class="chips">
             <span class="chip" id="server-name">中国大陆服务器</span>
-            <span class="chip" id="sync-state">数据同步中</span>
           </div>
         </div>
         <div class="hero-summary" aria-label="营地摘要">
@@ -159,6 +158,14 @@
 
       <article class="vote-panel feature-panel" id="vote" data-feature-panel="vote" hidden>
         <div id="daily-vote-panels" class="daily-vote-panel-list">
+          <button class="daily-vote-panel-card" type="button" data-daily-panel="identity">
+            <span class="daily-vote-panel-icon" aria-hidden="true">⌁</span>
+            <span class="daily-vote-panel-copy">
+              <strong>身份识别码</strong>
+              <small>登录、申请与找回身份识别码</small>
+            </span>
+            <span class="daily-vote-panel-stat"><b id="daily-identity-panel-state">—</b><small>状态</small><span aria-hidden="true">›</span></span>
+          </button>
           <button class="daily-vote-panel-card" type="button" data-daily-panel="technology">
             <span class="daily-vote-panel-icon" aria-hidden="true">✓</span>
             <span class="daily-vote-panel-copy">
@@ -195,27 +202,59 @@
             <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
             <p id="vote-limit-description" class="muted vote-limit-description">每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。</p>
             <p id="vote-window-state" class="vote-window-state">当前未开放</p>
-            <div class="identity-vote-row daily-identity-row">
-              <label class="field identity-code-field">
-                <span>身份识别码（必填）</span>
-                <input
-                  id="identity-code"
-                  inputmode="numeric"
-                  autocomplete="one-time-code"
-                  placeholder="请输入身份识别码"
-                  required
-                />
-              </label>
-              <button id="apply-identity-code" class="button button-quiet" type="button">申请身份识别码</button>
-              <button id="renew-identity-code" class="button button-quiet" type="button">申请延长识别码有效期</button>
-              <button id="reissue-identity-code" class="button button-quiet" type="button">申请更换身份识别码</button>
-              <button id="recover-identity-code" class="button button-quiet" type="button">忘记识别码</button>
-            </div>
+            <p id="technology-identity-hint" class="muted identity-login-hint"></p>
             <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
             <div id="vote-options" class="vote-options" aria-live="polite"></div>
             <div class="action-row vote-action-row">
               <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
               <span id="vote-feedback" class="feedback" role="status"></span>
+            </div>
+          </section>
+          <section class="daily-identity-section" data-daily-panel-content="identity" hidden>
+            <div class="section-heading">
+              <div>
+                <h3>身份识别码</h3>
+                <p class="muted">投票前请在此登录身份识别码账户。</p>
+              </div>
+              <span id="identity-account-state" class="date-badge">未登录</span>
+            </div>
+            <div id="identity-account-logged-out">
+              <form id="identity-login-form" class="form-grid identity-account-form">
+                <label class="field">
+                  <span>身份识别码</span>
+                  <input id="identity-login-code" inputmode="numeric" maxlength="8" autocomplete="username" required />
+                </label>
+                <label class="field">
+                  <span>密码</span>
+                  <input id="identity-login-password" type="password" autocomplete="current-password" required />
+                </label>
+                <div class="action-row identity-login-actions">
+                  <button class="button button-primary" type="submit">登录身份识别码</button>
+                </div>
+              </form>
+              <p id="identity-login-feedback" class="feedback" role="status"></p>
+              <div class="identity-login-divider" aria-hidden="true"></div>
+              <div class="action-row identity-account-actions">
+                <button id="identity-apply" class="button button-quiet" type="button">申请身份识别码</button>
+                <button id="identity-renew" class="button button-quiet" type="button">申请延长有效期</button>
+                <button id="identity-reissue" class="button button-quiet" type="button">申请更换识别码</button>
+                <button id="identity-recover" class="button button-quiet" type="button">忘记识别码</button>
+                <button id="identity-forgot-password" class="button button-quiet" type="button">忘记密码</button>
+              </div>
+            </div>
+            <div id="identity-account-logged-in" hidden>
+              <div class="identity-account-summary">
+                <strong id="identity-account-name">—</strong>
+                <span id="identity-account-code" class="muted">—</span>
+                <span id="identity-account-email" class="muted">—</span>
+                <span id="identity-account-expiry" class="muted">—</span>
+              </div>
+              <div class="action-row identity-account-actions">
+                <button id="identity-update-name" class="button button-quiet" type="button">修改玩家名称</button>
+                <button id="identity-change-email" class="button button-quiet" type="button">绑定/修改邮箱</button>
+                <button id="identity-logout" class="button button-quiet" type="button">退出身份识别码账号</button>
+              </div>
+              <p id="identity-profile-feedback" class="feedback" role="status"></p>
             </div>
           </section>
           <section class="daily-items-section" data-daily-panel-content="items" hidden>
@@ -322,6 +361,13 @@
             <input id="identity-player-name" maxlength="80" />
           </label>
         </div>
+        <div id="identity-application-verification-field" class="identity-verification-field" hidden>
+          <label class="field">
+            <span>邮箱验证码（10分钟内有效）</span>
+            <input id="identity-application-verification-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+          </label>
+          <p class="muted">验证码验证通过后才会继续提交申请。</p>
+        </div>
         <ol id="identity-rules" class="identity-rules">
           <li>小号及非本营地成员不得申请，否则申请将被审批拒绝。</li>
           <li>忘记玩家名称请查询后再来申请，填写不实信息将被审批拒绝。</li>
@@ -338,7 +384,7 @@
           <li>申请更换身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。</li>
           <li>在识别码被盗用等情况下建议立即申请更换身份识别码。</li>
           <li>新发行的识别码的有效期以审批为准。</li>
-          <li>申请更换身份识别码请输入申请编号、玩家名称、申请时预留的邮箱、旧识别码的其中一项。</li>
+          <li>申请更换身份识别码请输入申请编号、申请时预留的邮箱、旧识别码的其中一项。</li>
           <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
           <li>提交申请后预计于48小时内完成审核，请留意邮箱的审核结果邮件。</li>
         </ol>
@@ -352,6 +398,37 @@
           <span id="identity-application-feedback" class="feedback" role="status"></span>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="identity-password-reset-dialog" class="identity-password-reset-dialog">
+      <div class="dialog-card identity-password-reset-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">IDENTITY CODE</p>
+            <h2>忘记密码</h2>
+          </div>
+          <button id="close-identity-password-reset" class="button button-quiet" type="button">关闭</button>
+        </div>
+        <form id="identity-password-reset-form" class="form-grid">
+          <label class="field"><span>申请编号</span><input id="identity-reset-application" maxlength="40" /></label>
+          <label class="field"><span>申请时预留邮箱</span><input id="identity-reset-email" type="email" maxlength="254" /></label>
+          <label class="field"><span>身份识别码</span><input id="identity-reset-code" inputmode="numeric" maxlength="8" /></label>
+          <ol class="identity-rules">
+            <li>申请找回密码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
+          </ol>
+          <div class="action-row"><button class="button button-primary" type="submit">发送验证码</button><button id="identity-reset-cancel" class="button button-quiet" type="button">返回登录</button></div>
+        </form>
+        <form id="identity-password-verify-form" class="form-grid" hidden>
+          <label class="field"><span>验证码（10分钟内有效）</span><input id="identity-reset-otp" inputmode="numeric" maxlength="6" /></label>
+          <div class="action-row"><button class="button button-primary" type="submit">验证验证码</button></div>
+        </form>
+        <form id="identity-password-set-form" class="form-grid" hidden>
+          <label class="field"><span>新密码（12-64位）</span><input id="identity-new-password" type="password" minlength="12" maxlength="64" autocomplete="new-password" /></label>
+          <p class="muted password-policy-hint">密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。</p>
+          <div class="action-row"><button class="button button-primary" type="submit">设置新密码</button></div>
+        </form>
+        <p id="identity-reset-feedback" class="feedback" role="status"></p>
+      </div>
     </dialog>
 
     <dialog id="identity-application-error-dialog" class="compact-dialog">

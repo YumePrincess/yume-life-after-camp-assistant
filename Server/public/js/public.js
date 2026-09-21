@@ -12,6 +12,10 @@
     reissueApplicationNumber: "",
     reissueEmail: "",
     reissuePlayerName: "",
+    identitySession: null,
+    identityResetChallengeId: "",
+    identityResetToken: "",
+    identityEmailChangeId: "",
     voteErrorRenewalCode: "",
     activeFeature: "",
     dailyPanel: "",
@@ -35,11 +39,12 @@
     runs: "AUTOMATION"
   };
   const DAILY_PANEL_KICKERS = {
+    identity: "IDENTITY CODE",
     technology: "NEXT TECHNOLOGY",
     items: "OPEN ITEMS",
     history: "HISTORY"
   };
-  const IDENTITY_CODE_STORAGE_KEY = "mrzh.identity-code";
+  const IDENTITY_SESSION_STORAGE_KEY = "mrzh.identity-session";
   const ACTIVE_IDENTITY_CONFLICT =
     "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。";
   const EXPIRED_IDENTITY_CONFLICT =
@@ -58,48 +63,215 @@
   }
 
   function dailyVoteFeatureCount(payload) {
-    return (Array.isArray(payload?.items) ? payload.items.length : 0) + 1;
+    return (Array.isArray(payload?.items) ? payload.items.length : 0) + 2;
   }
 
-  function rememberedIdentityCode() {
+  function loadIdentitySession() {
     try {
-      const value = window.localStorage.getItem(IDENTITY_CODE_STORAGE_KEY) || "";
-      return /^\d{8}$/.test(value) ? value : "";
+      const value = JSON.parse(window.localStorage.getItem(IDENTITY_SESSION_STORAGE_KEY) || "null");
+      return value && /^\d{8}$/.test(value.identityCode) && value.password
+        ? value
+        : null;
     } catch {
-      return "";
+      return null;
     }
   }
 
-  function syncRememberedIdentityCodeInputs(code, { force = false } = {}) {
-    if (!/^\d{8}$/.test(code)) return;
-    const identityInput = byId("identity-code");
-    if (identityInput && (force || (!state.identityCodeEdited && !identityInput.value.trim()))) {
-      identityInput.value = code;
+  function persistIdentitySession(session) {
+    state.identitySession = session;
+    try {
+      if (session) {
+        window.localStorage.setItem(IDENTITY_SESSION_STORAGE_KEY, JSON.stringify(session));
+      } else {
+        window.localStorage.removeItem(IDENTITY_SESSION_STORAGE_KEY);
+      }
+    } catch {
+      // Private browsing or an embedded webview may deny localStorage access.
     }
-    for (const input of document.querySelectorAll(".daily-identity-code")) {
-      const itemId = input.dataset.dailyItemId;
-      const hasState = itemId && Object.prototype.hasOwnProperty.call(state.dailyIdentityCodes, itemId);
-      if (force || (!hasState && !input.value.trim())) {
-        input.value = code;
-        if (itemId) state.dailyIdentityCodes[itemId] = code;
+    renderIdentityAccount();
+  }
+
+  function identitySession() {
+    return state.identitySession;
+  }
+
+  function requireIdentitySession() {
+    if (identitySession()) return true;
+    setText("technology-identity-hint", window.MrzhI18n.t("请先在身份识别码卡片登录，登录后即可投票。"));
+    openDailyPanel("identity");
+    return false;
+  }
+
+  function renderIdentityAccount() {
+    const session = identitySession();
+    const loggedOut = byId("identity-account-logged-out");
+    const loggedIn = byId("identity-account-logged-in");
+    if (loggedOut) loggedOut.hidden = Boolean(session);
+    if (loggedIn) loggedIn.hidden = !session;
+    setText("identity-account-state", session ? window.MrzhI18n.t("已登录") : window.MrzhI18n.t("未登录"));
+    setText("daily-identity-panel-state", session ? "✓" : "—");
+    if (session) {
+      setText("identity-account-name", session.playerName || window.MrzhI18n.t("未填写玩家名称"));
+      setText("identity-account-code", session.identityCode || "—");
+      setText("identity-account-email", session.email || window.MrzhI18n.t("未绑定邮箱"));
+      setText(
+        "identity-account-expiry",
+        session.expiresAt ? window.MrzhI18n.format("有效期至 {date}", { date: formatDate(session.expiresAt) }) : window.MrzhI18n.t("永久有效")
+      );
+      const codeInput = byId("identity-reset-code");
+      if (codeInput && !codeInput.value) codeInput.value = session.identityCode;
+      const loginCode = byId("identity-login-code");
+      if (loginCode) loginCode.value = session.identityCode;
+    }
+  }
+
+  function openIdentityPanel() {
+    openDailyPanel("identity");
+    renderIdentityAccount();
+  }
+
+  async function loginIdentity(event) {
+    event.preventDefault();
+    const feedback = byId("identity-login-feedback");
+    const identityCode = byId("identity-login-code").value.trim();
+    const password = byId("identity-login-password").value;
+    if (!/^\d{8}$/.test(identityCode) || !password) {
+      feedback.textContent = window.MrzhI18n.t("请输入有效的身份识别码和密码。");
+      return;
+    }
+    feedback.textContent = window.MrzhI18n.t("正在验证…");
+    try {
+      const account = await request("/api/public/identity-login", {
+        method: "POST",
+        body: JSON.stringify({ identityCode, identityPassword: password })
+      });
+      persistIdentitySession({ ...account, password });
+      feedback.textContent = window.MrzhI18n.t("登录成功。");
+      byId("identity-login-password").value = "";
+      setText("technology-identity-hint", window.MrzhI18n.t("身份识别码已登录，可以提交投票。"));
+    } catch (error) {
+      feedback.textContent = window.MrzhI18n.t(error.message);
+      if (error.code === "identity_password_required") {
+        beginIdentityPasswordReset();
       }
     }
   }
 
-  function hydrateRememberedIdentityCodeInputs() {
-    syncRememberedIdentityCodeInputs(rememberedIdentityCode());
+  function beginIdentityPasswordReset() {
+    const dialog = byId("identity-password-reset-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+    byId("identity-password-verify-form").hidden = true;
+    byId("identity-password-set-form").hidden = true;
+    setText("identity-reset-feedback", "");
+    const session = identitySession();
+    if (session) {
+      byId("identity-reset-code").value = session.identityCode;
+      byId("identity-reset-email").value = session.email || "";
+    }
   }
 
-  function rememberIdentityCode(value) {
-    const code = String(value || "").trim();
-    if (!/^\d{8}$/.test(code)) return;
+  async function requestPasswordReset(event) {
+    event.preventDefault();
+    const feedback = byId("identity-reset-feedback");
+    feedback.textContent = window.MrzhI18n.t("正在发送验证码…");
     try {
-      window.localStorage.setItem(IDENTITY_CODE_STORAGE_KEY, code);
-    } catch {
-      // Private browsing or an embedded webview may deny localStorage access.
+      const result = await request("/api/public/identity-password-reset", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "request",
+          applicationNumber: byId("identity-reset-application").value.trim(),
+          email: byId("identity-reset-email").value.trim(),
+          identityCode: byId("identity-reset-code").value.trim()
+        })
+      });
+      state.identityResetChallengeId = result.challengeId;
+      byId("identity-password-verify-form").hidden = false;
+      feedback.textContent = window.MrzhI18n.t("验证码已发送到预留邮箱。");
+    } catch (error) {
+      feedback.textContent = window.MrzhI18n.t(error.message);
     }
-    state.identityCodeEdited = false;
-    syncRememberedIdentityCodeInputs(code, { force: true });
+  }
+
+  async function verifyPasswordReset(event) {
+    event.preventDefault();
+    const feedback = byId("identity-reset-feedback");
+    try {
+      const result = await request("/api/public/identity-password-reset", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "verify",
+          challengeId: state.identityResetChallengeId,
+          otp: byId("identity-reset-otp").value.trim()
+        })
+      });
+      state.identityResetToken = result.resetToken;
+      byId("identity-password-set-form").hidden = false;
+      feedback.textContent = window.MrzhI18n.t("验证通过，请设置新密码。");
+    } catch (error) {
+      feedback.textContent = window.MrzhI18n.t(error.message);
+    }
+  }
+
+  async function setPasswordReset(event) {
+    event.preventDefault();
+    const feedback = byId("identity-reset-feedback");
+    try {
+      await request("/api/public/identity-password-reset", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "set",
+          challengeId: state.identityResetChallengeId,
+          resetToken: state.identityResetToken,
+          password: byId("identity-new-password").value
+        })
+      });
+      feedback.textContent = window.MrzhI18n.t("密码设置成功，请返回登录。");
+      state.identityResetChallengeId = "";
+      state.identityResetToken = "";
+      byId("identity-new-password").value = "";
+      byId("identity-password-set-form").hidden = true;
+    } catch (error) {
+      feedback.textContent = window.MrzhI18n.t(error.message);
+    }
+  }
+
+  async function updateIdentityName() {
+    const session = identitySession();
+    if (!session) return openIdentityPanel();
+    const playerName = window.prompt(window.MrzhI18n.t("请输入新的玩家名称"), session.playerName || "");
+    if (playerName == null || !playerName.trim()) return;
+    try {
+      const result = await request("/api/public/identity-profile", {
+        method: "POST",
+        body: JSON.stringify({ action: "update-name", identityCode: session.identityCode, identityPassword: session.password, playerName })
+      });
+      setText("identity-profile-feedback", window.MrzhI18n.t("玩家名称变更已提交，审核通过后生效。"));
+    } catch (error) {
+      setText("identity-profile-feedback", window.MrzhI18n.t(error.message));
+    }
+  }
+
+  async function changeIdentityEmail() {
+    const session = identitySession();
+    if (!session) return openIdentityPanel();
+    const newEmail = window.prompt(window.MrzhI18n.t("请输入新的邮箱地址"), session.email || "");
+    if (newEmail == null || !newEmail.trim()) return;
+    try {
+      const result = await request("/api/public/identity-profile", {
+        method: "POST",
+        body: JSON.stringify({ action: "request-email-change", identityCode: session.identityCode, identityPassword: session.password, newEmail })
+      });
+      const oldOtp = window.prompt(window.MrzhI18n.t("请输入旧邮箱收到的验证码"), "");
+      const newOtp = window.prompt(window.MrzhI18n.t("请输入新邮箱收到的验证码"), "");
+      if (!oldOtp || !newOtp) return;
+      const confirmed = await request("/api/public/identity-profile", {
+        method: "POST",
+        body: JSON.stringify({ action: "confirm-email-change", changeId: result.changeId, oldOtp, newOtp })
+      });
+      setText("identity-profile-feedback", window.MrzhI18n.t("邮箱变更已提交，审核通过后生效。"));
+    } catch (error) {
+      setText("identity-profile-feedback", window.MrzhI18n.t(error.message));
+    }
   }
 
   function syncDailyFeatureBackButton() {
@@ -444,8 +616,6 @@
     renderVoteSelection(summary);
     byId("submit-vote").disabled =
       summary.isOpen === false || !summary.options?.length;
-    const identityInput = byId("identity-code");
-    if (identityInput) identityInput.disabled = summary.isOpen === false;
     if (!summary.options?.length) {
       root.append(create("p", "empty-state", "管理员尚未开放科技投票。"));
       return;
@@ -665,45 +835,6 @@
     return Array.isArray(values) ? values : [];
   }
 
-  function appendDailyIdentityControls(card, itemId) {
-    const row = create("div", "identity-vote-row daily-item-identity-row");
-    const label = document.createElement("label");
-    label.className = "field identity-code-field";
-    label.append(create("span", "", window.MrzhI18n.t("身份识别码（必填）")));
-    const input = document.createElement("input");
-    input.className = "daily-identity-code";
-    input.dataset.dailyItemId = itemId;
-    input.inputMode = "numeric";
-    input.autocomplete = "one-time-code";
-    input.placeholder = window.MrzhI18n.t("请输入身份识别码");
-    const hasState = Object.prototype.hasOwnProperty.call(state.dailyIdentityCodes, itemId);
-    input.value = hasState ? state.dailyIdentityCodes[itemId] : rememberedIdentityCode();
-    if (!hasState && input.value) state.dailyIdentityCodes[itemId] = input.value;
-    input.required = true;
-    input.addEventListener("input", () => {
-      state.dailyIdentityCodes[itemId] = input.value;
-    });
-    label.append(input);
-    row.append(label);
-    const actions = [
-      ["申请身份识别码", () => openNewApplication()],
-      ["申请延长识别码有效期", () => {
-        const value = input.value.trim();
-        openRenewalLookup(/^\d{8}$/.test(value) ? value : "");
-      }],
-      ["申请更换身份识别码", () => openReissue(input.value.trim())],
-      ["忘记识别码", () => openIdentityRecovery()]
-    ];
-    for (const [labelText, handler] of actions) {
-      const button = create("button", "button button-quiet", labelText);
-      button.type = "button";
-      button.addEventListener("click", handler);
-      row.append(button);
-    }
-    card.append(row);
-    return input;
-  }
-
   function renderDailyItem(item) {
     const card = create("article", `daily-vote-item daily-vote-item-${item.kind}`);
     const heading = create("div", "daily-vote-item-heading");
@@ -732,7 +863,6 @@
       })));
     }
     card.append(meta);
-    const identityInput = appendDailyIdentityControls(card, item.id);
     if (item.kind === "poll") {
       const selected = new Set(dailySelections(item.id));
       const options = create("div", "daily-vote-options");
@@ -768,7 +898,7 @@
     );
     submit.type = "button";
     submit.disabled = item.isOpen === false;
-    submit.addEventListener("click", () => submitDailyVote(item, identityInput));
+    submit.addEventListener("click", () => submitDailyVote(item));
     action.append(submit);
     card.append(action);
     return card;
@@ -876,6 +1006,7 @@
       (payload?.history?.polls || []).length +
       (payload?.history?.draws || []).length;
     root.replaceChildren();
+    renderIdentityAccount();
     setText("feature-vote-count", String(dailyVoteFeatureCount(payload)));
     setText("daily-tech-panel-count", "1");
     setText("daily-items-panel-count", String(items.length));
@@ -897,7 +1028,7 @@
   }
 
   function openDailyPanel(panel) {
-    if (!["technology", "items", "history"].includes(panel)) return;
+    if (!["identity", "technology", "items", "history"].includes(panel)) return;
     if (state.activeFeature !== "vote") return;
     state.dailyPanel = panel;
     syncDailyFeatureBackButton();
@@ -910,12 +1041,9 @@
     renderDailyVote(state.data?.dailyVote || {});
   }
 
-  async function submitDailyVote(item, identityInput = byId("identity-code")) {
-    const identityCode = identityInput?.value.trim() || "";
-    if (!/^\d{8}$/.test(identityCode)) {
-      showVoteError(window.MrzhI18n.t("请输入身份识别码。"), window.MrzhI18n.t("日常投票未提交"));
-      return;
-    }
+  async function submitDailyVote(item) {
+    if (!requireIdentitySession()) return;
+    const { identityCode, password } = identitySession();
     const selections = item.kind === "poll" ? dailySelections(item.id) : [];
     if (item.kind === "poll" && !selections.length) {
       setText("daily-vote-status", window.MrzhI18n.t("请至少选择一项。"));
@@ -928,11 +1056,11 @@
         body: JSON.stringify({
           itemId: item.id,
           identityCode,
+          identityPassword: password,
           locale: window.MrzhI18n.language(),
           selections
         })
       });
-      rememberIdentityCode(identityCode);
       state.dailySelections[item.id] = [];
       if (state.data) state.data.dailyVote = payload;
       renderDailyVote(payload);
@@ -940,13 +1068,15 @@
       showVoteSuccessDialog({
         kind: "daily",
         data: payload,
-        message: payload.publicTestVote
-          ? window.MrzhI18n.t("测试成功，本次提交不计票。")
-          : payload.renewalGraceUsed
+        message: payload.renewalGraceUsed
             ? window.MrzhI18n.t("投票已提交；本次已使用延期审批期间唯一一次过期投票机会。")
             : window.MrzhI18n.t("提交成功，票数已更新。")
       });
     } catch (error) {
+      if (["identity_password_required", "identity_password_invalid", "identity_login_failed"].includes(error.code)) {
+        persistIdentitySession(null);
+        openIdentityPanel();
+      }
       showVoteError(window.MrzhI18n.t(error.message), window.MrzhI18n.t("日常投票未提交"), error.code === "identity_code_expired" && error.canRenew, identityCode);
     }
   }
@@ -1291,11 +1421,8 @@
       });
       return;
     }
-    const identityCode = byId("identity-code").value.trim();
-    if (!/^\d{8}$/.test(identityCode)) {
-      showVoteError(window.MrzhI18n.t("请输入身份识别码。"));
-      return;
-    }
+    if (!requireIdentitySession()) return;
+    const { identityCode, password } = identitySession();
     button.disabled = true;
     feedback.textContent = window.MrzhI18n.t("正在提交…");
     try {
@@ -1303,11 +1430,11 @@
         method: "POST",
         body: JSON.stringify({
           identityCode,
+          identityPassword: password,
           locale: window.MrzhI18n.language(),
           selections: [...state.selections]
         })
       });
-      rememberIdentityCode(identityCode);
       state.selections.clear();
       if (state.data) state.data.voteSummary = summary;
       renderVote(summary);
@@ -1319,9 +1446,7 @@
         data: summary,
         message: summary.voteWithdrawn
           ? window.MrzhI18n.t("投票已撤回，当前不计入投票人数。")
-          : summary.publicTestVote
-            ? window.MrzhI18n.t("测试成功，本次提交不计票。")
-            : summary.renewalGraceUsed
+          : summary.renewalGraceUsed
               ? window.MrzhI18n.t("投票已提交；本次已使用延期审批期间唯一一次过期投票机会。")
               : window.MrzhI18n.t("投票已保存，可在截止前再次修改。")
       });
@@ -1339,6 +1464,10 @@
         error.code === "identity_code_expired" && error.canRenew,
         identityCode
       );
+      if (["identity_password_required", "identity_password_invalid", "identity_login_failed"].includes(error.code)) {
+        persistIdentitySession(null);
+        openIdentityPanel();
+      }
     } finally {
       button.disabled = false;
     }
@@ -1384,6 +1513,8 @@
     state.identityMode = "new";
     state.renewalCode = "";
     state.renewalApplicationNumber = "";
+    state.identityApplicationVerificationId = "";
+    state.identityApplicationVerificationToken = "";
     setText("identity-dialog-title", window.MrzhI18n.t("申请身份识别码"));
     byId("identity-renewal-number").hidden = true;
     byId("identity-email").value = "";
@@ -1400,9 +1531,10 @@
     byId("identity-reissue-rules").hidden = true;
     byId("identity-renewal-lookup-rules").hidden = true;
     setText("identity-email-label", window.MrzhI18n.t("接收识别码邮箱"));
-    setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
     setText("submit-identity-application", window.MrzhI18n.t("提交申请"));
     setText("identity-application-feedback", "");
+    byId("identity-application-verification-field").hidden = true;
+    byId("identity-application-verification-code").value = "";
     byId("identity-application-dialog").showModal();
   }
 
@@ -1494,6 +1626,8 @@
     state.reissueApplicationNumber = "";
     state.reissueEmail = "";
     state.reissuePlayerName = "";
+    state.identityApplicationVerificationId = "";
+    state.identityApplicationVerificationToken = "";
     setText("identity-dialog-title", window.MrzhI18n.t("申请更换身份识别码"));
     byId("identity-renewal-number").hidden = true;
     byId("identity-recovery-number-field").hidden = true;
@@ -1502,19 +1636,20 @@
     byId("identity-renewal-application-number-field").hidden = true;
     byId("identity-renewal-code-field").hidden = true;
     byId("identity-email-field").hidden = false;
-    byId("identity-player-name-field").hidden = false;
+    byId("identity-player-name-field").hidden = true;
     byId("identity-rules").hidden = true;
     byId("identity-recovery-rules").hidden = true;
     byId("identity-reissue-rules").hidden = false;
     byId("identity-renewal-lookup-rules").hidden = true;
     setText("identity-email-label", window.MrzhI18n.t("申请时预留的邮箱"));
-    setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
     setText("submit-identity-application", window.MrzhI18n.t("下一步：核对信息"));
     byId("identity-reissue-application-number").value = "";
     byId("identity-reissue-code").value = identityCode;
     byId("identity-email").value = "";
     byId("identity-player-name").value = "";
     setText("identity-application-feedback", "");
+    byId("identity-application-verification-field").hidden = true;
+    byId("identity-application-verification-code").value = "";
     byId("identity-application-dialog").showModal();
   }
 
@@ -1523,7 +1658,7 @@
     state.reissueCode = lookup.identityCode;
     state.reissueApplicationNumber =
       lookup.applicationNumber || preview.applicationNumber || "";
-    state.reissueEmail = lookup.email;
+    state.reissueEmail = lookup.email || preview.email;
     state.reissuePlayerName = lookup.playerName;
     setText("identity-dialog-title", window.MrzhI18n.t("申请更换身份识别码"));
     setText(
@@ -1539,16 +1674,15 @@
     byId("identity-renewal-application-number-field").hidden = true;
     byId("identity-renewal-code-field").hidden = true;
     byId("identity-email-field").hidden = false;
-    byId("identity-player-name-field").hidden = false;
+    byId("identity-player-name-field").hidden = true;
     byId("identity-rules").hidden = true;
     byId("identity-recovery-rules").hidden = true;
     byId("identity-reissue-rules").hidden = false;
     byId("identity-renewal-lookup-rules").hidden = true;
     setText("identity-email-label", window.MrzhI18n.t("申请时预留的邮箱"));
-    setText("identity-player-name-label", window.MrzhI18n.t("玩家名称"));
     setText("submit-identity-application", window.MrzhI18n.t("提交更换申请"));
     byId("identity-email").value = lookup.email || preview.email;
-    byId("identity-player-name").value = lookup.playerName || preview.playerName;
+    byId("identity-player-name").value = "";
     setText("identity-application-feedback", "");
   }
 
@@ -1605,27 +1739,62 @@
       reissueLookup &&
       !byId("identity-reissue-application-number").value.trim() &&
       !byId("identity-reissue-code").value.trim() &&
-      !byId("identity-email").value.trim() &&
-      !byId("identity-player-name").value.trim()
+      !byId("identity-email").value.trim()
     ) {
       feedback.textContent = window.MrzhI18n.t(
-        "请至少填写申请编号、玩家名称、申请时预留邮箱或旧识别码中的一项。"
+        "请至少填写申请编号、申请时预留邮箱或旧识别码中的一项。"
       );
       return;
     }
     if (
       state.identityMode === "reissue" &&
-      (!byId("identity-email").value.trim() ||
-        !byId("identity-player-name").value.trim())
+        !byId("identity-email").value.trim()
     ) {
       feedback.textContent = window.MrzhI18n.t(
-        "请核对玩家名称和申请时预留邮箱"
+        "请核对申请时预留邮箱"
       );
+      return;
+    }
+    const email = byId("identity-email").value.trim();
+    const playerName = byId("identity-player-name").value.trim();
+    if (state.identityMode === "new" && !state.identityApplicationVerificationId) {
+      if (!email || !playerName) {
+        feedback.textContent = window.MrzhI18n.t("请填写邮箱和玩家名称。");
+        return;
+      }
+      button.disabled = true;
+      try {
+        const challenge = await request("/api/public/identity-application-verification", {
+          method: "POST",
+          body: JSON.stringify({ action: "request", purpose: "new", email, playerName, locale: window.MrzhI18n.language() })
+        });
+        state.identityApplicationVerificationId = challenge.challengeId;
+        byId("identity-application-verification-field").hidden = false;
+        setText("submit-identity-application", window.MrzhI18n.t("验证邮箱并提交申请"));
+        feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
+      } catch (error) {
+        feedback.textContent = window.MrzhI18n.t(error.message);
+      } finally {
+        button.disabled = false;
+      }
       return;
     }
     button.disabled = true;
     feedback.textContent = window.MrzhI18n.t("正在提交…");
     try {
+      if ((state.identityMode === "new" || state.identityMode === "reissue") &&
+          state.identityApplicationVerificationId && !state.identityApplicationVerificationToken) {
+        const verified = await request("/api/public/identity-application-verification", {
+          method: "POST",
+          body: JSON.stringify({
+            action: "verify",
+            purpose: state.identityMode,
+            challengeId: state.identityApplicationVerificationId,
+            otp: byId("identity-application-verification-code").value.trim()
+          })
+        });
+        state.identityApplicationVerificationToken = verified.verificationToken;
+      }
       if (renewalLookup) {
         const preview = await request(
           "/api/public/identity-code-renewal-preview",
@@ -1648,8 +1817,7 @@
           applicationNumber:
             byId("identity-reissue-application-number").value.trim(),
           identityCode: byId("identity-reissue-code").value.trim(),
-          email: byId("identity-email").value.trim(),
-          playerName: byId("identity-player-name").value.trim()
+          email: byId("identity-email").value.trim()
         };
         const preview = await request(
           "/api/public/identity-code-reissue-preview",
@@ -1659,6 +1827,24 @@
           }
         );
         showReissueConfirmation(preview, lookup);
+        return;
+      }
+      if (state.identityMode === "reissue" && !state.identityApplicationVerificationId) {
+        const challenge = await request("/api/public/identity-application-verification", {
+          method: "POST",
+          body: JSON.stringify({
+            action: "request",
+            purpose: "reissue",
+            identityCode: state.reissueCode,
+            applicationNumber: state.reissueApplicationNumber,
+            email: state.reissueEmail,
+            locale: window.MrzhI18n.language()
+          })
+        });
+        state.identityApplicationVerificationId = challenge.challengeId;
+        byId("identity-application-verification-field").hidden = false;
+        setText("submit-identity-application", window.MrzhI18n.t("验证邮箱并提交更换申请"));
+        feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
         return;
       }
       const common = {
@@ -1680,11 +1866,13 @@
             ? await request("/api/public/identity-code-reissue", {
                 method: "POST",
                 body: JSON.stringify({
-                  ...common,
+                  email: common.email,
+                  locale: common.locale,
                   identityCode: state.reissueCode,
                   applicationNumber: state.reissueApplicationNumber,
                   lookupEmail: state.reissueEmail,
-                  lookupPlayerName: state.reissuePlayerName
+                  verificationId: state.identityApplicationVerificationId,
+                  verificationToken: state.identityApplicationVerificationToken
                 })
               })
           : state.identityMode === "recovery"
@@ -1696,9 +1884,13 @@
                 })
               })
             : await request("/api/public/identity-code-applications", {
-              method: "POST",
-              body: JSON.stringify(common)
-            });
+                method: "POST",
+                body: JSON.stringify({
+                  ...common,
+                  verificationId: state.identityApplicationVerificationId,
+                  verificationToken: state.identityApplicationVerificationToken
+                })
+              });
       if (state.identityMode === "recovery") {
         feedback.textContent = window.MrzhI18n.t(
           result.expired
@@ -1738,22 +1930,31 @@
   }
 
   byId("submit-vote").addEventListener("click", submitVote);
-  byId("identity-code").addEventListener("input", () => {
-    state.identityCodeEdited = true;
-  });
-  hydrateRememberedIdentityCodeInputs();
+  state.identitySession = loadIdentitySession();
+  renderIdentityAccount();
   for (const panel of document.querySelectorAll("[data-daily-panel]")) {
     panel.addEventListener("click", () => openDailyPanel(panel.dataset.dailyPanel));
   }
-  byId("apply-identity-code").addEventListener("click", openNewApplication);
-  byId("recover-identity-code").addEventListener("click", openIdentityRecovery);
-  byId("renew-identity-code").addEventListener("click", () => {
-    const identityCode = byId("identity-code").value.trim();
-    openRenewalLookup(/^\d{8}$/.test(identityCode) ? identityCode : "");
+  byId("identity-login-form").addEventListener("submit", loginIdentity);
+  byId("identity-forgot-password").addEventListener("click", beginIdentityPasswordReset);
+  byId("identity-password-reset-form").addEventListener("submit", requestPasswordReset);
+  byId("identity-password-verify-form").addEventListener("submit", verifyPasswordReset);
+  byId("identity-password-set-form").addEventListener("submit", setPasswordReset);
+  byId("identity-reset-cancel").addEventListener("click", () => {
+    byId("identity-password-reset-dialog").close();
   });
-  byId("reissue-identity-code").addEventListener("click", () => {
-    const identityCode = byId("identity-code").value.trim();
-    openReissue(identityCode);
+  byId("close-identity-password-reset").addEventListener("click", () => {
+    byId("identity-password-reset-dialog").close();
+  });
+  byId("identity-apply").addEventListener("click", openNewApplication);
+  byId("identity-recover").addEventListener("click", openIdentityRecovery);
+  byId("identity-renew").addEventListener("click", () => openRenewalLookup(identitySession()?.identityCode || ""));
+  byId("identity-reissue").addEventListener("click", () => openReissue(identitySession()?.identityCode || ""));
+  byId("identity-update-name").addEventListener("click", updateIdentityName);
+  byId("identity-change-email").addEventListener("click", changeIdentityEmail);
+  byId("identity-logout").addEventListener("click", () => {
+    persistIdentitySession(null);
+    setText("identity-profile-feedback", window.MrzhI18n.t("已退出身份识别码账号。"));
   });
   byId("vote-error-renew").addEventListener("click", () => {
     const identityCode = state.voteErrorRenewalCode;

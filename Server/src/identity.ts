@@ -1,6 +1,15 @@
-import { decryptSecret, encryptSecret, keyedHash } from "./crypto";
+import {
+  decryptSecret,
+  encryptSecret,
+  hashPassword,
+  keyedHash,
+  verifyPassword
+} from "./crypto";
 import {
   identityMail,
+  identityEmailChangeMail,
+  identityApplicationVerificationMail,
+  identityPasswordResetMail,
   identityRecoveryMail,
   normalizeLocale,
   sendMail,
@@ -56,6 +65,9 @@ export interface IdentityCodeRow {
   renewal_grace_vote_used_at: string | null;
   last_emailed_at: string | null;
   last_email_error: string | null;
+  password_hash: string | null;
+  password_set_at: string | null;
+  password_updated_at: string | null;
 }
 
 export type IdentityVerification =
@@ -142,6 +154,77 @@ async function localizedExpiry(
 
 function uuid(): string {
   return crypto.randomUUID();
+}
+
+const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+function generateInitialPassword(): string {
+  const values = crypto.getRandomValues(new Uint8Array(10));
+  const characters = Array.from(
+    values,
+    (value) => PASSWORD_ALPHABET.charAt(value % PASSWORD_ALPHABET.length)
+  );
+  if (!characters.some((value) => /[A-Za-z]/.test(value))) characters[0] = "A";
+  if (!characters.some((value) => /\d/.test(value))) characters[1] = "7";
+  return characters.join("");
+}
+
+function cleanPassword(value: unknown): string {
+  const password = typeof value === "string" ? value.trim() : "";
+  const normalized = password.toLowerCase();
+  const weakPasswords = new Set([
+    "passwordpassword",
+    "password123456",
+    "qwertyuiop123",
+    "123456789012",
+    "abcdefghijkl",
+    "adminadmin12",
+    "letmein12345",
+    "iloveyou1234"
+  ]);
+  if (password.length < 12 || password.length > 64 || /\s/.test(password)) {
+    throw new Error("密码必须为12至64位且不能包含空格");
+  }
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+    throw new Error("密码必须同时包含大写字母、小写字母、数字和特殊符号");
+  }
+  if (weakPasswords.has(normalized) || /(.)\1{3,}/.test(normalized)) {
+    throw new Error("密码过于简单，请避免常见密码或重复字符");
+  }
+  let ascendingRun = 1;
+  let descendingRun = 1;
+  for (let index = 1; index < normalized.length; index += 1) {
+    const previous = normalized.charCodeAt(index - 1);
+    const current = normalized.charCodeAt(index);
+    ascendingRun = current === previous + 1 ? ascendingRun + 1 : 1;
+    descendingRun = current === previous - 1 ? descendingRun + 1 : 1;
+    if (ascendingRun >= 4 || descendingRun >= 4) {
+      throw new Error("密码过于简单，请避免连续字符");
+    }
+  }
+  return password;
+}
+
+function cleanOtp(value: unknown): string {
+  const otp = typeof value === "string" ? value.trim() : String(value ?? "");
+  if (!/^\d{6}$/.test(otp)) throw new Error("验证码必须为6位数字");
+  return otp;
+}
+
+function cleanChallengeId(value: unknown): string {
+  const id = typeof value === "string" ? value.trim() : "";
+  if (!/^[a-f0-9-]{20,80}$/i.test(id)) {
+    throw new Error("验证码申请已失效，请重新申请");
+  }
+  return id;
+}
+
+function cleanChallengeToken(value: unknown): string {
+  const token = typeof value === "string" ? value.trim() : "";
+  if (!/^[A-Za-z0-9_-]{32,160}$/.test(token)) {
+    throw new Error("验证码验证已失效，请重新申请");
+  }
+  return token;
 }
 
 function cleanEmail(value: unknown, required = true): string {
@@ -456,6 +539,15 @@ export async function verifyIdentityCode(
   };
 }
 
+export type IdentityPasswordVerification =
+  | { ok: true; code: IdentityCodeRow; grace: boolean }
+  | {
+      ok: false;
+      reason: "invalid" | "invalid_password" | "password_required" | "disabled" | "expired";
+      canRenew: boolean;
+      applicationNumber?: string;
+    };
+
 async function codeAndApplicationForRenewal(
   env: Env,
   input: { identityCode: unknown; applicationNumber: unknown }
@@ -519,6 +611,58 @@ export async function renewalPreview(
     playerName: application.player_name,
     status: application.status,
     canSubmit: application.status !== "rejected"
+  };
+}
+
+export async function verifyIdentityPassword(
+  env: Env,
+  input: { identityCode: unknown; password: unknown },
+  options: { consumeRenewalGrace?: boolean } = {}
+): Promise<IdentityPasswordVerification> {
+  const verification = await verifyIdentityCode(env, input.identityCode, options);
+  if (!verification.ok) return verification;
+  const password = typeof input.password === "string" ? input.password : "";
+  if (!verification.code.password_hash) {
+    const application = await applicationForCode(env, verification.code);
+    return {
+      ok: false,
+      reason: "password_required",
+      canRenew: verification.grace,
+      ...(application ? { applicationNumber: application.application_number } : {})
+    };
+  }
+  if (!(await verifyPassword(password, verification.code.password_hash))) {
+    return { ok: false, reason: "invalid_password", canRenew: verification.grace };
+  }
+  return verification;
+}
+
+export async function identityAccount(
+  env: Env,
+  input: { identityCode: unknown; password: unknown }
+): Promise<{
+  identityCode: string;
+  playerName: string;
+  email: string;
+  expiresAt: string | null;
+  passwordRequired: false;
+}> {
+  const verification = await verifyIdentityPassword(env, input);
+  if (!verification.ok) {
+    if (verification.reason === "password_required") {
+      throw new Error("旧身份识别码尚未设置密码，请使用忘记密码功能设置密码");
+    }
+    if (verification.reason === "invalid_password") throw new Error("身份识别码或密码错误");
+    if (verification.reason === "disabled") throw new Error("身份识别码已被禁用");
+    if (verification.reason === "expired") throw new Error("身份识别码已过期");
+    throw new Error("身份识别码无效");
+  }
+  return {
+    identityCode: await decryptSecret(env, "identity-code-value", verification.code.code_encrypted),
+    playerName: verification.code.player_name ?? "",
+    email: verification.code.email ?? "",
+    expiresAt: verification.code.expires_at,
+    passwordRequired: false
   };
 }
 
@@ -592,7 +736,6 @@ async function codeForReissue(
     identityCode: unknown;
     applicationNumber: unknown;
     email: unknown;
-    playerName: unknown;
   }
 ): Promise<IdentityCodeRow> {
   const identityCode =
@@ -602,10 +745,9 @@ async function codeForReissue(
       ? input.applicationNumber.trim().slice(0, 40)
       : "";
   const email = cleanEmail(input.email, false);
-  const playerName = cleanPlayerName(input.playerName, false);
-  if (!applicationNumber && !identityCode && !email && !playerName) {
+  if (!applicationNumber && !identityCode && !email) {
     throw new Error(
-      "请至少填写申请编号、玩家名称、申请时预留邮箱或旧识别码中的一项"
+      "请至少填写申请编号、申请时预留邮箱或旧识别码中的一项"
     );
   }
   let code: IdentityCodeRow | null = null;
@@ -628,14 +770,7 @@ async function codeForReissue(
     code = codeByValue;
   }
   if (code) {
-    if (
-      !applicationNumber &&
-      !identityCode &&
-      ((email && code.email?.toLowerCase() !== email) ||
-        (playerName &&
-          identityPlayerNameKey(code.player_name) !==
-            identityPlayerNameKey(playerName)))
-    ) {
+    if (email && code.email?.toLowerCase() !== email) {
       throw new Error("填写的信息未指向同一份识别码记录");
     }
     if (code.status !== "active") {
@@ -660,12 +795,7 @@ async function codeForReissue(
   )
     .bind(...bindings)
     .all<IdentityCodeRow>();
-  const playerNameKey = identityPlayerNameKey(playerName);
-  const matches = rows.results.filter(
-    (row) =>
-      !playerNameKey ||
-      identityPlayerNameKey(row.player_name) === playerNameKey
-  );
+  const matches = rows.results;
   if (!matches.length) throw new Error("未找到匹配的身份识别码记录");
   const eligibleMatches = matches.filter(
     (row) => row.status === "active" && !isIdentityCodeExpired(row.expires_at)
@@ -689,7 +819,6 @@ export async function reissuePreview(
     identityCode: unknown;
     applicationNumber: unknown;
     email: unknown;
-    playerName: unknown;
   }
 ): Promise<{
   applicationNumber: string;
@@ -722,17 +851,14 @@ export async function submitReissue(
     identityCode: unknown;
     applicationNumber: unknown;
     lookupEmail?: unknown;
-    lookupPlayerName?: unknown;
-    email: unknown;
-    playerName: unknown;
+    email?: unknown;
     locale: unknown;
   }
 ): Promise<{ applicationNumber: string; status: "pending" }> {
   const code = await codeForReissue(env, {
     identityCode: input.identityCode,
     applicationNumber: input.applicationNumber,
-    email: input.lookupEmail ?? input.email,
-    playerName: input.lookupPlayerName ?? input.playerName
+    email: input.lookupEmail ?? input.email
   });
   const application = await ensureApplicationForCode(env, code);
   if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
@@ -748,8 +874,8 @@ export async function submitReissue(
   ) {
     throw new Error("该申请已被拒绝，请重新申请身份识别码");
   }
-  const email = cleanEmail(input.email);
-  const playerName = cleanPlayerName(input.playerName);
+  const email = application.email;
+  const playerName = application.player_name;
   await assertNoOtherActiveIdentityCode(env, {
     email,
     playerName,
@@ -868,6 +994,639 @@ export async function recoverIdentityCode(
   return { status: "sent", expired };
 }
 
+const PASSWORD_RECOVERY_PROMPT =
+  "申请找回密码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。";
+
+async function findPasswordResetIdentity(
+  env: Env,
+  input: {
+    applicationNumber: unknown;
+    email: unknown;
+    identityCode: unknown;
+  }
+): Promise<{ code: IdentityCodeRow; application: IdentityApplicationRow }> {
+  const applicationNumber =
+    typeof input.applicationNumber === "string"
+      ? input.applicationNumber.trim().slice(0, 40)
+      : "";
+  const email = cleanEmail(input.email, false);
+  const identityCode =
+    typeof input.identityCode === "string" ? input.identityCode.trim() : "";
+  if (!applicationNumber && !email && !identityCode) {
+    throw new Error(PASSWORD_RECOVERY_PROMPT);
+  }
+  let code: IdentityCodeRow | null = null;
+  if (applicationNumber) {
+    const application = await env.DB.prepare(
+      "SELECT * FROM identity_code_applications WHERE application_number = ?"
+    )
+      .bind(applicationNumber)
+      .first<IdentityApplicationRow>();
+    if (application) code = await codeForApplication(env, application);
+  }
+  if (identityCode) {
+    const fromValue = await codeByPlaintext(env, identityCode).catch(() => null);
+    if (code && fromValue && code.id !== fromValue.id) {
+      throw new Error("填写的信息未指向同一份识别码记录");
+    }
+    code = fromValue;
+  }
+  if (!code && email) {
+    const rows = await env.DB.prepare(
+      `SELECT * FROM identity_codes
+       WHERE status = 'active' AND lower(email) = ?
+       ORDER BY updated_at DESC LIMIT 20`
+    )
+      .bind(email)
+      .all<IdentityCodeRow>();
+    if (rows.results.length > 1) {
+      throw new Error("匹配到多个识别码，请再填写另一项信息缩小范围");
+    }
+    code = rows.results[0] ?? null;
+  }
+  if (!code || code.status !== "active") {
+    throw new Error("没有找到符合条件的身份识别码，请核对申请信息");
+  }
+  if (email && code.email?.toLowerCase() !== email) {
+    throw new Error("填写的信息未指向同一份识别码记录");
+  }
+  if (!code.email) throw new Error("申请预留信息不足，请联系市长人工处理");
+  const application = await ensureApplicationForCode(env, code);
+  if (!application || application.status !== "approved") {
+    throw new Error("申请预留信息不足，请联系市长人工处理");
+  }
+  return { code, application };
+}
+
+function generateOtp(): string {
+  const value = crypto.getRandomValues(new Uint32Array(1))[0] ?? 0;
+  return String(value % 1_000_000).padStart(6, "0");
+}
+
+async function challengeHash(
+  env: Env,
+  groupId: string,
+  channel: string,
+  value: string
+): Promise<string> {
+  return keyedHash(env, "identity-verification", `${groupId}:${channel}:${value}`);
+}
+
+type IdentityApplicationChallengeRow = {
+  id: string;
+  purpose: "new" | "reissue";
+  email: string;
+  player_name: string;
+  locale: SupportedLocale;
+  identity_code_id: string | null;
+  application_id: string | null;
+  code_hash: string;
+  verification_token_hash: string | null;
+  attempts: number;
+  expires_at: string;
+  verified_at: string | null;
+  consumed_at: string | null;
+};
+
+export async function requestIdentityApplicationVerification(
+  env: Env,
+  input: {
+    purpose: unknown;
+    email: unknown;
+    playerName?: unknown;
+    identityCode?: unknown;
+    applicationNumber?: unknown;
+    locale: unknown;
+  }
+): Promise<{ challengeId: string; expiresAt: string }> {
+  const purpose = input.purpose === "reissue" ? "reissue" : input.purpose === "new" ? "new" : "";
+  if (!purpose) throw new Error("申请验证码用途无效");
+  const emailInput = cleanEmail(input.email, false);
+  let email = emailInput;
+  let playerName = cleanPlayerName(input.playerName, false);
+  let identityCodeId: string | null = null;
+  let applicationId: string | null = null;
+  if (purpose === "new") {
+    email = cleanEmail(input.email);
+    playerName = cleanPlayerName(input.playerName);
+    await assertNoPendingIdentityApplication(env, { email, playerName });
+    await assertNoOtherActiveIdentityCode(env, {
+      email,
+      playerName,
+      conflictMessage:
+        "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。"
+    });
+  } else {
+    const code = await codeForReissue(env, {
+      identityCode: input.identityCode,
+      applicationNumber: input.applicationNumber,
+      email: emailInput
+    });
+    const application = await ensureApplicationForCode(env, code);
+    if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
+    email = application.email;
+    playerName = application.player_name;
+    identityCodeId = code.id;
+    applicationId = application.id;
+  }
+  const challengeId = uuid();
+  const otp = generateOtp();
+  const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+  const locale = normalizeLocale(input.locale);
+  await env.DB.prepare(
+    `INSERT INTO identity_application_challenges(
+      id, purpose, email, player_name, locale, identity_code_id, application_id,
+      code_hash, expires_at, created_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      challengeId,
+      purpose,
+      email,
+      playerName,
+      locale,
+      identityCodeId,
+      applicationId,
+      await challengeHash(env, challengeId, "application", otp),
+      expiresAt,
+      now()
+    )
+    .run();
+  await sendMail(env, {
+    to: email,
+    ...identityApplicationVerificationMail({ locale, otp, purpose })
+  });
+  return { challengeId, expiresAt };
+}
+
+export async function verifyIdentityApplicationVerification(
+  env: Env,
+  input: { challengeId: unknown; otp: unknown; purpose?: unknown }
+): Promise<{ verificationToken: string; expiresAt: string }> {
+  const challengeId = cleanChallengeId(input.challengeId);
+  const otp = cleanOtp(input.otp);
+  const challenge = await env.DB.prepare(
+    "SELECT * FROM identity_application_challenges WHERE id = ?"
+  )
+    .bind(challengeId)
+    .first<IdentityApplicationChallengeRow>();
+  if (
+    !challenge ||
+    (input.purpose && challenge.purpose !== input.purpose) ||
+    challenge.consumed_at ||
+    challenge.verified_at ||
+    Date.parse(challenge.expires_at) <= Date.now() ||
+    challenge.attempts >= 5
+  ) {
+    throw new Error("验证码已失效，请重新申请");
+  }
+  if (challenge.code_hash !== await challengeHash(env, challengeId, "application", otp)) {
+    await env.DB.prepare(
+      "UPDATE identity_application_challenges SET attempts = attempts + 1 WHERE id = ?"
+    ).bind(challenge.id).run();
+    throw new Error("验证码错误，请重新输入");
+  }
+  const verificationToken = `${uuid()}${uuid().replaceAll("-", "")}`;
+  await env.DB.prepare(
+    `UPDATE identity_application_challenges
+     SET verified_at = ?, verification_token_hash = ? WHERE id = ?`
+  )
+    .bind(now(), await keyedHash(env, "identity-application-token", verificationToken), challenge.id)
+    .run();
+  return { verificationToken, expiresAt: challenge.expires_at };
+}
+
+export async function consumeIdentityApplicationVerification(
+  env: Env,
+  input: {
+    challengeId: unknown;
+    verificationToken: unknown;
+    purpose: "new" | "reissue";
+    email: unknown;
+    playerName?: unknown;
+    identityCode?: unknown;
+  }
+): Promise<void> {
+  const challengeId = cleanChallengeId(input.challengeId);
+  const verificationToken = cleanChallengeToken(input.verificationToken);
+  const challenge = await env.DB.prepare(
+    "SELECT * FROM identity_application_challenges WHERE id = ?"
+  )
+    .bind(challengeId)
+    .first<IdentityApplicationChallengeRow>();
+  const email = cleanEmail(input.email);
+  const playerName = cleanPlayerName(input.playerName, false);
+  if (
+    !challenge ||
+    challenge.purpose !== input.purpose ||
+    challenge.consumed_at ||
+    !challenge.verified_at ||
+    !challenge.verification_token_hash ||
+    Date.parse(challenge.expires_at) <= Date.now() ||
+    challenge.verification_token_hash !== await keyedHash(env, "identity-application-token", verificationToken) ||
+    challenge.email !== email ||
+    (input.purpose === "new" && challenge.player_name !== playerName)
+  ) {
+    throw new Error("邮箱验证码验证已失效，请重新申请");
+  }
+  if (input.purpose === "reissue" && input.identityCode) {
+    const code = await codeByPlaintext(env, input.identityCode);
+    if (!code || code.id !== challenge.identity_code_id) {
+      throw new Error("验证码与旧身份识别码不匹配");
+    }
+  }
+  await env.DB.prepare(
+    "UPDATE identity_application_challenges SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL"
+  ).bind(now(), challenge.id).run();
+}
+
+export async function requestIdentityPasswordReset(
+  env: Env,
+  input: {
+    applicationNumber: unknown;
+    email: unknown;
+    identityCode: unknown;
+  }
+): Promise<{ challengeId: string; expiresAt: string }> {
+  const { code } = await findPasswordResetIdentity(env, input);
+  const challengeId = uuid();
+  const otp = generateOtp();
+  const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+  await env.DB.prepare(
+    `INSERT INTO identity_verification_challenges(
+      id, group_id, identity_code_id, purpose, channel, code_hash,
+      expires_at, created_at
+    ) VALUES(?, ?, ?, 'password_reset', 'primary', ?, ?, ?)`
+  )
+    .bind(
+      challengeId,
+      challengeId,
+      code.id,
+      await challengeHash(env, challengeId, "primary", otp),
+      expiresAt,
+      now()
+    )
+    .run();
+  const message = identityPasswordResetMail({
+    locale: code.locale,
+    playerName: code.player_name,
+    code: await decryptSecret(env, "identity-code-value", code.code_encrypted),
+    otp
+  });
+  await sendMail(env, { to: code.email!, ...message });
+  return { challengeId, expiresAt };
+}
+
+export async function verifyIdentityPasswordReset(
+  env: Env,
+  input: { challengeId: unknown; otp: unknown }
+): Promise<{ resetToken: string; expiresAt: string }> {
+  const challengeId = cleanChallengeId(input.challengeId);
+  const otp = cleanOtp(input.otp);
+  const challenge = await env.DB.prepare(
+    `SELECT * FROM identity_verification_challenges
+     WHERE id = ? AND purpose = 'password_reset' AND channel = 'primary'`
+  )
+    .bind(challengeId)
+    .first<{
+      id: string;
+      group_id: string;
+      code_hash: string;
+      reset_token_hash: string | null;
+      attempts: number;
+      expires_at: string;
+      verified_at: string | null;
+      consumed_at: string | null;
+    }>();
+  if (
+    !challenge ||
+    challenge.consumed_at ||
+    challenge.verified_at ||
+    Date.parse(challenge.expires_at) <= Date.now() ||
+    challenge.attempts >= 5
+  ) {
+    throw new Error("验证码已失效，请重新申请");
+  }
+  const matches =
+    challenge.code_hash === await challengeHash(env, challenge.group_id, "primary", otp);
+  if (!matches) {
+    await env.DB.prepare(
+      "UPDATE identity_verification_challenges SET attempts = attempts + 1 WHERE id = ?"
+    )
+      .bind(challenge.id)
+      .run();
+    throw new Error("验证码错误，请重新输入");
+  }
+  const resetToken = `${uuid()}${uuid().replaceAll("-", "")}`;
+  await env.DB.prepare(
+    `UPDATE identity_verification_challenges
+     SET verified_at = ?, reset_token_hash = ? WHERE id = ?`
+  )
+    .bind(now(), await keyedHash(env, "identity-reset-token", resetToken), challenge.id)
+    .run();
+  return { resetToken, expiresAt: challenge.expires_at };
+}
+
+export async function setIdentityPassword(
+  env: Env,
+  input: { challengeId: unknown; resetToken: unknown; password: unknown }
+): Promise<void> {
+  const challengeId = cleanChallengeId(input.challengeId);
+  const resetToken = cleanChallengeToken(input.resetToken);
+  const password = cleanPassword(input.password);
+  const challenge = await env.DB.prepare(
+    `SELECT * FROM identity_verification_challenges
+     WHERE id = ? AND purpose = 'password_reset' AND channel = 'primary'`
+  )
+    .bind(challengeId)
+    .first<{
+      id: string;
+      identity_code_id: string;
+      reset_token_hash: string | null;
+      expires_at: string;
+      verified_at: string | null;
+      consumed_at: string | null;
+    }>();
+  if (
+    !challenge ||
+    !challenge.verified_at ||
+    challenge.consumed_at ||
+    !challenge.reset_token_hash ||
+    Date.parse(challenge.expires_at) <= Date.now() ||
+    challenge.reset_token_hash !== await keyedHash(env, "identity-reset-token", resetToken)
+  ) {
+    throw new Error("验证码验证已失效，请重新申请");
+  }
+  const identity = await env.DB.prepare(
+    "SELECT code_encrypted, player_name, email FROM identity_codes WHERE id = ?"
+  ).bind(challenge.identity_code_id).first<{
+    code_encrypted: string;
+    player_name: string | null;
+    email: string | null;
+  }>();
+  if (!identity) throw new Error("身份识别码不存在");
+  const plaintextCode = await decryptSecret(env, "identity-code-value", identity.code_encrypted);
+  const passwordLower = password.toLowerCase();
+  if (
+    passwordLower.includes(plaintextCode.toLowerCase()) ||
+    (identity.player_name && passwordLower.includes(identity.player_name.toLowerCase())) ||
+    (identity.email && passwordLower.includes(identity.email.split("@")[0]!.toLowerCase()))
+  ) {
+    throw new Error("密码不能包含身份识别码、玩家名称或邮箱用户名");
+  }
+  const timestamp = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE identity_codes SET password_hash = ?, password_set_at = COALESCE(password_set_at, ?),
+       password_updated_at = ?, updated_at = ? WHERE id = ?`
+    ).bind(await hashPassword(password), timestamp, timestamp, timestamp, challenge.identity_code_id),
+    env.DB.prepare(
+      "UPDATE identity_verification_challenges SET consumed_at = ? WHERE id = ?"
+    ).bind(timestamp, challenge.id)
+  ]);
+}
+
+async function authenticatedCode(
+  env: Env,
+  input: { identityCode: unknown; password: unknown }
+): Promise<IdentityCodeRow> {
+  const verification = await verifyIdentityPassword(env, input);
+  if (verification.ok) return verification.code;
+  if (verification.reason === "password_required") {
+    throw new Error("旧身份识别码尚未设置密码，请使用忘记密码功能设置密码");
+  }
+  if (verification.reason === "invalid_password") throw new Error("身份识别码或密码错误");
+  if (verification.reason === "disabled") throw new Error("身份识别码已被禁用");
+  if (verification.reason === "expired") throw new Error("身份识别码已过期");
+  throw new Error("身份识别码无效");
+}
+
+async function assertNoPendingProfileChange(env: Env, identityCodeId: string): Promise<void> {
+  const pending = await env.DB.prepare(
+    `SELECT id FROM identity_profile_change_requests
+     WHERE identity_code_id = ? AND status = 'pending' LIMIT 1`
+  ).bind(identityCodeId).first<{ id: string }>();
+  if (pending) throw new Error("已有资料变更申请待审核，请等待审核完成后再提交");
+}
+
+export async function updateIdentityPlayerName(
+  env: Env,
+  input: { identityCode: unknown; password: unknown; playerName: unknown }
+): Promise<{ playerName: string; status: "pending" }> {
+  const code = await authenticatedCode(env, input);
+  const playerName = cleanPlayerName(input.playerName);
+  if (identityPlayerNameKey(playerName) === identityPlayerNameKey(code.player_name)) {
+    throw new Error("新的玩家名称不能与当前名称相同");
+  }
+  await assertNoPendingProfileChange(env, code.id);
+  await assertNoOtherActiveIdentityCode(env, {
+    email: code.email,
+    playerName,
+    excludeId: code.id
+  });
+  await env.DB.prepare(
+    `INSERT INTO identity_profile_change_requests(
+      id, identity_code_id, kind, requested_player_name, status, submitted_at
+    ) VALUES(?, ?, 'player_name', ?, 'pending', ?)`
+  ).bind(uuid(), code.id, playerName, now()).run();
+  return { playerName, status: "pending" };
+}
+
+export async function requestIdentityEmailChange(
+  env: Env,
+  input: { identityCode: unknown; password: unknown; newEmail: unknown }
+): Promise<{ changeId: string; expiresAt: string }> {
+  const code = await authenticatedCode(env, input);
+  if (!code.email) throw new Error("当前识别码没有绑定邮箱，请联系市长人工处理");
+  await assertNoPendingProfileChange(env, code.id);
+  const newEmail = cleanEmail(input.newEmail);
+  if (newEmail === code.email.toLowerCase()) throw new Error("新邮箱不能与当前邮箱相同");
+  await assertNoOtherActiveIdentityCode(env, {
+    email: newEmail,
+    playerName: null,
+    excludeId: code.id
+  });
+  const changeId = uuid();
+  const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+  const oldOtp = generateOtp();
+  const newOtp = generateOtp();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO identity_verification_challenges(
+        id, group_id, identity_code_id, purpose, channel, code_hash,
+        new_email, expires_at, created_at
+      ) VALUES(?, ?, ?, 'email_change', 'old_email', ?, ?, ?, ?)`
+    ).bind(
+      uuid(), changeId, code.id,
+      await challengeHash(env, changeId, "old_email", oldOtp),
+      newEmail, expiresAt, now()
+    ),
+    env.DB.prepare(
+      `INSERT INTO identity_verification_challenges(
+        id, group_id, identity_code_id, purpose, channel, code_hash,
+        new_email, expires_at, created_at
+      ) VALUES(?, ?, ?, 'email_change', 'new_email', ?, ?, ?, ?)`
+    ).bind(
+      uuid(), changeId, code.id,
+      await challengeHash(env, changeId, "new_email", newOtp),
+      newEmail, expiresAt, now()
+    )
+  ]);
+  await Promise.all([
+    sendMail(env, {
+      to: code.email,
+      ...identityEmailChangeMail({ locale: code.locale, otp: oldOtp, newEmail })
+    }),
+    sendMail(env, {
+      to: newEmail,
+      ...identityEmailChangeMail({ locale: code.locale, otp: newOtp, newEmail })
+    })
+  ]);
+  return { changeId, expiresAt };
+}
+
+export async function confirmIdentityEmailChange(
+  env: Env,
+  input: { changeId: unknown; oldOtp: unknown; newOtp: unknown }
+): Promise<{ email: string; status: "pending" }> {
+  const changeId = cleanChallengeId(input.changeId);
+  const oldOtp = cleanOtp(input.oldOtp);
+  const newOtp = cleanOtp(input.newOtp);
+  const rows = await env.DB.prepare(
+    `SELECT * FROM identity_verification_challenges
+     WHERE group_id = ? AND purpose = 'email_change'`
+  )
+    .bind(changeId)
+    .all<{
+      id: string;
+      identity_code_id: string;
+      channel: "old_email" | "new_email";
+      code_hash: string;
+      new_email: string;
+      attempts: number;
+      expires_at: string;
+      consumed_at: string | null;
+    }>();
+  const oldRow = rows.results.find((row) => row.channel === "old_email");
+  const newRow = rows.results.find((row) => row.channel === "new_email");
+  if (!oldRow || !newRow || oldRow.consumed_at || newRow.consumed_at || Date.parse(oldRow.expires_at) <= Date.now()) {
+    throw new Error("邮箱验证码已失效，请重新申请");
+  }
+  if (oldRow.attempts >= 5 || newRow.attempts >= 5) throw new Error("验证码尝试次数过多，请重新申请");
+  const oldMatches = oldRow.code_hash === await challengeHash(env, changeId, "old_email", oldOtp);
+  const newMatches = newRow.code_hash === await challengeHash(env, changeId, "new_email", newOtp);
+  if (!oldMatches || !newMatches) {
+    await env.DB.batch([
+      ...(oldMatches ? [] : [env.DB.prepare("UPDATE identity_verification_challenges SET attempts = attempts + 1 WHERE id = ?").bind(oldRow.id)]),
+      ...(newMatches ? [] : [env.DB.prepare("UPDATE identity_verification_challenges SET attempts = attempts + 1 WHERE id = ?").bind(newRow.id)])
+    ]);
+    throw new Error("邮箱验证码错误，请重新输入");
+  }
+  const timestamp = now();
+  const code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+    .bind(oldRow.identity_code_id).first<IdentityCodeRow>();
+  if (!code) throw new Error("识别码不存在");
+  await assertNoPendingProfileChange(env, code.id);
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO identity_profile_change_requests(
+        id, identity_code_id, kind, requested_email, status, submitted_at
+      ) VALUES(?, ?, 'email', ?, 'pending', ?)`
+    ).bind(uuid(), code.id, newRow.new_email, timestamp),
+    env.DB.prepare("UPDATE identity_verification_challenges SET consumed_at = ? WHERE group_id = ?")
+      .bind(timestamp, changeId)
+  ]);
+  return { email: newRow.new_email, status: "pending" };
+}
+
+export interface IdentityProfileChangeRequestRow {
+  id: string;
+  identity_code_id: string;
+  kind: "player_name" | "email";
+  requested_player_name: string | null;
+  requested_email: string | null;
+  status: "pending" | "approved" | "rejected";
+  submitted_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  rejection_reason: string | null;
+  current_player_name: string | null;
+  current_email: string | null;
+}
+
+export async function listIdentityProfileChangeRequests(
+  env: Env,
+  input: { page: number; status: string }
+): Promise<{ items: IdentityProfileChangeRequestRow[]; page: number; pageSize: 20; total: number }> {
+  const page = Math.max(1, Math.floor(input.page));
+  const clauses: string[] = [];
+  const bindings: unknown[] = [];
+  if (["pending", "approved", "rejected"].includes(input.status)) {
+    clauses.push("r.status = ?");
+    bindings.push(input.status);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const total = await env.DB.prepare(
+    `SELECT COUNT(*) AS total FROM identity_profile_change_requests r ${where}`
+  ).bind(...bindings).first<{ total: number }>();
+  const rows = await env.DB.prepare(
+    `SELECT r.*, c.player_name AS current_player_name, c.email AS current_email
+     FROM identity_profile_change_requests r
+     JOIN identity_codes c ON c.id = r.identity_code_id
+     ${where}
+     ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.submitted_at DESC
+     LIMIT 20 OFFSET ?`
+  ).bind(...bindings, (page - 1) * 20).all<IdentityProfileChangeRequestRow>();
+  return { items: rows.results, page, pageSize: 20, total: total?.total ?? 0 };
+}
+
+export async function reviewIdentityProfileChangeRequest(
+  env: Env,
+  input: { id: string; action: "approve" | "reject"; reviewedBy: string; reason?: string }
+): Promise<void> {
+  const request = await env.DB.prepare(
+    "SELECT * FROM identity_profile_change_requests WHERE id = ?"
+  ).bind(input.id).first<IdentityProfileChangeRequestRow>();
+  if (!request) throw new Error("资料变更申请不存在");
+  if (request.status !== "pending") throw new Error("资料变更申请已处理");
+  const timestamp = now();
+  if (input.action === "reject") {
+    const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 500) : "管理员拒绝了本次资料变更申请";
+    await env.DB.prepare(
+      `UPDATE identity_profile_change_requests
+       SET status = 'rejected', reviewed_at = ?, reviewed_by = ?, rejection_reason = ? WHERE id = ?`
+    ).bind(timestamp, input.reviewedBy, reason, request.id).run();
+    return;
+  }
+  const statements: D1PreparedStatement[] = [];
+  if (request.kind === "player_name" && request.requested_player_name) {
+    statements.push(
+      env.DB.prepare("UPDATE identity_codes SET player_name = ?, updated_at = ? WHERE id = ?")
+        .bind(request.requested_player_name, timestamp, request.identity_code_id),
+      env.DB.prepare(
+        "UPDATE identity_code_applications SET player_name = ? WHERE identity_code_id = ? AND status = 'approved'"
+      ).bind(request.requested_player_name, request.identity_code_id)
+    );
+  } else if (request.kind === "email" && request.requested_email) {
+    statements.push(
+      env.DB.prepare("UPDATE identity_codes SET email = ?, updated_at = ? WHERE id = ?")
+        .bind(request.requested_email, timestamp, request.identity_code_id),
+      env.DB.prepare(
+        "UPDATE identity_code_applications SET email = ? WHERE identity_code_id = ? AND status = 'approved'"
+      ).bind(request.requested_email, request.identity_code_id)
+    );
+  } else {
+    throw new Error("资料变更内容无效");
+  }
+  statements.push(
+    env.DB.prepare(
+      `UPDATE identity_profile_change_requests
+       SET status = 'approved', reviewed_at = ?, reviewed_by = ?, rejection_reason = NULL WHERE id = ?`
+    ).bind(timestamp, input.reviewedBy, request.id)
+  );
+  await env.DB.batch(statements);
+}
+
 export async function listIdentityApplications(
   env: Env,
   input: { page: number; search: string; status: string }
@@ -918,6 +1677,7 @@ async function sendApplicationMail(
   input: {
     approved: boolean;
     code?: IdentityCodeRow | null;
+    initialPassword?: string;
     expiresAt?: string | null;
     reason?: string | null;
   }
@@ -933,6 +1693,7 @@ async function sendApplicationMail(
     applicationNumber: application.application_number,
     playerName: application.player_name,
     ...(plaintext ? { code: plaintext } : {}),
+    ...(input.initialPassword ? { password: input.initialPassword } : {}),
     expiresAt: await localizedExpiry(
       env,
       input.expiresAt,
@@ -957,6 +1718,7 @@ export async function approveIdentityApplication(
   const expiresAt = parseExpiry(input);
   const reviewedAt = now();
   let code: IdentityCodeRow | null = null;
+  let initialPassword: string | undefined;
   if (application.request_type === "renewal") {
     if (!application.identity_code_id) throw new Error("延期申请未关联识别码");
     await assertNoOtherActiveIdentityCode(env, {
@@ -994,6 +1756,7 @@ export async function approveIdentityApplication(
       excludeId: application.identity_code_id
     });
     const generated = await generateCode(env);
+    initialPassword = generateInitialPassword();
     const invalidateCurrentVotes = await currentVoteInvalidations(
       env,
       application.identity_code_id,
@@ -1004,7 +1767,8 @@ export async function approveIdentityApplication(
         `UPDATE identity_codes SET
            code_hash = ?, code_encrypted = ?, player_name = ?, email = ?,
            locale = ?, status = 'active', expires_at = ?, disabled_at = NULL,
-           renewal_grace_vote_used_at = NULL, updated_at = ?
+           renewal_grace_vote_used_at = NULL, password_hash = ?,
+           password_set_at = ?, password_updated_at = ?, updated_at = ?
          WHERE id = ?`
       ).bind(
         generated.hash,
@@ -1013,6 +1777,9 @@ export async function approveIdentityApplication(
         application.email,
         application.locale,
         expiresAt,
+        await hashPassword(initialPassword),
+        reviewedAt,
+        reviewedAt,
         reviewedAt,
         application.identity_code_id
       ),
@@ -1031,13 +1798,15 @@ export async function approveIdentityApplication(
       playerName: application.player_name
     });
     const generated = await generateCode(env);
+    initialPassword = generateInitialPassword();
     const codeId = uuid();
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO identity_codes(
           id, code_hash, code_encrypted, player_name, email, locale, application_id,
-          status, expires_at, created_by, created_at, updated_at
-        ) VALUES(?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`
+          status, expires_at, created_by, created_at, updated_at,
+          password_hash, password_set_at, password_updated_at
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         codeId,
         generated.hash,
@@ -1048,6 +1817,9 @@ export async function approveIdentityApplication(
         application.id,
         expiresAt,
         input.reviewedBy,
+        reviewedAt,
+        reviewedAt,
+        await hashPassword(initialPassword),
         reviewedAt,
         reviewedAt
       ),
@@ -1064,7 +1836,8 @@ export async function approveIdentityApplication(
     await sendApplicationMail(env, application, {
       approved: true,
       code,
-      expiresAt
+      expiresAt,
+      initialPassword
     });
     await recordMailResult(env, application.id, code?.id ?? null, null);
     return { emailSent: true, emailError: null };
@@ -1259,7 +2032,7 @@ export async function listIdentityCodes(
       rows.results.map(async (row) => ({
         ...row,
         code: input.includeCode === false
-          ? "00000000"
+          ? "••••••••"
           : await decryptSecret(env, "identity-code-value", row.code_encrypted)
       }))
     ),
@@ -1347,11 +2120,12 @@ export async function createManualIdentityCode(
     expiresAt: unknown;
     createdBy: string;
   }
-): Promise<{ id: string; code: string }> {
+): Promise<{ id: string; code: string; initialPassword: string; emailSent: boolean }> {
   const playerName = cleanPlayerName(input.playerName, false) || null;
   const email = cleanEmail(input.email, false) || null;
   await assertNoOtherActiveIdentityCode(env, { email, playerName });
   const generated = await generateCode(env);
+  const initialPassword = generateInitialPassword();
   const id = uuid();
   const timestamp = now();
   const locale = normalizeLocale(input.locale);
@@ -1384,8 +2158,9 @@ export async function createManualIdentityCode(
     env.DB.prepare(
       `INSERT INTO identity_codes(
         id, code_hash, code_encrypted, player_name, email, locale, application_id,
-        status, expires_at, created_by, created_at, updated_at
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`
+          status, expires_at, created_by, created_at, updated_at,
+          password_hash, password_set_at, password_updated_at
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       id,
       generated.hash,
@@ -1397,11 +2172,41 @@ export async function createManualIdentityCode(
       expiresAt,
       input.createdBy,
       timestamp,
+      timestamp,
+      await hashPassword(initialPassword),
+      timestamp,
       timestamp
     )
   );
   await env.DB.batch(statements);
-  return { id, code: generated.code };
+  let emailSent = false;
+  if (email && playerName) {
+    const application = await env.DB.prepare(
+      "SELECT * FROM identity_code_applications WHERE id = ?"
+    ).bind(applicationId).first<IdentityApplicationRow>();
+    if (application) {
+      try {
+        const created = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+          .bind(id).first<IdentityCodeRow>();
+        await sendApplicationMail(env, application, {
+          approved: true,
+          code: created,
+          expiresAt,
+          initialPassword
+        });
+        await recordMailResult(env, application.id, id, null);
+        emailSent = true;
+      } catch (error) {
+        await recordMailResult(
+          env,
+          applicationId,
+          id,
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+    }
+  }
+  return { id, code: generated.code, initialPassword, emailSent };
 }
 
 export async function updateIdentityCode(
@@ -1536,6 +2341,7 @@ export async function reissueIdentityCode(
     excludeId: code.id
   });
   const generated = await generateCode(env);
+  const initialPassword = generateInitialPassword();
   const expiresAt = parseExpiry(input);
   const timestamp = now();
   await env.DB.batch([
@@ -1543,7 +2349,7 @@ export async function reissueIdentityCode(
       `UPDATE identity_codes SET
          code_hash = ?, code_encrypted = ?, status = 'active', expires_at = ?,
          disabled_at = NULL, renewal_grace_vote_used_at = NULL, updated_at = ?,
-         created_by = ?
+         created_by = ?, password_hash = ?, password_set_at = ?, password_updated_at = ?
        WHERE id = ?`
     ).bind(
       generated.hash,
@@ -1551,6 +2357,9 @@ export async function reissueIdentityCode(
       expiresAt,
       timestamp,
       input.reissuedBy,
+      await hashPassword(initialPassword),
+      timestamp,
+      timestamp,
       code.id
     ),
     ...(await currentVoteInvalidations(env, code.id, new Date(timestamp)))
@@ -1585,7 +2394,8 @@ export async function reissueIdentityCode(
     await sendApplicationMail(env, mailApplication, {
       approved: true,
       code: updated,
-      expiresAt
+      expiresAt,
+      initialPassword
     });
     await recordMailResult(env, application?.id ?? null, code.id, null);
     return { emailSent: true, emailError: null };
@@ -1593,6 +2403,49 @@ export async function reissueIdentityCode(
     const message = error instanceof Error ? error.message : String(error);
     await recordMailResult(env, application?.id ?? null, code.id, message);
     return { emailSent: false, emailError: message };
+  }
+}
+
+export async function resetIdentityCodePassword(
+  env: Env,
+  id: string
+): Promise<{ emailSent: boolean; emailError: string | null }> {
+  const code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
+    .bind(id)
+    .first<IdentityCodeRow>();
+  if (!code) throw new Error("识别码不存在");
+  if (!code.email) throw new Error("识别码没有绑定邮箱，无法发送密码");
+  const initialPassword = generateInitialPassword();
+  const timestamp = now();
+  await env.DB.prepare(
+    `UPDATE identity_codes SET password_hash = ?,
+       password_set_at = COALESCE(password_set_at, ?),
+       password_updated_at = ?, updated_at = ?, last_email_error = NULL
+     WHERE id = ?`
+  )
+    .bind(
+      await hashPassword(initialPassword),
+      timestamp,
+      timestamp,
+      timestamp,
+      code.id
+    )
+    .run();
+  const plaintext = await decryptSecret(env, "identity-code-value", code.code_encrypted);
+  const message = identityPasswordResetMail({
+    locale: code.locale,
+    playerName: code.player_name,
+    code: plaintext,
+    initialPassword
+  });
+  try {
+    await sendMail(env, { to: code.email, ...message });
+    await recordMailResult(env, null, code.id, null);
+    return { emailSent: true, emailError: null };
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : String(error);
+    await recordMailResult(env, null, code.id, messageText);
+    throw new Error(`密码已重置，但邮件发送失败：${messageText}`);
   }
 }
 

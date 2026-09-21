@@ -74,6 +74,7 @@
     runActionMenu: null,
     identityApplications: { page: 1, total: 0, items: [] },
     identityCodes: { page: 1, total: 0, items: [] },
+    identityProfileChanges: { page: 1, total: 0, items: [] },
     temporaryKeys: { page: 1, total: 0, items: [] },
     identityApplicationSearch: "",
     identityApplicationStatus: "",
@@ -84,6 +85,7 @@
     editingTemporaryKeyId: null,
     selectedIdentityApplication: null,
     selectedIdentityCode: null,
+    selectedIdentityPasswordResetCode: null,
     publicContentLocale: "zh-cn",
     publicContentDraft: null,
     smtpConfigLoaded: false,
@@ -2517,6 +2519,7 @@
     }
     if (resolved === "identity-codes" && canView(resolved)) {
       loadIdentityCodes();
+      loadIdentityProfileChanges();
     }
     if (resolved === "smtp" && canView(resolved)) {
       loadSmtpConfig();
@@ -3623,6 +3626,145 @@
     }
   }
 
+  async function loadIdentityProfileChanges(page = state.identityProfileChanges.page) {
+    if (!canView("identity-codes")) return;
+    const params = new URLSearchParams({
+      page: String(Math.max(1, page)),
+      status: "pending"
+    });
+    try {
+      state.identityProfileChanges = await request(
+        `/api/admin/identity-profile-change-requests?${params}`
+      );
+      renderIdentityProfileChanges();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  function renderIdentityProfileChanges() {
+    const root = byId("identity-profile-change-list");
+    if (!root) return;
+    root.replaceChildren();
+    const payload = state.identityProfileChanges;
+    if (!payload.items.length) {
+      root.append(create("p", "empty-state", "当前没有待审核的身份资料变更。"));
+      return;
+    }
+    for (const item of payload.items) {
+      const card = create("article", "identity-profile-change-card");
+      const heading = create("div", "section-heading");
+      const headingCopy = create("div");
+      headingCopy.append(
+        create(
+          "p",
+          "eyebrow",
+          item.kind === "email" ? "EMAIL CHANGE" : "PLAYER NAME CHANGE"
+        ),
+        create(
+          "h3",
+          "",
+          item.kind === "email" ? "绑定/修改邮箱" : "修改玩家名称"
+        )
+      );
+      heading.append(headingCopy, create("span", "muted", formatDate(item.submitted_at)));
+      card.append(heading);
+      const detail = create("dl", "member-detail");
+      for (const [label, value] of [
+        ["识别码记录", item.identity_code_id],
+        ["当前资料", item.kind === "email" ? item.current_email || "—" : item.current_player_name || "—"],
+        ["申请变更为", item.kind === "email" ? item.requested_email || "—" : item.requested_player_name || "—"]
+      ]) {
+        detail.append(create("dt", "", label), create("dd", "", value));
+      }
+      const actions = create("div", "action-row");
+      const approve = create("button", "button button-primary", "批准并应用");
+      approve.type = "button";
+      approve.addEventListener("click", () => reviewIdentityProfileChange(item, "approve"));
+      const reject = create("button", "button button-danger button-danger-quiet", "拒绝");
+      reject.type = "button";
+      reject.addEventListener("click", () => reviewIdentityProfileChange(item, "reject"));
+      actions.append(approve, reject);
+      card.append(detail, actions);
+      root.append(card);
+    }
+  }
+
+  async function reviewIdentityProfileChange(item, action) {
+    if (!(await showAppConfirm(
+      action === "approve"
+        ? "确认批准这项身份资料变更并立即应用？"
+        : "确认拒绝这项身份资料变更？",
+      { title: action === "approve" ? "批准资料变更" : "拒绝资料变更", danger: action === "reject" }
+    ))) return;
+    let body = {};
+    if (action === "reject") {
+      const reason = await showAppPrompt("请输入拒绝理由，该理由将保留在审核记录中。", {
+        title: "拒绝资料变更",
+        inputLabel: "拒绝理由（必填）",
+        inputPlaceholder: "请输入拒绝理由",
+        maxLength: 500,
+        multiline: true,
+        confirmLabel: "确认拒绝",
+        cancelLabel: "取消",
+        danger: true
+      });
+      if (reason === null) return;
+      if (!reason) {
+        byId("save-state").textContent = window.MrzhI18n.t("请填写拒绝理由");
+        return;
+      }
+      body = { reason };
+    }
+    try {
+      await request(
+        `/api/admin/identity-profile-change-requests/${encodeURIComponent(item.id)}/${action}`,
+        { method: "POST", body: JSON.stringify(body) }
+      );
+      byId("save-state").textContent =
+        action === "approve" ? "资料变更已批准并应用" : "资料变更已拒绝";
+      await Promise.all([loadIdentityProfileChanges(1), loadIdentityCodes()]);
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  function openIdentityPasswordReset(item) {
+    state.selectedIdentityPasswordResetCode = item;
+    setText(
+      "identity-password-reset-detail",
+      `将为 ${item.player_name || "未命名玩家"}（${item.code}）生成新密码，并发送到 ${item.email || "预留邮箱"}。`
+    );
+    setText("identity-password-reset-feedback", "");
+    byId("identity-password-reset-dialog").showModal();
+  }
+
+  async function confirmIdentityPasswordReset() {
+    const item = state.selectedIdentityPasswordResetCode;
+    if (!item) return;
+    if (!(await showAppConfirm(
+      "密码重置后旧密码会立即失效，确认继续并发送新密码邮件？",
+      { title: "二次确认密码重置", danger: true }
+    ))) return;
+    const button = byId("identity-password-reset-confirm");
+    const feedback = byId("identity-password-reset-feedback");
+    button.disabled = true;
+    feedback.textContent = window.MrzhI18n.t("正在重置并发送邮件…");
+    try {
+      await request(
+        `/api/admin/identity-codes/${encodeURIComponent(item.id)}/reset-password`,
+        { method: "POST" }
+      );
+      byId("identity-password-reset-dialog").close();
+      byId("save-state").textContent = window.MrzhI18n.t("新密码已生成并发送到预留邮箱");
+      await loadIdentityCodes();
+    } catch (error) {
+      feedback.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function renderIdentityCodes() {
     const payload = state.identityCodes;
     const pages = Math.max(1, Math.ceil(payload.total / 10));
@@ -3686,6 +3828,12 @@
             icon: "events",
             disabled: !item.email || !item.player_name,
             onSelect: (button) => resendIdentity(item.id, button)
+          },
+          {
+            label: "重置识别码密码",
+            icon: "events",
+            disabled: !item.email,
+            onSelect: () => openIdentityPasswordReset(item)
           }
         ]);
       });
@@ -4225,6 +4373,17 @@
   byId("identity-code-jump-button").addEventListener("click", () =>
     loadIdentityCodes(Number(byId("identity-code-jump").value))
   );
+  byId("refresh-identity-profile-changes").addEventListener("click", () =>
+    loadIdentityProfileChanges(1)
+  );
+  byId("identity-password-reset-cancel").addEventListener("click", () =>
+    byId("identity-password-reset-dialog").close()
+  );
+  byId("identity-password-reset-confirm").addEventListener("click", confirmIdentityPasswordReset);
+  byId("identity-password-reset-dialog").addEventListener("close", () => {
+    state.selectedIdentityPasswordResetCode = null;
+    setText("identity-password-reset-feedback", "");
+  });
   byId("smtp-config-form").addEventListener("submit", saveSmtpConfig);
   byId("smtp-config-form").addEventListener("input", () => {
     state.smtpDraftRevision += 1;
