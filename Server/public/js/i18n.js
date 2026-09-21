@@ -3380,8 +3380,6 @@
       "删除": "Delete",
       "巡逻任务只支持一个启动时间。": "Patrol supports one start time only.",
       "科技切换任务只支持一个执行时间。": "Technology switching supports one execution time only.",
-      "巡逻任务只支持一个启动时间，并且每天执行。": "Patrol supports one start time and runs every day.",
-      "科技切换任务只支持一个执行时间，并且每天执行。": "Technology switching supports one execution time and runs every day.",
       "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。":
         "The current time is kept by default. Set each time after adding executions. Manual tasks submitted within 15 minutes after a scheduled time use the scheduled-task retry count; other manual tasks use the manual-task retry count.",
       "请为每次执行填写有效时间。": "Enter a valid time for every execution."
@@ -3413,8 +3411,6 @@
       "删除": "Supprimer",
       "巡逻任务只支持一个启动时间。": "La patrouille ne prend qu’une heure de début.",
       "科技切换任务只支持一个执行时间。": "Le changement de technologie ne prend qu’une heure.",
-      "巡逻任务只支持一个启动时间，并且每天执行。": "La patrouille ne prend qu’une heure de début et s’exécute tous les jours.",
-      "科技切换任务只支持一个执行时间，并且每天执行。": "Le changement de technologie ne prend qu’une heure et s’exécute tous les jours.",
       "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。":
         "L’heure actuelle est conservée par défaut. Définissez chaque heure ajoutée. Les tâches manuelles lancées dans les 15 minutes suivant l’heure planifiée utilisent le nombre de relances planifiées ; les autres utilisent le nombre de relances manuelles.",
       "请为每次执行填写有效时间。": "Saisissez une heure valide pour chaque exécution."
@@ -3446,8 +3442,6 @@
       "删除": "削除",
       "巡逻任务只支持一个启动时间。": "巡回タスクは開始時刻を1つだけ設定できます。",
       "科技切换任务只支持一个执行时间。": "科技切替は実行時刻を1つだけ設定できます。",
-      "巡逻任务只支持一个启动时间，并且每天执行。": "巡回タスクは開始時刻を1つだけ設定でき、毎日実行されます。",
-      "科技切换任务只支持一个执行时间，并且每天执行。": "科技切替は実行時刻を1つだけ設定でき、毎日実行されます。",
       "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。":
         "現在の時刻を既定値として保持します。回数を追加したら各時刻を設定してください。予定時刻から15分以内の手動タスクは定期タスクの回数を使い、それ以外は手動タスクの回数を使います。",
       "请为每次执行填写有效时间。": "各実行に有効な時刻を入力してください。"
@@ -3479,8 +3473,6 @@
       "删除": "刪除",
       "巡逻任务只支持一个启动时间。": "巡邏任務只支援一個啟動時間。",
       "科技切换任务只支持一个执行时间。": "科技切換任務只支援一個執行時間。",
-      "巡逻任务只支持一个启动时间，并且每天执行。": "巡邏任務只支援一個啟動時間，並且每天執行。",
-      "科技切换任务只支持一个执行时间，并且每天执行。": "科技切換任務只支援一個執行時間，並且每天執行。",
       "默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。":
         "預設保留目前時間。增加執行次數後，請分別設定每次執行時間。計畫時間後 15 分鐘內提交的手動任務使用定時任務重試次數；其他手動任務使用手動任務失敗重試次數。",
       "请为每次执行填写有效时间。": "請為每次執行填寫有效時間。"

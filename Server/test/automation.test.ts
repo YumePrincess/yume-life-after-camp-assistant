@@ -288,7 +288,7 @@ describe("five-task automation configuration", () => {
     expect(config.tasks.patrol.times).toEqual(["19:20"]);
   });
 
-  it("accepts selected execution weekdays and rejects an empty selection", () => {
+  it("accepts selected execution weekdays for every task and rejects an empty selection", () => {
     const config = validateAutomationConfig({
       timezone: "Asia/Shanghai",
       schedulerGraceMinutes: 5,
@@ -302,7 +302,11 @@ describe("five-task automation configuration", () => {
         restartCooldownSeconds: 8
       },
       tasks: {
-        tech_switch: { enabled: true, time: "02:00" },
+        tech_switch: {
+          enabled: true,
+          time: "02:00",
+          weekdays: [2, 4, 6]
+        },
         contribution_sync: {
           enabled: true,
           time: "02:30",
@@ -311,6 +315,7 @@ describe("five-task automation configuration", () => {
         patrol: {
           enabled: true,
           time: "19:20",
+          weekdays: [2, 4, 6],
           teamReadyTime: "19:30",
           shareIntervalMinutes: 10,
           chatPollSeconds: 5,
@@ -318,9 +323,9 @@ describe("five-task automation configuration", () => {
         }
       }
     });
-    expect(config.tasks.tech_switch.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(config.tasks.tech_switch.weekdays).toEqual([2, 4, 6]);
     expect(config.tasks.contribution_sync.weekdays).toEqual([1, 3, 5]);
-    expect(config.tasks.patrol.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(config.tasks.patrol.weekdays).toEqual([2, 4, 6]);
     expect(() => validateAutomationConfig({
       timezone: "Asia/Shanghai",
       schedulerGraceMinutes: 5,
@@ -334,7 +339,7 @@ describe("five-task automation configuration", () => {
         restartCooldownSeconds: 8
       },
       tasks: {
-        tech_switch: { enabled: true, time: "02:00", weekdays: [1, 3, 5] },
+        tech_switch: { enabled: true, time: "02:00", weekdays: [] },
         patrol: {
           enabled: true,
           time: "19:20",
@@ -344,7 +349,7 @@ describe("five-task automation configuration", () => {
           deadline: "21:25"
         }
       }
-    })).toThrow("automationConfig.tasks.tech_switch.weekdays supports every day only");
+    })).toThrow("automationConfig.tasks.tech_switch.weekdays must contain weekdays");
   });
 
   it("keeps technology and patrol as single scheduled times", () => {

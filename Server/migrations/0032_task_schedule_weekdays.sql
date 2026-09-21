@@ -1,5 +1,5 @@
 -- Normalize legacy automatic-task schedules to an explicit every-day policy.
--- Technology switching and patrol are intentionally daily-only tasks.
+-- New weekday selection defaults to every day for all automatic tasks.
 UPDATE settings
 SET value = json_set(
   value,

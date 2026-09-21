@@ -927,10 +927,6 @@
 
   const ALL_TASK_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];
 
-  function scheduleSupportsWeekdays(taskKey) {
-    return taskKey !== "tech_switch" && taskKey !== "patrol";
-  }
-
   function scheduleWeekdays(taskKey) {
     const values = state.scheduleWeekdayDrafts[taskKey];
     if (Array.isArray(values) && values.length) return values.slice();
@@ -963,11 +959,6 @@
     const picker = list?.closest(".schedule-weekday-picker");
     const taskKey = state.scheduleDialogTaskKey;
     if (!list || !taskKey) return;
-    if (!scheduleSupportsWeekdays(taskKey)) {
-      if (picker) picker.hidden = true;
-      list.replaceChildren();
-      return;
-    }
     if (picker) picker.hidden = false;
     const selected = new Set(scheduleWeekdays(taskKey));
     list.replaceChildren();
@@ -1056,9 +1047,9 @@
     state.scheduleWeekdayDrafts[taskKey] = scheduleWeekdays(taskKey).slice();
     byId("schedule-dialog-title").textContent = `${window.MrzhI18n.t(field.title)}：${window.MrzhI18n.t("配置执行计划")}`;
     byId("schedule-dialog-note").textContent = taskKey === "patrol"
-      ? window.MrzhI18n.t("巡逻任务只支持一个启动时间，并且每天执行。")
+      ? window.MrzhI18n.t("巡逻任务只支持一个启动时间。")
       : taskKey === "tech_switch"
-        ? window.MrzhI18n.t("科技切换任务只支持一个执行时间，并且每天执行。")
+        ? window.MrzhI18n.t("科技切换任务只支持一个执行时间。")
         : window.MrzhI18n.t("默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。");
     byId("schedule-dialog-enabled").checked = Boolean(getField(field.enabled));
     const patrolFields = byId("schedule-patrol-fields");
@@ -1106,11 +1097,9 @@
       byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("请为每次执行填写有效时间。");
       return;
     }
-    const weekdays = scheduleSupportsWeekdays(taskKey)
-      ? [...byId("schedule-weekday-list").querySelectorAll("input[data-schedule-weekday]:checked")]
-          .map((control) => Number(control.value))
-      : ALL_TASK_WEEKDAYS.slice();
-    if (scheduleSupportsWeekdays(taskKey) && !weekdays.length) {
+    const weekdays = [...byId("schedule-weekday-list").querySelectorAll("input[data-schedule-weekday]:checked")]
+      .map((control) => Number(control.value));
+    if (!weekdays.length) {
       byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("至少选择一天");
       return;
     }

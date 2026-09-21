@@ -194,8 +194,7 @@ function validatePublicOverviewItems(
 function taskSchedule(
   value: unknown,
   field: string,
-  allowMultiple = true,
-  allowWeekdays = true
+  allowMultiple = true
 ): {
   source: Record<string, unknown>;
   enabled: boolean;
@@ -225,19 +224,12 @@ function taskSchedule(
     source.weekdays === undefined
       ? [...DEFAULT_TASK_WEEKDAYS]
       : weekdays(source.weekdays, `${field}.weekdays`);
-  if (
-    !allowWeekdays &&
-    (requestedWeekdays.length !== DEFAULT_TASK_WEEKDAYS.length ||
-      DEFAULT_TASK_WEEKDAYS.some((day) => !requestedWeekdays.includes(day)))
-  ) {
-    throw new Error(`${field}.weekdays supports every day only`);
-  }
   return {
     source,
     enabled: boolean(source.enabled, `${field}.enabled`),
     time: times[0] ?? time,
     times,
-    weekdays: allowWeekdays ? requestedWeekdays : [...DEFAULT_TASK_WEEKDAYS]
+    weekdays: requestedWeekdays
   };
 }
 
@@ -709,7 +701,6 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
   const tech = taskSchedule(
     tasks.tech_switch ?? { enabled: true, time: "02:00" },
     "automationConfig.tasks.tech_switch",
-    false,
     false
   );
   const contribution = taskSchedule(
@@ -724,12 +715,7 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     tasks.member_profile_sync ?? { enabled: true, time: "02:15" },
     "automationConfig.tasks.member_profile_sync"
   );
-  const patrol = taskSchedule(
-    tasks.patrol,
-    "automationConfig.tasks.patrol",
-    false,
-    false
-  );
+  const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol", false);
 
   const patrolTeamReadyTime = text(
     patrol.source.teamReadyTime,
