@@ -2651,6 +2651,17 @@
   }
 
   function mountVoteAdminCards() {
+    const managementGrid = document.querySelector(
+      "#vote-management-shell .vote-admin-card-grid"
+    );
+    const historyShell = byId("vote-history-shell");
+    const historyGrid = historyShell?.querySelector(".vote-admin-card-grid");
+    if (managementGrid && historyShell && historyGrid && historyShell.parentElement) {
+      while (historyGrid.firstElementChild) {
+        managementGrid.append(historyGrid.firstElementChild);
+      }
+      historyShell.remove();
+    }
     const move = (selector, hostId, removeViewAttribute = false) => {
       const source = document.querySelector(selector);
       const host = byId(hostId);

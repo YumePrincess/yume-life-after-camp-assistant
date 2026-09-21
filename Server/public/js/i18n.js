@@ -2192,6 +2192,7 @@
     en: {
       "VOTE": "VOTE",
       "投票管理": "Vote management",
+      "投票管理与历史": "Vote management and history",
       "投票历史": "Vote history",
       "科技目录、投票与固定科技": "Technology catalog, voting and fixed technology",
       "日常投票事项历史": "Daily voting history",
@@ -2203,6 +2204,7 @@
     fr: {
       "VOTE": "VOTE",
       "投票管理": "Gestion des votes",
+      "投票管理与历史": "Gestion et historique des votes",
       "投票历史": "Historique des votes",
       "科技目录、投票与固定科技": "Catalogue technologique, votes et technologies fixes",
       "日常投票事项历史": "Historique des votes du jour",
@@ -2214,6 +2216,7 @@
     ja: {
       "VOTE": "VOTE",
       "投票管理": "投票管理",
+      "投票管理与历史": "投票管理と履歴",
       "投票历史": "投票履歴",
       "科技目录、投票与固定科技": "技術カタログ・投票・固定技術",
       "日常投票事项历史": "日常投票履歴",
@@ -2225,6 +2228,7 @@
     "zh-tw": {
       "VOTE": "VOTE",
       "投票管理": "投票管理",
+      "投票管理与历史": "投票管理與歷史",
       "投票历史": "投票歷史",
       "科技目录、投票与固定科技": "科技目錄、投票與固定科技",
       "日常投票事项历史": "日常投票事項歷史",

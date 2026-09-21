@@ -157,12 +157,15 @@ textarea {
   display: flex;
   position: relative;
   z-index: 20;
+  align-items: center;
   gap: 8px;
   margin-left: auto;
 }
 
 .preference-menu {
   position: relative;
+  display: block;
+  flex: 0 0 auto;
 }
 
 .preference-menu > summary {
@@ -174,9 +177,11 @@ textarea {
 }
 
 .preference-trigger {
-  display: grid;
-  width: 42px;
-  height: 42px;
+  display: inline-flex;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 50%;
@@ -188,7 +193,9 @@ textarea {
   backdrop-filter: blur(14px) saturate(1.2);
   -webkit-backdrop-filter: blur(14px) saturate(1.2);
   cursor: pointer;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
   transition:
     transform var(--duration-fast) var(--ease-out),
     background var(--duration-fast) ease;
@@ -206,10 +213,11 @@ textarea {
 }
 
 .preference-icon {
-  width: 28px;
-  height: 28px;
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin: 0;
   flex-shrink: 0;
-  vertical-align: middle;
 }
 
 .preference-dropdown {
@@ -218,7 +226,8 @@ textarea {
   right: 0;
   display: grid;
   width: max-content;
-  min-width: 206px;
+  min-width: 172px;
+  max-width: min(220px, calc(100vw - 24px));
   gap: 4px;
   padding: 8px;
   border: 1px solid var(--line);
@@ -241,7 +250,9 @@ textarea {
 }
 
 .preference-option {
+  display: flex;
   width: 100%;
+  align-items: center;
   min-height: 40px;
   padding: 9px 12px;
   border: 0;
@@ -250,6 +261,7 @@ textarea {
   background: transparent;
   text-align: left;
   cursor: pointer;
+  line-height: 1.25;
   transition: background 140ms ease;
 }
 
@@ -5172,17 +5184,12 @@ dialog::backdrop {
   }
 
   .preference-dropdown {
-    min-width: 188px;
-  }
-
-  .preference-trigger {
-    width: 36px;
-    height: 36px;
+    min-width: 160px;
   }
 
   .preference-icon {
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
   }
 
   .brand small,
