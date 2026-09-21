@@ -2655,7 +2655,10 @@
       const source = document.querySelector(selector);
       const host = byId(hostId);
       if (!source || !host || source.parentElement === host) return source;
-      if (removeViewAttribute) source.removeAttribute("data-admin-view");
+      if (removeViewAttribute) {
+        source.removeAttribute("data-admin-view");
+        source.removeAttribute("hidden");
+      }
       host.append(source);
       return source;
     };
