@@ -161,4 +161,20 @@ test("safe count templates translate without translating OCR fields", () => {
     ),
     "Page 2 reached the threshold boundary; rereading recovered 1 members offline for at least 1 days"
   );
+  assert.equal(
+    localizeTaskEvent(
+      "weekly_activity_final_rows",
+      "周活跃点第 3 页最终采用成员 4 名：海盗猫猫✨、蛮蛮空心菜、寻不到旧梦、月丨倾玲",
+      "en"
+    ),
+    "Weekly activity page 3 final result retained 4 members: 海盗猫猫✨、蛮蛮空心菜、寻不到旧梦、月丨倾玲"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "weekly_activity_done",
+      "周活跃点读取完成：识别 12 名玩家，更新 9 名；未出现在排行的成员按 0 处理",
+      "ja"
+    ),
+    "週間活躍ポイントの読み取り完了：12人を認識し9人を更新；ランキングにないメンバーは0として処理"
+  );
 });

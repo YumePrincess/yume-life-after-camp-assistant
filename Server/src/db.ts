@@ -614,6 +614,7 @@ export async function listMembers(env: Env, limit = 200): Promise<Record<string,
   const result = await env.DB.prepare(
     `SELECT id, name, profession, manor_level, roommate_name, camp_title,
             weekly_contribution, technology_points_used, material_contribution,
+            weekly_activity_points,
             last_seen_at
      FROM members
      ORDER BY weekly_contribution DESC, name ASC
@@ -627,6 +628,7 @@ export async function listMembers(env: Env, limit = 200): Promise<Record<string,
 const MEMBER_DETAILS_SELECT = `
   SELECT id, name, profession, manor_level, roommate_name, camp_title,
          weekly_contribution, technology_points_used, material_contribution,
+         weekly_activity_points,
          last_seen_at
   FROM members`;
 
@@ -639,6 +641,7 @@ export type MemberDetailsUpdate = {
   weeklyContribution: number;
   technologyPointsUsed: number;
   materialContribution: number;
+  weeklyActivityPoints: number;
 };
 
 export async function getMemberById(
@@ -658,7 +661,7 @@ export async function updateMemberDetails(
     `UPDATE members
      SET profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
          weekly_contribution = ?, technology_points_used = ?,
-         material_contribution = ?
+         material_contribution = ?, weekly_activity_points = ?
      WHERE id = ?`
   )
     .bind(
@@ -669,6 +672,7 @@ export async function updateMemberDetails(
       input.weeklyContribution,
       input.technologyPointsUsed,
       input.materialContribution,
+      input.weeklyActivityPoints,
       input.id
     )
     .run();
@@ -946,6 +950,100 @@ export async function updateContributionSnapshot(
       input.capturedAt,
       member.name
     )
+  );
+  if (statements.length) await env.DB.batch(statements);
+  return reconciliation;
+}
+
+type WeeklyActivityRow = {
+  name: string;
+  weeklyActivityPoints: number;
+};
+
+export type WeeklyActivityReconciliation = {
+  updates: WeeklyActivityRow[];
+  ignored: number;
+  ambiguous: number;
+};
+
+export function reconcileWeeklyActivityMembers(
+  incoming: WeeklyActivityRow[],
+  masterMembers: Array<{ name: string }> = []
+): WeeklyActivityReconciliation {
+  const hasMasterRoster = masterMembers.length > 0;
+  const rawByName = new Map<string, Array<{ name: string }>>();
+  const coreByName = new Map<string, Array<{ name: string }>>();
+  for (const member of masterMembers) {
+    const name = String(member?.name || "").trim();
+    if (!name) continue;
+    rawByName.set(rawMemberName(name), [
+      ...(rawByName.get(rawMemberName(name)) ?? []),
+      { name }
+    ]);
+    const coreKey = symbolInsensitiveMemberName(name) || comparableMemberName(name);
+    coreByName.set(coreKey, [...(coreByName.get(coreKey) ?? []), { name }]);
+  }
+  const updatesByName = new Map<string, WeeklyActivityRow>();
+  let ignored = 0;
+  let ambiguous = 0;
+  for (const row of incoming) {
+    let canonicalName = String(row.name || "").trim();
+    if (hasMasterRoster) {
+      const rawCandidates = rawByName.get(rawMemberName(canonicalName)) ?? [];
+      const coreKey = symbolInsensitiveMemberName(canonicalName) || comparableMemberName(canonicalName);
+      const coreCandidates = coreByName.get(coreKey) ?? [];
+      const boundaryCandidates = hasMemberCoreBoundaryVariant(canonicalName, masterMembers);
+      const candidates = rawCandidates.length
+        ? rawCandidates
+        : coreCandidates.length
+          ? coreCandidates
+          : boundaryCandidates;
+      if (candidates.length === 1) canonicalName = candidates[0]!.name;
+      else {
+        if (candidates.length > 1) ambiguous += 1;
+        ignored += 1;
+        continue;
+      }
+    }
+    const key = hasMasterRoster
+      ? rawMemberName(canonicalName)
+      : symbolInsensitiveMemberName(canonicalName) || comparableMemberName(canonicalName);
+    if (!key || updatesByName.has(key)) {
+      ignored += 1;
+      continue;
+    }
+    updatesByName.set(key, { ...row, name: canonicalName });
+  }
+  return { updates: [...updatesByName.values()], ignored, ambiguous };
+}
+
+export async function updateWeeklyActivitySnapshot(
+  env: Env,
+  input: {
+    runId: string;
+    capturedAt: string;
+    members: WeeklyActivityRow[];
+  }
+): Promise<WeeklyActivityReconciliation> {
+  const identityNames = await listActiveIdentityPlayerNames(env);
+  const calibratedMembers = calibrateMemberNames(input.members, identityNames);
+  const master = await env.DB.prepare("SELECT name FROM members ORDER BY name")
+    .all<{ name: string }>();
+  const reconciliation = reconcileWeeklyActivityMembers(
+    calibratedMembers,
+    master.results
+  );
+  // The game leaderboard contains only members who earned activity points.
+  // A completed scan therefore resets absent roster members to zero first.
+  await env.DB.prepare(
+    "UPDATE members SET weekly_activity_points = 0, last_seen_at = ?"
+  ).bind(input.capturedAt).run();
+  const statements = reconciliation.updates.map((member) =>
+    env.DB.prepare(
+      `UPDATE members
+       SET weekly_activity_points = ?, last_seen_at = ?
+       WHERE name = ?`
+    ).bind(member.weeklyActivityPoints, input.capturedAt, member.name)
   );
   if (statements.length) await env.DB.batch(statements);
   return reconciliation;

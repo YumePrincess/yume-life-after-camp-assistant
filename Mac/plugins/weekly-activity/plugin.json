@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "zone.yume.lifeafter.weekly-activity",
+  "version": "27.0.0",
+  "build": 27123,
+  "kind": "task",
+  "architectures": ["arm64"],
+  "minimumAgentVersion": "27.0.0",
+  "entry": "plugin.mjs",
+  "export": "run",
+  "task": { "key": "weekly_activity_sync", "positionIndependent": true },
+  "name": {
+    "zh-Hans": "更新周活跃点",
+    "zh-Hant": "更新週活躍點",
+    "en": "Update weekly activity points",
+    "ja": "週間活躍ポイントを更新",
+    "fr": "Mettre à jour les points d’activité hebdomadaires"
+  },
+  "summary": {
+    "zh-Hans": "读取营地周计划中的活跃排行并更新成员周活跃点",
+    "zh-Hant": "讀取營地週計畫中的活躍排行並更新成員週活躍點",
+    "en": "Read the camp weekly activity ranking and update member points",
+    "ja": "キャンプ週間活躍ランキングを読み取り、メンバーのポイントを更新",
+    "fr": "Lire le classement hebdomadaire du camp et mettre à jour les points"
+  }
+}

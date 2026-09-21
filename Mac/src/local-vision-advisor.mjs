@@ -249,6 +249,44 @@ export class LocalVisionAdvisor {
       );
   }
 
+  async extractWeeklyActivity(imagePath, signal) {
+    if (!this.enabled || this.config.transport !== "http") return [];
+    const prompt = [
+      "读取《明日之后》营地周计划的活跃排行表当前可见的成员行。",
+      "图片保留完整卡片尺寸和排名列；头像列已被不透明遮罩覆盖，遮罩区域不是玩家姓名。只读取卡片数据区（坐标约为x=75..765、y=470..840）的4个普通成员行，不读取表头、底部固定的当前玩家行、按钮或装饰。",
+      "排名和活跃点只输出十进制整数；玩家姓名按原图保留符号和emoji，不要臆造看不清的字符。排名列仍然可见，按从上到下返回真实rank。每一个不重复的排名必须对应当前行唯一一项数据，不得跳过或合并。",
+      "玩家姓名可能完全由emoji或符号组成，例如 -😊-、✨、★、༺愿༻；这些都是有效姓名，必须逐字符保留，不能因为没有汉字、字母或数字而留空。",
+      "按原图区分花朵、星星、心形、༺/༻、短横线、竖线、间隔点、插入符、&、+、$、括号、引号和emoji；不要互换相近符号，不要把符号读成汉字、数字、字母或职位。",
+      "姓名右侧与姓名隔开的小型R/®/回归/启航/先行者图标是身份徽章，不是姓名；只能删除独立徽标，不能删除姓名自身的装饰符号。",
+      "每页最多4名普通成员，按从上到下返回；看不清的字段留空但不要把后面的行前移。看不到真实成员行时返回空rows。",
+      '只返回一次单行JSON：{"rows":[{"row":1,"rank":1,"name":"玩家","weeklyActivityPoints":6}]}。'
+    ].join("\n");
+    const parsed = await requestHttp(
+      this.config,
+      imagePath,
+      prompt,
+      { maxTokens: 384, resizeShape: [730, 680] },
+      signal
+    );
+    if (!Array.isArray(parsed.rows)) {
+      throw new Error("Local vision model weekly activity response has no rows");
+    }
+    return parsed.rows
+      .map((row) => ({
+        row: Number.parseInt(row?.row, 10),
+        rank: tableNumber(row?.rank),
+        name: String(row?.name || "").trim(),
+        weeklyActivityPoints: tableNumber(row?.weeklyActivityPoints)
+      }))
+      .filter(
+        (row) =>
+          Number.isInteger(row.row) &&
+          row.row > 0 &&
+          row.name &&
+          !/^(?:排名|成员|活跃点|name|player)$/i.test(row.name)
+      );
+  }
+
   async extractActivity(imagePath, signal) {
     if (!this.enabled || this.config.transport !== "http") return [];
     const prompt = [

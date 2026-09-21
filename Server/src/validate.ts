@@ -715,6 +715,14 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     tasks.member_profile_sync ?? { enabled: true, time: "02:15" },
     "automationConfig.tasks.member_profile_sync"
   );
+  const weeklyActivity = taskSchedule(
+    tasks.weekly_activity_sync ?? {
+      enabled: true,
+      time: "22:00",
+      weekdays: [7]
+    },
+    "automationConfig.tasks.weekly_activity_sync"
+  );
   const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol", false);
 
   const patrolTeamReadyTime = text(
@@ -916,6 +924,12 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
         time: profile.time,
         times: profile.times,
         weekdays: profile.weekdays
+      },
+      weekly_activity_sync: {
+        enabled: weeklyActivity.enabled,
+        time: weeklyActivity.time,
+        times: weeklyActivity.times,
+        weekdays: weeklyActivity.weekdays
       },
       patrol: {
         enabled: patrol.enabled,

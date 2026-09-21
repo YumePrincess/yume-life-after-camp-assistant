@@ -1391,7 +1391,8 @@
         [item.roommate_name || "—", ""],
         [item.weekly_contribution ?? 0, "numeric"],
         [item.technology_points_used ?? 0, "numeric"],
-        [item.material_contribution ?? 0, "numeric"]
+        [item.material_contribution ?? 0, "numeric"],
+        [item.weekly_activity_points ?? 0, "numeric"]
       ]) {
         row.append(create("td", className, String(value)));
       }
@@ -1417,7 +1418,8 @@
         for (const [value, label] of [
           [item.weekly_contribution ?? 0, "本周贡献"],
           [item.technology_points_used ?? 0, "使用科技点"],
-          [item.material_contribution ?? 0, "贡献物资"]
+          [item.material_contribution ?? 0, "贡献物资"],
+          [item.weekly_activity_points ?? 0, "周活跃点"]
         ]) {
           const metric = create("div", "member-responsive-metric");
           metric.append(

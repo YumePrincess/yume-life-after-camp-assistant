@@ -4,6 +4,7 @@ export const TASK_KEYS = [
   "contribution_sync",
   "inactivity_sync",
   "member_profile_sync",
+  "weekly_activity_sync",
   "patrol",
   "automation_routine"
 ] as const;
@@ -138,6 +139,7 @@ export interface AutomationConfig {
     contribution_sync: TaskSchedule;
     inactivity_sync: TaskSchedule;
     member_profile_sync: TaskSchedule;
+    weekly_activity_sync: TaskSchedule;
     patrol: TaskSchedule & {
       teamReadyTime: string;
       shareIntervalMinutes: number;

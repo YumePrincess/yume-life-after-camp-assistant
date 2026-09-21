@@ -103,6 +103,7 @@
   "vision": {
     "binary": "./bin/mrzh-vision-ocr",
     "pixelProbeBinary": "./bin/mrzh-pixel-probe",
+    "imageMaskBinary": "./bin/mrzh-image-mask",
     "mode": "fast",
     "prewarmEnabled": true,
     "prewarmTimeoutSeconds": 45,

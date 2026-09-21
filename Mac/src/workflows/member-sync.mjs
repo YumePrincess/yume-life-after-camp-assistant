@@ -2734,7 +2734,7 @@ async function alignMemberDetailsPage(
   return frame;
 }
 
-async function memberAlignmentSwipe(adb, from, to, durationMs, signal) {
+export async function memberAlignmentSwipe(adb, from, to, durationMs, signal) {
   if (typeof adb.shell !== "function") {
     await adb.mouseSwipe(from, to, durationMs, signal);
     return false;

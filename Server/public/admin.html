@@ -297,6 +297,12 @@
                   <label class="field"><span>执行时间</span><input name="profileTime" type="time" /></label>
                   <p class="schedule-summary" data-schedule-summary="member_profile_sync"></p><button class="button button-quiet schedule-open-button" type="button" data-schedule-open="member_profile_sync">配置执行计划</button>
                 </fieldset>
+                <fieldset class="schedule-card schedule-card-repeat" data-plugin-task="weekly-activity">
+                  <legend>更新周活跃点</legend>
+                  <label class="field field-checkbox"><input name="weeklyActivityEnabled" type="checkbox" /><span>启用</span></label>
+                  <label class="field"><span>执行时间</span><input name="weeklyActivityTime" type="time" /></label>
+                  <p class="schedule-summary" data-schedule-summary="weekly_activity_sync"></p><button class="button button-quiet schedule-open-button" type="button" data-schedule-open="weekly_activity_sync">配置执行计划</button>
+                </fieldset>
                 <fieldset class="schedule-card schedule-card-repeat" data-plugin-task="patrol">
                   <legend>营地巡逻</legend>
                   <label class="field field-checkbox"><input name="patrolEnabled" type="checkbox" /><span>启用</span></label>
@@ -706,7 +712,7 @@
             <div class="table-scroll">
               <table>
                 <thead>
-                  <tr><th>成员</th><th>职业</th><th>庄园</th><th>同居</th><th>本周贡献</th><th>科技点</th><th>物资</th></tr>
+                  <tr><th>成员</th><th>职业</th><th>庄园</th><th>同居</th><th>本周贡献</th><th>科技点</th><th>物资</th><th>周活跃点</th></tr>
                 </thead>
                 <tbody id="admin-member-table"></tbody>
               </table>
@@ -881,6 +887,10 @@
           <label class="field">
             <span>贡献物资</span>
             <input id="member-edit-material-contribution" name="materialContribution" type="number" min="0" max="100000000000" step="1" required />
+          </label>
+          <label class="field">
+            <span>周活跃点</span>
+            <input id="member-edit-weekly-activity-points" name="weeklyActivityPoints" type="number" min="0" max="1000000000" step="1" required />
           </label>
           <label class="field">
             <span>资料采集时间</span>

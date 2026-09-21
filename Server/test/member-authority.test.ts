@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   calibrateMemberName,
   reconcileStaffAssignments,
+  updateWeeklyActivitySnapshot,
   updateMemberDetails,
   updateMemberProfiles
 } from "../src/db";
@@ -161,9 +162,10 @@ describe("manual member details", () => {
         manorLevel: 31,
         roommateName: "玩家乙",
         campTitle: "新称号",
-        weeklyContribution: 1234,
-        technologyPointsUsed: 5678,
-        materialContribution: 9012
+      weeklyContribution: 1234,
+      technologyPointsUsed: 5678,
+      materialContribution: 9012,
+      weeklyActivityPoints: 345
       }
     );
 
@@ -180,6 +182,7 @@ describe("manual member details", () => {
       1234,
       5678,
       9012,
+      345,
       "member_123"
     ]);
   });
@@ -205,5 +208,104 @@ describe("identity-code member-name calibration", () => {
     expect(
       calibrateMemberName("玩家甲一", [{ name: "玩家甲二" }])
     ).toBe("玩家甲一");
+  });
+});
+
+describe("weekly activity snapshot", () => {
+  it("resets every roster member before applying the recognized ranking rows", async () => {
+    const recorder = createDatabaseRecorder();
+    const masterStatement = recorder.prepared;
+    const originalPrepare = recorder.db.prepare.bind(recorder.db);
+    recorder.db.prepare = (sql: string) => {
+      const statement = originalPrepare(sql);
+      if (sql.includes("SELECT name FROM members")) {
+        statement.all = vi.fn(async () => ({
+          results: [{ name: "玩家甲" }, { name: "玩家乙" }, { name: "玩家丙" }]
+        })) as never;
+      }
+      return statement;
+    };
+
+    const result = await updateWeeklyActivitySnapshot(
+      { DB: recorder.db } as never,
+      {
+        runId: "weekly-activity-run",
+        capturedAt: "2026-09-21T14:00:00.000Z",
+        members: [{ name: "玩家甲", weeklyActivityPoints: 12 }]
+      }
+    );
+
+    expect(result.updates).toEqual([
+      { name: "玩家甲", weeklyActivityPoints: 12 }
+    ]);
+    expect(
+      masterStatement.some((statement) =>
+        statement.sql.includes("UPDATE members SET weekly_activity_points = 0")
+      )
+    ).toBe(true);
+    expect(recorder.batches).toHaveLength(1);
+    expect(recorder.batches[0]).toHaveLength(1);
+  });
+
+  it("resets the full roster when the game returns an empty ranking", async () => {
+    const recorder = createDatabaseRecorder();
+    const originalPrepare = recorder.db.prepare.bind(recorder.db);
+    recorder.db.prepare = (sql: string) => {
+      const statement = originalPrepare(sql);
+      if (sql.includes("SELECT name FROM members")) {
+        statement.all = vi.fn(async () => ({
+          results: [{ name: "玩家甲" }, { name: "玩家乙" }]
+        })) as never;
+      }
+      return statement;
+    };
+
+    const result = await updateWeeklyActivitySnapshot(
+      { DB: recorder.db } as never,
+      {
+        runId: "weekly-activity-empty-run",
+        capturedAt: "2026-09-21T14:00:00.000Z",
+        members: []
+      }
+    );
+
+    expect(result).toEqual({ updates: [], ignored: 0, ambiguous: 0 });
+    expect(
+      recorder.prepared.some((statement) =>
+        statement.sql.includes("UPDATE members SET weekly_activity_points = 0")
+      )
+    ).toBe(true);
+    expect(recorder.batches).toHaveLength(0);
+  });
+
+  it("resets the full roster even when every recognized row is unmatched", async () => {
+    const recorder = createDatabaseRecorder();
+    const originalPrepare = recorder.db.prepare.bind(recorder.db);
+    recorder.db.prepare = (sql: string) => {
+      const statement = originalPrepare(sql);
+      if (sql.includes("SELECT name FROM members")) {
+        statement.all = vi.fn(async () => ({
+          results: [{ name: "玩家甲" }, { name: "玩家乙" }]
+        })) as never;
+      }
+      return statement;
+    };
+
+    const result = await updateWeeklyActivitySnapshot(
+      { DB: recorder.db } as never,
+      {
+        runId: "weekly-activity-unmatched-run",
+        capturedAt: "2026-09-21T14:00:00.000Z",
+        members: [{ name: "无法匹配的 OCR 名称", weeklyActivityPoints: 99 }]
+      }
+    );
+
+    expect(result).toEqual({ updates: [], ignored: 1, ambiguous: 0 });
+    expect(
+      recorder.prepared.some((statement) =>
+        statement.sql.includes("UPDATE members SET weekly_activity_points = 0")
+      )
+    ).toBe(true);
+    expect(recorder.batches).toHaveLength(0);
   });
 });

@@ -211,15 +211,93 @@ const FIXED_TRANSLATIONS = {
     fr: "Aucune donnée de contribution ne correspond à la liste des profils ; les données précédentes ont été conservées",
     ja: "貢献データをプロフィール名簿のメンバーに照合できなかったため、前回のデータを保持しました"
   },
-  "成员资料首次扫描识别 ${details}/${expectedMembers} 名，先通过顶部“首页”返回列表起点，再进入“成员”页完整重扫一次，避免末页 OCR 漏行": {
-    "zh-tw": "成員資料首次掃描識別 ${details}/${expectedMembers} 名，先透過頂部「首頁」返回列表起點，再進入「成員」頁完整重掃一次，避免末頁 OCR 漏行",
-    en: "The first member-profile scan recognized ${details}/${expectedMembers}; returning to Home and reopening Members before a full rescan to avoid missing rows at the bottom",
-    fr: "Le premier scan des profils a reconnu ${details}/${expectedMembers} membres ; retour à l’accueil puis réouverture de Membres avant un nouveau scan complet pour éviter les lignes manquantes en bas",
-    ja: "メンバープロフィールの初回スキャンは ${details}/${expectedMembers} 名を認識しました。末尾の行抜けを避けるため、「ホーム」に戻って「メンバー」を開き直して再スキャンします"
-  }
+  "营地周计划显示暂无周活跃记录，已为全部成员写入周活跃点 0": {
+    "zh-tw": "營地週計畫顯示暫無週活躍記錄，已為全部成員寫入週活躍點 0",
+    en: "The camp weekly plan has no activity records; weekly activity points were set to 0 for all members",
+    fr: "Le plan hebdomadaire du camp ne contient aucune activité ; les points hebdomadaires ont été définis à 0 pour tous les membres",
+    ja: "キャンプ週間計画に活躍記録がないため、全メンバーの週間活躍ポイントを0に設定しました"
+  },
+  "活跃排行显示暂无排名，已为全部成员写入周活跃点 0": {
+    "zh-tw": "活躍排行顯示暫無排名，已為全部成員寫入週活躍點 0",
+    en: "The activity ranking has no entries; weekly activity points were set to 0 for all members",
+    fr: "Le classement d’activité est vide ; les points hebdomadaires ont été définis à 0 pour tous les membres",
+    ja: "活躍ランキングが空のため、全メンバーの週間活躍ポイントを0に設定しました"
+  },
 };
 
 const PATTERN_TRANSLATIONS = [
+  {
+    test: /^成员资料首次扫描识别 (\d+)\/(\d+) 名，先通过顶部“首页”返回列表起点，再进入“成员”页完整重扫一次，避免末页 OCR 漏行$/,
+    values: {
+      "zh-tw": "成員資料首次掃描識別 $1/$2 名，先透過頂部「首頁」返回列表起點，再進入「成員」頁完整重掃一次，避免末頁 OCR 漏行",
+      en: "The first member-profile scan recognized $1/$2; returning to Home and reopening Members before a full rescan to avoid missing rows at the bottom",
+      fr: "Le premier scan des profils a reconnu $1/$2 membres ; retour à l’accueil puis réouverture de Membres avant un nouveau scan complet pour éviter les lignes manquantes en bas",
+      ja: "メンバープロフィールの初回スキャンは $1/$2 名を認識しました。末尾の行抜けを避けるため、「ホーム」に戻って「メンバー」を開き直して再スキャンします"
+    }
+  },
+  {
+    test: /^周活跃点读取完成：识别 (\d+) 名玩家，更新 (\d+) 名；未出现在排行的成员按 0 处理$/,
+    values: {
+      "zh-tw": "週活躍點讀取完成：識別 $1 名玩家，更新 $2 名；未出現在排行的成員按 0 處理",
+      en: "Weekly activity points read: $1 players recognized and $2 updated; members absent from the ranking use 0",
+      fr: "Points d’activité hebdomadaires lus : $1 joueurs reconnus et $2 mis à jour ; les absents du classement valent 0",
+      ja: "週間活躍ポイントの読み取り完了：$1人を認識し$2人を更新；ランキングにないメンバーは0として処理"
+    }
+  },
+  {
+    test: /^周活跃点第 (\d+) 页原生 OCR 识别成员 (\d+) 名：(.+)$/,
+    values: {
+      "zh-tw": "週活躍點第 $1 頁原生 OCR 識別成員 $2 名：$3",
+      en: "Weekly activity page $1 native OCR recognized $2 members: $3",
+      fr: "La page d’activité hebdomadaire $1 a reconnu $2 membres avec l’OCR natif : $3",
+      ja: "週間活躍ポイント $1 ページ目のネイティブ OCR が $2 人を認識：$3"
+    }
+  },
+  {
+    test: /^周活跃点第 (\d+) 页 Qwen 辅助识别成员 (\d+) 名：(.+)$/,
+    values: {
+      "zh-tw": "週活躍點第 $1 頁 Qwen 輔助識別成員 $2 名：$3",
+      en: "Weekly activity page $1 Qwen-assisted recognition found $2 members: $3",
+      fr: "La reconnaissance Qwen de la page d’activité hebdomadaire $1 a trouvé $2 membres : $3",
+      ja: "週間活躍ポイント $1 ページ目の Qwen 補助認識で $2 人を検出：$3"
+    }
+  },
+  {
+    test: /^周活跃点第 (\d+) 页最终采用成员 (\d+) 名：(.+)$/,
+    values: {
+      "zh-tw": "週活躍點第 $1 頁最終採用成員 $2 名：$3",
+      en: "Weekly activity page $1 final result retained $2 members: $3",
+      fr: "Le résultat final de la page d’activité hebdomadaire $1 retient $2 membres : $3",
+      ja: "週間活躍ポイント $1 ページ目の最終結果は $2 人：$3"
+    }
+  },
+  {
+    test: /^按更新成员资料任务的分段滑动方式上移 (\d+)px，连续读取 (\d+) 行$/,
+    values: {
+      "zh-tw": "依更新成員資料任務的分段滑動方式上移 $1px，連續讀取 $2 行",
+      en: "Moved up $1px using the member-profile segmented swipe and will read $2 consecutive rows",
+      fr: "Défilement vers le haut de $1 px avec le geste segmenté des profils, puis lecture de $2 lignes consécutives",
+      ja: "メンバープロフィール更新と同じ分割スワイプで $1px 上へ移動し、$2 行を連続読み取り"
+    }
+  },
+  {
+    test: /^周活跃点第 (\d+) 页识别 (\d+) 行，当前最后排名 (.+)，累计 (\d+) 名$/,
+    values: {
+      "zh-tw": "週活躍點第 $1 頁識別 $2 行，目前最後排名 $3，累計 $4 名",
+      en: "Weekly activity page $1 recognized $2 rows; last rank $3; $4 accumulated",
+      fr: "Page d’activité hebdomadaire $1 : $2 lignes reconnues ; dernier rang $3 ; $4 cumulées",
+      ja: "週間活躍ポイント $1 ページ目で $2 行を認識、最終順位 $3、累計 $4 人"
+    }
+  },
+  {
+    test: /^翻页后最后一名玩家排名仍为 (\d+)，确认活跃排行已到底部$/,
+    values: {
+      "zh-tw": "翻頁後最後一名玩家排名仍為 $1，確認活躍排行已到底部",
+      en: "The last player remained rank $1 after paging; the activity ranking bottom is confirmed",
+      fr: "Le dernier joueur reste au rang $1 après défilement ; le bas du classement est confirmé",
+      ja: "ページ送り後も最後のプレイヤーが $1 位のため、活躍ランキング末尾を確認しました"
+    }
+  },
   {
     test: /^检测到角色昏迷状态（(.+)），已确认“回到营地”按钮，正在点击回到营地复活$/,
     values: {

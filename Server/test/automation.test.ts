@@ -426,6 +426,12 @@ describe("five-task automation configuration", () => {
         time: "02:15",
         times: ["02:15", "14:15"]
       },
+      weekly_activity_sync: {
+        enabled: true,
+        time: "22:00",
+        times: ["22:00"],
+        weekdays: [7]
+      },
       patrol: {
         enabled: true,
         time: "19:20",

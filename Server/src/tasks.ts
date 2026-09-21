@@ -51,7 +51,8 @@ export function isManualRetryEligible(
     taskKey !== "tech_switch" &&
     taskKey !== "contribution_sync" &&
     taskKey !== "inactivity_sync" &&
-    taskKey !== "member_profile_sync"
+    taskKey !== "member_profile_sync" &&
+    taskKey !== "weekly_activity_sync"
   ) {
     return false;
   }

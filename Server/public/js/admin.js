@@ -10,6 +10,7 @@
       "更新成员资料",
       "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单"
     ],
+    ["weekly_activity_sync", "更新周活跃点", "读取营地周计划中的活跃排行并更新成员周活跃点"],
     ["patrol", "营地巡逻", "组队、困难路线与定时古籍分享"]
   ];
   const TECHNOLOGY_ROW_SLOT_COUNT = 6;
@@ -544,7 +545,11 @@
       button.type = "button";
       button.disabled = !hasPermission(runPermission);
       button.addEventListener("click", () => runTask(key, button));
-      card.append(create("h3", "", name), create("p", "", copy), button);
+      card.append(
+        create("h3", "", translateUi(name)),
+        create("p", "", translateUi(copy)),
+        button
+      );
       root.append(card);
     }
   }
@@ -820,6 +825,8 @@
         inactivityTime: tasks.inactivity_sync.time,
         profileEnabled: tasks.member_profile_sync.enabled,
         profileTime: tasks.member_profile_sync.time,
+        weeklyActivityEnabled: tasks.weekly_activity_sync.enabled,
+        weeklyActivityTime: tasks.weekly_activity_sync.time,
         patrolEnabled: tasks.patrol.enabled,
         patrolTime: tasks.patrol.time,
         patrolReadyTime: tasks.patrol.teamReadyTime,
@@ -908,6 +915,7 @@
     contribution_sync: { enabled: "contributionEnabled", time: "contributionTime", title: "更新贡献" },
     inactivity_sync: { enabled: "inactivityEnabled", time: "inactivityTime", title: "更新斩杀预警" },
     member_profile_sync: { enabled: "profileEnabled", time: "profileTime", title: "更新成员资料" },
+    weekly_activity_sync: { enabled: "weeklyActivityEnabled", time: "weeklyActivityTime", title: "更新周活跃点" },
     patrol: { enabled: "patrolEnabled", time: "patrolTime", title: "营地巡逻" }
   };
 
@@ -2845,7 +2853,8 @@
         item.roommate_name || "—",
         item.weekly_contribution ?? 0,
         item.technology_points_used ?? 0,
-        item.material_contribution ?? 0
+        item.material_contribution ?? 0,
+        item.weekly_activity_points ?? 0
       ]) {
         row.append(create("td", "", String(value)));
       }
@@ -2866,6 +2875,7 @@
       ["本周贡献", member.weekly_contribution],
       ["使用科技点", member.technology_points_used],
       ["贡献物资", member.material_contribution],
+      ["周活跃点", member.weekly_activity_points],
       ["资料采集时间", formatDate(member.last_seen_at)]
     ]) {
       detail.append(create("dt", "", label), create("dd", "", String(value ?? "—")));
@@ -2893,6 +2903,7 @@
       ["member-edit-weekly-contribution", member.weekly_contribution ?? 0],
       ["member-edit-technology-points-used", member.technology_points_used ?? 0],
       ["member-edit-material-contribution", member.material_contribution ?? 0],
+      ["member-edit-weekly-activity-points", member.weekly_activity_points ?? 0],
       ["member-edit-capture-time", formatDate(member.last_seen_at)]
     ]) {
       byId(id).value = value ?? "";
@@ -2928,7 +2939,8 @@
       roommateName: optionalText("roommateName"),
       weeklyContribution: Number(form.elements.weeklyContribution.value),
       technologyPointsUsed: Number(form.elements.technologyPointsUsed.value),
-      materialContribution: Number(form.elements.materialContribution.value)
+      materialContribution: Number(form.elements.materialContribution.value),
+      weeklyActivityPoints: Number(form.elements.weeklyActivityPoints.value)
     };
     state.memberEditSaving = true;
     setText("member-edit-feedback", "正在保存…");
@@ -3264,6 +3276,13 @@
           times: profileTimes,
           weekdays: scheduleWeekdays("member_profile_sync"),
           replaceTimes: Boolean(state.scheduleReplacements.member_profile_sync)
+        },
+        weekly_activity_sync: {
+          enabled: getField("weeklyActivityEnabled"),
+          time: scheduleTimes("weekly_activity_sync")[0],
+          times: scheduleTimes("weekly_activity_sync"),
+          weekdays: scheduleWeekdays("weekly_activity_sync"),
+          replaceTimes: Boolean(state.scheduleReplacements.weekly_activity_sync)
         },
         patrol: {
           enabled: getField("patrolEnabled"),

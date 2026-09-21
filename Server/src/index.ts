@@ -55,6 +55,7 @@ import {
   updateContributionSnapshot,
   updateMemberDetails,
   updateMemberProfiles,
+  updateWeeklyActivitySnapshot,
   requestRunCancellation,
   saveBallot,
   saveConfigBundle,
@@ -2288,7 +2289,8 @@ async function handleAgentApi(
       departed: "member-profile",
       staff: "member-profile",
       contribution: "contribution",
-      activity: "inactivity"
+      activity: "inactivity",
+      weekly_activity: "weekly-activity"
     }[type];
     if (
       snapshotPlugin &&
@@ -2335,6 +2337,21 @@ async function handleAgentApi(
     if (type === "activity") {
       const members = sanitizeActivity(body.payload);
       const reconciliation = await updateActivitySnapshot(env, {
+        runId,
+        capturedAt,
+        members
+      });
+      return json({
+        ok: true,
+        count: reconciliation.updates.length,
+        received: members.length,
+        ignored: reconciliation.ignored,
+        ambiguous: reconciliation.ambiguous
+      });
+    }
+    if (type === "weekly_activity") {
+      const members = sanitizeWeeklyActivity(body.payload);
+      const reconciliation = await updateWeeklyActivitySnapshot(env, {
         runId,
         capturedAt,
         members
@@ -3182,6 +3199,11 @@ function sanitizeMemberDetailsUpdate(value: Record<string, unknown>) {
       value.materialContribution,
       0,
       100_000_000_000
+    ),
+    weeklyActivityPoints: requiredInteger(
+      value.weeklyActivityPoints,
+      0,
+      1_000_000_000
     )
   };
 }
@@ -3211,6 +3233,26 @@ function sanitizeActivity(value: unknown) {
       name: boundedText(item.name, `activity[${index}].name`, 80),
       lastActiveText: nullableText(item.lastActiveText, 80),
       inactiveDays: nullableInteger(item.inactiveDays, 0, 100_000)
+    };
+  });
+}
+
+function sanitizeWeeklyActivity(value: unknown) {
+  if (!Array.isArray(value) || value.length > 200) {
+    throw new Error("Invalid weekly activity payload");
+  }
+  return value.map((raw, index) => {
+    if (!raw || typeof raw !== "object") {
+      throw new Error(`Invalid weekly activity ${index}`);
+    }
+    const item = raw as Record<string, unknown>;
+    return {
+      name: boundedText(item.name, `weeklyActivity[${index}].name`, 80),
+      weeklyActivityPoints: requiredInteger(
+        item.weeklyActivityPoints,
+        0,
+        1_000_000_000
+      )
     };
   });
 }

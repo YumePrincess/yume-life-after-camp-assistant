@@ -26,4 +26,12 @@ xcrun swiftc \
   "${MAC_DIR}/vision/MrzhPixelProbe.swift" \
   -o "${OUTPUT_DIR}/mrzh-pixel-probe"
 
-echo "Built ${OUTPUT_DIR}/mrzh-vision-ocr and ${OUTPUT_DIR}/mrzh-pixel-probe"
+xcrun swiftc \
+  -O \
+  -module-cache-path "${OUTPUT_DIR}/module-cache" \
+  -framework CoreGraphics \
+  -framework ImageIO \
+  "${MAC_DIR}/vision/MrzhImageMask.swift" \
+  -o "${OUTPUT_DIR}/mrzh-image-mask"
+
+echo "Built ${OUTPUT_DIR}/mrzh-vision-ocr, ${OUTPUT_DIR}/mrzh-pixel-probe and ${OUTPUT_DIR}/mrzh-image-mask"

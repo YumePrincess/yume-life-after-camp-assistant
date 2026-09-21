@@ -77,6 +77,76 @@ function memberDetailsReadDefinition(definition) {
   };
 }
 
+function weeklyActivityContentRegion(definition) {
+  return weeklyActivityReadRegion(definition);
+}
+
+function weeklyActivityAvatarMaskRegion(definition) {
+  const configured =
+    definition?.avatarMaskRegion || definition?.pagination?.avatarMaskRegion;
+  if (configured) return configured;
+  const card = definition?.cardRegion || weeklyActivityReadRegion(definition);
+  const width = Math.max(1, Number(card.right) - Number(card.left));
+  return {
+    left: Number(card.left) + width * 0.18,
+    top: Number(card.top),
+    right: Number(card.left) + width * 0.39,
+    bottom: Number(card.bottom)
+  };
+}
+
+function weeklyActivityFixedRowMaskRegion(definition) {
+  const configured = definition?.fixedRowMaskRegion;
+  if (configured) return configured;
+  const fixedBottom = Number(definition?.pagination?.fixedBottomTop);
+  const card = definition?.cardRegion || weeklyActivityReadRegion(definition);
+  if (!Number.isFinite(fixedBottom)) return null;
+  return {
+    left: Number(card.left),
+    top: fixedBottom,
+    right: Number(card.right),
+    bottom: Number(card.bottom)
+  };
+}
+
+function weeklyActivityReadRegion(definition) {
+  const base = definition?.readRegion || definition?.region || {};
+  const fixedBottom = Number(definition?.pagination?.fixedBottomTop);
+  return Number.isFinite(fixedBottom)
+    ? { ...base, bottom: Math.min(Number(base.bottom), fixedBottom) }
+    : base;
+}
+
+function weeklyActivityRankRegion(definition) {
+  const region = weeklyActivityReadRegion(definition);
+  const width = Math.max(1, Number(region.right) - Number(region.left));
+  const rankColumn = (definition?.columns || []).find(
+    (column) => column?.key === "rank"
+  );
+  const rightRatio = Math.max(0, Math.min(1, Number(rankColumn?.right) || 0));
+  return {
+    ...region,
+    right: Number(region.left) + width * rightRatio
+  };
+}
+
+function isWeeklyActivityDefinition(definition) {
+  const keys = (definition?.columns || []).map((column) => column?.key);
+  return (
+    keys.length === 3 &&
+    ["rank", "name", "weeklyActivityPoints"].every((key) =>
+      keys.includes(key)
+    )
+  );
+}
+
+function weeklyActivityReadDefinition(definition) {
+  const region = definition?.readRegion || definition?.region;
+  return region
+    ? { ...definition, region, rowAnchorTop: null }
+    : definition;
+}
+
 export class Vision {
   constructor(config, adb) {
     this.config = config;
@@ -188,11 +258,69 @@ export class Vision {
     return { path, debugPath: debugPath || null, observations: [] };
   }
 
-  async captureTable(label, definition, signal) {
+  async maskImage(imagePath, region, label = "masked", signal) {
+    const binary = this.config.vision?.imageMaskBinary;
+    if (!binary) {
+      throw new Error("VISION_IMAGE_MASK_BINARY_MISSING: 未配置图片遮罩工具");
+    }
+    await mkdir(this.snapshotDir, { recursive: true });
+    const outputPath = resolve(
+      this.snapshotDir,
+      `${String(++this.sequence).padStart(4, "0")}-${safe(label)}-masked.png`
+    );
+    this.taskPaths.add(outputPath);
+    await runFile(
+      binary,
+      [
+        imagePath,
+        outputPath,
+        String(Math.round(Number(region.left) || 0)),
+        String(Math.round(Number(region.top) || 0)),
+        String(Math.round(Number(region.right) || 0)),
+        String(Math.round(Number(region.bottom) || 0))
+      ],
+      { timeoutMs: 30_000, signal }
+    );
+    await this.taskDebugRecorder?.recordImage(outputPath, `${label}-masked`);
+    return outputPath;
+  }
+
+  async captureTable(label, definition, signal, options = {}) {
     const configuredMinimum = Number(definition?.ocrMinimumConfidence);
     const minimumConfidence = Number.isFinite(configuredMinimum)
       ? Math.max(0.1, Math.min(0.6, configuredMinimum))
       : 0.25;
+    if (isWeeklyActivityDefinition(definition)) {
+      // Preserve the rank/name/points columns and mask only the portrait
+      // column. Avatar artwork contains year badges (often "2025") that
+      // otherwise leak into the name token.
+      const frame = await this.captureSource(label, signal);
+      let maskedPath = await this.maskImage(
+        frame.path,
+        weeklyActivityAvatarMaskRegion(definition),
+        `${label}-avatar-column`,
+        signal
+      );
+      const fixedRowMaskRegion = weeklyActivityFixedRowMaskRegion(definition);
+      if (fixedRowMaskRegion) {
+        maskedPath = await this.maskImage(
+          maskedPath,
+          fixedRowMaskRegion,
+          `${label}-fixed-current-player-row`,
+          signal
+        );
+      }
+      // Preserve the full screenshot dimensions. The per-row OCR below still
+      // limits processing to the card's data rectangle, but no horizontal
+      // crop is applied to the image sent to native OCR/Qwen.
+      return {
+        path: maskedPath,
+        sourcePath: frame.path,
+        observations: [],
+        avatarMaskRegion: weeklyActivityAvatarMaskRegion(definition),
+        fixedRowMaskRegion
+      };
+    }
     if (isMemberDetailsDefinition(definition)) {
       // Do not run the table OCR over the avatar column.  Avatar artwork has
       // printed year marks such as 2025, and a full-screen OCR pass can turn
@@ -319,6 +447,9 @@ export class Vision {
         signal,
         options
       );
+    }
+    if (isWeeklyActivityDefinition(definition) && typeof this.advisor.extractWeeklyActivity === "function") {
+      return this.advisor.extractWeeklyActivity(imagePath, signal);
     }
     if (!this.advisor.enabled) return [];
     return [];
@@ -1678,6 +1809,44 @@ export class Vision {
       { timeoutMs: 20_000, signal }
     );
     return JSON.parse(result.stdout);
+  }
+
+  async detectWeeklyActivityNameInk(imagePath, region, signal) {
+  const width = Math.max(1, Number(region.right) - Number(region.left));
+  const height = Math.max(1, Number(region.bottom) - Number(region.top));
+  const points = [];
+    // Name glyphs can be narrow, symbol-heavy, or separated from the next
+    // glyph by large gaps. Sample densely enough to detect a real brown text
+    // block even when native OCR returns an empty token.
+    const columns = 28;
+    const rows = 5;
+    for (let row = 0; row < rows; row += 1) {
+      const y = Number(region.top) + height * (0.16 + row * 0.17);
+      for (let column = 0; column < columns; column += 1) {
+        const x = Number(region.left) + width * ((column + 0.5) / columns);
+        points.push({ x: Math.round(x), y: Math.round(y) });
+      }
+    }
+    const probes = await this.probe(imagePath, points, 3, signal);
+    const brownPoints = probes.filter((probe) => {
+      const red = Number(probe.meanRed);
+      const green = Number(probe.meanGreen);
+      const blue = Number(probe.meanBlue);
+      const saturation = Number(probe.meanSaturation);
+      const deviation = Number(probe.luminanceDeviation);
+      return (
+        [red, green, blue, saturation, deviation].every(Number.isFinite) &&
+        red - blue >= 0.02 &&
+        green - blue >= 0.005 &&
+        saturation >= 0.05 &&
+        deviation >= 0.02
+      );
+    });
+    return {
+      detected: brownPoints.length >= 3,
+      sampleCount: probes.length,
+      brownPointCount: brownPoints.length
+    };
   }
 
   async gameMouseIconVisible(signal) {

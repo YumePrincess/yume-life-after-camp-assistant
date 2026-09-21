@@ -1543,7 +1543,7 @@ struct SetupAssistantView: View {
             Label(model.agentID, systemImage: "number")
                 .font(.caption.monospaced())
             Label(model.mumuInstanceName, systemImage: "square.stack.3d.up")
-            Label("5 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
+            Label("6 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
             HStack(spacing: 10) {
                 Label(
                     model.modelInfo.isInstalled

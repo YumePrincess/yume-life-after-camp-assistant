@@ -42,6 +42,12 @@ export async function loadConfig(options = {}) {
     MAC_ROOT,
     config.vision.pixelProbeBinary
   );
+  if (typeof config.vision.imageMaskBinary === "string") {
+    config.vision.imageMaskBinary = resolve(
+      MAC_ROOT,
+      config.vision.imageMaskBinary
+    );
+  }
   if (typeof config.localVisionModel?.model === "string") {
     config.localVisionModel.model = resolveConfiguredPath(
       config.localVisionModel.model

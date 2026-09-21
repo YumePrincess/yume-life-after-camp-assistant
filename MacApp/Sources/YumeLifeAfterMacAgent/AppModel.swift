@@ -135,6 +135,7 @@ final class AppModel: ObservableObject {
         case "contribution_sync": key = "Task contribution_sync"
         case "inactivity_sync": key = "Task inactivity_sync"
         case "member_profile_sync": key = "Task member_profile_sync"
+        case "weekly_activity_sync": key = "Task weekly_activity_sync"
         case "patrol": key = "Task patrol"
         case "tech_switch": key = "Task tech_switch"
         case "automation_routine": key = "Task automation_routine"

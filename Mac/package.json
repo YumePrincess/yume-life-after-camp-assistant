@@ -18,6 +18,7 @@
     "test:contribution-current": "node scripts/contribution-current-diagnostic.mjs",
     "test:activity-current": "node scripts/activity-current-diagnostic.mjs",
     "test:member-profile-current": "node scripts/member-profile-current-diagnostic.mjs",
+    "test:weekly-activity-current": "node scripts/weekly-activity-current-diagnostic.mjs",
     "test:technology-current": "node scripts/technology-current-diagnostic.mjs",
     "test:technology-open-current": "node scripts/technology-current-diagnostic.mjs --current",
     "test:technology-apply-current": "node scripts/technology-apply-current-diagnostic.mjs",

@@ -4,7 +4,7 @@ Agent plugins are plain, unencrypted folders. Each folder contains a
 `plugin.json`, the declared `.mjs` entry point, and any resources declared by
 the manifest. Only Apple Silicon (`arm64`) plugins are accepted.
 
-The five official plugins live in `Mac/plugins/` and are copied into the signed
+The six official plugins live in `Mac/plugins/` and are copied into the signed
 App Runtime during a build. They can be enabled or disabled, but a local folder
 cannot replace or remove an official plugin id. To update an official plugin,
 replace its source folder and rebuild the App.

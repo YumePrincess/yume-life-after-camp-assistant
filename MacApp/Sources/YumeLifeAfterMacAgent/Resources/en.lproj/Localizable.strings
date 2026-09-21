@@ -132,7 +132,7 @@
 "Tokens are stored in macOS Keychain and are never included in the App or migration archive." = "Tokens are stored in macOS Keychain and are never included in the App or migration archive.";
 "Ready to install" = "Ready to install";
 "The assistant will create config.json, register the launch agent and verify the bundled arm64 runtime." = "The assistant will create config.json, register the launch agent and verify the bundled arm64 runtime.";
-"5 bundled task plugins" = "5 bundled task plugins";
+"6 bundled task plugins" = "6 bundled task plugins";
 "Preparing installation…" = "Preparing installation…";
 "Enter a valid Workers URL, Agent ID and MuMu container name." = "Enter a valid Workers URL, Agent ID and MuMu container name.";
 "Enter both Agent tokens to continue." = "Enter both Agent tokens to continue.";
@@ -159,7 +159,7 @@
 "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically.";
 "Enter a valid Workers URL, device name and MuMu container name." = "Enter a valid Workers URL, device name and MuMu container name.";
 "Enabled plugins" = "Enabled plugins";
-"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "Five plugins are bundled with the App. Add extra folder plugins from Application Support.";
+"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "Six plugins are bundled with the App. Add extra folder plugins from Application Support.";
 "Open plugin folder" = "Open plugin folder";
 "Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced." = "Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced.";
 "Bundled plugins cannot be removed. Disable the plugin instead." = "Bundled plugins cannot be removed. Disable the plugin instead.";
@@ -237,6 +237,7 @@
 "Task contribution_sync" = "Update contributions";
 "Task inactivity_sync" = "Update inactivity alerts";
 "Task member_profile_sync" = "Update member profiles";
+"Task weekly_activity_sync" = "Update weekly activity points";
 "Task patrol" = "Camp patrol";
 "Task tech_switch" = "Update technology";
 "Task automation_routine" = "Automation routine";
