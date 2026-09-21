@@ -109,6 +109,8 @@ export interface TaskSchedule {
   enabled: boolean;
   time: string;
   times: string[];
+  /** ISO weekday numbers (1 = Monday, 7 = Sunday) on which this task may run. */
+  weekdays?: number[];
 }
 
 export interface AutomationConfig {

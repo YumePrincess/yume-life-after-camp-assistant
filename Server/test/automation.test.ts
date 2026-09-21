@@ -174,6 +174,11 @@ describe("five-task automation configuration", () => {
       member_profile_sync: { enabled: true, time: "02:15", times: ["02:15"] },
       patrol: { enabled: true, time: "19:20", times: ["19:20"] }
     });
+    expect(config.tasks.tech_switch.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(config.tasks.contribution_sync.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(config.tasks.inactivity_sync.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(config.tasks.member_profile_sync.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(config.tasks.patrol.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(config.tasks).not.toHaveProperty("member_sync");
     expect(config.routines).toEqual([]);
     expect(config.agentPolling.claimTimeoutMinutes).toBe(45);
@@ -283,6 +288,65 @@ describe("five-task automation configuration", () => {
     expect(config.tasks.patrol.times).toEqual(["19:20"]);
   });
 
+  it("accepts selected execution weekdays and rejects an empty selection", () => {
+    const config = validateAutomationConfig({
+      timezone: "Asia/Shanghai",
+      schedulerGraceMinutes: 5,
+      agentPolling: { activeSeconds: 2, idleSeconds: 300, windows: [] },
+      gameWatchdog: {
+        enabled: true,
+        healthCheckSeconds: 10,
+        actionTimeoutSeconds: 45,
+        frozenScreenSeconds: 90,
+        maxRestarts: 2,
+        restartCooldownSeconds: 8
+      },
+      tasks: {
+        tech_switch: { enabled: true, time: "02:00" },
+        contribution_sync: {
+          enabled: true,
+          time: "02:30",
+          weekdays: [1, 3, 5]
+        },
+        patrol: {
+          enabled: true,
+          time: "19:20",
+          teamReadyTime: "19:30",
+          shareIntervalMinutes: 10,
+          chatPollSeconds: 5,
+          deadline: "21:25"
+        }
+      }
+    });
+    expect(config.tasks.tech_switch.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(config.tasks.contribution_sync.weekdays).toEqual([1, 3, 5]);
+    expect(config.tasks.patrol.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(() => validateAutomationConfig({
+      timezone: "Asia/Shanghai",
+      schedulerGraceMinutes: 5,
+      agentPolling: { activeSeconds: 2, idleSeconds: 300, windows: [] },
+      gameWatchdog: {
+        enabled: true,
+        healthCheckSeconds: 10,
+        actionTimeoutSeconds: 45,
+        frozenScreenSeconds: 90,
+        maxRestarts: 2,
+        restartCooldownSeconds: 8
+      },
+      tasks: {
+        tech_switch: { enabled: true, time: "02:00", weekdays: [1, 3, 5] },
+        patrol: {
+          enabled: true,
+          time: "19:20",
+          teamReadyTime: "19:30",
+          shareIntervalMinutes: 10,
+          chatPollSeconds: 5,
+          deadline: "21:25"
+        }
+      }
+    })).toThrow("automationConfig.tasks.tech_switch.weekdays supports every day only");
+  });
+
   it("keeps technology and patrol as single scheduled times", () => {
     expect(() => validateAutomationConfig({
       timezone: "Asia/Shanghai",
@@ -344,7 +408,8 @@ describe("five-task automation configuration", () => {
       contribution_sync: {
         enabled: true,
         time: "02:30",
-        times: ["02:30", "12:30", "18:30"]
+        times: ["02:30", "12:30", "18:30"],
+        weekdays: [1, 3, 5]
       },
       inactivity_sync: {
         enabled: true,
@@ -390,6 +455,7 @@ describe("five-task automation configuration", () => {
     expect(merged.contribution_sync.times).toEqual(["03:00", "12:30", "18:30"]);
     expect(merged.inactivity_sync.times).toEqual(["04:00", "13:45"]);
     expect(merged.member_profile_sync.times).toEqual(["05:00", "14:15"]);
+    expect(merged.contribution_sync.weekdays).toEqual([1, 3, 5]);
 
     const explicitlyReduced = preserveAutomationScheduleTimes(
       current,

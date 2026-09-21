@@ -3237,6 +3237,66 @@ select option {
   white-space: pre-line;
 }
 
+.schedule-weekday-picker {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.schedule-weekday-picker .field-label {
+  color: var(--muted, #9caab2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.schedule-weekday-list {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.schedule-weekday-option {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted, #9caab2);
+  background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.schedule-weekday-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.schedule-weekday-option span {
+  display: block;
+  padding: 7px 3px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.schedule-weekday-option:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel-strong));
+}
+
+.schedule-weekday-option:has(input:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.schedule-weekday-picker .field-hint {
+  margin: 0;
+}
+
 .schedule-open-button {
   width: 100%;
   margin-top: auto;

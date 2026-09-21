@@ -28,6 +28,7 @@ const CATEGORY_VALUES = new Set<TechnologyCategory>([
 ]);
 const LANE_VALUES = new Set<TechnologyLane>(["core", "general"]);
 const TECH_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{1,63}$/;
+const DEFAULT_TASK_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const;
 
 function object(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -193,8 +194,15 @@ function validatePublicOverviewItems(
 function taskSchedule(
   value: unknown,
   field: string,
-  allowMultiple = true
-): { source: Record<string, unknown>; enabled: boolean; time: string; times: string[] } {
+  allowMultiple = true,
+  allowWeekdays = true
+): {
+  source: Record<string, unknown>;
+  enabled: boolean;
+  time: string;
+  times: string[];
+  weekdays: number[];
+} {
   const source = object(value, field);
   const rawTimes = source.times === undefined ? [source.time] : source.times;
   if (!Array.isArray(rawTimes) || rawTimes.length < 1 || rawTimes.length > 12) {
@@ -213,21 +221,33 @@ function taskSchedule(
       ? times[0] ?? ""
       : text(source.time, `${field}.time`, { max: 5 });
   assertClock(time, `${field}.time`);
+  const requestedWeekdays =
+    source.weekdays === undefined
+      ? [...DEFAULT_TASK_WEEKDAYS]
+      : weekdays(source.weekdays, `${field}.weekdays`);
+  if (
+    !allowWeekdays &&
+    (requestedWeekdays.length !== DEFAULT_TASK_WEEKDAYS.length ||
+      DEFAULT_TASK_WEEKDAYS.some((day) => !requestedWeekdays.includes(day)))
+  ) {
+    throw new Error(`${field}.weekdays supports every day only`);
+  }
   return {
     source,
     enabled: boolean(source.enabled, `${field}.enabled`),
     time: times[0] ?? time,
-    times
+    times,
+    weekdays: allowWeekdays ? requestedWeekdays : [...DEFAULT_TASK_WEEKDAYS]
   };
 }
 
 type AutomationTasks = AutomationConfig["tasks"];
 
 /**
- * Older admin clients only submit `time`. Keep any later execution slots that
- * are already persisted when one of those clients saves the task section.
- * Current clients always submit `times`, so an intentional removal to one
- * execution remains possible.
+ * Older admin clients only submit `time` and do not know about weekdays.
+ * Keep later execution slots and an already persisted weekday selection when
+ * one of those clients saves the task section. Current clients always submit
+ * `times`, so an intentional removal to one execution remains possible.
  */
 export function preserveAutomationScheduleTimes(
   current: AutomationTasks,
@@ -259,6 +279,11 @@ export function preserveAutomationScheduleTimes(
       typeof rawSchedule === "object" &&
       !Array.isArray(rawSchedule) &&
       Object.prototype.hasOwnProperty.call(rawSchedule, "times");
+    const includesWeekdays =
+      rawSchedule &&
+      typeof rawSchedule === "object" &&
+      !Array.isArray(rawSchedule) &&
+      Object.prototype.hasOwnProperty.call(rawSchedule, "weekdays");
     const explicitlyReplacesTimes =
       rawSchedule &&
       typeof rawSchedule === "object" &&
@@ -267,26 +292,43 @@ export function preserveAutomationScheduleTimes(
     const currentSchedule = current[taskKey];
     const submittedSchedule = result[taskKey];
     const submittedTimes = submittedSchedule?.times || [];
-    if (
+    const preserveTimes = !(
       explicitlyReplacesTimes ||
       !currentSchedule ||
       !submittedSchedule ||
       currentSchedule.times.length < 2 ||
       (includesTimes && submittedTimes.length >= currentSchedule.times.length)
-    ) {
+    );
+    const preserveWeekdays = Boolean(
+      !includesWeekdays &&
+      currentSchedule &&
+      submittedSchedule &&
+      currentSchedule.weekdays?.length
+    );
+    if (!preserveTimes && !preserveWeekdays) {
       continue;
     }
-    const firstTime = submittedSchedule.time || currentSchedule.times[0];
+    const nextSchedule = { ...submittedSchedule };
+    if (preserveTimes) {
+      const firstTime = submittedSchedule.time || currentSchedule.times[0];
+      // `patrol` has extra fields, so assigning through a dynamic key makes
+      // TypeScript require the intersection of every task shape. Merge through
+      // the object instead; the runtime key has already been validated above,
+      // and this preserves the specialised patrol schedule fields.
+      Object.assign(nextSchedule, {
+        time: firstTime,
+        times: [firstTime, ...currentSchedule.times.slice(1)]
+      });
+    }
+    if (preserveWeekdays) {
+      nextSchedule.weekdays = currentSchedule?.weekdays?.slice() || [];
+    }
     // `patrol` has extra fields, so assigning through a dynamic key makes
     // TypeScript require the intersection of every task shape. Merge through
     // the object instead; the runtime key has already been validated above,
     // and this preserves the specialised patrol schedule fields.
     Object.assign(result, {
-      [taskKey]: {
-        ...submittedSchedule,
-        time: firstTime,
-        times: [firstTime, ...currentSchedule.times.slice(1)]
-      }
+      [taskKey]: nextSchedule
     });
   }
   return result;
@@ -667,6 +709,7 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
   const tech = taskSchedule(
     tasks.tech_switch ?? { enabled: true, time: "02:00" },
     "automationConfig.tasks.tech_switch",
+    false,
     false
   );
   const contribution = taskSchedule(
@@ -681,7 +724,12 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     tasks.member_profile_sync ?? { enabled: true, time: "02:15" },
     "automationConfig.tasks.member_profile_sync"
   );
-  const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol", false);
+  const patrol = taskSchedule(
+    tasks.patrol,
+    "automationConfig.tasks.patrol",
+    false,
+    false
+  );
 
   const patrolTeamReadyTime = text(
     patrol.source.teamReadyTime,
@@ -859,18 +907,35 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
             )
     },
     tasks: {
-      tech_switch: { enabled: tech.enabled, time: tech.time, times: tech.times },
+      tech_switch: {
+        enabled: tech.enabled,
+        time: tech.time,
+        times: tech.times,
+        weekdays: tech.weekdays
+      },
       contribution_sync: {
         enabled: contribution.enabled,
         time: contribution.time,
-        times: contribution.times
+        times: contribution.times,
+        weekdays: contribution.weekdays
       },
-      inactivity_sync: { enabled: inactivity.enabled, time: inactivity.time, times: inactivity.times },
-      member_profile_sync: { enabled: profile.enabled, time: profile.time, times: profile.times },
+      inactivity_sync: {
+        enabled: inactivity.enabled,
+        time: inactivity.time,
+        times: inactivity.times,
+        weekdays: inactivity.weekdays
+      },
+      member_profile_sync: {
+        enabled: profile.enabled,
+        time: profile.time,
+        times: profile.times,
+        weekdays: profile.weekdays
+      },
       patrol: {
         enabled: patrol.enabled,
         time: patrol.time,
         times: [patrol.time],
+        weekdays: patrol.weekdays,
         teamReadyTime: patrolTeamReadyTime,
         shareIntervalMinutes: integer(
           patrol.source.shareIntervalMinutes,

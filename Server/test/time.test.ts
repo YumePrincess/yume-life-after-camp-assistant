@@ -7,7 +7,8 @@ import {
   scheduledTaskClocks,
   technologyEffectiveDateAtDailyReset,
   targetDateForTechnologyRun,
-  zonedDateTimeToIso
+  zonedDateTimeToIso,
+  zonedParts
 } from "../src/time";
 
 describe("daily voting window", () => {
@@ -170,5 +171,13 @@ describe("scheduled Agent polling windows", () => {
         15
       )
     ).toBe(true);
+  });
+});
+
+describe("timezone-aware task weekdays", () => {
+  it("derives the weekday from the automation timezone instead of UTC", () => {
+    const instant = new Date("2026-09-06T16:30:00.000Z");
+    expect(zonedParts(instant, "Asia/Shanghai").weekday).toBe(1);
+    expect(zonedParts(instant, "America/New_York").weekday).toBe(7);
   });
 });

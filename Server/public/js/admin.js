@@ -92,6 +92,7 @@
     smtpDraftRevision: 0,
     smtpDirty: false,
     scheduleDrafts: {},
+    scheduleWeekdayDrafts: {},
     scheduleReplacements: {},
     scheduleDialogTaskKey: null,
     maintenanceAction: null,
@@ -805,6 +806,7 @@
     }
     if (sections.includes("tasks")) {
       state.scheduleDrafts = {};
+      state.scheduleWeekdayDrafts = {};
       state.scheduleReplacements = {};
       for (const [name, value] of Object.entries({
         scheduledRetryCount: automation.scheduledRetryCount ?? 2,
@@ -828,6 +830,9 @@
       }
       for (const [taskKey, schedule] of Object.entries(tasks)) {
         state.scheduleDrafts[taskKey] = (schedule.times || [schedule.time]).slice();
+        state.scheduleWeekdayDrafts[taskKey] = Array.isArray(schedule.weekdays) && schedule.weekdays.length
+          ? schedule.weekdays.slice()
+          : [1, 2, 3, 4, 5, 6, 7];
       }
       renderScheduleSummaries();
     }
@@ -920,17 +925,86 @@
     return [String(getField(field?.time) || "").trim()];
   }
 
+  const ALL_TASK_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];
+
+  function scheduleSupportsWeekdays(taskKey) {
+    return taskKey !== "tech_switch" && taskKey !== "patrol";
+  }
+
+  function scheduleWeekdays(taskKey) {
+    const values = state.scheduleWeekdayDrafts[taskKey];
+    if (Array.isArray(values) && values.length) return values.slice();
+    const persisted = state.bootstrap?.configBundle?.automationConfig?.tasks?.[taskKey]?.weekdays;
+    return Array.isArray(persisted) && persisted.length
+      ? persisted.slice()
+      : ALL_TASK_WEEKDAYS.slice();
+  }
+
+  function scheduleWeekdayLabel(day) {
+    return new Intl.DateTimeFormat(localeTag(), {
+      weekday: "short",
+      timeZone: "UTC"
+    }).format(new Date(Date.UTC(2026, 0, 5 + day - 1, 12)));
+  }
+
+  function scheduleWeekdaySummary(taskKey) {
+    const selected = scheduleWeekdays(taskKey);
+    const days = selected.length === ALL_TASK_WEEKDAYS.length &&
+      ALL_TASK_WEEKDAYS.every((day) => selected.includes(day))
+      ? window.MrzhI18n.t("每天")
+      : selected.map((day) => scheduleWeekdayLabel(day)).join("、");
+    return window.MrzhI18n.format("执行日期：{days}", {
+      days: days || window.MrzhI18n.t("未选择执行日")
+    });
+  }
+
+  function renderScheduleWeekdayInputs() {
+    const list = byId("schedule-weekday-list");
+    const picker = list?.closest(".schedule-weekday-picker");
+    const taskKey = state.scheduleDialogTaskKey;
+    if (!list || !taskKey) return;
+    if (!scheduleSupportsWeekdays(taskKey)) {
+      if (picker) picker.hidden = true;
+      list.replaceChildren();
+      return;
+    }
+    if (picker) picker.hidden = false;
+    const selected = new Set(scheduleWeekdays(taskKey));
+    list.replaceChildren();
+    for (const day of ALL_TASK_WEEKDAYS) {
+      const label = create("label", "schedule-weekday-option");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = String(day);
+      input.checked = selected.has(day);
+      input.dataset.scheduleWeekday = "true";
+      input.addEventListener("change", () => {
+        const values = [...list.querySelectorAll("input[data-schedule-weekday]:checked")]
+          .map((control) => Number(control.value));
+        if (!values.length) {
+          input.checked = true;
+          byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("至少选择一天");
+          return;
+        }
+        state.scheduleWeekdayDrafts[taskKey] = values;
+        byId("schedule-dialog-feedback").textContent = "";
+      });
+      label.append(input, create("span", "", scheduleWeekdayLabel(day)));
+      list.append(label);
+    }
+  }
+
   function renderScheduleSummaries() {
     for (const [taskKey, field] of Object.entries(SCHEDULE_FIELDS)) {
       const times = scheduleTimes(taskKey).filter(Boolean);
       const summary = document.querySelector(`[data-schedule-summary="${taskKey}"]`);
       if (summary) {
         summary.textContent = taskKey === "patrol"
-          ? window.MrzhI18n.format("启动时间：{time}", { time: times[0] || window.MrzhI18n.t("未设置") })
-          : window.MrzhI18n.format("执行 {count} 次：{times}", {
+          ? `${window.MrzhI18n.format("启动时间：{time}", { time: times[0] || window.MrzhI18n.t("未设置") })} · ${scheduleWeekdaySummary(taskKey)}`
+          : `${window.MrzhI18n.format("执行 {count} 次：{times}", {
               count: times.length || 1,
               times: times.join("、") || window.MrzhI18n.t("未设置")
-            });
+            })} · ${scheduleWeekdaySummary(taskKey)}`;
       }
       if (times[0]) setField(field.time, times[0]);
     }
@@ -979,11 +1053,12 @@
     if (!field || !dialog) return;
     state.scheduleDialogTaskKey = taskKey;
     state.scheduleDrafts[taskKey] = scheduleTimes(taskKey).slice();
+    state.scheduleWeekdayDrafts[taskKey] = scheduleWeekdays(taskKey).slice();
     byId("schedule-dialog-title").textContent = `${window.MrzhI18n.t(field.title)}：${window.MrzhI18n.t("配置执行计划")}`;
     byId("schedule-dialog-note").textContent = taskKey === "patrol"
-      ? window.MrzhI18n.t("巡逻任务只支持一个启动时间。")
+      ? window.MrzhI18n.t("巡逻任务只支持一个启动时间，并且每天执行。")
       : taskKey === "tech_switch"
-        ? window.MrzhI18n.t("科技切换任务只支持一个执行时间。")
+        ? window.MrzhI18n.t("科技切换任务只支持一个执行时间，并且每天执行。")
         : window.MrzhI18n.t("默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。");
     byId("schedule-dialog-enabled").checked = Boolean(getField(field.enabled));
     const patrolFields = byId("schedule-patrol-fields");
@@ -995,6 +1070,7 @@
       byId("schedule-dialog-chat-poll").value = getField("chatPollSeconds") || "";
     }
     byId("schedule-dialog-feedback").textContent = "";
+    renderScheduleWeekdayInputs();
     renderScheduleTimeInputs();
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
@@ -1030,8 +1106,17 @@
       byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("请为每次执行填写有效时间。");
       return;
     }
+    const weekdays = scheduleSupportsWeekdays(taskKey)
+      ? [...byId("schedule-weekday-list").querySelectorAll("input[data-schedule-weekday]:checked")]
+          .map((control) => Number(control.value))
+      : ALL_TASK_WEEKDAYS.slice();
+    if (scheduleSupportsWeekdays(taskKey) && !weekdays.length) {
+      byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("至少选择一天");
+      return;
+    }
     const normalized = taskKey === "tech_switch" || taskKey === "patrol" ? [times[0]] : times;
     state.scheduleDrafts[taskKey] = normalized;
+    state.scheduleWeekdayDrafts[taskKey] = weekdays;
     state.scheduleReplacements[taskKey] = true;
     setField(field.time, normalized[0]);
     setField(field.enabled, byId("schedule-dialog-enabled").checked);
@@ -3075,30 +3160,35 @@
           enabled: getField("techEnabled"),
           time: techTimes[0],
           times: techTimes,
+          weekdays: scheduleWeekdays("tech_switch"),
           replaceTimes: Boolean(state.scheduleReplacements.tech_switch)
         },
         contribution_sync: {
           enabled: getField("contributionEnabled"),
           time: contributionTimes[0],
           times: contributionTimes,
+          weekdays: scheduleWeekdays("contribution_sync"),
           replaceTimes: Boolean(state.scheduleReplacements.contribution_sync)
         },
         inactivity_sync: {
           enabled: getField("inactivityEnabled"),
           time: inactivityTimes[0],
           times: inactivityTimes,
+          weekdays: scheduleWeekdays("inactivity_sync"),
           replaceTimes: Boolean(state.scheduleReplacements.inactivity_sync)
         },
         member_profile_sync: {
           enabled: getField("profileEnabled"),
           time: profileTimes[0],
           times: profileTimes,
+          weekdays: scheduleWeekdays("member_profile_sync"),
           replaceTimes: Boolean(state.scheduleReplacements.member_profile_sync)
         },
         patrol: {
           enabled: getField("patrolEnabled"),
           time: patrolTime,
           times: [patrolTime],
+          weekdays: scheduleWeekdays("patrol"),
           replaceTimes: Boolean(state.scheduleReplacements.patrol),
           teamReadyTime: getField("patrolReadyTime"),
           shareIntervalMinutes: Number(getField("shareInterval")),

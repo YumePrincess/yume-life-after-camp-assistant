@@ -6,10 +6,10 @@
     <link rel="icon" href="https://www.yume.zone/img/logo.png" />
     <meta name="theme-color" content="#15221f" />
     <title>管理后台 · 明日之后“愿”营地助手</title>
-    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/app.css?v=20260921-task-weekdays" />
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/i18n.js?v=20260921-i18n-locale-init" defer></script>
-    <script src="/js/admin.js?v=20260921-draw-limits" defer></script>
+    <script src="/js/i18n.js?v=20260921-task-weekdays" defer></script>
+    <script src="/js/admin.js?v=20260921-task-weekdays" defer></script>
   </head>
   <body class="admin-page">
     <div class="ambient ambient-a"></div>
@@ -273,10 +273,11 @@
                 </div>
               </div>
               <div class="schedule-grid">
-                <fieldset class="schedule-card schedule-card-single" data-plugin-task="tech_switch">
+                <fieldset class="schedule-card schedule-card-repeat" data-plugin-task="tech_switch">
                   <legend>科技切换</legend>
                   <label class="field field-checkbox"><input name="techEnabled" type="checkbox" /><span>启用</span></label>
                   <label class="field"><span>执行时间</span><input name="techTime" type="time" /></label>
+                  <p class="schedule-summary" data-schedule-summary="tech_switch"></p><button class="button button-quiet schedule-open-button" type="button" data-schedule-open="tech_switch">配置执行计划</button>
                 </fieldset>
                 <fieldset class="schedule-card schedule-card-repeat" data-plugin-task="contribution_sync">
                   <legend>更新贡献</legend>
@@ -296,16 +297,17 @@
                   <label class="field"><span>执行时间</span><input name="profileTime" type="time" /></label>
                   <p class="schedule-summary" data-schedule-summary="member_profile_sync"></p><button class="button button-quiet schedule-open-button" type="button" data-schedule-open="member_profile_sync">配置执行计划</button>
                 </fieldset>
-                <fieldset class="schedule-card schedule-card-wide schedule-card-single" data-plugin-task="patrol">
+                <fieldset class="schedule-card schedule-card-wide schedule-card-repeat" data-plugin-task="patrol">
                   <legend>营地巡逻</legend>
+                  <label class="field field-checkbox"><input name="patrolEnabled" type="checkbox" /><span>启用</span></label>
                   <div class="form-grid form-grid-compact">
-                    <label class="field field-checkbox"><input name="patrolEnabled" type="checkbox" /><span>启用</span></label>
                     <label class="field"><span>启动</span><input name="patrolTime" type="time" /></label>
                     <label class="field"><span>最早开巡逻</span><input name="patrolReadyTime" type="time" /></label>
                     <label class="field"><span>结束</span><input name="patrolDeadline" type="time" /></label>
                     <label class="field"><span>分享间隔（分钟）</span><input name="shareInterval" type="number" min="1" max="60" /></label>
                     <label class="field"><span>满员检测（秒）</span><input name="chatPollSeconds" type="number" min="1" max="60" /></label>
                   </div>
+                  <p class="schedule-summary" data-schedule-summary="patrol"></p><button class="button button-quiet schedule-open-button" type="button" data-schedule-open="patrol">配置执行计划</button>
                 </fieldset>
               </div>
               <div class="section-savebar">
@@ -953,6 +955,11 @@
         </div>
         <label class="field field-checkbox"><input id="schedule-dialog-enabled" type="checkbox" /><span>启用此任务</span></label>
         <p id="schedule-dialog-note" class="section-intro"></p>
+        <div class="schedule-weekday-picker">
+          <span class="field-label">执行日期</span>
+          <div id="schedule-weekday-list" class="schedule-weekday-list" role="group" aria-label="执行日期"></div>
+          <p class="field-hint">默认每天执行；可选择一个或多个星期。</p>
+        </div>
         <div id="schedule-time-list" class="schedule-time-list"></div>
         <div id="schedule-patrol-fields" class="schedule-patrol-fields" hidden>
           <label class="field"><span>最早开巡逻</span><input id="schedule-dialog-patrol-ready" type="time" /></label>

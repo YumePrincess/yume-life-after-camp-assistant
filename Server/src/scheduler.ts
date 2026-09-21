@@ -73,6 +73,7 @@ export async function runScheduler(
         bundle,
         now,
         localDate,
+        parts.weekday,
         taskKey,
         times[slot] ?? schedule.time,
         slot,
@@ -98,6 +99,7 @@ async function maybeEnqueueDaily(
   bundle: ConfigBundle,
   now: Date,
   localDate: string,
+  localWeekday: number,
   taskKey: keyof ConfigBundle["automationConfig"]["tasks"],
   scheduledTime: string,
   slot: number,
@@ -109,6 +111,10 @@ async function maybeEnqueueDaily(
     result.skipped.push(`${taskKey}:disabled`);
     return;
   }
+  const taskWeekdays = schedule.weekdays?.length
+    ? schedule.weekdays
+    : [1, 2, 3, 4, 5, 6, 7];
+  if (!taskWeekdays.includes(localWeekday)) return;
   if (
     !isWithinDueWindow(
       now,
