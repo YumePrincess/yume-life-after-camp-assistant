@@ -927,7 +927,10 @@ export class Vision {
             nameBaselineY: anchor,
             maxNameOffset: rowSpacing * 0.4
           }
-        )
+        ),
+        roommateName: columnBounds.has("roommateName")
+          ? firstColumnText(items, columnBounds.get("roommateName"))
+          : ""
       };
     });
     const missingIdentityRows = rowData.filter(
@@ -1043,6 +1046,7 @@ export class Vision {
     if (
       this.advisor.enabled &&
       (forceMemberAdvisor ||
+        rowData.some((row) => String(row.roommateName || "").trim()) ||
         rowData.some(
           (row) =>
             !isPlausibleMemberName(row.identity.name) ||
@@ -1220,12 +1224,18 @@ export class Vision {
       );
     }
     const rowsWithNameCandidates = rowData.map(
-      ({ items, identity, profession }, index) => {
+      ({ items, identity, profession, roommateName }, index) => {
         const ai = advisedByRow.get(index + 1) || {};
         const nativeName = cleanMemberName(identity.name, profession);
         const advisedName = cleanMemberName(
           targetedNamesByRow.get(index + 1) || ai.name,
           profession
+        );
+        const nativeRoommateName = cleanMemberName(roommateName);
+        const advisedRoommateName = cleanMemberName(ai.roommateName);
+        const preferredRoommateName = preferredMemberVisionName(
+          nativeRoommateName,
+          advisedRoommateName
         );
         const preferredName = preferredMemberVisionName(
           nativeName,
@@ -1266,7 +1276,10 @@ export class Vision {
             firstColumnText(items, columnBounds.get("onlineState")),
           scene: firstColumnText(items, columnBounds.get("scene")),
           roommateName:
-            firstColumnText(items, columnBounds.get("roommateName"))
+            preferredRoommateName ||
+            nativeRoommateName ||
+            advisedRoommateName ||
+            ""
         };
       }
     );

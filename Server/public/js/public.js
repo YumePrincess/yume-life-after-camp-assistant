@@ -17,7 +17,13 @@
     dailyPanel: "",
     dailyIdentityCodes: {},
     dailySelections: {},
-    identityCodeEdited: false
+    identityCodeEdited: false,
+    liveSocket: null,
+    liveReconnectTimer: null,
+    liveReconnectAttempt: 0,
+    liveRefreshInFlight: false,
+    liveRefreshQueued: false,
+    liveDirty: false
   };
   const FEATURE_IDS = ["overview", "staff", "warnings", "vote", "members", "runs"];
   const IDENTITY_CODE_STORAGE_KEY = "mrzh.identity-code";
@@ -1140,36 +1146,77 @@
     }
   }
 
-  async function refreshVoteSummary() {
-    if (document.hidden || !state.data || !pluginEnabled("technology")) return;
+  async function refreshFromLiveUpdate() {
+    if (document.hidden || !state.data) {
+      state.liveDirty = true;
+      return;
+    }
+    if (state.liveRefreshInFlight) {
+      state.liveRefreshQueued = true;
+      return;
+    }
+    state.liveRefreshInFlight = true;
+    state.liveDirty = false;
     try {
-      const summary = await request(
-        `/api/public/tech-vote?t=${Date.now()}&locale=${encodeURIComponent(window.MrzhI18n.language())}`
-      );
-      state.data.voteSummary = summary;
-      const available = new Set(
-        (summary.options || []).map((option) => option.key)
-      );
-      state.selections = new Set(
-        [...state.selections].filter((key) => available.has(key))
-      );
-      renderVote(summary);
-    } catch {
-      // Initial loading and explicit submission already surface network errors.
+      await load();
+    } finally {
+      state.liveRefreshInFlight = false;
+      if (state.liveRefreshQueued) {
+        state.liveRefreshQueued = false;
+        void refreshFromLiveUpdate();
+      }
     }
   }
 
-  async function refreshDailyVote() {
-    if (document.hidden || !state.data) return;
-    try {
-      const payload = await request(
-        `/api/public/daily-vote?t=${Date.now()}&locale=${encodeURIComponent(window.MrzhI18n.language())}`
-      );
-      if (state.data) state.data.dailyVote = payload;
-      renderDailyVote(payload);
-    } catch {
-      // Keep the last successful daily-vote snapshot visible during a transient failure.
+  function scheduleLiveReconnect() {
+    if (state.liveReconnectTimer) return;
+    const delay = Math.min(30_000, 1_000 * 2 ** state.liveReconnectAttempt);
+    state.liveReconnectAttempt = Math.min(state.liveReconnectAttempt + 1, 5);
+    state.liveReconnectTimer = window.setTimeout(() => {
+      state.liveReconnectTimer = null;
+      connectLiveUpdates();
+    }, delay);
+  }
+
+  function connectLiveUpdates() {
+    if (state.liveSocket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(state.liveSocket.readyState)) {
+      return;
     }
+    const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(
+      `${scheme}//${window.location.host}/api/live?scope=public`
+    );
+    state.liveSocket = socket;
+    socket.addEventListener("open", () => {
+      if (state.liveSocket !== socket) return;
+      state.liveReconnectAttempt = 0;
+      socket.send(JSON.stringify({ type: "subscribe", scope: "public" }));
+      void refreshFromLiveUpdate();
+    });
+    socket.addEventListener("message", (event) => {
+      if (state.liveSocket !== socket) return;
+      let message;
+      try {
+        message = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (
+        message?.type === "data-changed" &&
+        Array.isArray(message.scopes) &&
+        message.scopes.includes("public")
+      ) {
+        void refreshFromLiveUpdate();
+      }
+    });
+    socket.addEventListener("close", () => {
+      if (state.liveSocket !== socket) return;
+      state.liveSocket = null;
+      scheduleLiveReconnect();
+    });
+    socket.addEventListener("error", () => {
+      if (state.liveSocket === socket) socket.close();
+    });
   }
 
   async function submitVote() {
@@ -1676,9 +1723,10 @@
     if (state.data) render(state.data);
     load();
   });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && state.liveDirty) void refreshFromLiveUpdate();
+    if (!document.hidden) connectLiveUpdates();
+  });
   load();
-  window.setInterval(() => {
-    refreshVoteSummary();
-    refreshDailyVote();
-  }, 10_000);
+  connectLiveUpdates();
 })();

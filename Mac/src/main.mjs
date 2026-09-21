@@ -451,6 +451,17 @@ async function executeCommand(command, signal) {
   };
   const flushRunUpdates = async () => {
     await runUpdateQueue;
+    try {
+      await api.flushRunStream(command.runId);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "run_update_stream_flush_failed",
+          runId: command.runId,
+          message: String(error?.message || error)
+        })
+      );
+    }
   };
   const report = async (level, step, message, detail = {}) => {
     const localizedMessages = localizedTaskEventMessages(step, message);
@@ -548,6 +559,10 @@ async function executeCommand(command, signal) {
     ui.setRuntimeAutomation(bootstrap.configBundle.automationConfig);
     if (!bootstrap.run) throw new Error("任务记录不存在，拒绝执行孤立命令");
     if (bootstrap.run.cancel_requested) throw new Error("任务在开始前已被中断");
+    // Task-facing progress and event updates use one authenticated WebSocket
+    // stream. Control-plane requests (bootstrap, snapshots, final state, and
+    // command completion) remain explicit HTTP operations.
+    api.startRunStream(command.runId, signal);
     taskMetadata.executionMode =
       taskMetadata.executionMode === "unknown"
         ? bootstrap.run.trigger_mode || "unknown"
@@ -758,6 +773,7 @@ async function executeCommand(command, signal) {
     // has been written so normal snapshots never accumulate on disk.
     await vision.cleanupTask().catch(() => 0);
     if (activeTaskDebug === taskDebug) activeTaskDebug = null;
+    api.closeRunStream(command.runId);
     await api.completeCommand(
       command,
       ["succeeded", "partially_succeeded"].includes(terminalState)

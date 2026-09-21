@@ -1859,8 +1859,27 @@ export async function appendRunEvent(
     step?: string | null;
     message: string;
     detail?: unknown;
+    streamEventId?: string | null;
   }
 ): Promise<void> {
+  const detail = JSON.stringify(input.detail ?? {});
+  const createdAt = isoNow();
+  if (input.streamEventId) {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO task_events(run_id, level, step, message, detail_json, created_at, stream_event_id) VALUES(?, ?, ?, ?, ?, ?, ?)"
+    )
+      .bind(
+        input.runId,
+        input.level,
+        input.step ?? null,
+        input.message,
+        detail,
+        createdAt,
+        input.streamEventId
+      )
+      .run();
+    return;
+  }
   await env.DB.prepare(
     "INSERT INTO task_events(run_id, level, step, message, detail_json, created_at) VALUES(?, ?, ?, ?, ?, ?)"
   )
@@ -1869,8 +1888,8 @@ export async function appendRunEvent(
       input.level,
       input.step ?? null,
       input.message,
-      JSON.stringify(input.detail ?? {}),
-      isoNow()
+      detail,
+      createdAt
     )
     .run();
 }

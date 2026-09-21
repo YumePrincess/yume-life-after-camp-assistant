@@ -85,3 +85,80 @@ test("persistent port 443 resets are described as HTTPS transport failures", asy
     globalThis.fetch = originalFetch;
   }
 });
+
+test("in-progress run updates use the acknowledged WebSocket stream without HTTP fallback", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  const sent = [];
+  let httpRequests = 0;
+
+  class FakeWebSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+
+    constructor(url, protocols) {
+      this.url = url;
+      this.protocols = protocols;
+      this.readyState = FakeWebSocket.CONNECTING;
+      this.listeners = new Map();
+      queueMicrotask(() => {
+        this.readyState = FakeWebSocket.OPEN;
+        this.emit("open", {});
+      });
+    }
+
+    addEventListener(type, listener) {
+      this.listeners.set(type, listener);
+    }
+
+    send(value) {
+      const payload = JSON.parse(value);
+      sent.push(payload);
+      queueMicrotask(() => this.emit("message", {
+        data: JSON.stringify({ type: "ack", sequence: payload.sequence })
+      }));
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+
+    emit(type, event) {
+      this.listeners.get(type)?.(event);
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  globalThis.fetch = async () => {
+    httpRequests += 1;
+    throw new Error("HTTP log fallback must not be used");
+  };
+  try {
+    const api = new AgentApi({
+      server: {
+        baseUrl: "https://lifeafter.yume.zone",
+        agentToken: "agent-secret",
+        agentId: "mac-test",
+        agentName: "Test Mac"
+      }
+    });
+    api.startRunStream("run-test");
+    const result = await api.updateRun("run-test", {
+      currentStep: "scan",
+      event: { level: "info", step: "scan", message: "扫描中" }
+    });
+    assert.deepEqual(result, { ok: true });
+    await api.updateRun("run-test", { currentStep: "scan:page-2", progress: 0.2 });
+    await api.updateRun("run-test", { currentStep: "scan:page-3", progress: 0.3 });
+    await api.flushRunStream("run-test");
+    assert.equal(httpRequests, 0);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].type, "run-update-batch");
+    assert.equal(sent[0].runId, "run-test");
+    assert.equal(sent[0].updates.length, 3);
+    assert.equal(sent[0].updates[0].event.message, "扫描中");
+    api.closeRunStream("run-test");
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.WebSocket = originalWebSocket;
+  }
+});

@@ -42,6 +42,10 @@
     dirtySections: new Set(),
     refreshing: false,
     saving: false,
+    liveSocket: null,
+    liveReconnectTimer: null,
+    liveReconnectAttempt: 0,
+    liveDirty: false,
     memberQuery: "",
     selectedMember: null,
     technologyDate: "",
@@ -61,7 +65,6 @@
     activeView: "overview",
     accessAllowed: false,
     activeEventRunId: null,
-    eventRefreshTimer: null,
     eventRefreshInFlight: false,
     eventSignature: "",
     eventEntries: [],
@@ -2817,6 +2820,67 @@
     }
   }
 
+  function scheduleLiveReconnect() {
+    if (state.liveReconnectTimer) return;
+    const delay = Math.min(30_000, 1_000 * 2 ** state.liveReconnectAttempt);
+    state.liveReconnectAttempt = Math.min(state.liveReconnectAttempt + 1, 5);
+    state.liveReconnectTimer = window.setTimeout(() => {
+      state.liveReconnectTimer = null;
+      connectLiveUpdates();
+    }, delay);
+  }
+
+  function connectLiveUpdates() {
+    if (state.liveSocket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(state.liveSocket.readyState)) {
+      return;
+    }
+    const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(
+      `${scheme}//${window.location.host}/api/live?scope=admin`
+    );
+    state.liveSocket = socket;
+    socket.addEventListener("open", () => {
+      if (state.liveSocket !== socket) return;
+      state.liveReconnectAttempt = 0;
+      socket.send(JSON.stringify({ type: "subscribe", scope: "admin" }));
+      void refresh(false);
+    });
+    socket.addEventListener("message", (event) => {
+      if (state.liveSocket !== socket) return;
+      let message;
+      try {
+        message = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (
+        message?.type === "data-changed" &&
+        Array.isArray(message.scopes) &&
+        message.scopes.includes("admin")
+      ) {
+        if (
+          message.reason === "agent-log-stream" &&
+          state.activeEventRunId &&
+          !document.hidden
+        ) {
+          void refreshRunEvents(state.activeEventRunId);
+        } else if (document.hidden) {
+          state.liveDirty = true;
+        } else {
+          void refresh(false);
+        }
+      }
+    });
+    socket.addEventListener("close", () => {
+      if (state.liveSocket !== socket) return;
+      state.liveSocket = null;
+      scheduleLiveReconnect();
+    });
+    socket.addEventListener("error", () => {
+      if (state.liveSocket === socket) socket.close();
+    });
+  }
+
   async function runTask(taskKey, button, routineId) {
     button.disabled = true;
     try {
@@ -2874,12 +2938,6 @@
     root.replaceChildren(create("p", "empty-state", "正在加载…"));
     byId("run-dialog").showModal();
     await refreshRunEvents(runId);
-    if (state.activeEventRunId === runId && byId("run-dialog").open) {
-      state.eventRefreshTimer = window.setInterval(
-        () => refreshRunEvents(runId),
-        2_000
-      );
-    }
   }
 
   async function refreshRunEvents(runId) {
@@ -2953,7 +3011,7 @@
       }
       // Events are rendered oldest-first so the run can be read as a timeline,
       // but the useful state is always at the tail. Keep the newest event in
-      // view after the initial load and every polling refresh.
+      // view after the initial load and every WebSocket-triggered refresh.
       root.scrollTop = root.scrollHeight;
     } catch (error) {
       if (state.activeEventRunId === runId) {
@@ -2965,10 +3023,6 @@
   }
 
   function stopEventRefresh() {
-    if (state.eventRefreshTimer) {
-      window.clearInterval(state.eventRefreshTimer);
-      state.eventRefreshTimer = null;
-    }
     state.activeEventRunId = null;
     state.eventSignature = "";
     state.eventEntries = [];
@@ -4198,8 +4252,15 @@
     }
     refresh(false);
   });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && state.liveDirty) {
+      state.liveDirty = false;
+      void refresh(false);
+    }
+    if (!document.hidden) connectLiveUpdates();
+  });
   setDefaultKeyExpiry();
   input("identityExpiresAt").value = identityExpiryDate();
   refresh(true);
-  setInterval(() => refresh(false), 10_000);
+  connectLiveUpdates();
 })();

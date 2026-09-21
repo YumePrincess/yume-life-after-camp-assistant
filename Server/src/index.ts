@@ -161,6 +161,9 @@ import {
   saveDailyVoteResponse,
   updateDailyVoteItem
 } from "./daily-vote";
+import type { LiveUpdateScope } from "./live-updates";
+export { LiveUpdates } from "./live-updates";
+export { AgentLogStream } from "./agent-log-stream";
 
 type PublicDailyVotePayload = Awaited<ReturnType<typeof buildPublicDailyVote>> & {
   technologyHistory: TechnologyVoteHistory[];
@@ -234,9 +237,19 @@ function identityLookupFingerprint(
 }
 
 const handler = {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<Response> {
     try {
       const response = await routeRequest(request, env);
+      const scopes = liveUpdateScopes(request, response);
+      if (scopes.length) {
+        // The response must not wait for a best-effort UI invalidation. Keeping
+        // it in waitUntil also avoids adding latency to a vote or admin save.
+        ctx.waitUntil(publishLiveUpdate(env, scopes, request.url));
+      }
       return withSecurityHeaders(response);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -259,6 +272,9 @@ const handler = {
   ): Promise<void> {
     const now = new Date(controller.scheduledTime);
     const result = await runScheduler(env, now);
+    if (result.enqueued.length || result.timedOut.length) {
+      await publishLiveUpdate(env, ["public", "admin"], "scheduler");
+    }
     console.log(JSON.stringify({ event: "scheduler_tick", ...result }));
   }
 } satisfies ExportedHandler<Env>;
@@ -317,6 +333,33 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
         : null
     });
   }
+  if (path === "/api/live") {
+    if (method !== "GET") return methodNotAllowed(["GET"]);
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("WebSocket upgrade required", {
+        status: 426,
+        headers: { "Content-Type": "text/plain; charset=utf-8" }
+      });
+    }
+    const scope = new URL(request.url).searchParams.get("scope");
+    if (scope !== "public" && scope !== "admin") {
+      return problem("Invalid live update scope", 400, "invalid_live_scope");
+    }
+    if (scope === "admin") {
+      const auth = await requireAdmin(request, env, { api: true });
+      if ("response" in auth) return auth.response;
+    }
+    return env.LIVE_UPDATES.getByName("global").fetch(request);
+  }
+  if (path === "/api/agent/run-stream") {
+    if (method !== "GET") return methodNotAllowed(["GET"]);
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("WebSocket upgrade required", { status: 426 });
+    }
+    const agentAuth = await requireAgentAuth(request, env);
+    if (agentAuth) return agentAuth;
+    return env.AGENT_LOGS.getByName("global").fetch(request);
+  }
   if (path === "/login") {
     if (method !== "GET") return methodNotAllowed(["GET"]);
     const session = await getAuthenticatedSession(request, env);
@@ -356,6 +399,45 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
   const asset = await env.ASSETS.fetch(request);
   return asset.status === 404 ? problem("Not found", 404, "not_found") : asset;
+}
+
+function liveUpdateScopes(
+  request: Request,
+  response: Response
+): LiveUpdateScope[] {
+  if (response.status < 200 || response.status >= 300) return [];
+  const url = new URL(request.url);
+  const method = request.method.toUpperCase();
+  if (["GET", "HEAD", "OPTIONS"].includes(method)) return [];
+  if (url.pathname.startsWith("/api/public/")) return ["public", "admin"];
+  if (url.pathname.startsWith("/api/admin/") || url.pathname.startsWith("/api/agent/")) {
+    return ["public", "admin"];
+  }
+  return [];
+}
+
+async function publishLiveUpdate(
+  env: Env,
+  scopes: LiveUpdateScope[],
+  reason: string
+): Promise<void> {
+  try {
+    await env.LIVE_UPDATES.getByName("global").fetch(
+      new Request("https://live.internal/broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scopes,
+          reason: reason.startsWith("http") ? new URL(reason).pathname : reason
+        })
+      })
+    );
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "live_update_broadcast_failed",
+      message: error instanceof Error ? error.message : String(error)
+    }));
+  }
 }
 
 async function handlePublicApi(
@@ -2568,7 +2650,9 @@ function publicRun(run: Awaited<ReturnType<typeof listRecentRuns>>[number]) {
 }
 
 async function requireAgentAuth(request: Request, env: Env): Promise<Response | null> {
-  const authorization = request.headers.get("Authorization") ?? "";
+  const authorization = request.headers.get("Authorization") ||
+    agentWebSocketAuthorization(request) ||
+    "";
   if (!authorization.startsWith("Bearer ")) {
     return problem("Agent authentication required", 401, "agent_auth_required");
   }
@@ -2593,6 +2677,23 @@ async function requireAgentAuth(request: Request, env: Env): Promise<Response | 
     return problem("Invalid agent token", 403, "invalid_agent_token");
   }
   return null;
+}
+
+function agentWebSocketAuthorization(request: Request): string | null {
+  const offered = (request.headers.get("Sec-WebSocket-Protocol") || "")
+    .split(",")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith("mrzh-agent-token."));
+  if (!offered) return null;
+  const encoded = offered.slice("mrzh-agent-token.".length);
+  try {
+    const padded = encoded.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((encoded.length + 3) % 4);
+    const binary = atob(padded);
+    const token = Array.from(binary, (character) => String.fromCharCode(character.charCodeAt(0))).join("");
+    return `Bearer ${token}`;
+  } catch {
+    return null;
+  }
 }
 
 async function readJsonObject(

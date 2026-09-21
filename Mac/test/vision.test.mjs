@@ -458,6 +458,69 @@ test("member vision keeps a decorated same-core name separate from a plain name"
   assert.deepEqual(rows.map((row) => row.name), ["✿慕离✿", "慕离"]);
 });
 
+test("member vision applies AI and symbol repair to roommate names", async () => {
+  const definition = {
+    region: { left: 115, top: 285, right: 1800, bottom: 500 },
+    rowAnchorTop: 315,
+    columns: [
+      { key: "identity", left: 0.08, right: 0.318 },
+      { key: "profession", left: 0.318, right: 0.46 },
+      { key: "manorLevel", left: 0.555, right: 0.65 },
+      { key: "onlineState", left: 0.65, right: 0.745 },
+      { key: "roommateName", left: 0.858, right: 1 }
+    ],
+    pagination: { rowsPerPage: 2, rowHeightPx: 95 }
+  };
+  const imagePath = "/private/tmp/member-roommate-symbols.png";
+  await writeFile(
+    imagePath,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  const vision = new Vision({
+    adb: { screenWidth: 1920, screenHeight: 1200 },
+    vision: {},
+    localVisionModel: { enabled: true, transport: "http" }
+  }, {});
+  vision.ocrRegion = async (_path, region) => {
+    if (region.left < 700 && region.right > 700) {
+      return [
+        { text: "玩家一", x: 320, y: 315, width: 80, height: 24 },
+        { text: "特级步枪兵王", x: 700, y: 315, width: 180, height: 24 },
+        { text: "在线", x: 1200, y: 315, width: 40, height: 24 },
+        { text: "※橘悠悠米", x: 1600, y: 315, width: 120, height: 24 },
+        { text: "玩家二", x: 320, y: 410, width: 80, height: 24 },
+        { text: "特级步枪兵王", x: 700, y: 410, width: 180, height: 24 },
+        { text: "在线", x: 1200, y: 410, width: 40, height: 24 },
+        { text: "踏月追星河卒", x: 1600, y: 410, width: 150, height: 24 }
+      ];
+    }
+    return [];
+  };
+  let advisorCalled = false;
+  vision.advisor.extractMemberDetails = async () => {
+    advisorCalled = true;
+    return [
+      { row: 1, name: "玩家一", roommateName: "橘悠悠" },
+      { row: 2, name: "玩家二", roommateName: "踏月追星河" }
+    ];
+  };
+
+  const rows = await vision.extractTableRows(
+    imagePath,
+    definition,
+    "member-roommate-symbols"
+  );
+
+  assert.equal(advisorCalled, true);
+  assert.deepEqual(rows.map((row) => row.roommateName), [
+    "❀橘悠悠❀",
+    "踏月追星河✨"
+  ]);
+});
+
 test("member vision keeps an unused native name when Qwen collapses numeric rows", async () => {
   const definition = {
     region: { left: 115, top: 285, right: 1800, bottom: 780 },

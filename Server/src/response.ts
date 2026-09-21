@@ -10,6 +10,10 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 export function withSecurityHeaders(response: Response): Response {
+  // A 101 response carries the live WebSocket endpoint in a non-standard
+  // response slot. Re-wrapping it in `new Response(...)` would discard that
+  // endpoint before the browser can complete the upgrade handshake.
+  if (response.status === 101) return response;
   const next = new Response(response.body, response);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     if (!next.headers.has(key)) next.headers.set(key, value);
