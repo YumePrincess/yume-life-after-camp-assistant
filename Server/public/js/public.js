@@ -427,14 +427,26 @@
       });
       if (mode === "name") {
         byId("identity-profile-dialog").close();
-        setText("identity-profile-feedback", window.MrzhI18n.t("玩家名称变更已提交，审核通过后生效。"));
+        showVoteSuccessDialog({
+          kind: "identity",
+          data: { publicTestVote: true },
+          title: "申请已提交",
+          kicker: "身份识别码",
+          message: window.MrzhI18n.t("玩家名称变更已提交，审核通过后生效。")
+        });
       } else if (step === "email") {
         state.identityEmailChangeId = result.changeId;
         setIdentityProfileStep("old-email");
         feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
       } else {
         byId("identity-profile-dialog").close();
-        setText("identity-profile-feedback", window.MrzhI18n.t("邮箱变更已提交，审核通过后生效。"));
+        showVoteSuccessDialog({
+          kind: "identity",
+          data: { publicTestVote: true },
+          title: "申请已提交",
+          kicker: "身份识别码",
+          message: window.MrzhI18n.t("邮箱变更已提交，审核通过后生效。")
+        });
       }
     } catch (error) {
       feedback.textContent = window.MrzhI18n.t(error.message);
@@ -573,15 +585,18 @@
       : "识别码将在 7 天内到期，请及时申请延期；延期审批期间，过期识别码可额外投票一次。";
   }
 
-  function showVoteSuccessDialog({ kind, data, message }) {
+  function showVoteSuccessDialog({ kind, data, message, title = "投票成功", kicker = "" }) {
     const isTest = Boolean(data?.publicTestVote);
     const renewalNoticeKey = isTest
       ? ""
       : identityRenewalNoticeKey(data?.identityCodeExpiresAt);
     setText(
       "vote-success-kicker",
-      window.MrzhI18n.t(kind === "daily" ? "DAILY VOTING" : "TECHNOLOGY VOTE")
+      window.MrzhI18n.t(
+        kicker || (kind === "daily" ? "DAILY VOTING" : "TECHNOLOGY VOTE")
+      )
     );
+    setText("vote-success-title", window.MrzhI18n.t(title));
     setText("vote-success-message", message);
     setText(
       "vote-success-expiry",

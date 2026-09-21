@@ -261,7 +261,20 @@ const COPY = {
     verificationCode: "验证码",
     renew: "该识别码已经过期，可在网页或小程序中申请延期。",
     usage: "此身份识别码用于日常投票，包括科技投票、投票事项和抽签事项。",
-    keep: "请妥善保管识别码，并仅由本人用于日常投票。"
+    keep: "请妥善保管识别码，并仅由本人用于日常投票。",
+    profileApproved: "身份资料变更申请已通过",
+    profileRejected: "身份资料变更申请未通过",
+    changeType: "变更项目",
+    oldValue: "原信息",
+    newValue: "申请信息",
+    name: "玩家名称",
+    email: "邮箱",
+    profileApprovedNote: "资料变更已审核通过并生效。",
+    profileRejectedNote: "本次资料未发生变更。",
+    cancelled: "身份识别码注销成功",
+    cancelledStatus: "状态",
+    cancelledStatusValue: "已注销",
+    cancelledNote: "该身份识别码已立即失效，注销流程无法撤回。"
   },
   "zh-tw": {
     approved: "身分識別碼申請已通過",
@@ -281,7 +294,20 @@ const COPY = {
     verificationCode: "驗證碼",
     renew: "該識別碼已經過期，可在網頁或小程式中申請延期。",
     usage: "此身分識別碼用於日常投票，包括科技投票、投票事項和抽籤事項。",
-    keep: "請妥善保管識別碼，並僅由本人用於日常投票。"
+    keep: "請妥善保管識別碼，並僅由本人用於日常投票。",
+    profileApproved: "身分資料變更申請已通過",
+    profileRejected: "身分資料變更申請未通過",
+    changeType: "變更項目",
+    oldValue: "原資訊",
+    newValue: "申請資訊",
+    name: "玩家名稱",
+    email: "信箱",
+    profileApprovedNote: "資料變更已審核通過並生效。",
+    profileRejectedNote: "本次資料未發生變更。",
+    cancelled: "身分識別碼註銷成功",
+    cancelledStatus: "狀態",
+    cancelledStatusValue: "已註銷",
+    cancelledNote: "該身分識別碼已立即失效，註銷流程無法撤回。"
   },
   en: {
     approved: "Identity code application approved",
@@ -301,7 +327,20 @@ const COPY = {
     verificationCode: "Verification code",
     renew: "This code has expired. You may request an extension on the website or mini program.",
     usage: "This identity code is used for daily voting, including technology votes, polls, and draws.",
-    keep: "Keep this code secure and use it only for your own daily votes."
+    keep: "Keep this code secure and use it only for your own daily votes.",
+    profileApproved: "Identity profile change approved",
+    profileRejected: "Identity profile change rejected",
+    changeType: "Change type",
+    oldValue: "Previous value",
+    newValue: "Requested value",
+    name: "Player name",
+    email: "Email",
+    profileApprovedNote: "The profile change was approved and is now active.",
+    profileRejectedNote: "No profile information was changed.",
+    cancelled: "Identity code cancellation completed",
+    cancelledStatus: "Status",
+    cancelledStatusValue: "Cancelled",
+    cancelledNote: "The identity code is now invalid. This cancellation cannot be undone."
   },
   fr: {
     approved: "Demande de code d’identité approuvée",
@@ -321,7 +360,20 @@ const COPY = {
     verificationCode: "Code de vérification",
     renew: "Ce code a expiré. Vous pouvez demander une prolongation sur le site ou le mini-programme.",
     usage: "Ce code d’identité sert aux votes du jour, notamment aux votes technologiques, sondages et tirages au sort.",
-    keep: "Conservez ce code en sécurité et utilisez-le uniquement pour vos votes du jour."
+    keep: "Conservez ce code en sécurité et utilisez-le uniquement pour vos votes du jour.",
+    profileApproved: "Modification du profil approuvée",
+    profileRejected: "Modification du profil refusée",
+    changeType: "Type de modification",
+    oldValue: "Valeur précédente",
+    newValue: "Valeur demandée",
+    name: "Nom du joueur",
+    email: "E-mail",
+    profileApprovedNote: "La modification du profil a été approuvée et est active.",
+    profileRejectedNote: "Aucune information du profil n’a été modifiée.",
+    cancelled: "Résiliation du code d’identité terminée",
+    cancelledStatus: "État",
+    cancelledStatusValue: "Résilié",
+    cancelledNote: "Le code d’identité est maintenant invalide. Cette résiliation est irréversible."
   },
   ja: {
     approved: "本人確認コード申請が承認されました",
@@ -341,7 +393,20 @@ const COPY = {
     verificationCode: "確認コード",
     renew: "このコードは期限切れです。ウェブサイトまたはミニプログラムから延長を申請できます。",
     usage: "この本人確認コードは、技術投票、投票案件、抽選を含む日常投票に使用します。",
-    keep: "コードを安全に保管し、ご本人の日常投票にのみ使用してください。"
+    keep: "コードを安全に保管し、ご本人の日常投票にのみ使用してください。",
+    profileApproved: "本人確認コードのプロフィール変更が承認されました",
+    profileRejected: "本人確認コードのプロフィール変更が却下されました",
+    changeType: "変更項目",
+    oldValue: "変更前",
+    newValue: "申請内容",
+    name: "プレイヤー名",
+    email: "メールアドレス",
+    profileApprovedNote: "プロフィール変更が承認され、反映されました。",
+    profileRejectedNote: "プロフィール情報は変更されていません。",
+    cancelled: "本人確認コードの解約が完了しました",
+    cancelledStatus: "状態",
+    cancelledStatusValue: "解約済み",
+    cancelledNote: "本人確認コードは無効になりました。この解約は取り消せません。"
   }
 } as const;
 
@@ -380,6 +445,44 @@ export function identityMail(input: {
     "",
     ...rows.map(([key, value]) => `${key}: ${value}`),
     ...(notes.length ? ["", ...notes] : []),
+    "",
+    input.locale === "zh-cn"
+      ? `版权所有 © ${new Date().getUTCFullYear()} 美国雨梦互联网有限公司 保留所有权利。`
+      : `Copyright © ${new Date().getUTCFullYear()} Yume Internet LLC. All Rights Reserved.`
+  ];
+  return {
+    subject,
+    text: plain.join("\n"),
+    html: renderYumeEmail({ locale: input.locale, title: subject, rows, notes })
+  };
+}
+
+export function identityProfileChangeMail(input: {
+  locale: SupportedLocale;
+  approved: boolean;
+  kind: "player_name" | "email";
+  applicationNumber?: string | null;
+  currentValue: string | null;
+  requestedValue: string;
+  reason?: string | null;
+}): { subject: string; text: string; html: string } {
+  const copy = COPY[input.locale];
+  const subject = input.approved ? copy.profileApproved : copy.profileRejected;
+  const rows: Array<[string, string]> = [];
+  if (input.applicationNumber) rows.push([copy.application, input.applicationNumber]);
+  rows.push(
+    [copy.changeType, input.kind === "player_name" ? copy.name : copy.email],
+    [copy.oldValue, input.currentValue ?? ""],
+    [copy.newValue, input.requestedValue]
+  );
+  if (!input.approved && input.reason) rows.push([copy.reason, input.reason]);
+  const notes = [input.approved ? copy.profileApprovedNote : copy.profileRejectedNote];
+  const plain = [
+    subject,
+    "",
+    ...rows.map(([key, value]) => `${key}: ${value}`),
+    "",
+    ...notes,
     "",
     input.locale === "zh-cn"
       ? `版权所有 © ${new Date().getUTCFullYear()} 美国雨梦互联网有限公司 保留所有权利。`
@@ -463,6 +566,33 @@ export function identityCancellationMail(input: {
     subject,
     text: [subject, "", ...rows.map(([key, value]) => `${key}: ${value}`), "", note].join("\n"),
     html: renderYumeEmail({ locale: input.locale, title: subject, rows, notes: [note] })
+  };
+}
+
+export function identityCancellationCompletedMail(input: {
+  locale: SupportedLocale;
+  playerName: string | null;
+}): { subject: string; text: string; html: string } {
+  const copy = COPY[input.locale];
+  const rows: Array<[string, string]> = [];
+  if (input.playerName) rows.push([copy.player, input.playerName]);
+  rows.push([copy.cancelledStatus, copy.cancelledStatusValue]);
+  const notes = [copy.cancelledNote];
+  const plain = [
+    copy.cancelled,
+    "",
+    ...rows.map(([key, value]) => `${key}: ${value}`),
+    "",
+    ...notes,
+    "",
+    input.locale === "zh-cn"
+      ? `版权所有 © ${new Date().getUTCFullYear()} 美国雨梦互联网有限公司 保留所有权利。`
+      : `Copyright © ${new Date().getUTCFullYear()} Yume Internet LLC. All Rights Reserved.`
+  ];
+  return {
+    subject: copy.cancelled,
+    text: plain.join("\n"),
+    html: renderYumeEmail({ locale: input.locale, title: copy.cancelled, rows, notes })
   };
 }
 

@@ -3575,11 +3575,11 @@
     byId("identity-approval-expiry").hidden = isProfileChange;
     setText(
       "identity-review-approve",
-      isProfileChange ? "批准并应用" : "通过并发送邮件"
+      isProfileChange ? "批准并应用并发送邮件" : "通过并发送邮件"
     );
     setText(
       "identity-review-reject",
-      isProfileChange ? "拒绝" : "拒绝并发送通知"
+      isProfileChange ? "拒绝并发送通知" : "拒绝并发送通知"
     );
     byId("identity-review-expiry").value = identityExpiryDate();
     byId("identity-review-permanent").checked = false;
@@ -3625,7 +3625,7 @@
       }
       body = { reason };
     }
-    feedback.textContent = isProfileChange ? "正在处理…" : "正在处理并发送邮件…";
+    feedback.textContent = "正在处理并发送邮件…";
     try {
       const endpoint = isProfileChange
         ? "/api/admin/identity-profile-change-requests"
@@ -3637,7 +3637,11 @@
       byId("identity-review-dialog").close();
       if (isProfileChange) {
         byId("save-state").textContent =
-          action === "approve" ? "资料变更已批准并应用" : "资料变更已拒绝";
+          result.emailSent
+            ? action === "approve"
+              ? "资料变更已批准并应用，邮件已发送"
+              : "资料变更已拒绝，通知邮件已发送"
+            : `资料变更已处理，但邮件发送失败：${result.emailError}`;
       } else {
         byId("save-state").textContent =
           result.emailSent
@@ -3789,10 +3793,17 @@
 
   async function updateIdentityCodeItem(item, values) {
     try {
-      await request(`/api/admin/identity-codes/${encodeURIComponent(item.id)}`, {
+      const result = await request(`/api/admin/identity-codes/${encodeURIComponent(item.id)}`, {
         method: "PATCH",
         body: JSON.stringify(values)
       });
+      if (values.status === "disabled") {
+        byId("save-state").textContent = result.emailSent
+          ? "识别码已取消，确认邮件已发送"
+          : result.emailError
+            ? `识别码已取消，但确认邮件发送失败：${result.emailError}`
+            : "识别码已取消";
+      }
       await loadIdentityCodes();
     } catch (error) {
       byId("save-state").textContent = error.message;

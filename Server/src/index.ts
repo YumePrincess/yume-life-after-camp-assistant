@@ -1524,13 +1524,13 @@ async function handleAdminApi(
     }
     try {
       const body = await readJsonObject(request, 8_000);
-      await reviewIdentityProfileChangeRequest(env, {
+      const result = await reviewIdentityProfileChangeRequest(env, {
         id: requestId,
         action,
         reviewedBy: session.email,
         reason: typeof body.reason === "string" ? body.reason : undefined
       });
-      return json({ ok: true });
+      return json({ ok: true, ...result });
     } catch (error) {
       return problem(errorMessage(error), 400, "identity_profile_change_review_failed");
     }
@@ -1598,13 +1598,13 @@ async function handleAdminApi(
         body.permanent,
         body.expiresOn
       );
-      await updateIdentityCode(env, {
+      const result = await updateIdentityCode(env, {
         id: codeId,
         status: body.status,
         permanent: expiry.permanent,
         expiresAt: expiry.expiresAt
       });
-      return json({ ok: true });
+      return json({ ok: true, ...result });
     } catch (error) {
       return problem(errorMessage(error), 400, "identity_code_update_failed");
     }

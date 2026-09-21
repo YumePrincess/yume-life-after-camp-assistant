@@ -4,7 +4,13 @@ vi.mock("worker-mailer", () => ({
   WorkerMailer: { send: vi.fn() }
 }));
 
-import { identityMail, identityRecoveryMail, type SupportedLocale } from "../src/mailer";
+import {
+  identityCancellationCompletedMail,
+  identityMail,
+  identityProfileChangeMail,
+  identityRecoveryMail,
+  type SupportedLocale
+} from "../src/mailer";
 
 const locales: SupportedLocale[] = ["zh-cn", "zh-tw", "en", "fr", "ja"];
 
@@ -58,5 +64,40 @@ describe("identity email templates", () => {
       expect(message.text).toContain("不符合营地成员条件");
       expect(message.html).toContain("不符合营地成员条件");
     }
+  });
+
+  it("renders profile-change approval and rejection notices", () => {
+    const approved = identityProfileChangeMail({
+      locale: "zh-cn",
+      approved: true,
+      kind: "email",
+      applicationNumber: "APP-123",
+      currentValue: "old@example.com",
+      requestedValue: "new@example.com"
+    });
+    expect(approved.subject).toContain("身份资料变更申请已通过");
+    expect(approved.text).toContain("old@example.com");
+    expect(approved.text).toContain("new@example.com");
+
+    const rejected = identityProfileChangeMail({
+      locale: "en",
+      approved: false,
+      kind: "player_name",
+      currentValue: "Old name",
+      requestedValue: "New name",
+      reason: "Not allowed"
+    });
+    expect(rejected.subject).toContain("Identity profile change rejected");
+    expect(rejected.text).toContain("Not allowed");
+  });
+
+  it("renders a localized cancellation completion notice", () => {
+    const message = identityCancellationCompletedMail({
+      locale: "ja",
+      playerName: "プレイヤー"
+    });
+    expect(message.subject).toContain("解約が完了");
+    expect(message.text).toContain("プレイヤー");
+    expect(message.text).toContain("取り消せません");
   });
 });

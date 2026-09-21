@@ -11,6 +11,8 @@ import {
   identityApplicationVerificationMail,
   identityPasswordResetMail,
   identityCancellationMail,
+  identityCancellationCompletedMail,
+  identityProfileChangeMail,
   identityRecoveryMail,
   normalizeLocale,
   sendMail,
@@ -112,6 +114,9 @@ async function currentVoteInvalidations(
   identityCodeId: string,
   at = new Date()
 ): Promise<D1PreparedStatement[]> {
+  // Public OTP cancellation and admin disabling must use this same statement
+  // set: the active technology ballot, every still-open daily vote response,
+  // and unresolved draw responses are all invalidated together with the code.
   const bundle = await getConfigBundle(env);
   const timezone = bundle.automationConfig.timezone;
   const pollDate = nextTechnologyTargetDate(
@@ -1092,7 +1097,7 @@ export async function requestIdentityCancellation(
 export async function confirmIdentityCancellation(
   env: Env,
   input: { challengeId: unknown; otp: unknown }
-): Promise<{ status: "cancelled" }> {
+): Promise<{ status: "cancelled"; emailSent: boolean; emailError: string | null }> {
   const challengeId = cleanChallengeId(input.challengeId);
   const otp = cleanOtp(input.otp);
   const challenge = await env.DB.prepare(
@@ -1123,8 +1128,8 @@ export async function confirmIdentityCancellation(
     throw new Error("验证码错误，请重新输入");
   }
   const code = await env.DB.prepare(
-    "SELECT id FROM identity_codes WHERE id = ? AND status = 'active'"
-  ).bind(challenge.identity_code_id).first<{ id: string }>();
+    "SELECT * FROM identity_codes WHERE id = ? AND status = 'active'"
+  ).bind(challenge.identity_code_id).first<IdentityCodeRow>();
   if (!code) throw new Error("身份识别码已失效，无法重复注销");
   const timestamp = now();
   await env.DB.batch([
@@ -1138,7 +1143,26 @@ export async function confirmIdentityCancellation(
     ).bind(timestamp, timestamp, challenge.identity_code_id),
     ...(await currentVoteInvalidations(env, challenge.identity_code_id, new Date(timestamp)))
   ]);
-  return { status: "cancelled" };
+  let emailSent = false;
+  let emailError: string | null = null;
+  try {
+    if (!code.email) throw new Error("识别码没有可用邮箱");
+    await sendMail(env, {
+      to: code.email,
+      ...identityCancellationCompletedMail({
+        locale: normalizeLocale(code.locale),
+        playerName: code.player_name
+      })
+    });
+    emailSent = true;
+  } catch (error) {
+    emailError = error instanceof Error ? error.message : String(error);
+  }
+  await env.DB.prepare(
+    `UPDATE identity_cancellation_challenges
+     SET email_sent_at = ?, last_email_error = ? WHERE id = ?`
+  ).bind(emailSent ? timestamp : null, emailError, challenge.id).run();
+  return { status: "cancelled", emailSent, emailError };
 }
 
 const PASSWORD_RECOVERY_PROMPT =
@@ -1700,6 +1724,8 @@ export interface IdentityProfileChangeRequestRow {
   reviewed_at: string | null;
   reviewed_by: string | null;
   rejection_reason: string | null;
+  email_sent_at: string | null;
+  last_email_error: string | null;
   current_player_name: string | null;
   current_email: string | null;
 }
@@ -1730,15 +1756,85 @@ export async function listIdentityProfileChangeRequests(
   return { items: rows.results, page, pageSize: 20, total: total?.total ?? 0 };
 }
 
+type IdentityReviewMailResult = {
+  emailSent: boolean;
+  emailError: string | null;
+};
+
+async function sendIdentityProfileChangeMail(
+  env: Env,
+  request: IdentityProfileChangeRequestRow,
+  code: IdentityCodeRow,
+  approved: boolean,
+  reason: string | null
+): Promise<IdentityReviewMailResult> {
+  const requestedValue = request.kind === "player_name"
+    ? request.requested_player_name
+    : request.requested_email;
+  const recipient = approved && request.kind === "email"
+    ? request.requested_email
+    : code.email;
+  if (!recipient || !requestedValue) {
+    return { emailSent: false, emailError: "资料变更邮件缺少收件邮箱或变更内容" };
+  }
+  let applicationNumber: string | null = null;
+  let locale = normalizeLocale(code.locale);
+  if (code.application_id) {
+    const application = await env.DB.prepare(
+      "SELECT application_number, locale FROM identity_code_applications WHERE id = ?"
+    ).bind(code.application_id).first<{
+      application_number: string;
+      locale: SupportedLocale;
+    }>();
+    applicationNumber = application?.application_number ?? null;
+    locale = normalizeLocale(application?.locale ?? code.locale);
+  }
+  try {
+    await sendMail(env, {
+      to: recipient,
+      ...identityProfileChangeMail({
+        locale,
+        approved,
+        kind: request.kind,
+        applicationNumber,
+        currentValue: request.kind === "player_name" ? code.player_name : code.email,
+        requestedValue,
+        reason
+      })
+    });
+    return { emailSent: true, emailError: null };
+  } catch (error) {
+    return {
+      emailSent: false,
+      emailError: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+async function recordIdentityProfileChangeMailResult(
+  env: Env,
+  requestId: string,
+  result: IdentityReviewMailResult
+): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE identity_profile_change_requests
+     SET email_sent_at = ?, last_email_error = ? WHERE id = ?`
+  ).bind(result.emailSent ? now() : null, result.emailError, requestId).run();
+}
+
 export async function reviewIdentityProfileChangeRequest(
   env: Env,
   input: { id: string; action: "approve" | "reject"; reviewedBy: string; reason?: string }
-): Promise<void> {
+): Promise<IdentityReviewMailResult> {
   const request = await env.DB.prepare(
     "SELECT * FROM identity_profile_change_requests WHERE id = ?"
   ).bind(input.id).first<IdentityProfileChangeRequestRow>();
   if (!request) throw new Error("资料变更申请不存在");
   if (request.status !== "pending") throw new Error("资料变更申请已处理");
+  const code = await env.DB.prepare(
+    "SELECT * FROM identity_codes WHERE id = ?"
+  ).bind(request.identity_code_id).first<IdentityCodeRow>();
+  if (!code) throw new Error("识别码不存在");
   const timestamp = now();
   if (input.action === "reject") {
     const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 500) : "管理员拒绝了本次资料变更申请";
@@ -1746,7 +1842,9 @@ export async function reviewIdentityProfileChangeRequest(
       `UPDATE identity_profile_change_requests
        SET status = 'rejected', reviewed_at = ?, reviewed_by = ?, rejection_reason = ? WHERE id = ?`
     ).bind(timestamp, input.reviewedBy, reason, request.id).run();
-    return;
+    const mailResult = await sendIdentityProfileChangeMail(env, request, code, false, reason);
+    await recordIdentityProfileChangeMailResult(env, request.id, mailResult);
+    return mailResult;
   }
   const statements: D1PreparedStatement[] = [];
   if (request.kind === "player_name" && request.requested_player_name) {
@@ -1775,6 +1873,9 @@ export async function reviewIdentityProfileChangeRequest(
     ).bind(timestamp, input.reviewedBy, request.id)
   );
   await env.DB.batch(statements);
+  const mailResult = await sendIdentityProfileChangeMail(env, request, code, true, null);
+  await recordIdentityProfileChangeMailResult(env, request.id, mailResult);
+  return mailResult;
 }
 
 export async function listIdentityApplications(
@@ -1835,8 +1936,8 @@ export async function listIdentityApplications(
         r.reviewed_at,
         r.reviewed_by,
         r.rejection_reason,
-        NULL AS email_sent_at,
-        NULL AS last_email_error,
+        r.email_sent_at,
+        r.last_email_error,
         r.kind AS profile_kind,
         c.player_name AS current_player_name,
         c.email AS current_email,
@@ -2418,7 +2519,7 @@ export async function updateIdentityCode(
     permanent: unknown;
     expiresAt: unknown;
   }
-): Promise<void> {
+): Promise<IdentityReviewMailResult> {
   const status = input.status === "disabled" ? "disabled" : "active";
   const code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
     .bind(input.id)
@@ -2459,6 +2560,27 @@ export async function updateIdentityCode(
     );
   }
   await env.DB.batch(statements);
+  if (status !== "disabled" || code.status !== "active") {
+    return { emailSent: false, emailError: null };
+  }
+  let result: IdentityReviewMailResult;
+  try {
+    if (!code.email) throw new Error("识别码没有可用邮箱");
+    await sendMail(env, {
+      to: code.email,
+      ...identityCancellationCompletedMail({
+        locale: normalizeLocale(code.locale),
+        playerName: code.player_name
+      })
+    });
+    result = { emailSent: true, emailError: null };
+  } catch (error) {
+    result = {
+      emailSent: false,
+      emailError: error instanceof Error ? error.message : String(error)
+    };
+  }
+  return result;
 }
 
 export async function updateIdentityCodeInformation(
