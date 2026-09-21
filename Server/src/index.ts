@@ -105,6 +105,7 @@ import { localizeTechnology } from "../plugins/technology/localizations";
 import {
   approveIdentityApplication,
   confirmIdentityEmailChange,
+  confirmIdentityCancellation,
   consumeIdentityApplicationVerification,
   createIdentityApplication,
   createManualIdentityCode,
@@ -118,6 +119,7 @@ import {
   recoverIdentityCode,
   rejectIdentityApplication,
   requestIdentityEmailChange,
+  requestIdentityCancellation,
   requestIdentityApplicationVerification,
   requestIdentityPasswordReset,
   resetIdentityCodePassword,
@@ -756,6 +758,52 @@ async function handlePublicApi(
         recordValueRateLimitAttempt(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
       ]);
       return problem(errorMessage(error), 400, "identity_profile_failed", cors);
+    }
+  }
+  if (path === "/api/public/identity-cancellation" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_APPLICATION_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 12_000);
+    const action = typeof body.action === "string" ? body.action : "";
+    const target = identityLookupFingerprint({
+      action,
+      applicationNumber: body.applicationNumber,
+      email: body.email,
+      identityCode: body.identityCode,
+      challengeId: body.challengeId
+    });
+    const targetLimited = await rejectIfValueRateLimited(
+      target,
+      env,
+      IDENTITY_VALUE_CHECK_LIMIT,
+      cors
+    );
+    if (targetLimited) return targetLimited;
+    try {
+      const result = action === "request"
+        ? await requestIdentityCancellation(env, {
+            applicationNumber: body.applicationNumber,
+            email: body.email,
+            identityCode: body.identityCode
+          })
+        : action === "confirm"
+          ? await confirmIdentityCancellation(env, {
+              challengeId: body.challengeId,
+              otp: body.otp
+            })
+          : null;
+      if (!result) return problem("身份识别码注销操作无效", 400, "identity_cancellation_invalid", cors);
+      await Promise.all([
+        clearRateLimitAttempts(request, env, IDENTITY_APPLICATION_LIMIT),
+        clearValueRateLimitAttempts(target, env, IDENTITY_VALUE_CHECK_LIMIT)
+      ]);
+      return json(result, 200, cors);
+    } catch (error) {
+      await Promise.all([
+        recordRateLimitAttempt(request, env, IDENTITY_APPLICATION_LIMIT),
+        recordValueRateLimitAttempt(target, env, IDENTITY_VALUE_CHECK_LIMIT)
+      ]);
+      return problem(errorMessage(error), 400, "identity_cancellation_failed", cors);
     }
   }
   if (path === "/api/public/bootstrap" && method === "GET") {

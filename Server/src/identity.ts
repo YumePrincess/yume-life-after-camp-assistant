@@ -10,6 +10,7 @@ import {
   identityEmailChangeMail,
   identityApplicationVerificationMail,
   identityPasswordResetMail,
+  identityCancellationMail,
   identityRecoveryMail,
   normalizeLocale,
   sendMail,
@@ -668,6 +669,7 @@ export async function identityAccount(
   playerName: string;
   email: string;
   expiresAt: string | null;
+  timezone: string;
   passwordRequired: false;
 }> {
   const verification = await verifyIdentityPassword(env, input);
@@ -680,11 +682,13 @@ export async function identityAccount(
     if (verification.reason === "expired") throw new Error("身份识别码已过期");
     throw new Error("身份识别码无效");
   }
+  const bundle = await getConfigBundle(env);
   return {
     identityCode: await decryptSecret(env, "identity-code-value", verification.code.code_encrypted),
     playerName: verification.code.player_name ?? "",
     email: verification.code.email ?? "",
     expiresAt: verification.code.expires_at,
+    timezone: bundle.campConfig.timezone,
     passwordRequired: false
   };
 }
@@ -1015,6 +1019,94 @@ export async function recoverIdentityCode(
     .bind(now(), now(), code.id)
     .run();
   return { status: "sent", expired };
+}
+
+export async function requestIdentityCancellation(
+  env: Env,
+  input: {
+    applicationNumber: unknown;
+    email: unknown;
+    identityCode: unknown;
+  }
+): Promise<{ challengeId: string; expiresAt: string }> {
+  const code = await codeForReissue(env, {
+    applicationNumber: input.applicationNumber,
+    identityCode: input.identityCode,
+    email: input.email
+  });
+  if (!code.email) throw new Error("申请预留信息不足，请联系市长处理");
+  const challengeId = uuid();
+  const otp = generateOtp();
+  const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+  await env.DB.prepare(
+    `INSERT INTO identity_cancellation_challenges(
+      id, identity_code_id, email, code_hash, expires_at, created_at
+    ) VALUES(?, ?, ?, ?, ?, ?)`
+  ).bind(
+    challengeId,
+    code.id,
+    code.email,
+    await challengeHash(env, challengeId, "primary", otp),
+    expiresAt,
+    now()
+  ).run();
+  await sendMail(env, {
+    to: code.email,
+    ...identityCancellationMail({ locale: code.locale, otp })
+  });
+  return { challengeId, expiresAt };
+}
+
+export async function confirmIdentityCancellation(
+  env: Env,
+  input: { challengeId: unknown; otp: unknown }
+): Promise<{ status: "cancelled" }> {
+  const challengeId = cleanChallengeId(input.challengeId);
+  const otp = cleanOtp(input.otp);
+  const challenge = await env.DB.prepare(
+    `SELECT * FROM identity_cancellation_challenges WHERE id = ?`
+  ).bind(challengeId).first<{
+    id: string;
+    identity_code_id: string;
+    code_hash: string;
+    attempts: number;
+    expires_at: string;
+    verified_at: string | null;
+    consumed_at: string | null;
+  }>();
+  if (
+    !challenge ||
+    challenge.consumed_at ||
+    challenge.verified_at ||
+    Date.parse(challenge.expires_at) <= Date.now() ||
+    challenge.attempts >= 5
+  ) {
+    throw new Error("验证码已失效，请重新申请");
+  }
+  const matches = challenge.code_hash === await challengeHash(env, challenge.id, "primary", otp);
+  if (!matches) {
+    await env.DB.prepare(
+      "UPDATE identity_cancellation_challenges SET attempts = attempts + 1 WHERE id = ?"
+    ).bind(challenge.id).run();
+    throw new Error("验证码错误，请重新输入");
+  }
+  const code = await env.DB.prepare(
+    "SELECT id FROM identity_codes WHERE id = ? AND status = 'active'"
+  ).bind(challenge.identity_code_id).first<{ id: string }>();
+  if (!code) throw new Error("身份识别码已失效，无法重复注销");
+  const timestamp = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE identity_cancellation_challenges
+       SET verified_at = ?, consumed_at = ? WHERE id = ? AND consumed_at IS NULL`
+    ).bind(timestamp, timestamp, challenge.id),
+    env.DB.prepare(
+      `UPDATE identity_codes SET status = 'disabled', disabled_at = ?,
+       updated_at = ? WHERE id = ? AND status = 'active'`
+    ).bind(timestamp, timestamp, challenge.identity_code_id),
+    ...(await currentVoteInvalidations(env, challenge.identity_code_id, new Date(timestamp)))
+  ]);
+  return { status: "cancelled" };
 }
 
 const PASSWORD_RECOVERY_PROMPT =

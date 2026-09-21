@@ -15,7 +15,12 @@
     identitySession: null,
     identityResetChallengeId: "",
     identityResetToken: "",
+    identityCancellationChallengeId: "",
     identityEmailChangeId: "",
+    identityProfileMode: "",
+    identityProfileStep: "",
+    identityEmailOldOtp: "",
+    identitySessionRefreshedAt: 0,
     voteErrorRenewalCode: "",
     activeFeature: "",
     dailyPanel: "",
@@ -116,7 +121,7 @@
       setText("identity-account-email", session.email || window.MrzhI18n.t("未绑定邮箱"));
       setText(
         "identity-account-expiry",
-        session.expiresAt ? window.MrzhI18n.format("有效期至 {date}", { date: formatDate(session.expiresAt) }) : window.MrzhI18n.t("永久有效")
+        session.expiresAt ? formatIdentityExpiry(session.expiresAt, session.timezone || configuredTimezone()) : window.MrzhI18n.t("永久有效")
       );
       const codeInput = byId("identity-reset-code");
       if (codeInput && !codeInput.value) codeInput.value = session.identityCode;
@@ -128,6 +133,26 @@
   function openIdentityPanel() {
     openDailyPanel("identity");
     renderIdentityAccount();
+    void refreshIdentitySession();
+  }
+
+  async function refreshIdentitySession() {
+    const session = identitySession();
+    if (!session?.identityCode || !session.password) return;
+    if (Date.now() - state.identitySessionRefreshedAt < 30_000) return;
+    state.identitySessionRefreshedAt = Date.now();
+    try {
+      const account = await request("/api/public/identity-login", {
+        method: "POST",
+        body: JSON.stringify({
+          identityCode: session.identityCode,
+          identityPassword: session.password
+        })
+      });
+      persistIdentitySession({ ...session, ...account, password: session.password });
+    } catch {
+      // Keep the cached session on transient failures; the next panel open retries.
+    }
   }
 
   async function loginIdentity(event) {
@@ -146,6 +171,7 @@
         body: JSON.stringify({ identityCode, identityPassword: password })
       });
       persistIdentitySession({ ...account, password });
+      state.identitySessionRefreshedAt = Date.now();
       feedback.textContent = window.MrzhI18n.t("登录成功。");
       byId("identity-login-password").value = "";
       setText("technology-identity-hint", window.MrzhI18n.t("身份识别码已登录，可以提交投票。"));
@@ -242,42 +268,178 @@
     }
   }
 
-  async function updateIdentityName() {
-    const session = identitySession();
-    if (!session) return openIdentityPanel();
-    const playerName = window.prompt(window.MrzhI18n.t("请输入新的玩家名称"), session.playerName || "");
-    if (playerName == null || !playerName.trim()) return;
-    try {
-      const result = await request("/api/public/identity-profile", {
-        method: "POST",
-        body: JSON.stringify({ action: "update-name", identityCode: session.identityCode, identityPassword: session.password, playerName })
-      });
-      setText("identity-profile-feedback", window.MrzhI18n.t("玩家名称变更已提交，审核通过后生效。"));
-    } catch (error) {
-      setText("identity-profile-feedback", window.MrzhI18n.t(error.message));
+  function setIdentityCancellationStep(step) {
+    for (const element of document.querySelectorAll("[data-cancellation-step]")) {
+      element.hidden = element.dataset.cancellationStep !== step;
     }
   }
 
-  async function changeIdentityEmail() {
+  function openIdentityCancellationDialog() {
+    const session = identitySession();
+    state.identityCancellationChallengeId = "";
+    byId("identity-cancel-application").value = "";
+    byId("identity-cancel-email").value = session?.email || "";
+    byId("identity-cancel-code").value = session?.identityCode || "";
+    byId("identity-cancel-otp").value = "";
+    setText("identity-cancellation-feedback", "");
+    setIdentityCancellationStep("request");
+    const dialog = byId("identity-cancellation-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
+  async function submitIdentityCancellation(event) {
+    event.preventDefault();
+    const feedback = byId("identity-cancellation-feedback");
+    const step = document.querySelector("[data-cancellation-step]:not([hidden])")?.dataset.cancellationStep;
+    try {
+      if (step === "request") {
+        feedback.textContent = window.MrzhI18n.t("正在发送验证码…");
+        const result = await request("/api/public/identity-cancellation", {
+          method: "POST",
+          body: JSON.stringify({
+            action: "request",
+            applicationNumber: byId("identity-cancel-application").value.trim(),
+            email: byId("identity-cancel-email").value.trim(),
+            identityCode: byId("identity-cancel-code").value.trim()
+          })
+        });
+        state.identityCancellationChallengeId = result.challengeId;
+        setIdentityCancellationStep("verify");
+        feedback.textContent = window.MrzhI18n.t("验证码已发送到预留邮箱。");
+        return;
+      }
+      feedback.textContent = window.MrzhI18n.t("正在提交…");
+      await request("/api/public/identity-cancellation", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "confirm",
+          challengeId: state.identityCancellationChallengeId,
+          otp: byId("identity-cancel-otp").value.trim()
+        })
+      });
+      byId("identity-cancellation-dialog").close();
+      persistIdentitySession(null);
+      setText("identity-profile-feedback", window.MrzhI18n.t("身份识别码已注销，已立即失效。"));
+    } catch (error) {
+      feedback.textContent = window.MrzhI18n.t(error.message);
+    }
+  }
+
+  function setIdentityProfileStep(step) {
+    state.identityProfileStep = step;
+    for (const element of document.querySelectorAll("[data-identity-profile-step]")) {
+      element.hidden = element.dataset.identityProfileStep !== step;
+    }
+    const submit = byId("identity-profile-submit");
+    if (!submit) return;
+    const label =
+      step === "email"
+        ? "发送验证码"
+        : step === "old-email" || step === "new-email"
+          ? "验证验证码"
+          : "确认变更";
+    submit.textContent = window.MrzhI18n.t(label);
+  }
+
+  function openIdentityProfileDialog(mode) {
     const session = identitySession();
     if (!session) return openIdentityPanel();
-    const newEmail = window.prompt(window.MrzhI18n.t("请输入新的邮箱地址"), session.email || "");
-    if (newEmail == null || !newEmail.trim()) return;
+    state.identityProfileMode = mode;
+    state.identityEmailChangeId = "";
+    state.identityEmailOldOtp = "";
+    setText(
+      "identity-profile-dialog-title",
+      window.MrzhI18n.t(mode === "name" ? "修改玩家名称" : "绑定/修改邮箱")
+    );
+    byId("identity-profile-name").value = session.playerName || "";
+    byId("identity-profile-email").value = session.email || "";
+    byId("identity-profile-old-otp").value = "";
+    byId("identity-profile-new-otp").value = "";
+    setText("identity-profile-dialog-feedback", "");
+    setIdentityProfileStep(mode === "name" ? "name" : "email");
+    const dialog = byId("identity-profile-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
+  async function submitIdentityProfile(event) {
+    event.preventDefault();
+    const session = identitySession();
+    if (!session) return openIdentityPanel();
+    const feedback = byId("identity-profile-dialog-feedback");
+    const submit = byId("identity-profile-submit");
+    const mode = state.identityProfileMode;
+    const step = state.identityProfileStep;
+    let body;
+    let endpoint = "/api/public/identity-profile";
+    if (mode === "name") {
+      const playerName = byId("identity-profile-name").value.trim();
+      if (!playerName) {
+        feedback.textContent = window.MrzhI18n.t("请输入新的玩家名称");
+        return;
+      }
+      body = {
+        action: "update-name",
+        identityCode: session.identityCode,
+        identityPassword: session.password,
+        playerName
+      };
+    } else if (step === "email") {
+      const newEmail = byId("identity-profile-email").value.trim();
+      if (!newEmail) {
+        feedback.textContent = window.MrzhI18n.t("请输入新的邮箱地址");
+        return;
+      }
+      body = {
+        action: "request-email-change",
+        identityCode: session.identityCode,
+        identityPassword: session.password,
+        newEmail
+      };
+    } else if (step === "old-email") {
+      const oldOtp = byId("identity-profile-old-otp").value.trim();
+      if (!oldOtp) {
+        feedback.textContent = window.MrzhI18n.t("请输入旧邮箱收到的验证码");
+        return;
+      }
+      state.identityEmailOldOtp = oldOtp;
+      setIdentityProfileStep("new-email");
+      feedback.textContent = "";
+      return;
+    } else {
+      const newOtp = byId("identity-profile-new-otp").value.trim();
+      if (!newOtp) {
+        feedback.textContent = window.MrzhI18n.t("请输入新邮箱收到的验证码");
+        return;
+      }
+      body = {
+        action: "confirm-email-change",
+        changeId: state.identityEmailChangeId,
+        oldOtp: state.identityEmailOldOtp,
+        newOtp
+      };
+    }
+    submit.disabled = true;
+    feedback.textContent = window.MrzhI18n.t("正在提交…");
     try {
-      const result = await request("/api/public/identity-profile", {
+      const result = await request(endpoint, {
         method: "POST",
-        body: JSON.stringify({ action: "request-email-change", identityCode: session.identityCode, identityPassword: session.password, newEmail })
+        body: JSON.stringify(body)
       });
-      const oldOtp = window.prompt(window.MrzhI18n.t("请输入旧邮箱收到的验证码"), "");
-      const newOtp = window.prompt(window.MrzhI18n.t("请输入新邮箱收到的验证码"), "");
-      if (!oldOtp || !newOtp) return;
-      const confirmed = await request("/api/public/identity-profile", {
-        method: "POST",
-        body: JSON.stringify({ action: "confirm-email-change", changeId: result.changeId, oldOtp, newOtp })
-      });
-      setText("identity-profile-feedback", window.MrzhI18n.t("邮箱变更已提交，审核通过后生效。"));
+      if (mode === "name") {
+        byId("identity-profile-dialog").close();
+        setText("identity-profile-feedback", window.MrzhI18n.t("玩家名称变更已提交，审核通过后生效。"));
+      } else if (step === "email") {
+        state.identityEmailChangeId = result.changeId;
+        setIdentityProfileStep("old-email");
+        feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
+      } else {
+        byId("identity-profile-dialog").close();
+        setText("identity-profile-feedback", window.MrzhI18n.t("邮箱变更已提交，审核通过后生效。"));
+      }
     } catch (error) {
-      setText("identity-profile-feedback", window.MrzhI18n.t(error.message));
+      feedback.textContent = window.MrzhI18n.t(error.message);
+    } finally {
+      submit.disabled = false;
     }
   }
 
@@ -1040,6 +1202,7 @@
     state.dailyPanel = panel;
     syncDailyFeatureBackButton();
     renderDailyVote(state.data?.dailyVote || {});
+    if (panel === "identity") void refreshIdentitySession();
   }
 
   function backDailyPanels() {
@@ -1232,6 +1395,28 @@
       minute: "2-digit",
       hour12: false
     }).format(new Date(value));
+  }
+
+  function formatIdentityExpiry(value, timezone) {
+    if (!value) return window.MrzhI18n.t("永久有效");
+    const source = timezone || configuredTimezone();
+    const locale = {
+      "zh-cn": "zh-CN",
+      "zh-tw": "zh-TW",
+      en: "en",
+      fr: "fr",
+      ja: "ja"
+    }[window.MrzhI18n.language()] || "zh-CN";
+    const formatted = new Intl.DateTimeFormat(locale, {
+      timeZone: source,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(new Date(value));
+    return `${window.MrzhI18n.format("有效期至 {date}", { date: formatted })} (${source})`;
   }
 
   function configuredTimezone() {
@@ -1952,10 +2137,20 @@
   });
   byId("identity-apply").addEventListener("click", openNewApplication);
   byId("identity-recover").addEventListener("click", openIdentityRecovery);
+  byId("identity-cancel").addEventListener("click", openIdentityCancellationDialog);
+  byId("identity-cancel-logged-in").addEventListener("click", openIdentityCancellationDialog);
+  byId("identity-cancellation-form").addEventListener("submit", submitIdentityCancellation);
+  byId("close-identity-cancellation-dialog").addEventListener("click", () => {
+    byId("identity-cancellation-dialog").close();
+  });
   byId("identity-renew").addEventListener("click", () => openRenewalLookup(identitySession()?.identityCode || ""));
   byId("identity-reissue").addEventListener("click", () => openReissue(identitySession()?.identityCode || ""));
-  byId("identity-update-name").addEventListener("click", updateIdentityName);
-  byId("identity-change-email").addEventListener("click", changeIdentityEmail);
+  byId("identity-update-name").addEventListener("click", () => openIdentityProfileDialog("name"));
+  byId("identity-change-email").addEventListener("click", () => openIdentityProfileDialog("email"));
+  byId("identity-renew-logged-in").addEventListener("click", () => openRenewalLookup(identitySession()?.identityCode || ""));
+  byId("identity-reissue-logged-in").addEventListener("click", () => openReissue(identitySession()?.identityCode || ""));
+  byId("identity-profile-form").addEventListener("submit", submitIdentityProfile);
+  byId("close-identity-profile-dialog").addEventListener("click", () => byId("identity-profile-dialog").close());
   byId("identity-logout").addEventListener("click", () => {
     persistIdentitySession(null);
     setText("identity-profile-feedback", window.MrzhI18n.t("已退出身份识别码账号。"));

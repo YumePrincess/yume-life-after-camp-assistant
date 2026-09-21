@@ -242,20 +242,24 @@
                 <button id="identity-apply" class="button button-quiet" type="button">申请身份识别码</button>
                 <button id="identity-renew" class="button button-quiet" type="button">申请延长有效期</button>
                 <button id="identity-reissue" class="button button-quiet" type="button">申请更换识别码</button>
+                <button id="identity-cancel" class="button button-quiet" type="button">申请注销身份识别码</button>
                 <button id="identity-recover" class="button button-quiet" type="button">忘记识别码</button>
                 <button id="identity-forgot-password" class="button button-quiet" type="button">忘记密码</button>
               </div>
             </div>
             <div id="identity-account-logged-in" hidden>
               <div class="identity-account-summary">
-                <strong id="identity-account-name">—</strong>
-                <span id="identity-account-code" class="muted">—</span>
-                <span id="identity-account-email" class="muted">—</span>
-                <span id="identity-account-expiry" class="muted">—</span>
+                <div class="identity-account-line"><span class="identity-account-label">玩家名称：</span><strong id="identity-account-name">—</strong></div>
+                <div class="identity-account-line"><span class="identity-account-label">识别码：</span><span id="identity-account-code" class="muted">—</span></div>
+                <div class="identity-account-line"><span class="identity-account-label">邮箱：</span><span id="identity-account-email" class="muted">—</span></div>
+                <div class="identity-account-line"><span class="identity-account-label">有效期：</span><span id="identity-account-expiry" class="muted">—</span></div>
               </div>
               <div class="action-row identity-account-actions">
                 <button id="identity-update-name" class="button button-quiet" type="button">修改玩家名称</button>
                 <button id="identity-change-email" class="button button-quiet" type="button">绑定/修改邮箱</button>
+                <button id="identity-renew-logged-in" class="button button-quiet" type="button">申请延长有效期</button>
+                <button id="identity-reissue-logged-in" class="button button-quiet" type="button">申请更换识别码</button>
+                <button id="identity-cancel-logged-in" class="button button-quiet" type="button">申请注销身份识别码</button>
                 <button id="identity-logout" class="button button-quiet" type="button">退出身份识别码账号</button>
               </div>
               <p id="identity-profile-feedback" class="feedback" role="status"></p>
@@ -436,6 +440,77 @@
         <p id="identity-reset-feedback" class="feedback" role="status"></p>
       </div>
     </dialog>
+
+<dialog id="identity-profile-dialog" class="identity-profile-dialog">
+      <form id="identity-profile-form" class="dialog-card identity-profile-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">IDENTITY CODE</p>
+            <h2 id="identity-profile-dialog-title">修改身份资料</h2>
+          </div>
+          <button id="close-identity-profile-dialog" class="button button-quiet" type="button">关闭</button>
+        </div>
+        <div class="identity-profile-step" data-identity-profile-step="name">
+          <label class="field">
+            <span>新的玩家名称</span>
+            <input id="identity-profile-name" maxlength="80" autocomplete="nickname" />
+          </label>
+        </div>
+        <div class="identity-profile-step" data-identity-profile-step="email" hidden>
+          <label class="field">
+            <span>新的邮箱地址</span>
+            <input id="identity-profile-email" type="email" maxlength="254" autocomplete="email" />
+          </label>
+        </div>
+        <div class="identity-profile-step" data-identity-profile-step="old-email" hidden>
+          <label class="field">
+            <span>旧邮箱收到的验证码</span>
+            <input id="identity-profile-old-otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+          </label>
+        </div>
+        <div class="identity-profile-step" data-identity-profile-step="new-email" hidden>
+          <label class="field">
+            <span>新邮箱收到的验证码</span>
+            <input id="identity-profile-new-otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" />
+          </label>
+        </div>
+        <div class="action-row">
+          <button id="identity-profile-submit" class="button button-primary" type="submit">确认变更</button>
+        </div>
+        <p id="identity-profile-dialog-feedback" class="feedback" role="status"></p>
+  </form>
+</dialog>
+
+<dialog id="identity-cancellation-dialog" class="identity-profile-dialog">
+  <form id="identity-cancellation-form" class="dialog-card identity-profile-card">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">IDENTITY CODE</p>
+        <h2>申请注销身份识别码</h2>
+      </div>
+      <button id="close-identity-cancellation-dialog" class="button button-quiet" type="button">关闭</button>
+    </div>
+    <div class="identity-cancellation-step" data-cancellation-step="request">
+      <div class="form-grid identity-cancellation-fields">
+        <label class="field"><span>申请编号</span><input id="identity-cancel-application" maxlength="40" /></label>
+        <label class="field"><span>申请时预留邮箱</span><input id="identity-cancel-email" type="email" maxlength="254" /></label>
+        <label class="field"><span>身份识别码</span><input id="identity-cancel-code" inputmode="numeric" maxlength="8" /></label>
+      </div>
+      <ol class="identity-rules">
+        <li>申请注销身份识别码申请通过后将立即注销识别码。</li>
+        <li>申请注销身份识别码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。</li>
+        <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
+        <li>邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。</li>
+      </ol>
+      <button id="request-identity-cancellation" class="button button-danger" type="submit">发送验证码</button>
+    </div>
+    <div class="identity-cancellation-step" data-cancellation-step="verify" hidden>
+      <label class="field"><span>邮箱验证码（10分钟内有效）</span><input id="identity-cancel-otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" /></label>
+      <button id="confirm-identity-cancellation" class="button button-danger" type="submit">确认注销身份识别码</button>
+    </div>
+    <p id="identity-cancellation-feedback" class="feedback" role="status"></p>
+  </form>
+</dialog>
 
     <dialog id="identity-application-error-dialog" class="compact-dialog">
       <form method="dialog" class="dialog-card vote-success-card">

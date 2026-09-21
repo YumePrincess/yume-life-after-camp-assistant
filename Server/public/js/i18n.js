@@ -2847,6 +2847,10 @@
       "未绑定邮箱": "未绑定邮箱",
       "永久有效": "永久有效",
       "有效期至 {date}": "有效期至 {date}",
+      "玩家名称：": "玩家名称：",
+      "识别码：": "识别码：",
+      "邮箱：": "邮箱：",
+      "确认变更": "确认变更",
       "已退出身份识别码账号。": "已退出身份识别码账号。",
       "玩家名称已更新。": "玩家名称已更新。",
       "请输入新的玩家名称": "请输入新的玩家名称",
@@ -2897,6 +2901,76 @@
     }
   };
   for (const [language, additions] of Object.entries(identityAccountTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+  const identityUiLabelTranslations = {
+    en: {
+      "玩家名称：": "Player name:",
+      "识别码：": "Identity code:",
+      "邮箱：": "Email:",
+      "确认变更": "Confirm change"
+    },
+    "zh-tw": {
+      "玩家名称：": "玩家名稱：",
+      "识别码：": "身分識別碼：",
+      "邮箱：": "信箱：",
+      "确认变更": "確認變更"
+    },
+    fr: {
+      "玩家名称：": "Nom du joueur :",
+      "识别码：": "Code d’identité :",
+      "邮箱：": "E-mail :",
+      "确认变更": "Confirmer la modification"
+    },
+    ja: {
+      "玩家名称：": "プレイヤー名：",
+      "识别码：": "本人確認コード：",
+      "邮箱：": "メール：",
+      "确认变更": "変更を確認"
+    }
+  };
+  for (const [language, additions] of Object.entries(identityUiLabelTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+  const identityCancellationTranslations = {
+    en: {
+      "申请注销身份识别码": "Request identity-code cancellation",
+      "申请注销身份识别码申请通过后将立即注销识别码。": "Once approved, the identity code will be cancelled immediately.",
+      "申请注销身份识别码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。": "Enter an application number, the saved email, or the identity code.",
+      "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。": "If the code was issued manually and the saved details are incomplete, contact the mayor for manual assistance.",
+      "邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。": "After email verification, cancellation starts and cannot be undone; the identity code becomes invalid immediately.",
+      "确认注销身份识别码": "Confirm identity-code cancellation",
+      "身份识别码已注销，已立即失效。": "The identity code was cancelled and is now invalid."
+    },
+    "zh-tw": {
+      "申请注销身份识别码": "申請註銷身分識別碼",
+      "申请注销身份识别码申请通过后将立即注销识别码。": "申請註銷身分識別碼通過後將立即註銷識別碼。",
+      "申请注销身份识别码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。": "申請註銷身分識別碼請輸入申請編號、申請時預留的信箱或身分識別碼其中一項。",
+      "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。": "若您是透過人工申請且預留資訊不完整，請聯絡市長人工處理。",
+      "邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。": "信箱驗證碼通過後將正式進入註銷流程，流程無法撤回，提交註銷後身分識別碼立即失效。",
+      "确认注销身份识别码": "確認註銷身分識別碼",
+      "身份识别码已注销，已立即失效。": "身分識別碼已註銷，現已失效。"
+    },
+    fr: {
+      "申请注销身份识别码": "Demander la résiliation du code d’identité",
+      "申请注销身份识别码申请通过后将立即注销识别码。": "Après approbation, le code d’identité sera résilié immédiatement.",
+      "申请注销身份识别码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。": "Saisissez un numéro de demande, l’e-mail enregistré ou le code d’identité.",
+      "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。": "Si le code a été délivré manuellement avec des informations incomplètes, contactez le maire.",
+      "邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。": "Après vérification de l’e-mail, la résiliation démarre et ne peut pas être annulée ; le code devient immédiatement invalide.",
+      "确认注销身份识别码": "Confirmer la résiliation du code",
+      "身份识别码已注销，已立即失效。": "Le code d’identité a été résilié et est maintenant invalide."
+    },
+    ja: {
+      "申请注销身份识别码": "本人確認コードの解約を申請",
+      "申请注销身份识别码申请通过后将立即注销识别码。": "解約申請が承認されると、本人確認コードは直ちに解約されます。",
+      "申请注销身份识别码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。": "申請番号、登録メールアドレス、本人確認コードのいずれかを入力してください。",
+      "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。": "手動申請で登録情報が不足している場合は、市長へご連絡ください。",
+      "邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。": "メール確認後に解約処理が始まり、取り消せません。送信後、コードは直ちに無効になります。",
+      "确认注销身份识别码": "本人確認コードの解約を確認",
+      "身份识别码已注销，已立即失效。": "本人確認コードを解約しました。現在は無効です。"
+    }
+  };
+  for (const [language, additions] of Object.entries(identityCancellationTranslations)) {
     Object.assign(translations[language], additions);
   }
   const identityStaticTranslations = {

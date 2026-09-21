@@ -436,6 +436,36 @@ export function identityEmailChangeMail(input: {
   };
 }
 
+export function identityCancellationMail(input: {
+  locale: SupportedLocale;
+  otp: string;
+}): { subject: string; text: string; html: string } {
+  const subject = input.locale === "zh-cn"
+    ? "身份识别码注销邮箱验证码"
+    : input.locale === "zh-tw"
+      ? "身分識別碼註銷信箱驗證碼"
+      : input.locale === "ja"
+        ? "本人確認コード解約メール確認コード"
+        : input.locale === "fr"
+          ? "Code de vérification de la résiliation du code d’identité"
+          : "Identity code cancellation verification code";
+  const note = input.locale === "zh-cn"
+    ? "验证码有效期为10分钟。验证通过后识别码将立即失效，注销流程无法撤回。"
+    : input.locale === "zh-tw"
+      ? "驗證碼有效期為10分鐘。驗證通過後身分識別碼將立即失效，註銷流程無法撤回。"
+      : input.locale === "ja"
+        ? "確認コードは10分間有効です。確認後、本人確認コードは直ちに無効となり、解約処理は取り消せません。"
+        : input.locale === "fr"
+          ? "Le code est valable 10 minutes. Après vérification, le code sera immédiatement désactivé et la procédure est irréversible."
+          : "The code is valid for 10 minutes. After verification, the identity code is immediately disabled and the cancellation cannot be undone.";
+  const rows: Array<[string, string]> = [[COPY[input.locale].verificationCode, input.otp]];
+  return {
+    subject,
+    text: [subject, "", ...rows.map(([key, value]) => `${key}: ${value}`), "", note].join("\n"),
+    html: renderYumeEmail({ locale: input.locale, title: subject, rows, notes: [note] })
+  };
+}
+
 export function identityApplicationVerificationMail(input: {
   locale: SupportedLocale;
   otp: string;
