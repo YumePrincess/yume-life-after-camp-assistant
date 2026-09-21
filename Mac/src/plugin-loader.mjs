@@ -96,7 +96,11 @@ async function loadPlugin(
   if (typeof workflow !== "function") {
     throw new Error(`${manifest.id} export ${manifest.export} is not a function`);
   }
-  return { manifest, directory, entryPath, builtin, signature, workflow };
+  const config = module.config === undefined ? {} : module.config;
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error(`${manifest.id} config export must be an object`);
+  }
+  return { manifest, directory, entryPath, builtin, signature, workflow, config };
 }
 
 async function pluginDirectories(root) {

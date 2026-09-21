@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TechnologyConfig, VoteOption } from "../src/domain";
-import { BUILT_IN_TECHNOLOGY_CATALOG } from "../src/built-in-technology-catalog";
+import { BUILT_IN_TECHNOLOGY_CATALOG } from "../plugins/technology/catalog";
 import {
   buildTechnologyPlan,
   fixedTechnologyKeysForDate,

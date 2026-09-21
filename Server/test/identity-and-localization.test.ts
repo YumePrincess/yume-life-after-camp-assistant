@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_TECHNOLOGY_CATALOG } from "../src/built-in-technology-catalog";
+import { BUILT_IN_TECHNOLOGY_CATALOG } from "../plugins/technology/catalog";
 import {
   canUseExpiredRenewalGrace,
   identityPlayerNameKey,
@@ -10,7 +10,7 @@ import {
 import {
   localizeTechnology,
   TECHNOLOGY_LOCALIZATIONS
-} from "../src/technology-localizations";
+} from "../plugins/technology/localizations";
 import { localizeWorkerEvent } from "../src/task-localization";
 import { validatePublicOverview } from "../src/validate";
 

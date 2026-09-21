@@ -16,6 +16,7 @@ export class GameUi {
     this.vision = vision;
     this.report = report;
     this.mumu = mumu;
+    this.pluginConfig = {};
     this.runtimeAutomation = null;
     this.lastConfirmedDestination = null;
     this.taskActive = false;
@@ -26,6 +27,12 @@ export class GameUi {
 
   setRuntimeAutomation(automation) {
     this.runtimeAutomation = automation;
+  }
+
+  setPluginConfig(pluginConfig) {
+    this.pluginConfig = pluginConfig && typeof pluginConfig === "object"
+      ? pluginConfig
+      : {};
   }
 
   setTaskActive(active) {
@@ -2571,6 +2578,144 @@ export class GameUi {
     return warmPoints.length >= minimumWarmPoints;
   }
 
+  async openCampPanelViaProfile(action, signal) {
+    await this.closeMapBeforeCampPanel(action, signal);
+    const attempts = Math.max(1, Math.min(6, Number(action.attempts) || 6));
+    const profileButton = action.profileButton || { x: 70, y: 64 };
+    const campCardButton = action.campCardButton || { x: 1005, y: 420 };
+    const profileReadyTexts = Array.isArray(action.profileReadyTexts) && action.profileReadyTexts.length
+      ? action.profileReadyTexts.filter((text) => String(text).trim())
+      : [
+          "营地",
+          "交易之城",
+          "交易之称",
+          "天赋能力",
+          "潜能强化",
+          "拟态能力",
+          "核芯",
+          "角色属性",
+          "个人档案"
+        ];
+    const profileReadyRegion = action.profileReadyRegion || {
+      left: 650,
+      top: 160,
+      right: 1850,
+      bottom: 1080
+    };
+    const profileReadyMinimum = Math.max(
+      4,
+      Math.min(profileReadyTexts.length, Number(action.profileReadyMinimumTexts) || 4)
+    );
+    const profileMatches = (observations) => profileReadyTexts
+      .map((text) => ({
+        text,
+        match: this.findInRegion(observations, text, profileReadyRegion)
+      }))
+      .filter((item) => item.match);
+    const panelVerificationSeconds = Math.max(
+      1.5,
+      Number(action.verifySeconds) || 6
+    );
+    let lastProfileMatches = [];
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      if (signal?.aborted) throw signal.reason || new Error("Interrupted");
+      const before = await this.vision.captureTransient(
+        `camp-profile-before-${attempt}`,
+        signal
+      );
+      if (this.isCampPanel(before.observations, action)) return;
+      let matches = profileMatches(before.observations);
+      if (
+        matches.length < profileReadyMinimum &&
+        typeof this.vision.captureAccurateTransient === "function"
+      ) {
+        const accurateBefore = await this.vision.captureAccurateTransient(
+          `camp-profile-before-accurate-${attempt}`,
+          signal
+        );
+        if (this.isCampPanel(accurateBefore.observations, action)) return;
+        matches = profileMatches(accurateBefore.observations);
+      }
+      if (matches.length < profileReadyMinimum) {
+        await this.report(
+          "info",
+          "open_camp_profile_attempt",
+          `从 HUD 点击左上角头像进入个人卡片（${attempt}/${attempts}）`
+        );
+        await this.tap(profileButton, signal);
+        await delay(Number(action.profileOpenSettleMs) || 1_500, signal);
+        const profileFrame = await this.vision.captureTransient(
+          `camp-profile-verify-${attempt}`,
+          signal
+        );
+        matches = profileMatches(profileFrame.observations);
+        if (
+          matches.length < profileReadyMinimum &&
+          typeof this.vision.captureAccurateTransient === "function"
+        ) {
+          const accurateProfile = await this.vision.captureAccurateTransient(
+            `camp-profile-verify-accurate-${attempt}`,
+            signal
+          );
+          matches = profileMatches(accurateProfile.observations);
+        }
+      }
+      lastProfileMatches = matches.map((item) => item.text);
+      if (matches.length < profileReadyMinimum) {
+        await this.report(
+          "warning",
+          "camp_profile_not_verified",
+          `第 ${attempt}/${attempts} 次未确认个人卡片至少 ${profileReadyMinimum} 个关键词；已识别：${lastProfileMatches.join("、") || "无"}`
+        );
+        continue;
+      }
+      await this.report(
+        "info",
+        "camp_profile_verified",
+        `已确认个人卡片（${matches.length}/${profileReadyMinimum} 个关键词），正在点击固定位置的营地卡片`
+      );
+      await this.tap(campCardButton, signal);
+      await delay(Number(action.campCardSettleMs) || 2_500, signal);
+      const verifyDeadline = Date.now() + panelVerificationSeconds * 1000;
+      let accurateChecked = false;
+      while (Date.now() < verifyDeadline) {
+        if (signal?.aborted) throw signal.reason || new Error("Interrupted");
+        const frame = await this.vision.captureTransient(
+          `camp-profile-panel-verify-${attempt}`,
+          signal
+        );
+        if (this.isCampPanel(frame.observations, action)) return;
+        if (
+          !accurateChecked &&
+          typeof this.vision.captureAccurateTransient === "function"
+        ) {
+          accurateChecked = true;
+          const accurate = await this.vision.captureAccurateTransient(
+            `camp-profile-panel-verify-accurate-${attempt}`,
+            signal
+          );
+          if (this.isCampPanel(accurate.observations, action)) {
+            await this.report(
+              "info",
+              "camp_panel_verified_accurate",
+              "已通过高精度中文 OCR 确认营地卡片首页"
+            );
+            return;
+          }
+        }
+        await delay(350, signal);
+      }
+      await this.report(
+        "warning",
+        "camp_profile_card_click_failed",
+        `第 ${attempt}/${attempts} 次点击营地卡片后未确认营地首页；下次将重新识别个人卡片`
+      );
+    }
+    throw new Error(
+      `CAMP_PANEL_DID_NOT_OPEN: 已重试个人卡片→营地卡片流程，但未确认营地首页；个人卡片关键词：${lastProfileMatches.join("、") || "无"}`
+    );
+  }
+
   async openCampPanelViaChat(action, signal) {
     await this.closeMapBeforeCampPanel(action, signal);
     const attempts = Math.max(1, Math.min(6, Number(action.attempts) || 6));
@@ -3609,7 +3754,7 @@ export class GameUi {
   }
 
   async executeFlow(name, variables = {}, signal) {
-    const actions = this.config.flows[name];
+    const actions = this.pluginConfig?.flows?.[name] || this.config.flows[name];
     if (!Array.isArray(actions) || !actions.length) {
       throw new Error(
         `Flow "${name}" is not calibrated in the active Runtime config.json`
@@ -3625,6 +3770,9 @@ export class GameUi {
           break;
         case "openCampPanelViaChat":
           await this.openCampPanelViaChat(action, signal);
+          break;
+        case "openCampPanelViaProfile":
+          await this.openCampPanelViaProfile(action, signal);
           break;
         case "clickText":
           await this.clickText(action.text, action, signal);

@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import {
   clearAllConfiguredSlots,
   findTechnologyMatch,
   selectTechnology,
   verifyFinalConfiguredSlots
 } from "../src/workflows/technology.mjs";
+import { config as technologyPluginConfig } from "../plugins/technology/config.mjs";
 
 test("technology matching ignores parenthetical prerequisites as one generic rule", () => {
   const region = { left: 60, top: 180, right: 720, bottom: 1040 };
@@ -53,10 +53,7 @@ test("technology detail accepts the main title when the prerequisite is omitted"
 });
 
 test("1920x1200 technology hitboxes keep the live-device calibration", async () => {
-  const config = JSON.parse(
-    await readFile(new URL("../config.json", import.meta.url), "utf8")
-  );
-  assert.deepEqual(config.technology.slots, {
+  assert.deepEqual(technologyPluginConfig.technology.slots, {
     core: [
       { x: 768, y: 425 },
       { x: 899, y: 425 },
@@ -74,9 +71,9 @@ test("1920x1200 technology hitboxes keep the live-device calibration", async () 
       { x: 1358, y: 554 }
     ]
   });
-  assert.deepEqual(config.technology.unloadSelected, { x: 744, y: 612 });
-  assert.deepEqual(config.technology.configureSelected, { x: 744, y: 612 });
-  assert.equal(config.technology.selectorItemTapX, 178);
+  assert.deepEqual(technologyPluginConfig.technology.unloadSelected, { x: 744, y: 612 });
+  assert.deepEqual(technologyPluginConfig.technology.configureSelected, { x: 744, y: 612 });
+  assert.equal(technologyPluginConfig.technology.selectorItemTapX, 178);
 });
 
 test("technology slots unload core 1-6 then general 1-6 without re-clicking", async () => {

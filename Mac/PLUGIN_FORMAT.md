@@ -23,3 +23,22 @@ developer mode (`allowUnsignedLocal`) is explicitly enabled.
 
 App plugins are never fetched from Workers. Workers has its own independent,
 build-time plugin folders under `Server/plugins/`.
+
+## Plugin-owned runtime configuration
+
+An Agent entry module may export an optional `config` object alongside the
+manifest's workflow export:
+
+```js
+import { config } from "./config.mjs";
+export { run } from "../../src/workflows/example.mjs";
+export { config };
+```
+
+The Agent injects that object only into the task that owns the plugin. Its
+`flows`, `tables`, hitboxes, OCR regions, waits, and other feature-specific
+calibration values override the generic Runtime config for that task. This is
+the supported location for non-generic points and screen recognition rules;
+they must not be added back to the global `config.json` or
+`config.example.json`. The signed App Runtime includes these plugin modules,
+and the plugin loader rejects a non-object `config` export.

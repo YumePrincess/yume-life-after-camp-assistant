@@ -504,10 +504,24 @@ async function executeCommand(command, signal) {
       `progress:${currentStep || "unknown"}`
     );
   };
-  const ui = new GameUi(config, adb, vision, report, mumu);
+  const pluginConfig = plugin.config || {};
+  const taskConfig = {
+    ...config,
+    ...pluginConfig,
+    tables: {
+      ...(config.tables || {}),
+      ...(pluginConfig.tables || {})
+    },
+    flows: {
+      ...(config.flows || {}),
+      ...(pluginConfig.flows || {})
+    }
+  };
+  const ui = new GameUi(taskConfig, adb, vision, report, mumu);
+  ui.setPluginConfig(pluginConfig);
   const positionIndependent = plugin.manifest.task.positionIndependent === true;
   const context = {
-    config,
+    config: taskConfig,
     api,
     adb,
     mumu,
@@ -518,7 +532,9 @@ async function executeCommand(command, signal) {
     positionIndependent,
     skipUnknownRecovery: false,
     skipReturnToCenter: positionIndependent,
-    memberRoster: []
+    memberRoster: [],
+    pluginConfig,
+    pluginId: plugin.manifest.id
   };
   vision.beginTask({ taskDebug });
   try {

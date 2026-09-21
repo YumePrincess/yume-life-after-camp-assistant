@@ -101,7 +101,7 @@ import {
   preserveAutomationScheduleTimes,
   validateConfigBundle
 } from "./validate";
-import { localizeTechnology } from "./technology-localizations";
+import { localizeTechnology } from "../plugins/technology/localizations";
 import {
   approveIdentityApplication,
   createIdentityApplication,

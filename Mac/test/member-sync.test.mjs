@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { config as contributionConfig } from "../plugins/contribution/config.mjs";
+import { config as inactivityConfig } from "../plugins/inactivity/config.mjs";
+import { config as memberProfileConfig } from "../plugins/member-profile/config.mjs";
 import {
   captureContribution,
   capturePagedTable,
@@ -106,59 +108,65 @@ test("contribution rows keep all three values while deduplicating against the ro
 });
 
 test("contribution and inactivity scans wait three seconds after paging and stop at eleven pages", async () => {
-  for (const file of ["config.json", "config.example.json"]) {
-    const config = JSON.parse(
-      await readFile(new URL(`../${file}`, import.meta.url), "utf8")
-    );
-    for (const table of ["contribution", "activity"]) {
-      assert.equal(config.tables[table].pagination.maxPages, 11);
+  const tables = {
+    ...contributionConfig.tables,
+    ...inactivityConfig.tables
+  };
+  for (const table of ["contribution", "activity"]) {
+      assert.equal(tables[table].pagination.maxPages, 11);
       assert.equal(
-        config.tables[table].pagination.initialSettleMs,
+        tables[table].pagination.initialSettleMs,
         3000
       );
-      assert.equal(config.tables[table].pagination.durationMs, 1000);
-      assert.equal(config.tables[table].ocrMinimumConfidence, 0.3);
+      assert.equal(tables[table].pagination.durationMs, 1000);
+      assert.equal(tables[table].ocrMinimumConfidence, 0.3);
       assert.equal(
-        config.tables[table].pagination.settleAfterSwipeMs,
+        tables[table].pagination.settleAfterSwipeMs,
         2000
       );
-      assert.equal(config.tables[table].pagination.rowsPerPage, 11);
-      assert.equal(config.tables[table].pagination.minimumRowsPerPage, 11);
-      assert.equal(config.tables[table].pagination.visibleRowsPerPage, 11);
-      assert.equal(config.tables[table].pagination.lastPageRows, 11);
-      assert.equal(config.tables[table].pagination.swipeStartY, 980);
-      assert.equal(config.tables[table].pagination.rowAnchorTop, 285);
-      assert.equal(config.tables[table].pagination.rowHeightPx, 66);
-      assert.equal(config.tables[table].pagination.measurePageHeightFromRows, true);
-      assert.equal(config.tables[table].pagination.pageHeightPx, 729);
-      assert.equal(config.tables[table].pagination.pageHeightExtraPx, 0);
-      assert.equal(config.tables[table].pagination.rowResidualMaxPx, 18);
-      assert.equal(config.tables[table].pagination.to.y, 250);
-    }
-    assert.equal(config.tables.members.ocrMinimumConfidence, 0.3);
-    assert.deepEqual(config.tables.members.pagination.from, { x: 1700, y: 700 });
-    assert.deepEqual(config.tables.members.pagination.to, { x: 1700, y: 225 });
-    assert.deepEqual(config.tables.members.pagination.firstPageFrom, { x: 1700, y: 700 });
-    assert.deepEqual(config.tables.members.pagination.firstPageTo, { x: 1700, y: 225 });
-    assert.deepEqual(config.tables.members.pagination.fullPageRegion, {
+      assert.equal(tables[table].pagination.rowsPerPage, 11);
+      assert.equal(tables[table].pagination.minimumRowsPerPage, 11);
+      assert.equal(tables[table].pagination.visibleRowsPerPage, 11);
+      assert.equal(tables[table].pagination.lastPageRows, 11);
+      assert.equal(tables[table].pagination.swipeStartY, 980);
+      assert.equal(tables[table].pagination.rowAnchorTop, 285);
+      assert.equal(tables[table].pagination.rowHeightPx, 66);
+      assert.equal(tables[table].pagination.measurePageHeightFromRows, true);
+      assert.equal(tables[table].pagination.pageHeightPx, 729);
+      assert.equal(tables[table].pagination.pageHeightExtraPx, 0);
+      assert.equal(tables[table].pagination.rowResidualMaxPx, 18);
+      assert.equal(tables[table].pagination.to.y, 250);
+  }
+  const memberTable = memberProfileConfig.tables.members;
+  assert.equal(memberTable.ocrMinimumConfidence, 0.3);
+  assert.deepEqual(memberTable.pagination.from, { x: 1700, y: 700 });
+  assert.deepEqual(memberTable.pagination.to, { x: 1700, y: 225 });
+  assert.deepEqual(memberTable.pagination.firstPageFrom, { x: 1700, y: 700 });
+  assert.deepEqual(memberTable.pagination.firstPageTo, { x: 1700, y: 225 });
+  assert.deepEqual(memberTable.pagination.fullPageRegion, {
       left: 115,
       top: 340,
       right: 1800,
       bottom: 810
-    });
-    assert.equal(config.tables.members.pagination.fullPageRows, 5);
-    assert.equal(config.tables.members.pagination.maxPages, 24);
-    assert.equal(
-      Object.hasOwn(config.tables.members.pagination, "maxExtraPagesAfterExpected"),
-      false
-    );
-    assert.deepEqual(
-      config.flows.resetMemberPanelForRescan.map((action) => action.op),
-      ["clickText", "waitAnyText", "clickText", "waitAnyText"]
-    );
-    assert.equal(config.flows.resetMemberPanelForRescan[0].text, "首页");
-    assert.equal(config.flows.resetMemberPanelForRescan[2].text, "成员");
-  }
+  });
+  assert.equal(memberTable.pagination.fullPageRows, 5);
+  assert.equal(memberTable.pagination.maxPages, 24);
+  assert.equal(
+    Object.hasOwn(memberTable.pagination, "maxExtraPagesAfterExpected"),
+    false
+  );
+  const runtimeConfig = JSON.parse(
+    await (await import("node:fs/promises")).readFile(
+      new URL("../config.example.json", import.meta.url),
+      "utf8"
+    )
+  );
+  assert.deepEqual(
+    runtimeConfig.flows.resetMemberPanelForRescan.map((action) => action.op),
+    ["clickText", "waitAnyText", "clickText", "waitAnyText"]
+  );
+  assert.equal(runtimeConfig.flows.resetMemberPanelForRescan[0].text, "首页");
+  assert.equal(runtimeConfig.flows.resetMemberPanelForRescan[2].text, "成员");
 });
 
 test("member profile helpers clean staff color codes and detect leaked sailing titles", () => {

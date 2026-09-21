@@ -8,7 +8,7 @@ import type {
   TriggerMode,
   TechnologyVoteHistory
 } from "./domain";
-import { BUILT_IN_TECHNOLOGY_CATALOG } from "./built-in-technology-catalog";
+import { BUILT_IN_TECHNOLOGY_CATALOG } from "../plugins/technology/catalog";
 import {
   validateAutomationConfig,
   validateAuthConfig,

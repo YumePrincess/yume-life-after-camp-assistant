@@ -63,6 +63,46 @@ test("camp page is recognized by two stable, region-bound anchors", () => {
   );
 });
 
+test("profile-card camp navigation uses the avatar and camp-card ADB points", async () => {
+  const fixture = createUi({
+    config: { timeouts: { actionDelayMs: 0 } },
+    transientCapture(label) {
+      if (label === "camp-profile-verify-1") {
+        return [
+          observation("营地", 900, 300),
+          observation("天赋能力", 900, 700),
+          observation("潜能强化", 1200, 700),
+          observation("核芯", 1600, 700)
+        ];
+      }
+      if (label.startsWith("camp-profile-panel-verify")) {
+        return [
+          observation("量子时代", 330, 330),
+          observation("营地周活跃", 760, 320)
+        ];
+      }
+      return [];
+    }
+  });
+
+  await fixture.ui.openCampPanelViaProfile({
+    attempts: 1,
+    profileButton: { x: 70, y: 64 },
+    profileOpenSettleMs: 1,
+    profileReadyMinimumTexts: 4,
+    profileReadyRegion: { left: 650, top: 160, right: 1850, bottom: 1080 },
+    campCardButton: { x: 1005, y: 420 },
+    campCardSettleMs: 1,
+    verifySeconds: 1.5
+  });
+
+  assert.deepEqual(fixture.taps, [
+    { x: 70, y: 64 },
+    { x: 1005, y: 420 }
+  ]);
+  assert.ok(fixture.messages.some((message) => message.includes("个人卡片")));
+});
+
 test("a marked game-mouse entry stays a direct tap after the HUD phase", async () => {
   const fixture = createUi();
   const touchTaps = [];
@@ -2063,12 +2103,15 @@ test("post-login click flows use input keyevent 70 and no host release config", 
     assert.deepEqual(config.adb.gameMouseHudInitialTapPoint, { x: 1782, y: 1110 });
     assert.deepEqual(config.adb.gameMouseHudTapPoint, { x: 1865, y: 1130 });
     assert.equal(Object.hasOwn(config.mumu, "hostMouseUnlock"), false);
-    assert.equal(
-      Object.hasOwn(config.flows.openCampPanel[0], "hostMouseUnlockBeforeCampChannel"),
-      false
-    );
     assert.equal(Object.hasOwn(config.patrolTeamUi, "hostMouseUnlockBeforeCreate"), false);
   }
+  const { config: technologyConfig } = await import("../plugins/technology/config.mjs");
+  assert.equal(technologyConfig.flows.openCampPanel[0].op, "openCampPanelViaProfile");
+  assert.deepEqual(technologyConfig.flows.openCampPanel[0].profileButton, { x: 70, y: 64 });
+  assert.equal(
+    Object.hasOwn(technologyConfig.flows.openCampPanel[0], "hostMouseUnlockBeforeCampChannel"),
+    false
+  );
 });
 
 test("both city-hall data tasks enter the sand table with F, never a HUD mouse click", async () => {

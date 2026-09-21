@@ -459,16 +459,30 @@ actor RuntimeService {
         _ object: inout [String: Any],
         from template: URL
     ) -> Bool {
+        var flows = object["flows"] as? [String: Any] ?? [:]
+        var changed = false
+        // Camp navigation is owned by the technology/member-profile plugins.
+        // Remove the legacy global copy so an installed config cannot shadow
+        // the plugin-calibrated profile-card route.
+        if flows.removeValue(forKey: "openCampPanel") != nil {
+            changed = true
+        }
+        // These sections were formerly read from the global Runtime config.
+        // Their calibrated points now ship with the owning Agent plugins.
+        if object.removeValue(forKey: "technology") != nil {
+            changed = true
+        }
+        if object.removeValue(forKey: "tables") != nil {
+            changed = true
+        }
         guard let data = try? Data(contentsOf: template),
               let decoded = try? JSONSerialization.jsonObject(with: data),
               let templateObject = decoded as? [String: Any],
               let templateFlows = templateObject["flows"] as? [String: Any],
               !templateFlows.isEmpty else {
-            return false
+            if changed { object["flows"] = flows }
+            return changed
         }
-
-        var flows = object["flows"] as? [String: Any] ?? [:]
-        var changed = false
         for (name, definition) in templateFlows {
             guard flows[name] == nil,
                   let actions = definition as? [[String: Any]],
@@ -479,44 +493,6 @@ actor RuntimeService {
             changed = true
         }
 
-        // Runtime/current keeps the user's config while the bundled runtime
-        // code is replaced. The camp flow was present before the explicit
-        // channel -> camp navigation was introduced, so merely adding missing
-        // flow names leaves older installs on the unsafe fixed-coordinate
-        // private-chat path. Backfill only missing navigation keys and keep
-        // every existing calibration untouched.
-        if var campActions = flows["openCampPanel"] as? [[String: Any]],
-           let templateCampActions = templateFlows["openCampPanel"] as? [[String: Any]],
-           let templateCampAction = templateCampActions.first(where: {
-               $0["op"] as? String == "openCampPanelViaChat"
-           }),
-           let campIndex = campActions.firstIndex(where: {
-               $0["op"] as? String == "openCampPanelViaChat"
-           }) {
-            let navigationKeys = [
-                "chatCardSettleMs",
-                "chatTabText",
-                "chatTabMode",
-                "chatTabRegion",
-                "chatTabSettleMs",
-                "campChannelText",
-                "campChannelMode",
-                "campChannelRegion",
-                "campChannelSettleMs",
-                "campChannelReadyTexts",
-                "campChannelReadyRegion",
-                "chatNavigationTimeoutSeconds",
-                "chatReadyTexts",
-                "chatReadyRegion",
-                "chatReadyMinimumTexts"
-            ]
-            for key in navigationKeys where campActions[campIndex][key] == nil {
-                guard let value = templateCampAction[key] else { continue }
-                campActions[campIndex][key] = value
-                changed = true
-            }
-            flows["openCampPanel"] = campActions
-        }
         if changed {
             object["flows"] = flows
         }

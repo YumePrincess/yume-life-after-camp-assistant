@@ -1,5 +1,5 @@
-import type { TechnologyDefinition } from "./domain";
-import { normalizeLocale, type SupportedLocale } from "./locale";
+import type { TechnologyDefinition } from "../../src/domain";
+import { normalizeLocale, type SupportedLocale } from "../../src/locale";
 
 type Translation = Record<Exclude<SupportedLocale, "zh-cn">, string>;
 type Entry = { name: Translation; description: Translation };

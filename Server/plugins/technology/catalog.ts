@@ -1,4 +1,4 @@
-import type { TechnologyDefinition } from "./domain";
+import type { TechnologyDefinition } from "../../src/domain";
 
 export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
   {
