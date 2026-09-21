@@ -770,7 +770,12 @@ export async function saveDailyVoteResponse(
 
 export async function listAdminDailyVoteItems(
   env: Env,
-  options: { date?: string; kind?: DailyVoteKind; page?: number } = {}
+  options: {
+    date?: string;
+    kind?: DailyVoteKind;
+    status?: "active" | "history";
+    page?: number;
+  } = {}
 ): Promise<AdminDailyVotePage> {
   const now = new Date();
   const config = await getDailyVoteConfig(env);
@@ -783,6 +788,8 @@ export async function listAdminDailyVoteItems(
     clauses.push("(substr(start_at, 1, 10) = ? OR substr(end_at, 1, 10) = ?)");
     binds.push(options.date, options.date);
   }
+  if (options.status === "active") clauses.push("end_at > ?");
+  if (options.status === "history") clauses.push("end_at <= ?");
   const where = (extra: string[] = []) => {
     const all = [...clauses, ...extra];
     return all.length ? `WHERE ${all.join(" AND ")}` : "";
@@ -794,18 +801,26 @@ export async function listAdminDailyVoteItems(
   let page: number;
   let total: number;
   let items: DailyVoteItem[];
-  if (options.date) {
+  if (options.date || options.status) {
     const dateWhere = where();
     const count = await env.DB.prepare(
       `SELECT COUNT(*) AS total FROM daily_vote_items ${dateWhere}`
-    ).bind(...binds).first<{ total: number }>();
+    ).bind(
+      ...binds,
+      ...(options.status ? [nowIso] : [])
+    ).first<{ total: number }>();
     total = Number(count?.total ?? 0);
     const pages = Math.max(1, Math.ceil(total / pageSize));
     page = Math.min(pages, Math.max(1, requestedPage));
     const result = await env.DB.prepare(
       `SELECT * FROM daily_vote_items ${dateWhere}
        ORDER BY start_at DESC, created_at DESC LIMIT ? OFFSET ?`
-    ).bind(...binds, pageSize, (page - 1) * pageSize).all<DailyVoteRow>();
+    ).bind(
+      ...binds,
+      ...(options.status ? [nowIso] : []),
+      pageSize,
+      (page - 1) * pageSize
+    ).all<DailyVoteRow>();
     items = result.results.map(itemFromRow);
   } else {
     const unfinishedWhere = where(["end_at > ?"]);

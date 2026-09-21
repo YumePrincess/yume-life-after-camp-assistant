@@ -62,6 +62,8 @@
     dailyVoteConfig: { drawMaxWins28Days: 4 },
     dailyVotePage: 1,
     dailyVoteTotal: 0,
+    dailyVoteHistoryPage: 1,
+    dailyVoteHistoryTotal: 0,
     dailyVoteLoading: false,
     dailyVoteEditorItem: null,
     activeView: "overview",
@@ -1428,20 +1430,46 @@
       { titleBlocks: [], descriptionBlocks: [], options: [] };
   }
 
-  function renderDailyVoteAdmin(payload) {
+  function renderDailyVoteAdmin(payload, mode = "active") {
+    const history = mode === "history";
+    const view = history
+      ? {
+          rootId: "daily-vote-history-admin-list",
+          statusId: "daily-vote-history-status",
+          pageId: "daily-vote-history-page",
+          prevId: "daily-vote-history-prev",
+          nextId: "daily-vote-history-next",
+          jumpId: "daily-vote-history-jump",
+          pageKey: "dailyVoteHistoryPage",
+          totalKey: "dailyVoteHistoryTotal"
+        }
+      : {
+          rootId: "daily-vote-admin-list",
+          statusId: "daily-vote-status",
+          pageId: "daily-vote-page",
+          prevId: "daily-vote-prev",
+          nextId: "daily-vote-next",
+          jumpId: "daily-vote-jump",
+          pageKey: "dailyVotePage",
+          totalKey: "dailyVoteTotal"
+        };
     state.dailyVoteItems = payload?.items || [];
-    state.dailyVoteConfig = payload?.config || { drawMaxWins28Days: 4 };
-    state.dailyVotePage = Number(payload?.page) || 1;
-    state.dailyVoteTotal = Number(payload?.total) || 0;
+    if (!history) state.dailyVoteConfig = payload?.config || { drawMaxWins28Days: 4 };
+    state[view.pageKey] = Number(payload?.page) || 1;
+    state[view.totalKey] = Number(payload?.total) || 0;
     const maxWinsInput = byId("daily-vote-max-wins-28-days");
-    if (maxWinsInput && document.activeElement !== maxWinsInput) {
+    if (!history && maxWinsInput && document.activeElement !== maxWinsInput) {
       maxWinsInput.value = String(state.dailyVoteConfig.drawMaxWins28Days ?? 4);
     }
-    const root = byId("daily-vote-admin-list");
+    const root = byId(view.rootId);
     if (!root) return;
     root.replaceChildren();
     if (!state.dailyVoteItems.length) {
-      root.append(create("p", "empty-state", "暂无日常投票事项记录。"));
+      root.append(create(
+        "p",
+        "empty-state",
+        history ? "暂无已结束日常投票事项记录。" : "暂无日常投票事项记录。"
+      ));
     } else for (const item of state.dailyVoteItems) {
       const content = dailyContentForAdmin(item);
       const card = create("article", "daily-vote-admin-card");
@@ -1452,16 +1480,19 @@
         .map((block) => block.text)
         .join(" ") || window.MrzhI18n.t("未命名事项");
       const actions = create("div", "daily-vote-admin-actions");
-      const edit = create("button", "button button-quiet button-small", "编辑");
-      edit.type = "button";
-      edit.addEventListener("click", () => openDailyVoteEditor(item));
-      const remove = create("button", "button button-danger button-small", "删除选中记录");
-      remove.type = "button";
-      remove.addEventListener("click", () => deleteDailyVoteItemAdmin(item.id));
-      actions.append(edit, remove);
+      if (!history) {
+        const edit = create("button", "button button-quiet button-small", "编辑");
+        edit.type = "button";
+        edit.addEventListener("click", () => openDailyVoteEditor(item));
+        const remove = create("button", "button button-danger button-small", "删除选中记录");
+        remove.type = "button";
+        remove.addEventListener("click", () => deleteDailyVoteItemAdmin(item.id));
+        actions.append(edit, remove);
+      }
       const titleGroup = create("div", "daily-vote-admin-title-group");
       titleGroup.append(title, create("span", "daily-vote-kind", item.kind === "draw" ? "抽签事项" : "投票事项"));
-      heading.append(titleGroup, actions);
+      heading.append(titleGroup);
+      if (actions.childElementCount) heading.append(actions);
       card.append(heading);
       card.append(create(
         "p",
@@ -1548,30 +1579,33 @@
       }
       root.append(card);
     }
-    const pages = Math.max(1, Math.ceil(state.dailyVoteTotal / 10));
-    setText("daily-vote-page", `${state.dailyVotePage} / ${pages}`);
-    byId("daily-vote-prev").disabled = state.dailyVotePage <= 1;
-    byId("daily-vote-next").disabled = state.dailyVotePage >= pages;
-    byId("daily-vote-jump").max = String(pages);
-    byId("daily-vote-jump").value = String(state.dailyVotePage);
+    const page = state[view.pageKey];
+    const pages = Math.max(1, Math.ceil(state[view.totalKey] / 10));
+    setText(view.pageId, `${page} / ${pages}`);
+    byId(view.prevId).disabled = page <= 1;
+    byId(view.nextId).disabled = page >= pages;
+    byId(view.jumpId).max = String(pages);
+    byId(view.jumpId).value = String(page);
   }
 
-  async function loadDailyVoteAdmin(date = "", page = state.dailyVotePage) {
+  async function loadDailyVoteAdmin(date = "", page = state.dailyVotePage, mode = "active") {
+    const history = mode === "history";
     if (!canView("daily-vote") || state.dailyVoteLoading) return;
     state.dailyVoteLoading = true;
-    setText("daily-vote-status", window.MrzhI18n.t("正在读取历史记录…"));
+    setText(history ? "daily-vote-history-status" : "daily-vote-status", window.MrzhI18n.t("正在读取历史记录…"));
     try {
       const requestedPage = Number(page);
       const params = new URLSearchParams({
         locale: window.MrzhI18n.language(),
-        page: String(Number.isFinite(requestedPage) ? Math.max(1, Math.trunc(requestedPage)) : 1)
+        page: String(Number.isFinite(requestedPage) ? Math.max(1, Math.trunc(requestedPage)) : 1),
+        status: history ? "history" : "active"
       });
-      if (date) params.set("date", date);
+      if (history && date) params.set("date", date);
       const payload = await request(`/api/admin/daily-vote?${params}`);
-      renderDailyVoteAdmin(payload);
-      setText("daily-vote-status", window.MrzhI18n.t("记录已载入"));
+      renderDailyVoteAdmin(payload, mode);
+      setText(history ? "daily-vote-history-status" : "daily-vote-status", window.MrzhI18n.t("记录已载入"));
     } catch (error) {
-      setText("daily-vote-status", error.message);
+      setText(history ? "daily-vote-history-status" : "daily-vote-status", error.message);
     } finally {
       state.dailyVoteLoading = false;
     }
@@ -1695,7 +1729,7 @@
         body: JSON.stringify(payload)
       });
       closeDailyVoteEditor();
-      await loadDailyVoteAdmin(byId("daily-vote-date").value);
+      await loadDailyVoteAdmin("", 1, "active");
     } catch (error) {
       setText("daily-vote-editor-feedback", localizeDailyVoteError(error));
     }
@@ -1705,7 +1739,7 @@
     if (!(await showAppConfirm(window.MrzhI18n.t("确认删除选中的日常事项吗？删除后无法恢复。"), { title: "删除选中记录", danger: true }))) return;
     try {
       await request(`/api/admin/daily-vote/${encodeURIComponent(id)}`, { method: "DELETE" });
-      await loadDailyVoteAdmin(byId("daily-vote-date").value);
+      await loadDailyVoteAdmin("", 1, "active");
     } catch (error) {
       setText("daily-vote-status", error.message);
     }
@@ -1720,10 +1754,10 @@
     try {
       const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
       const result = await request(`/api/admin/daily-vote${suffix}`, { method: "DELETE" });
-      setText("daily-vote-status", window.MrzhI18n.format("已清空 {count} 条记录。", { count: result.deleted || 0 }));
-      await loadDailyVoteAdmin(date);
+      setText("daily-vote-history-status", window.MrzhI18n.format("已清空 {count} 条记录。", { count: result.deleted || 0 }));
+      await loadDailyVoteAdmin(date, 1, "history");
     } catch (error) {
-      setText("daily-vote-status", error.message);
+      setText("daily-vote-history-status", error.message);
     }
   }
 
@@ -2614,12 +2648,63 @@
     ) {
       loadTechnologyHistory();
     }
-    if (resolved === "daily-vote" && canView(resolved)) {
-      loadDailyVoteAdmin(byId("daily-vote-date")?.value || "");
+  }
+
+  function mountVoteAdminCards() {
+    const move = (selector, hostId, removeViewAttribute = false) => {
+      const source = document.querySelector(selector);
+      const host = byId(hostId);
+      if (!source || !host || source.parentElement === host) return source;
+      if (removeViewAttribute) source.removeAttribute("data-admin-view");
+      host.append(source);
+      return source;
+    };
+    move(
+      '.config-form[data-config-section="technology"]',
+      "vote-management-technology-host"
+    );
+    move(
+      "#daily-vote-management-admin",
+      "vote-management-daily-host",
+      true
+    );
+    move(
+      ".technology-history[data-admin-view=\"technology-history\"]",
+      "vote-history-technology-host",
+      true
+    );
+
+    for (const card of document.querySelectorAll("[data-vote-management-card]")) {
+      if (card.dataset.voteCardBound) continue;
+      card.dataset.voteCardBound = "true";
+      card.addEventListener("toggle", () => {
+        if (!card.open) return;
+        if (card.dataset.voteManagementCard === "daily-vote") {
+          void loadDailyVoteAdmin("", 1, "active");
+        }
+      });
+    }
+    for (const card of document.querySelectorAll("[data-vote-history-card]")) {
+      if (card.dataset.voteCardBound) continue;
+      card.dataset.voteCardBound = "true";
+      card.addEventListener("toggle", () => {
+        if (!card.open) return;
+        if (card.dataset.voteHistoryCard === "technology") {
+          state.technologyHistoryLoaded = false;
+          void loadTechnologyHistory();
+        } else {
+          void loadDailyVoteAdmin(
+            byId("daily-vote-history-date")?.value || "",
+            1,
+            "history"
+          );
+        }
+      });
     }
   }
 
   function render(data, fillSections = []) {
+    mountVoteAdminCards();
     state.bootstrap = data;
     document.documentElement.dataset.timezone =
       data.configBundle?.campConfig?.timezone || "Asia/Shanghai";
@@ -2705,7 +2790,7 @@
     }
     byId("clear-rate-limits").disabled = !hasPermission("admin:history");
     byId("clear-run-history").disabled = !hasPermission("admin:history");
-    for (const control of document.querySelectorAll("#delete-daily-vote-date, #delete-daily-vote-all")) {
+    for (const control of document.querySelectorAll("#delete-daily-vote-history-date, #delete-daily-vote-history-all")) {
       control.disabled = !hasPermission("admin:daily-vote");
     }
     const canManageTechnologyHistory = hasPermission("technology-history:manage");
@@ -4352,21 +4437,45 @@
   byId("daily-vote-editor")?.addEventListener("submit", saveDailyVoteFromEditor);
   byId("daily-vote-config-form")?.addEventListener("submit", saveDailyVoteConfig);
   byId("refresh-daily-vote")?.addEventListener("click", () =>
-    loadDailyVoteAdmin(byId("daily-vote-date").value, 1)
+    loadDailyVoteAdmin("", 1, "active")
   );
   byId("daily-vote-prev")?.addEventListener("click", () =>
-    loadDailyVoteAdmin(byId("daily-vote-date").value, state.dailyVotePage - 1)
+    loadDailyVoteAdmin("", state.dailyVotePage - 1, "active")
   );
   byId("daily-vote-next")?.addEventListener("click", () =>
-    loadDailyVoteAdmin(byId("daily-vote-date").value, state.dailyVotePage + 1)
+    loadDailyVoteAdmin("", state.dailyVotePage + 1, "active")
   );
   byId("daily-vote-jump-button")?.addEventListener("click", () =>
-    loadDailyVoteAdmin(byId("daily-vote-date").value, Number(byId("daily-vote-jump").value))
+    loadDailyVoteAdmin("", Number(byId("daily-vote-jump").value), "active")
   );
-  byId("delete-daily-vote-date")?.addEventListener("click", () =>
-    deleteDailyVoteHistoryAdmin(byId("daily-vote-date").value)
+  byId("refresh-daily-vote-history")?.addEventListener("click", () =>
+    loadDailyVoteAdmin(byId("daily-vote-history-date").value, 1, "history")
   );
-  byId("delete-daily-vote-all")?.addEventListener("click", () =>
+  byId("daily-vote-history-prev")?.addEventListener("click", () =>
+    loadDailyVoteAdmin(
+      byId("daily-vote-history-date").value,
+      state.dailyVoteHistoryPage - 1,
+      "history"
+    )
+  );
+  byId("daily-vote-history-next")?.addEventListener("click", () =>
+    loadDailyVoteAdmin(
+      byId("daily-vote-history-date").value,
+      state.dailyVoteHistoryPage + 1,
+      "history"
+    )
+  );
+  byId("daily-vote-history-jump-button")?.addEventListener("click", () =>
+    loadDailyVoteAdmin(
+      byId("daily-vote-history-date").value,
+      Number(byId("daily-vote-history-jump").value),
+      "history"
+    )
+  );
+  byId("delete-daily-vote-history-date")?.addEventListener("click", () =>
+    deleteDailyVoteHistoryAdmin(byId("daily-vote-history-date").value)
+  );
+  byId("delete-daily-vote-history-all")?.addEventListener("click", () =>
     deleteDailyVoteHistoryAdmin("")
   );
   byId("public-content-locale").addEventListener("change", (event) => {

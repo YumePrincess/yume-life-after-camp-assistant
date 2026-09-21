@@ -2188,6 +2188,56 @@
     Object.assign(translations[language], additions);
   }
 
+  const voteAdminTranslations = {
+    en: {
+      "VOTE": "VOTE",
+      "投票管理": "Vote management",
+      "投票历史": "Vote history",
+      "科技目录、投票与固定科技": "Technology catalog, voting and fixed technology",
+      "日常投票事项历史": "Daily voting history",
+      "点击展开": "Click to expand",
+      "这里只显示新增及尚未结束的事项，每页显示 10 条并支持跳页。": "Only new and unfinished items are shown; 10 per page with page jumping.",
+      "仅显示已结束的日常投票与抽签事项；每页显示 10 条，支持按日期查询和跳页。": "Only ended daily polls and draws are shown; 10 per page with date search and page jumping.",
+      "暂无已结束日常投票事项记录。": "No ended daily voting records."
+    },
+    fr: {
+      "VOTE": "VOTE",
+      "投票管理": "Gestion des votes",
+      "投票历史": "Historique des votes",
+      "科技目录、投票与固定科技": "Catalogue technologique, votes et technologies fixes",
+      "日常投票事项历史": "Historique des votes du jour",
+      "点击展开": "Cliquer pour développer",
+      "这里只显示新增及尚未结束的事项，每页显示 10 条并支持跳页。": "Seuls les nouveaux sujets et ceux non terminés sont affichés ; 10 par page avec navigation directe.",
+      "仅显示已结束的日常投票与抽签事项；每页显示 10 条，支持按日期查询和跳页。": "Seuls les sondages et tirages terminés sont affichés ; 10 par page avec recherche par date et navigation directe.",
+      "暂无已结束日常投票事项记录。": "Aucun vote du jour terminé."
+    },
+    ja: {
+      "VOTE": "VOTE",
+      "投票管理": "投票管理",
+      "投票历史": "投票履歴",
+      "科技目录、投票与固定科技": "技術カタログ・投票・固定技術",
+      "日常投票事项历史": "日常投票履歴",
+      "点击展开": "クリックして展開",
+      "这里只显示新增及尚未结束的事项，每页显示 10 条并支持跳页。": "新規および未終了の項目のみ表示します。1ページ10件でページ移動に対応します。",
+      "仅显示已结束的日常投票与抽签事项；每页显示 10 条，支持按日期查询和跳页。": "終了した日常投票・抽選のみ表示します。1ページ10件、日付検索とページ移動に対応します。",
+      "暂无已结束日常投票事项记录。": "終了した日常投票の記録はありません。"
+    },
+    "zh-tw": {
+      "VOTE": "VOTE",
+      "投票管理": "投票管理",
+      "投票历史": "投票歷史",
+      "科技目录、投票与固定科技": "科技目錄、投票與固定科技",
+      "日常投票事项历史": "日常投票事項歷史",
+      "点击展开": "點擊展開",
+      "这里只显示新增及尚未结束的事项，每页显示 10 条并支持跳页。": "僅顯示新增及尚未結束的事項，每頁顯示 10 筆並支援跳頁。",
+      "仅显示已结束的日常投票与抽签事项；每页显示 10 条，支持按日期查询和跳页。": "僅顯示已結束的日常投票與抽籤事項，每頁顯示 10 筆，支援按日期查詢與跳頁。",
+      "暂无已结束日常投票事项记录。": "暫無已結束的日常投票事項記錄。"
+    }
+  };
+  for (const [language, additions] of Object.entries(voteAdminTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+
   const identityTranslations = {
     en: {
       "身份识别码（必填）": "Identity code (required)",

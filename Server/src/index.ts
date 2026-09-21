@@ -1276,10 +1276,15 @@ async function handleAdminApi(
     }
     const kindValue = params.get("kind");
     const kind = kindValue === "poll" || kindValue === "draw" ? kindValue : undefined;
+    const statusValue = params.get("status");
+    const status = statusValue === "active" || statusValue === "history"
+      ? statusValue
+      : undefined;
     const pageValue = Number(params.get("page") ?? 1);
     const result = await listAdminDailyVoteItems(env, {
       date,
       kind,
+      status,
       page: Number.isFinite(pageValue) ? pageValue : 1
     });
     return json({

@@ -6,10 +6,10 @@
     <link rel="icon" href="https://www.yume.zone/img/logo.png" />
     <meta name="theme-color" content="#15221f" />
     <title>管理后台 · 明日之后“愿”营地助手</title>
-    <link rel="stylesheet" href="/app.css?v=20260921-task-weekdays" />
+    <link rel="stylesheet" href="/app.css?v=20260921-beta175" />
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/i18n.js?v=20260921-task-weekdays" defer></script>
-    <script src="/js/admin.js?v=20260921-task-weekdays" defer></script>
+    <script src="/js/i18n.js?v=20260921-beta175" defer></script>
+    <script src="/js/admin.js?v=20260921-beta175" defer></script>
   </head>
   <body class="admin-page">
     <div class="ambient ambient-a"></div>
@@ -47,11 +47,10 @@
             <a class="admin-nav-item" href="#plugins" data-nav-target="plugins" hidden>Workers 插件</a>
             <a class="admin-nav-item" href="#smtp" data-nav-target="smtp" hidden>SMTP 发信</a>
           </div>
-          <div class="admin-nav-section" aria-label="TECHNOLOGY">
-            <span class="admin-nav-section-label">TECHNOLOGY</span>
-            <a class="admin-nav-item" href="#technology" data-nav-target="technology" data-worker-plugin="technology" hidden>科技管理</a>
-            <a class="admin-nav-item" href="#technology-history" data-nav-target="technology-history" data-worker-plugin="technology" hidden>科技投票历史</a>
-            <a class="admin-nav-item" href="#daily-vote" data-nav-target="daily-vote" hidden>日常投票事项</a>
+          <div class="admin-nav-section" aria-label="VOTE">
+            <span class="admin-nav-section-label">VOTE</span>
+            <a class="admin-nav-item" href="#technology" data-nav-target="technology" data-worker-plugin="technology" hidden>投票管理</a>
+            <a class="admin-nav-item" href="#technology-history" data-nav-target="technology-history" data-worker-plugin="technology" hidden>投票历史</a>
           </div>
           <div class="admin-nav-section" aria-label="ACCESS & MEMBERS">
             <span class="admin-nav-section-label">ACCESS &amp; MEMBERS</span>
@@ -372,6 +371,19 @@
             </section>
           </form>
 
+          <section id="vote-management-shell" class="admin-view vote-admin-shell" data-admin-view="technology" data-worker-plugin="technology" hidden>
+            <div class="vote-admin-card-grid">
+              <details class="vote-admin-card" data-vote-management-card="technology">
+                <summary><span>科技目录、投票与固定科技</span><span class="vote-admin-card-hint">点击展开</span></summary>
+                <div id="vote-management-technology-host" class="vote-admin-card-body"></div>
+              </details>
+              <details class="vote-admin-card" data-vote-management-card="daily-vote">
+                <summary><span>日常投票事项</span><span class="vote-admin-card-hint">点击展开</span></summary>
+                <div id="vote-management-daily-host" class="vote-admin-card-body"></div>
+              </details>
+            </div>
+          </section>
+
           <form class="config-form" data-config-section="technology" data-admin-view="technology" data-worker-plugin="technology" hidden>
             <section class="panel technology-panel">
               <div class="section-heading">
@@ -506,6 +518,51 @@
             </section>
           </form>
 
+          <section id="vote-history-shell" class="admin-view vote-admin-shell" data-admin-view="technology-history" data-worker-plugin="technology" hidden>
+            <div class="vote-admin-card-grid">
+              <details class="vote-admin-card" data-vote-history-card="technology">
+                <summary><span>科技投票历史</span><span class="vote-admin-card-hint">点击展开</span></summary>
+                <div id="vote-history-technology-host" class="vote-admin-card-body"></div>
+              </details>
+              <details class="vote-admin-card" data-vote-history-card="daily-vote">
+                <summary><span>日常投票事项历史</span><span class="vote-admin-card-hint">点击展开</span></summary>
+                <div id="vote-history-daily-host" class="vote-admin-card-body">
+                  <section id="daily-vote-history-admin" class="panel daily-vote-admin history-daily-vote-admin" aria-labelledby="daily-vote-history-admin-title">
+                    <div class="section-heading">
+                      <div>
+                        <p class="eyebrow">DAILY VOTE ARCHIVE</p>
+                        <h1 id="daily-vote-history-admin-title">日常投票事项历史</h1>
+                        <p class="section-intro">仅显示已结束的日常投票与抽签事项；每页显示 10 条，支持按日期查询和跳页。</p>
+                      </div>
+                    </div>
+                    <div class="technology-history-toolbar daily-vote-toolbar">
+                      <div class="technology-history-query">
+                        <label class="field technology-history-date-field">
+                          <span>按日期查询</span>
+                          <input id="daily-vote-history-date" type="date" />
+                        </label>
+                        <div class="daily-vote-toolbar-actions">
+                          <button id="refresh-daily-vote-history" class="button button-quiet" type="button">查询</button>
+                          <button id="delete-daily-vote-history-date" class="button button-danger" type="button">清空当天历史</button>
+                          <button id="delete-daily-vote-history-all" class="button button-danger button-danger-quiet" type="button">清空全部历史</button>
+                        </div>
+                        <span id="daily-vote-history-status" class="muted" aria-live="polite"></span>
+                      </div>
+                    </div>
+                    <div id="daily-vote-history-admin-list" class="daily-vote-admin-list"></div>
+                    <div class="pagination daily-vote-pagination">
+                      <button id="daily-vote-history-prev" class="button button-quiet" type="button">上一页</button>
+                      <span id="daily-vote-history-page">1 / 1</span>
+                      <label class="jump-field"><span>跳至</span><input id="daily-vote-history-jump" type="number" min="1" value="1" /></label>
+                      <button id="daily-vote-history-jump-button" class="button button-quiet" type="button">跳页</button>
+                      <button id="daily-vote-history-next" class="button button-quiet" type="button">下一页</button>
+                    </div>
+                  </section>
+                </div>
+              </details>
+            </div>
+          </section>
+
           <section class="panel admin-view technology-history" data-admin-view="technology-history" data-worker-plugin="technology" aria-labelledby="technology-history-title" hidden>
             <div class="technology-history-heading">
               <div>
@@ -564,12 +621,12 @@
             <p id="technology-history-empty" class="empty-state">暂无已归档的历史投票结果。</p>
           </section>
 
-          <section class="panel admin-view daily-vote-admin" data-admin-view="daily-vote" aria-labelledby="daily-vote-admin-title" hidden>
+          <section id="daily-vote-management-admin" class="panel daily-vote-admin" aria-labelledby="daily-vote-admin-title" hidden>
             <div class="section-heading">
               <div>
                 <p class="eyebrow">DAILY VOTING</p>
                 <h1 id="daily-vote-admin-title">日常投票事项</h1>
-                <p class="section-intro">创建投票或抽签事项，默认显示全部未结束事项和最近10条已结束事项；按日期查询时每页显示10条。</p>
+                <p class="section-intro">创建投票或抽签事项；这里只显示新增及尚未结束的事项，每页显示 10 条并支持跳页。</p>
               </div>
               <div class="action-row">
                 <button id="daily-vote-new-poll" class="button button-primary" type="button">新建投票</button>
@@ -578,14 +635,8 @@
             </div>
             <div class="technology-history-toolbar daily-vote-toolbar">
               <div class="technology-history-query">
-                <label class="field technology-history-date-field">
-                  <span>按日期查询</span>
-                  <input id="daily-vote-date" type="date" />
-                </label>
                 <div class="daily-vote-toolbar-actions">
-                  <button id="refresh-daily-vote" class="button button-quiet" type="button">查询</button>
-                  <button id="delete-daily-vote-date" class="button button-danger" type="button">清空当天历史</button>
-                  <button id="delete-daily-vote-all" class="button button-danger button-danger-quiet" type="button">清空全部历史</button>
+                  <button id="refresh-daily-vote" class="button button-quiet" type="button">刷新</button>
                 </div>
                 <span id="daily-vote-status" class="muted" aria-live="polite"></span>
               </div>

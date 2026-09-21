@@ -42,12 +42,15 @@ export async function loadConfig(options = {}) {
     MAC_ROOT,
     config.vision.pixelProbeBinary
   );
-  if (typeof config.vision.imageMaskBinary === "string") {
-    config.vision.imageMaskBinary = resolve(
-      MAC_ROOT,
-      config.vision.imageMaskBinary
-    );
-  }
+  // Older installed runtimes predate the weekly-activity avatar mask. Keep
+  // those configs usable when the bundled helper already exists.
+  config.vision.imageMaskBinary = resolve(
+    MAC_ROOT,
+    typeof config.vision.imageMaskBinary === "string" &&
+      config.vision.imageMaskBinary.trim()
+      ? config.vision.imageMaskBinary
+      : "./bin/mrzh-image-mask"
+  );
   if (typeof config.localVisionModel?.model === "string") {
     config.localVisionModel.model = resolveConfiguredPath(
       config.localVisionModel.model

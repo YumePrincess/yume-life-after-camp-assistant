@@ -245,6 +245,19 @@ actor RuntimeService {
                 vision["prewarmTimeoutSeconds"] = 45
                 changed = true
             }
+            // Weekly-activity masking was added after some Runtime/current
+            // configs had already been created. Preserve custom paths, but
+            // repair the missing default so an App update can use the bundled
+            // helper immediately.
+            if let imageMaskBinary = vision["imageMaskBinary"] as? String {
+                if imageMaskBinary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    vision["imageMaskBinary"] = "./bin/mrzh-image-mask"
+                    changed = true
+                }
+            } else {
+                vision["imageMaskBinary"] = "./bin/mrzh-image-mask"
+                changed = true
+            }
             for key in ["fastTimeoutSeconds", "accurateTimeoutSeconds", "memberTableTimeoutSeconds"] {
                 if let timeout = vision[key] as? NSNumber, timeout.doubleValue <= 2 {
                     vision[key] = 3

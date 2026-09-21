@@ -259,10 +259,8 @@ export class Vision {
   }
 
   async maskImage(imagePath, region, label = "masked", signal) {
-    const binary = this.config.vision?.imageMaskBinary;
-    if (!binary) {
-      throw new Error("VISION_IMAGE_MASK_BINARY_MISSING: 未配置图片遮罩工具");
-    }
+    const binary = this.config.vision?.imageMaskBinary ||
+      resolve(MAC_ROOT, "bin/mrzh-image-mask");
     await mkdir(this.snapshotDir, { recursive: true });
     const outputPath = resolve(
       this.snapshotDir,
