@@ -1087,8 +1087,9 @@
     }
   }
 
-  function historyTechnologyItem(item, tag = "article") {
-    const card = create(tag, "technology-history-tech");
+  function historyTechnologyItem(item, tag = "article", source = "") {
+    const sourceClass = source ? ` technology-result-${source}` : "";
+    const card = create(tag, `technology-history-tech${sourceClass}`);
     const icon = document.createElement(item.iconUrl ? "img" : "span");
     icon.className = "technology-history-tech-icon";
     if (item.iconUrl) {
@@ -1108,7 +1109,7 @@
       root.append(create("p", "technology-history-none", emptyText));
       return;
     }
-    for (const item of items) root.append(historyTechnologyItem(item));
+    for (const item of items) root.append(historyTechnologyItem(item, "article", "fixed"));
   }
 
   function renderHistoryResultSlots(root, items, fixedKeys) {
@@ -1234,7 +1235,7 @@
           )
         );
         row.append(
-          historyTechnologyItem(item, "span"),
+          historyTechnologyItem(item, "span", "voted"),
           create(
             "strong",
             "technology-history-vote-count",

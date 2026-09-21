@@ -61,6 +61,11 @@
     "identity_password_required",
     "identity_login_failed"
   ]);
+
+  function isIdentitySessionInvalidError(error) {
+    return IDENTITY_SESSION_INVALID_CODES.has(error?.code) ||
+      [401, 403, 409].includes(Number(error?.status));
+  }
   const ACTIVE_IDENTITY_CONFLICT =
     "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。";
   const EXPIRED_IDENTITY_CONFLICT =
@@ -175,7 +180,7 @@
       persistIdentitySession({ ...session, ...account, password: session.password });
       state.identitySessionRefreshedAt = Date.now();
     } catch (error) {
-      if (IDENTITY_SESSION_INVALID_CODES.has(error.code)) {
+      if (isIdentitySessionInvalidError(error)) {
         clearIdentitySession({ openPanel: state.dailyPanel === "identity" });
       }
       // Keep the cached session on transient failures and retry on the next interval.
@@ -914,6 +919,9 @@
     const root = target;
     if (!root) return;
     root.replaceChildren();
+    const fixedKeys = new Set(
+      (summary.fixedTechnologies || []).map((item) => item.key)
+    );
     for (const lane of ["core", "general"]) {
       const row = create("section", "vote-selection-row");
       row.append(
@@ -929,9 +937,14 @@
       const technologies = summary.projectedPlan?.[lane] || [];
       for (let index = 0; index < 6; index += 1) {
         const option = technologies[index];
+        const sourceClass = option
+          ? fixedKeys.has(option.key)
+            ? " is-fixed"
+            : " is-voted"
+          : "";
         const slot = create(
           "span",
-          `vote-selection-slot${option ? " is-filled" : ""}`
+          `vote-selection-slot${option ? " is-filled" : ""}${sourceClass}`
         );
         if (option?.iconUrl) {
           const image = document.createElement("img");
@@ -1062,10 +1075,14 @@
     if (description.childElementCount) card.append(description);
     const meta = create("div", "daily-vote-meta");
     meta.append(
-      create("span", "daily-vote-meta-item", window.MrzhI18n.format("开放 {start} · 截止 {end}", {
-        start: dailyDate(item.startAt),
-        end: dailyDate(item.endAt)
-      }))
+      create("span", "daily-vote-meta-item", window.MrzhI18n.format(
+        "投票时间 {start} - {end} ({timezone})",
+        {
+          start: formatVoteDateTime(item.startAt),
+          end: formatVoteDateTime(item.endAt),
+          timezone: configuredTimezone()
+        }
+      ))
     );
     if (item.kind === "poll") {
       meta.append(create("span", "daily-vote-meta-item", window.MrzhI18n.format("每人可选 {count} 项", {
@@ -1148,7 +1165,7 @@
         const result = create("div", "daily-history-result-list");
         for (const tech of [...(item.projectedPlan?.core || []), ...(item.projectedPlan?.general || [])]) {
           if (fixedKeys.has(tech.key)) continue;
-          result.append(create("span", "daily-history-result", window.MrzhI18n.format("{name} · {count} 票", {
+          result.append(create("span", "daily-history-result is-voted", window.MrzhI18n.format("{name} · {count} 票", {
             name: tech.name,
             count: (item.options || []).find((option) => option.key === tech.key)?.votes || 0
           })));
@@ -1181,9 +1198,15 @@
         const card = create("article", "daily-history-card");
         const title = create("div", "daily-history-card-title");
         renderRichBlocks(title, item.titleBlocks, window.MrzhI18n.t("未命名事项"));
-        card.append(title, create("small", "muted", window.MrzhI18n.format("截止 {date} · 参与 {count} 人", {
-          date: dailyDate(item.endAt), count: item.participantCount || 0
-        })));
+        card.append(title, create("small", "muted", window.MrzhI18n.format(
+          "投票时间 {start} - {end} ({timezone}) · 参与 {count} 人",
+          {
+            start: formatVoteDateTime(item.startAt),
+            end: formatVoteDateTime(item.endAt),
+            timezone: configuredTimezone(),
+            count: item.participantCount || 0
+          }
+        )));
         if (kind === "poll") {
           const result = create("div", "daily-history-result-list");
           for (const option of item.options || []) {
@@ -1440,6 +1463,32 @@
       minute: "2-digit",
       hour12: false
     }).format(new Date(value));
+  }
+
+  function formatVoteDateTime(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    try {
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: configuredTimezone(),
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23"
+        })
+          .formatToParts(date)
+          .filter((part) => part.type !== "literal")
+          .map((part) => [part.type, part.value])
+      );
+      const hour = parts.hour === "24" ? "00" : parts.hour;
+      return `${parts.year}/${parts.month}/${parts.day} ${hour}:${parts.minute}`;
+    } catch (_) {
+      return formatDate(value);
+    }
   }
 
   function formatIdentityExpiry(value, timezone) {

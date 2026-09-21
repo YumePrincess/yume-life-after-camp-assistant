@@ -2642,7 +2642,13 @@ async function buildAdminBootstrap(
     },
     voteSummary: canTechnology
       ? localizeVoteSummary(voteSummary, locale)
-      : { pollDate: voteSummary.pollDate, ballotCount: 0, options: [], projectedPlan: { core: [], general: [] } },
+      : {
+          pollDate: voteSummary.pollDate,
+          ballotCount: 0,
+          options: [],
+          fixedTechnologies: [],
+          projectedPlan: { core: [], general: [] }
+        },
     voteBallots,
     heartbeats: safeHeartbeats,
     recentRuns: recentRuns
@@ -2678,6 +2684,7 @@ async function buildAdminBootstrap(
 
 function localizeVoteSummary<T extends {
   options: Array<ReturnType<typeof localizeTechnology>>;
+  fixedTechnologies: Array<ReturnType<typeof localizeTechnology>>;
   projectedPlan: {
     core: Array<ReturnType<typeof localizeTechnology>>;
     general: Array<ReturnType<typeof localizeTechnology>>;
@@ -2686,6 +2693,9 @@ function localizeVoteSummary<T extends {
   return {
     ...summary,
     options: summary.options.map((item) => localizeTechnology(item, locale)),
+    fixedTechnologies: summary.fixedTechnologies.map((item) =>
+      localizeTechnology(item, locale)
+    ),
     projectedPlan: {
       core: summary.projectedPlan.core.map((item) =>
         localizeTechnology(item, locale)
@@ -2701,12 +2711,7 @@ function localizeTechnologyVoteHistory(
   history: TechnologyVoteHistory,
   locale: unknown
 ): TechnologyVoteHistory {
-  return {
-    ...localizeVoteSummary(history, locale),
-    fixedTechnologies: history.fixedTechnologies.map((item) =>
-      localizeTechnology(item, locale)
-    )
-  };
+  return localizeVoteSummary(history, locale);
 }
 
 function isDateKey(value: string): boolean {

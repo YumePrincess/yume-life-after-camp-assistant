@@ -1372,6 +1372,10 @@ h2 {
   color: var(--accent);
 }
 
+.daily-history-result.is-voted {
+  border-color: rgba(116, 185, 255, 0.58);
+}
+
 .daily-history-result .daily-rich-text {
   margin: 0;
 }
@@ -1438,9 +1442,15 @@ h2 {
   background: rgba(255, 255, 255, 0.025);
 }
 
-.vote-selection-slot.is-filled {
+.vote-selection-slot.is-filled.is-fixed {
   border-style: solid;
   border-color: rgba(235, 184, 97, 0.62);
+}
+
+.vote-selection-slot.is-filled.is-voted {
+  border-style: solid;
+  border-color: color-mix(in srgb, #74b9ff 72%, var(--line));
+  box-shadow: 0 0 14px color-mix(in srgb, #74b9ff 10%, transparent);
 }
 
 .vote-selection-slot img {
@@ -3851,16 +3861,18 @@ select option {
   place-items: center;
 }
 
-.technology-fixed-slot[data-filled="true"] {
+.technology-fixed-slot[data-filled="true"][data-source="fixed"] {
   border-style: solid;
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  border-color: rgba(235, 184, 97, 0.72);
+  box-shadow: 0 0 14px rgba(235, 184, 97, 0.1);
 }
 
-.technology-fixed-slot[data-source="vote"] {
-  border-color: color-mix(in srgb, #74b9ff 58%, var(--line));
+.technology-fixed-slot[data-filled="true"][data-source="vote"] {
+  border-style: solid;
+  border-color: rgba(116, 185, 255, 0.78);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 15%, transparent),
-    0 0 18px color-mix(in srgb, #74b9ff 9%, transparent);
+    0 0 18px rgba(116, 185, 255, 0.1);
 }
 
 .technology-fixed-slot img {
@@ -4258,6 +4270,14 @@ select option {
   border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
   border-radius: 12px;
   background: color-mix(in srgb, var(--panel-strong) 54%, transparent);
+}
+
+.technology-history-tech.technology-result-fixed {
+  border-color: rgba(235, 184, 97, 0.56);
+}
+
+.technology-history-tech.technology-result-voted {
+  border-color: rgba(116, 185, 255, 0.58);
 }
 
 .technology-history-tech-icon {

@@ -124,6 +124,9 @@ export async function buildVoteSummary(
     voteLimit: bundle.technologyConfig.voteLimit,
     options,
     ballotCount: ballots.length,
+    fixedTechnologies: bundle.technologyConfig.catalog.filter((item) =>
+      fixed.has(item.key)
+    ),
     projectedPlan: {
       core: projectedPlan.core,
       general: projectedPlan.general

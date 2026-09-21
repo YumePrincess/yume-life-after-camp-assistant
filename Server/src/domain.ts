@@ -185,6 +185,7 @@ export interface VoteSummary {
   voteLimit: number;
   options: VoteOption[];
   ballotCount: number;
+  fixedTechnologies: TechnologyDefinition[];
   projectedPlan: {
     core: TechnologyDefinition[];
     general: TechnologyDefinition[];

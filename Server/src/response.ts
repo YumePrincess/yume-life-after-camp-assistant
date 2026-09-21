@@ -61,7 +61,15 @@ export async function fetchAsset(env: Env, request: Request, pathname: string): 
   const assetUrl = new URL(request.url);
   assetUrl.pathname = pathname;
   assetUrl.search = "";
-  return env.ASSETS.fetch(new Request(assetUrl, { method: "GET", headers: request.headers }));
+  const response = await env.ASSETS.fetch(
+    new Request(assetUrl, { method: "GET", headers: request.headers })
+  );
+  if (pathname.endsWith(".html")) {
+    const headers = new Headers(response.headers);
+    headers.set("Cache-Control", "no-store");
+    return new Response(response.body, { status: response.status, headers });
+  }
+  return response;
 }
 
 export function publicCors(request: Request): Headers {
