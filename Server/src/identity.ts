@@ -265,6 +265,9 @@ function cleanPlayerName(value: unknown, required = true): string {
   return result;
 }
 
+const PENDING_IDENTITY_REQUEST_MESSAGE =
+  "已有身份识别码申请待审批，请等待当前申请完成后再提交其他申请";
+
 async function assertNoPendingIdentityApplication(
   env: Env,
   input: { email: string; playerName: string; excludeId?: string }
@@ -289,8 +292,43 @@ async function assertNoPendingIdentityApplication(
           identityPlayerNameKey(row.player_name) === playerNameKey))
   );
   if (pending) {
-    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
+    throw new Error(PENDING_IDENTITY_REQUEST_MESSAGE);
   }
+}
+
+async function assertNoPendingIdentityRequest(
+  env: Env,
+  identityCodeId: string,
+  options: { excludeEmailChangeGroupId?: string } = {}
+): Promise<void> {
+  const application = await env.DB.prepare(
+    `SELECT id FROM identity_code_applications
+     WHERE identity_code_id = ? AND status = 'pending' LIMIT 1`
+  ).bind(identityCodeId).first<{ id: string }>();
+  if (application) throw new Error(PENDING_IDENTITY_REQUEST_MESSAGE);
+
+  const challengeExclusion = options.excludeEmailChangeGroupId
+    ? " AND group_id != ?"
+    : "";
+  const challengeBindings: unknown[] = [identityCodeId, now()];
+  if (options.excludeEmailChangeGroupId) {
+    challengeBindings.push(options.excludeEmailChangeGroupId);
+  }
+  const emailChange = await env.DB.prepare(
+    `SELECT id FROM identity_verification_challenges
+     WHERE identity_code_id = ? AND purpose = 'email_change'
+       AND consumed_at IS NULL AND expires_at > ?${challengeExclusion}
+     LIMIT 1`
+  )
+    .bind(...challengeBindings)
+    .first<{ id: string }>();
+  if (emailChange) throw new Error(PENDING_IDENTITY_REQUEST_MESSAGE);
+
+  const profileChange = await env.DB.prepare(
+    `SELECT id FROM identity_profile_change_requests
+     WHERE identity_code_id = ? AND status = 'pending' LIMIT 1`
+  ).bind(identityCodeId).first<{ id: string }>();
+  if (profileChange) throw new Error(PENDING_IDENTITY_REQUEST_MESSAGE);
 }
 
 async function assertNoOtherActiveIdentityCode(
@@ -622,12 +660,13 @@ export async function renewalPreview(
   canSubmit: boolean;
 }> {
   const { code, application } = await codeAndApplicationForRenewal(env, input);
+  await assertNoPendingIdentityRequest(env, code.id);
   if (code.status === "disabled") throw new Error("身份识别码已被禁用");
   if (!isIdentityRenewalWindowOpen(code.expires_at)) {
     throw new Error("仅可在识别码有效期届满前7天内申请延期");
   }
   if (application.status === "pending") {
-    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
+    throw new Error(PENDING_IDENTITY_REQUEST_MESSAGE);
   }
   return {
     applicationNumber: application.application_number,
@@ -709,6 +748,7 @@ export async function submitRenewal(
   });
   const email = cleanEmail(input.email);
   const playerName = cleanPlayerName(input.playerName);
+  await assertNoPendingIdentityRequest(env, code.id);
   if (code.status === "disabled") throw new Error("身份识别码已被禁用");
   if (!isIdentityRenewalWindowOpen(code.expires_at)) {
     throw new Error("仅可在识别码有效期届满前7天内申请延期");
@@ -726,9 +766,6 @@ export async function submitRenewal(
     playerName,
     excludeId: application.id
   });
-  if (application.request_type === "renewal" && application.status === "pending") {
-    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
-  }
   const submittedAt = now();
   await env.DB.batch([
     env.DB.prepare(
@@ -797,6 +834,7 @@ async function codeForReissue(
     code = codeByValue;
   }
   if (code) {
+    await assertNoPendingIdentityRequest(env, code.id);
     if (email && code.email?.toLowerCase() !== email) {
       throw new Error("填写的信息未指向同一份识别码记录");
     }
@@ -858,7 +896,7 @@ export async function reissuePreview(
   const application = await ensureApplicationForCode(env, code);
   if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
   if (application.status === "pending") {
-    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
+    throw new Error(PENDING_IDENTITY_REQUEST_MESSAGE);
   }
   if (application.status === "rejected") {
     throw new Error("该申请已被拒绝，请重新申请身份识别码");
@@ -889,12 +927,6 @@ export async function submitReissue(
   });
   const application = await ensureApplicationForCode(env, code);
   if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
-  if (
-    application.request_type === "reissue" &&
-    application.status === "pending"
-  ) {
-    throw new Error("相同邮箱或玩家名称已有待审批申请，不能重复提交或申请其他类型");
-  }
   if (
     application.request_type === "reissue" &&
     application.status === "rejected"
@@ -1511,17 +1543,18 @@ async function authenticatedCode(
     throw new Error("旧身份识别码尚未设置密码，请使用忘记密码功能设置密码");
   }
   if (verification.reason === "invalid_password") throw new Error("身份识别码或密码错误");
+  if (verification.reason === "disabled" || verification.reason === "expired") {
+    // A pending reissue temporarily disables the current code. Check the
+    // request state first so follow-up profile changes are blocked by the
+    // same pending-request rule instead of reporting a misleading status.
+    if (typeof input.identityCode === "string" && input.identityCode.trim()) {
+      const code = await codeByPlaintext(env, input.identityCode);
+      if (code) await assertNoPendingIdentityRequest(env, code.id);
+    }
+  }
   if (verification.reason === "disabled") throw new Error("身份识别码已被禁用");
   if (verification.reason === "expired") throw new Error("身份识别码已过期");
   throw new Error("身份识别码无效");
-}
-
-async function assertNoPendingProfileChange(env: Env, identityCodeId: string): Promise<void> {
-  const pending = await env.DB.prepare(
-    `SELECT id FROM identity_profile_change_requests
-     WHERE identity_code_id = ? AND status = 'pending' LIMIT 1`
-  ).bind(identityCodeId).first<{ id: string }>();
-  if (pending) throw new Error("已有资料变更申请待审核，请等待审核完成后再提交");
 }
 
 export async function updateIdentityPlayerName(
@@ -1530,10 +1563,10 @@ export async function updateIdentityPlayerName(
 ): Promise<{ playerName: string; status: "pending" }> {
   const code = await authenticatedCode(env, input);
   const playerName = cleanPlayerName(input.playerName);
+  await assertNoPendingIdentityRequest(env, code.id);
   if (identityPlayerNameKey(playerName) === identityPlayerNameKey(code.player_name)) {
     throw new Error("新的玩家名称不能与当前名称相同");
   }
-  await assertNoPendingProfileChange(env, code.id);
   await assertNoOtherActiveIdentityCode(env, {
     email: code.email,
     playerName,
@@ -1553,7 +1586,7 @@ export async function requestIdentityEmailChange(
 ): Promise<{ changeId: string; expiresAt: string }> {
   const code = await authenticatedCode(env, input);
   if (!code.email) throw new Error("当前识别码没有绑定邮箱，请联系市长人工处理");
-  await assertNoPendingProfileChange(env, code.id);
+  await assertNoPendingIdentityRequest(env, code.id);
   const newEmail = cleanEmail(input.newEmail);
   if (newEmail === code.email.toLowerCase()) throw new Error("新邮箱不能与当前邮箱相同");
   await assertNoOtherActiveIdentityCode(env, {
@@ -1641,7 +1674,9 @@ export async function confirmIdentityEmailChange(
   const code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
     .bind(oldRow.identity_code_id).first<IdentityCodeRow>();
   if (!code) throw new Error("识别码不存在");
-  await assertNoPendingProfileChange(env, code.id);
+  await assertNoPendingIdentityRequest(env, code.id, {
+    excludeEmailChangeGroupId: changeId
+  });
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO identity_profile_change_requests(

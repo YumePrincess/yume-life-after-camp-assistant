@@ -2908,24 +2908,28 @@
       "玩家名称：": "Player name:",
       "识别码：": "Identity code:",
       "邮箱：": "Email:",
+      "有效期：": "Validity:",
       "确认变更": "Confirm change"
     },
     "zh-tw": {
       "玩家名称：": "玩家名稱：",
       "识别码：": "身分識別碼：",
       "邮箱：": "信箱：",
+      "有效期：": "有效期：",
       "确认变更": "確認變更"
     },
     fr: {
       "玩家名称：": "Nom du joueur :",
       "识别码：": "Code d’identité :",
       "邮箱：": "E-mail :",
+      "有效期：": "Validité :",
       "确认变更": "Confirmer la modification"
     },
     ja: {
       "玩家名称：": "プレイヤー名：",
       "识别码：": "本人確認コード：",
       "邮箱：": "メール：",
+      "有效期：": "有効期限：",
       "确认变更": "変更を確認"
     }
   };
@@ -2939,6 +2943,7 @@
       "申请注销身份识别码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。": "Enter an application number, the saved email, or the identity code.",
       "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。": "If the code was issued manually and the saved details are incomplete, contact the mayor for manual assistance.",
       "邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。": "After email verification, cancellation starts and cannot be undone; the identity code becomes invalid immediately.",
+      "正在发送验证码…": "Sending a verification code…",
       "确认注销身份识别码": "Confirm identity-code cancellation",
       "身份识别码已注销，已立即失效。": "The identity code was cancelled and is now invalid."
     },
@@ -2948,6 +2953,7 @@
       "申请注销身份识别码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。": "申請註銷身分識別碼請輸入申請編號、申請時預留的信箱或身分識別碼其中一項。",
       "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。": "若您是透過人工申請且預留資訊不完整，請聯絡市長人工處理。",
       "邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。": "信箱驗證碼通過後將正式進入註銷流程，流程無法撤回，提交註銷後身分識別碼立即失效。",
+      "正在发送验证码…": "正在傳送驗證碼…",
       "确认注销身份识别码": "確認註銷身分識別碼",
       "身份识别码已注销，已立即失效。": "身分識別碼已註銷，現已失效。"
     },
@@ -2957,6 +2963,7 @@
       "申请注销身份识别码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。": "Saisissez un numéro de demande, l’e-mail enregistré ou le code d’identité.",
       "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。": "Si le code a été délivré manuellement avec des informations incomplètes, contactez le maire.",
       "邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。": "Après vérification de l’e-mail, la résiliation démarre et ne peut pas être annulée ; le code devient immédiatement invalide.",
+      "正在发送验证码…": "Envoi du code de vérification…",
       "确认注销身份识别码": "Confirmer la résiliation du code",
       "身份识别码已注销，已立即失效。": "Le code d’identité a été résilié et est maintenant invalide."
     },
@@ -2966,6 +2973,7 @@
       "申请注销身份识别码请输入申请编号、申请时预留的邮箱、身份识别码的其中一项。": "申請番号、登録メールアドレス、本人確認コードのいずれかを入力してください。",
       "如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。": "手動申請で登録情報が不足している場合は、市長へご連絡ください。",
       "邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。": "メール確認後に解約処理が始まり、取り消せません。送信後、コードは直ちに無効になります。",
+      "正在发送验证码…": "確認コードを送信中…",
       "确认注销身份识别码": "本人確認コードの解約を確認",
       "身份识别码已注销，已立即失效。": "本人確認コードを解約しました。現在は無効です。"
     }
@@ -2978,25 +2986,29 @@
       "新密码（12-64位）": "New password (12–64 characters)",
       "验证码（10分钟内有效）": "Verification code (valid for 10 minutes)",
       "密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "Use uppercase, lowercase, a number, and a special character. Avoid common, sequential, or repeated characters, and do not include your identity code, player name, or email username.",
-      "申请更换识别码": "Request code replacement"
+      "申请更换识别码": "Request code replacement",
+      "已有身份识别码申请待审批，请等待当前申请完成后再提交其他申请": "An identity-code request is already awaiting review. Wait for it to finish before submitting another request."
     },
     "zh-tw": {
       "新密码（12-64位）": "新密碼（12–64 個字元）",
       "验证码（10分钟内有效）": "驗證碼（10 分鐘內有效）",
       "密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "密碼需同時包含大寫字母、小寫字母、數字與特殊符號；不可使用常見密碼、連續或重複字元，也不可包含身分識別碼、玩家名稱或信箱使用者名稱。",
-      "申请更换识别码": "申請更換身分識別碼"
+      "申请更换识别码": "申請更換身分識別碼",
+      "已有身份识别码申请待审批，请等待当前申请完成后再提交其他申请": "已有身分識別碼申請待審批，請等待目前申請完成後再提交其他申請。"
     },
     fr: {
       "新密码（12-64位）": "Nouveau mot de passe (12 à 64 caractères)",
       "验证码（10分钟内有效）": "Code de vérification (valable 10 minutes)",
       "密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "Utilisez une majuscule, une minuscule, un chiffre et un caractère spécial. Évitez les mots de passe courants, séquentiels ou répétés, ainsi que le code, le nom ou l’identifiant e-mail.",
-      "申请更换识别码": "Demander le remplacement du code"
+      "申请更换识别码": "Demander le remplacement du code",
+      "已有身份识别码申请待审批，请等待当前申请完成后再提交其他申请": "Une demande liée à ce code d’identité est déjà en attente. Attendez sa fin avant d’en envoyer une autre."
     },
     ja: {
       "新密码（12-64位）": "新しいパスワード（12～64文字）",
       "验证码（10分钟内有效）": "確認コード（10分間有効）",
       "密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "大文字・小文字・数字・特殊記号を含め、一般的なパスワードや連続・反復文字、コード・プレイヤー名・メール名は使用しないでください。",
-      "申请更换识别码": "本人確認コードを交換申請"
+      "申请更换识别码": "本人確認コードを交換申請",
+      "已有身份识别码申请待审批，请等待当前申请完成后再提交其他申请": "この本人確認コードの申請は審査中です。完了するまで別の申請は送信できません。"
     }
   };
   for (const [language, additions] of Object.entries(identityStaticTranslations)) {

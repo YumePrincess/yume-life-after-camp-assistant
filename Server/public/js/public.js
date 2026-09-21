@@ -1416,7 +1416,7 @@
       minute: "2-digit",
       hour12: false
     }).format(new Date(value));
-    return `${window.MrzhI18n.format("有效期至 {date}", { date: formatted })} (${source})`;
+    return `${formatted} (${source})`;
   }
 
   function configuredTimezone() {

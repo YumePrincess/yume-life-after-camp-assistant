@@ -481,7 +481,7 @@
   </form>
 </dialog>
 
-<dialog id="identity-cancellation-dialog" class="identity-profile-dialog">
+<dialog id="identity-cancellation-dialog" class="identity-profile-dialog identity-cancellation-dialog">
   <form id="identity-cancellation-form" class="dialog-card identity-profile-card">
     <div class="section-heading">
       <div>
@@ -502,11 +502,15 @@
         <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
         <li>邮箱验证码验证通过后将正式进入注销流程，该流程无法撤回，提交注销后识别码立即失效。</li>
       </ol>
-      <button id="request-identity-cancellation" class="button button-danger" type="submit">发送验证码</button>
+      <div class="action-row">
+        <button id="request-identity-cancellation" class="button button-primary" type="submit">发送验证码</button>
+      </div>
     </div>
     <div class="identity-cancellation-step" data-cancellation-step="verify" hidden>
       <label class="field"><span>邮箱验证码（10分钟内有效）</span><input id="identity-cancel-otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" /></label>
-      <button id="confirm-identity-cancellation" class="button button-danger" type="submit">确认注销身份识别码</button>
+      <div class="action-row">
+        <button id="confirm-identity-cancellation" class="button button-danger" type="submit">确认注销身份识别码</button>
+      </div>
     </div>
     <p id="identity-cancellation-feedback" class="feedback" role="status"></p>
   </form>
