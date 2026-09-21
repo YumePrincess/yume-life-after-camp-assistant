@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  calibrateMemberName,
   reconcileStaffAssignments,
+  updateMemberDetails,
   updateMemberProfiles
 } from "../src/db";
 
@@ -9,6 +11,7 @@ function createDatabaseRecorder() {
     sql: string;
     args: unknown[];
     run: ReturnType<typeof vi.fn>;
+    all: ReturnType<typeof vi.fn>;
   }> = [];
   const batches: unknown[][] = [];
 
@@ -21,7 +24,8 @@ function createDatabaseRecorder() {
           statement.args = args;
           return statement;
         },
-        run: vi.fn(async () => ({ success: true }))
+        run: vi.fn(async () => ({ success: true })),
+        all: vi.fn(async () => ({ results: [] }))
       };
       prepared.push(statement);
       return statement;
@@ -114,5 +118,92 @@ describe("staff assignments", () => {
       { roleKey: "staff-4", roleName: "#G春之音", memberName: "不在营地的人" }
     ]);
     expect(result.ignored).toBe(2);
+  });
+});
+
+describe("manual member details", () => {
+  it("updates editable fields without changing the member identity or sync metadata", async () => {
+    const prepared: Array<{ sql: string; args: unknown[] }> = [];
+    const updatedMember = {
+      id: "member_123",
+      name: "玩家甲",
+      profession: "采集",
+      manor_level: 31,
+      roommate_name: "玩家乙",
+      camp_title: "新称号",
+      weekly_contribution: 1234,
+      technology_points_used: 5678,
+      material_contribution: 9012,
+      last_seen_at: "2026-09-21T06:00:00.000Z"
+    };
+    const db = {
+      prepare(sql: string) {
+        const statement = {
+          sql,
+          args: [] as unknown[],
+          bind(...args: unknown[]) {
+            statement.args = args;
+            return statement;
+          },
+          run: vi.fn(async () => ({ meta: { changes: 1 } })),
+          first: vi.fn(async () => updatedMember)
+        };
+        prepared.push(statement);
+        return statement;
+      }
+    };
+
+    const result = await updateMemberDetails(
+      { DB: db } as never,
+      {
+        id: "member_123",
+        profession: "采集",
+        manorLevel: 31,
+        roommateName: "玩家乙",
+        campTitle: "新称号",
+        weeklyContribution: 1234,
+        technologyPointsUsed: 5678,
+        materialContribution: 9012
+      }
+    );
+
+    expect(result).toEqual(updatedMember);
+    expect(prepared).toHaveLength(2);
+    expect(prepared[0]?.sql).toContain("SET profession = ?, manor_level = ?");
+    expect(prepared[0]?.sql).toContain("WHERE id = ?");
+    expect(prepared[0]?.sql).not.toMatch(/(?:^|[\s,])name\s*=/);
+    expect(prepared[0]?.args).toEqual([
+      "采集",
+      31,
+      "玩家乙",
+      "新称号",
+      1234,
+      5678,
+      9012,
+      "member_123"
+    ]);
+  });
+});
+
+describe("identity-code member-name calibration", () => {
+  it("uses the active identity display name for decorative-symbol variants", () => {
+    expect(
+      calibrateMemberName("☆椿☆", [{ name: "✨椿✨" }])
+    ).toBe("✨椿✨");
+  });
+
+  it("accepts one long-name OCR typo only when the best match is unique", () => {
+    expect(
+      calibrateMemberName("AlphaX", [{ name: "AlphaY" }, { name: "Bravo" }])
+    ).toBe("AlphaY");
+    expect(
+      calibrateMemberName("AlphaX", [{ name: "AlphaY" }, { name: "AlphaZ" }])
+    ).toBe("AlphaX");
+  });
+
+  it("does not fuzzy-match short names", () => {
+    expect(
+      calibrateMemberName("玩家甲一", [{ name: "玩家甲二" }])
+    ).toBe("玩家甲一");
   });
 });

@@ -17,6 +17,7 @@ import {
   validateTechnologyConfig
 } from "./validate";
 import { zonedDateKey, zonedDateTimeToIso } from "./time";
+import { identityPlayerNameKey } from "./identity-code-utils";
 
 function isoNow(): string {
   return new Date().toISOString();
@@ -623,6 +624,131 @@ export async function listMembers(env: Env, limit = 200): Promise<Record<string,
   return result.results;
 }
 
+const MEMBER_DETAILS_SELECT = `
+  SELECT id, name, profession, manor_level, roommate_name, camp_title,
+         weekly_contribution, technology_points_used, material_contribution,
+         last_seen_at
+  FROM members`;
+
+export type MemberDetailsUpdate = {
+  id: string;
+  profession: string | null;
+  manorLevel: number | null;
+  roommateName: string | null;
+  campTitle: string | null;
+  weeklyContribution: number;
+  technologyPointsUsed: number;
+  materialContribution: number;
+};
+
+export async function getMemberById(
+  env: Env,
+  id: string
+): Promise<Record<string, unknown> | null> {
+  return env.DB.prepare(`${MEMBER_DETAILS_SELECT} WHERE id = ?`)
+    .bind(id)
+    .first<Record<string, unknown>>();
+}
+
+export async function updateMemberDetails(
+  env: Env,
+  input: MemberDetailsUpdate
+): Promise<Record<string, unknown> | null> {
+  const result = await env.DB.prepare(
+    `UPDATE members
+     SET profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
+         weekly_contribution = ?, technology_points_used = ?,
+         material_contribution = ?
+     WHERE id = ?`
+  )
+    .bind(
+      input.profession,
+      input.manorLevel,
+      input.roommateName,
+      input.campTitle,
+      input.weeklyContribution,
+      input.technologyPointsUsed,
+      input.materialContribution,
+      input.id
+    )
+    .run();
+  if (!(result.meta.changes ?? 0)) return null;
+  return getMemberById(env, input.id);
+}
+
+export async function listActiveIdentityPlayerNames(
+  env: Env
+): Promise<Array<{ name: string }>> {
+  const rows = await env.DB.prepare(
+    `SELECT DISTINCT player_name
+     FROM identity_codes
+     WHERE status = 'active'
+       AND player_name IS NOT NULL
+       AND trim(player_name) <> ''
+       AND (expires_at IS NULL OR expires_at > ?)`
+  )
+    .bind(isoNow())
+    .all<{ player_name: string }>();
+  return rows.results.map((row) => ({ name: row.player_name.trim() }));
+}
+
+/**
+ * Prefer the display name owned by an active identity code when the Worker
+ * OCR/source name is the same after Unicode and decorative-symbol cleanup.
+ * A small, unique edit-distance match handles one or two OCR mistakes without
+ * turning an unrelated player into an identity-code player.
+ */
+export function calibrateMemberName(
+  source: string,
+  identityNames: Array<{ name: string }>
+): string {
+  const original = source.trim();
+  if (!original) return original;
+  const candidates = [...new Map(
+    identityNames
+      .map((item) => String(item.name || "").trim())
+      .filter(Boolean)
+      .map((name) => [name, name])
+  ).values()];
+  const sourceKey = identityPlayerNameKey(original);
+  if (!sourceKey) return original;
+  const exact = candidates.filter((name) => identityPlayerNameKey(name) === sourceKey);
+  if (exact.length === 1) return exact[0]!;
+  if (exact.length > 1) return original;
+
+  const fuzzy = candidates
+    .map((name) => ({ name, key: identityPlayerNameKey(name) }))
+    .filter((item) => {
+      const minimumLength = Math.min(sourceKey.length, item.key.length);
+      const maximumDistance =
+        minimumLength >= 10 ? 2 : minimumLength >= 5 ? 1 : 0;
+      return maximumDistance > 0 &&
+        levenshteinDistance(sourceKey, item.key) <= maximumDistance;
+    })
+    .sort(
+      (left, right) =>
+        levenshteinDistance(sourceKey, left.key) -
+          levenshteinDistance(sourceKey, right.key) ||
+        right.key.length - left.key.length
+    );
+  if (!fuzzy.length) return original;
+  const bestDistance = levenshteinDistance(sourceKey, fuzzy[0]!.key);
+  const tied = fuzzy.filter(
+    (item) => levenshteinDistance(sourceKey, item.key) === bestDistance
+  );
+  return tied.length === 1 ? tied[0]!.name : original;
+}
+
+export function calibrateMemberNames<T extends { name: string }>(
+  rows: T[],
+  identityNames: Array<{ name: string }>
+): T[] {
+  return rows.map((row) => ({
+    ...row,
+    name: calibrateMemberName(row.name, identityNames)
+  }));
+}
+
 export type MemberScanSummary = {
   expectedCount: number;
   recognizedCount: number;
@@ -705,7 +831,9 @@ export async function replaceMemberSnapshot(
   }
 ): Promise<void> {
   const statements: D1PreparedStatement[] = [];
-  for (const member of input.members) {
+  const identityNames = await listActiveIdentityPlayerNames(env);
+  const calibratedMembers = calibrateMemberNames(input.members, identityNames);
+  for (const member of calibratedMembers) {
     const memberId = await stableMemberId(member.name);
     statements.push(
       env.DB.prepare(
@@ -791,11 +919,13 @@ export async function updateContributionSnapshot(
     }>;
   }
 ): Promise<ContributionReconciliation> {
+  const identityNames = await listActiveIdentityPlayerNames(env);
+  const calibratedMembers = calibrateMemberNames(input.members, identityNames);
   const current = await env.DB.prepare(
     "SELECT name, weekly_contribution FROM members ORDER BY name"
   ).all<{ name: string; weekly_contribution: number }>();
   const reconciliation = reconcileContributionMembers(
-    input.members,
+    calibratedMembers,
     current.results.map((member) => ({
       name: member.name,
       weeklyContribution: member.weekly_contribution
@@ -1100,12 +1230,14 @@ export async function updateActivitySnapshot(
     members: ActivityRow[];
   }
 ): Promise<ActivityReconciliation> {
+  const identityNames = await listActiveIdentityPlayerNames(env);
+  const calibratedMembers = calibrateMemberNames(input.members, identityNames);
   const master = await env.DB.prepare(
     "SELECT name FROM members ORDER BY name"
   ).all<{ name: string }>();
   const reconciliation = reconcileActivityMembers(
-    input.members,
-    master.results
+    calibratedMembers,
+    calibrateMemberNames(master.results, identityNames)
   );
   // Preserve the last valid warning snapshot when a non-empty OCR payload
   // cannot produce even one self-contained warning row.
@@ -1159,11 +1291,13 @@ export async function updateMemberProfiles(
   // table. Do not use the display name as the server-side reconciliation key:
   // OCR-safe names can contain symbols and visually similar variants, and a
   // name conflict here would silently reduce the accepted snapshot. The
-  // stable ID is derived from the exact name submitted by the Agent, so this
-  // path accepts the authoritative payload as-is and only updates the row
-  // belonging to that exact submitted identity.
+  // stable ID is derived from the calibrated name submitted by the Agent. If
+  // no active identity code is a safe match, calibration returns the original
+  // Worker name and the existing roster rules remain authoritative.
   const statements: D1PreparedStatement[] = [];
-  for (const member of input.members) {
+  const identityNames = await listActiveIdentityPlayerNames(env);
+  const calibratedMembers = calibrateMemberNames(input.members, identityNames);
+  for (const member of calibratedMembers) {
     const memberId = await stableMemberId(member.name);
     statements.push(
       env.DB.prepare(

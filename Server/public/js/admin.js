@@ -42,6 +42,7 @@
     dirtySections: new Set(),
     refreshing: false,
     saving: false,
+    memberEditSaving: false,
     liveSocket: null,
     liveReconnectTimer: null,
     liveReconnectAttempt: 0,
@@ -2706,6 +2707,15 @@
       !canManageTechnologyHistory || !state.technologyHistory.history;
     byId("delete-technology-history-all").disabled =
       !canManageTechnologyHistory || !(state.technologyHistory.dates || []).length;
+    const canManageMembers = hasPermission("admin:members");
+    const memberEditButton = byId("member-dialog-edit");
+    if (memberEditButton) {
+      memberEditButton.hidden = !canManageMembers;
+      memberEditButton.disabled = !canManageMembers || state.memberEditSaving;
+    }
+    for (const control of byId("member-edit-form")?.querySelectorAll("input, button") || []) {
+      control.disabled = !canManageMembers || state.memberEditSaving;
+    }
   }
 
   async function loadTemporaryKeys(page = state.temporaryKeys.page) {
@@ -2844,8 +2854,7 @@
     }
   }
 
-  function showMember(member) {
-    state.selectedMember = member;
+  function renderMemberDetail(member) {
     byId("member-dialog-title").textContent = member.name;
     const detail = byId("member-detail");
     detail.replaceChildren();
@@ -2861,7 +2870,90 @@
     ]) {
       detail.append(create("dt", "", label), create("dd", "", String(value ?? "—")));
     }
+  }
+
+  function showMember(member) {
+    state.selectedMember = member;
+    renderMemberDetail(member);
+    setModuleActionState();
     byId("member-dialog").showModal();
+  }
+
+  function openMemberEdit() {
+    const member = state.selectedMember;
+    if (!member || !hasPermission("admin:members")) return;
+    byId("member-edit-name").textContent = formatUi("成员名称：{name}（不可编辑）", {
+      name: member.name
+    });
+    for (const [id, value] of [
+      ["member-edit-camp-title", member.camp_title],
+      ["member-edit-profession", member.profession],
+      ["member-edit-manor-level", member.manor_level],
+      ["member-edit-roommate-name", member.roommate_name],
+      ["member-edit-weekly-contribution", member.weekly_contribution ?? 0],
+      ["member-edit-technology-points-used", member.technology_points_used ?? 0],
+      ["member-edit-material-contribution", member.material_contribution ?? 0],
+      ["member-edit-capture-time", formatDate(member.last_seen_at)]
+    ]) {
+      byId(id).value = value ?? "";
+    }
+    setText("member-edit-feedback", "");
+    const dialog = byId("member-edit-dialog");
+    if (!dialog.open) dialog.showModal();
+    setModuleActionState();
+  }
+
+  function closeMemberEdit() {
+    const dialog = byId("member-edit-dialog");
+    if (dialog?.open && !state.memberEditSaving) dialog.close();
+  }
+
+  async function saveMemberEdit(event) {
+    event.preventDefault();
+    const member = state.selectedMember;
+    const form = event.currentTarget;
+    if (!member || !hasPermission("admin:members") || !form.reportValidity()) return;
+    const optionalText = (name) => {
+      const value = String(form.elements[name]?.value || "").trim();
+      return value || null;
+    };
+    const optionalInteger = (name) => {
+      const value = String(form.elements[name]?.value || "").trim();
+      return value === "" ? null : Number(value);
+    };
+    const payload = {
+      campTitle: optionalText("campTitle"),
+      profession: optionalText("profession"),
+      manorLevel: optionalInteger("manorLevel"),
+      roommateName: optionalText("roommateName"),
+      weeklyContribution: Number(form.elements.weeklyContribution.value),
+      technologyPointsUsed: Number(form.elements.technologyPointsUsed.value),
+      materialContribution: Number(form.elements.materialContribution.value)
+    };
+    state.memberEditSaving = true;
+    setText("member-edit-feedback", "正在保存…");
+    setModuleActionState();
+    try {
+      const result = await request(
+        `/api/admin/members/${encodeURIComponent(member.id)}`,
+        { method: "PUT", body: JSON.stringify(payload) }
+      );
+      const updated = result.member;
+      if (!updated) throw new Error("成员信息保存失败");
+      state.bootstrap.members = (state.bootstrap.members || []).map((item) =>
+        item.id === updated.id ? updated : item
+      );
+      state.selectedMember = updated;
+      renderAdminMembers(state.bootstrap.members);
+      renderMemberDetail(updated);
+      byId("member-edit-dialog").close();
+      setText("save-state", "成员信息已保存");
+    } catch (error) {
+      setText("member-edit-feedback", error.message);
+    } finally {
+      state.memberEditSaving = false;
+      setModuleActionState();
+    }
   }
 
   async function refresh(forceAll = false) {
@@ -4165,6 +4257,10 @@
     state.memberQuery = event.target.value || "";
     renderAdminMembers(state.bootstrap?.members || []);
   });
+  byId("member-dialog-edit")?.addEventListener("click", openMemberEdit);
+  byId("member-edit-close")?.addEventListener("click", closeMemberEdit);
+  byId("member-edit-cancel")?.addEventListener("click", closeMemberEdit);
+  byId("member-edit-form")?.addEventListener("submit", saveMemberEdit);
   byId("technology-search").addEventListener("input", (event) => {
     state.technologyQuery = event.target.value || "";
     renderTechnologyEditor();

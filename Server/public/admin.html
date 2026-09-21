@@ -830,9 +830,72 @@
       <form method="dialog" class="dialog-card">
         <div class="section-heading">
           <h2 id="member-dialog-title">成员信息</h2>
-          <button class="button button-quiet" value="close">关闭</button>
+          <div class="action-row">
+            <button id="member-dialog-edit" class="button button-quiet" type="button">
+              编辑
+            </button>
+            <button class="button button-quiet" value="close">关闭</button>
+          </div>
         </div>
         <dl id="member-detail" class="member-detail"></dl>
+      </form>
+    </dialog>
+    <dialog id="member-edit-dialog">
+      <form id="member-edit-form" class="dialog-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">MEMBER EDIT</p>
+            <h2>编辑成员信息</h2>
+          </div>
+          <button id="member-edit-close" class="button button-quiet" type="button">
+            关闭
+          </button>
+        </div>
+        <p id="member-edit-name" class="muted"></p>
+        <p class="field-help">手动修改会在对应的下一次同步任务写入新数据时被同步数据覆盖。玩家名称和资料采集时间由系统维护。</p>
+        <div class="form-grid member-edit-grid">
+          <label class="field">
+            <span>营地称号</span>
+            <input id="member-edit-camp-title" name="campTitle" type="text" maxlength="80" />
+          </label>
+          <label class="field">
+            <span>职业</span>
+            <input id="member-edit-profession" name="profession" type="text" maxlength="80" />
+          </label>
+          <label class="field">
+            <span>庄园等级</span>
+            <input id="member-edit-manor-level" name="manorLevel" type="number" min="0" max="1000" step="1" />
+          </label>
+          <label class="field">
+            <span>同居</span>
+            <input id="member-edit-roommate-name" name="roommateName" type="text" maxlength="80" />
+          </label>
+          <label class="field">
+            <span>本周贡献</span>
+            <input id="member-edit-weekly-contribution" name="weeklyContribution" type="number" min="0" max="1000000000" step="1" required />
+          </label>
+          <label class="field">
+            <span>使用科技点</span>
+            <input id="member-edit-technology-points-used" name="technologyPointsUsed" type="number" min="0" max="10000000000" step="1" required />
+          </label>
+          <label class="field">
+            <span>贡献物资</span>
+            <input id="member-edit-material-contribution" name="materialContribution" type="number" min="0" max="100000000000" step="1" required />
+          </label>
+          <label class="field">
+            <span>资料采集时间</span>
+            <input id="member-edit-capture-time" type="text" readonly />
+          </label>
+        </div>
+        <div class="action-row member-edit-actions">
+          <button id="member-edit-cancel" class="button button-quiet" type="button">
+            取消
+          </button>
+          <button id="member-edit-save" class="button button-primary" type="submit">
+            保存成员信息
+          </button>
+          <span id="member-edit-feedback" class="feedback" role="status"></span>
+        </div>
       </form>
     </dialog>
     <dialog id="vote-detail-dialog">

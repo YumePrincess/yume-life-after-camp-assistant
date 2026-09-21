@@ -1922,6 +1922,18 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.member-edit-grid {
+  margin-top: 18px;
+}
+
+.member-edit-actions {
+  justify-content: flex-end;
+}
+
+.member-edit-actions .feedback {
+  margin-right: auto;
+}
+
 .warning-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));

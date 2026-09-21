@@ -53,6 +53,7 @@ import {
   reconcileStaleCommands,
   updateActivitySnapshot,
   updateContributionSnapshot,
+  updateMemberDetails,
   updateMemberProfiles,
   requestRunCancellation,
   saveBallot,
@@ -1236,6 +1237,23 @@ async function handleAdminApi(
         new URL(request.url).searchParams.get("locale")
       )
     );
+  }
+  const memberMatch = /^\/api\/admin\/members\/([^/]+)$/.exec(path);
+  if (memberMatch && method === "PUT") {
+    try {
+      const id = boundedText(decodeURIComponent(memberMatch[1] ?? ""), "memberId", 120);
+      const body = await readJsonObject(request, 16_000);
+      const updated = await updateMemberDetails(env, {
+        id,
+        ...sanitizeMemberDetailsUpdate(body)
+      });
+      if (!updated) {
+        return problem("成员不存在或已被同步移除", 404, "member_not_found");
+      }
+      return json({ ok: true, member: updated });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "member_update_invalid");
+    }
   }
   if (path === "/api/admin/daily-vote/config" && method === "GET") {
     return json({ ok: true, config: await getDailyVoteConfig(env) });
@@ -2896,6 +2914,7 @@ function permissionForAdminRequest(
     return "admin:daily-vote";
   }
   if (path.startsWith("/api/admin/plugins/")) return "plugins:manage";
+  if (path.startsWith("/api/admin/members/")) return "admin:members";
   if (path === "/api/admin/technology-history") {
     return method === "DELETE"
       ? "technology-history:manage"
@@ -3141,6 +3160,30 @@ function sanitizeMembers(value: unknown) {
       inactiveDays: nullableInteger(item.inactiveDays, 0, 100_000)
     };
   });
+}
+
+function sanitizeMemberDetailsUpdate(value: Record<string, unknown>) {
+  return {
+    profession: nullableText(value.profession, 80),
+    manorLevel: nullableInteger(value.manorLevel, 0, 1000),
+    roommateName: nullableText(value.roommateName, 80),
+    campTitle: nullableText(value.campTitle, 80),
+    weeklyContribution: requiredInteger(
+      value.weeklyContribution,
+      0,
+      1_000_000_000
+    ),
+    technologyPointsUsed: requiredInteger(
+      value.technologyPointsUsed,
+      0,
+      10_000_000_000
+    ),
+    materialContribution: requiredInteger(
+      value.materialContribution,
+      0,
+      100_000_000_000
+    )
+  };
 }
 
 function sanitizeContribution(value: unknown) {
