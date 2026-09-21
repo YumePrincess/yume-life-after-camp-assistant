@@ -21,6 +21,8 @@
     identityProfileStep: "",
     identityEmailOldOtp: "",
     identitySessionRefreshedAt: 0,
+    identitySessionRefreshTimer: null,
+    identitySessionRefreshInFlight: false,
     voteErrorRenewalCode: "",
     activeFeature: "",
     dailyPanel: "",
@@ -50,6 +52,15 @@
     history: "HISTORY"
   };
   const IDENTITY_SESSION_STORAGE_KEY = "mrzh.identity-session";
+  const IDENTITY_SESSION_REFRESH_INTERVAL_MS = 30_000;
+  const IDENTITY_SESSION_INVALID_CODES = new Set([
+    "identity_code_invalid",
+    "identity_code_disabled",
+    "identity_code_expired",
+    "identity_password_invalid",
+    "identity_password_required",
+    "identity_login_failed"
+  ]);
   const ACTIVE_IDENTITY_CONFLICT =
     "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。";
   const EXPIRED_IDENTITY_CONFLICT =
@@ -84,6 +95,7 @@
 
   function persistIdentitySession(session) {
     state.identitySession = session;
+    if (!session) state.identitySessionRefreshedAt = 0;
     try {
       if (session) {
         window.localStorage.setItem(IDENTITY_SESSION_STORAGE_KEY, JSON.stringify(session));
@@ -98,6 +110,12 @@
 
   function identitySession() {
     return state.identitySession;
+  }
+
+  function clearIdentitySession({ openPanel = false } = {}) {
+    persistIdentitySession(null);
+    setText("technology-identity-hint", window.MrzhI18n.t("请先在身份识别码卡片登录，登录后即可投票。"));
+    if (openPanel) openIdentityPanel();
   }
 
   function requireIdentitySession() {
@@ -136,11 +154,12 @@
     void refreshIdentitySession();
   }
 
-  async function refreshIdentitySession() {
+  async function refreshIdentitySession({ force = false } = {}) {
     const session = identitySession();
     if (!session?.identityCode || !session.password) return;
-    if (Date.now() - state.identitySessionRefreshedAt < 30_000) return;
-    state.identitySessionRefreshedAt = Date.now();
+    if (!force && Date.now() - state.identitySessionRefreshedAt < IDENTITY_SESSION_REFRESH_INTERVAL_MS) return;
+    if (state.identitySessionRefreshInFlight) return;
+    state.identitySessionRefreshInFlight = true;
     try {
       const account = await request("/api/public/identity-login", {
         method: "POST",
@@ -149,9 +168,19 @@
           identityPassword: session.password
         })
       });
+      if (
+        identitySession()?.identityCode !== session.identityCode ||
+        identitySession()?.password !== session.password
+      ) return;
       persistIdentitySession({ ...session, ...account, password: session.password });
-    } catch {
-      // Keep the cached session on transient failures; the next panel open retries.
+      state.identitySessionRefreshedAt = Date.now();
+    } catch (error) {
+      if (IDENTITY_SESSION_INVALID_CODES.has(error.code)) {
+        clearIdentitySession({ openPanel: state.dailyPanel === "identity" });
+      }
+      // Keep the cached session on transient failures and retry on the next interval.
+    } finally {
+      state.identitySessionRefreshInFlight = false;
     }
   }
 
@@ -318,7 +347,7 @@
         })
       });
       byId("identity-cancellation-dialog").close();
-      persistIdentitySession(null);
+      clearIdentitySession();
       setText("identity-profile-feedback", window.MrzhI18n.t("身份识别码已注销，已立即失效。"));
     } catch (error) {
       feedback.textContent = window.MrzhI18n.t(error.message);
@@ -434,6 +463,7 @@
           kicker: "身份识别码",
           message: window.MrzhI18n.t("玩家名称变更已提交，审核通过后生效。")
         });
+        void refreshIdentitySession({ force: true });
       } else if (step === "email") {
         state.identityEmailChangeId = result.changeId;
         setIdentityProfileStep("old-email");
@@ -447,6 +477,7 @@
           kicker: "身份识别码",
           message: window.MrzhI18n.t("邮箱变更已提交，审核通过后生效。")
         });
+        void refreshIdentitySession({ force: true });
       }
     } catch (error) {
       feedback.textContent = window.MrzhI18n.t(error.message);
@@ -1258,9 +1289,8 @@
             : window.MrzhI18n.t("提交成功，票数已更新。")
       });
     } catch (error) {
-      if (["identity_password_required", "identity_password_invalid", "identity_login_failed"].includes(error.code)) {
-        persistIdentitySession(null);
-        openIdentityPanel();
+      if (IDENTITY_SESSION_INVALID_CODES.has(error.code)) {
+        clearIdentitySession({ openPanel: true });
       }
       showVoteError(window.MrzhI18n.t(error.message), window.MrzhI18n.t("日常投票未提交"), error.code === "identity_code_expired" && error.canRenew, identityCode);
     }
@@ -1671,9 +1701,8 @@
         error.code === "identity_code_expired" && error.canRenew,
         identityCode
       );
-      if (["identity_password_required", "identity_password_invalid", "identity_login_failed"].includes(error.code)) {
-        persistIdentitySession(null);
-        openIdentityPanel();
+      if (IDENTITY_SESSION_INVALID_CODES.has(error.code)) {
+        clearIdentitySession({ openPanel: true });
       }
     } finally {
       button.disabled = false;
@@ -2167,7 +2196,7 @@
   byId("identity-profile-form").addEventListener("submit", submitIdentityProfile);
   byId("close-identity-profile-dialog").addEventListener("click", () => byId("identity-profile-dialog").close());
   byId("identity-logout").addEventListener("click", () => {
-    persistIdentitySession(null);
+    clearIdentitySession();
     setText("identity-profile-feedback", window.MrzhI18n.t("已退出身份识别码账号。"));
   });
   byId("vote-error-renew").addEventListener("click", () => {
@@ -2200,8 +2229,15 @@
   });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && state.liveDirty) void refreshFromLiveUpdate();
-    if (!document.hidden) connectLiveUpdates();
+    if (!document.hidden) {
+      connectLiveUpdates();
+      void refreshIdentitySession({ force: true });
+    }
   });
+  state.identitySessionRefreshTimer = window.setInterval(() => {
+    if (!document.hidden) void refreshIdentitySession({ force: true });
+  }, IDENTITY_SESSION_REFRESH_INTERVAL_MS);
   load();
   connectLiveUpdates();
+  void refreshIdentitySession({ force: true });
 })();
