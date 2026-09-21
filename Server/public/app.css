@@ -1952,6 +1952,67 @@ textarea:focus {
   overflow-x: auto;
 }
 
+.member-responsive-cards {
+  display: none;
+}
+
+.member-responsive-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px 14px 13px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06), transparent 62%),
+    color-mix(in srgb, var(--panel-strong) 68%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.member-responsive-heading {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.member-responsive-name {
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.member-responsive-detail {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.member-responsive-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.member-responsive-metric {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.member-responsive-metric strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.member-responsive-metric span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -2761,6 +2822,15 @@ select option {
 
   .public-page .run-item {
     grid-template-columns: 90px minmax(0, 1fr) auto;
+  }
+
+  .public-page #members .table-scroll {
+    display: none;
+  }
+
+  .public-page #members .member-responsive-cards {
+    display: grid;
+    gap: 10px;
   }
 }
 

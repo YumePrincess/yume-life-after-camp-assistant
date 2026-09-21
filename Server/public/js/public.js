@@ -1378,7 +1378,9 @@
         .some((value) => String(value).toLowerCase().includes(query))
     );
     const root = byId("member-table");
+    const cardsRoot = byId("member-cards");
     root.replaceChildren();
+    cardsRoot?.replaceChildren();
     byId("member-empty").hidden = filtered.length > 0;
     for (const item of filtered) {
       const row = document.createElement("tr");
@@ -1394,6 +1396,39 @@
         row.append(create("td", className, String(value)));
       }
       root.append(row);
+
+      if (cardsRoot) {
+        const card = create("article", "member-responsive-card");
+        const heading = create("div", "member-responsive-heading");
+        heading.append(
+          create("strong", "member-responsive-name", String(item.name || "—")),
+          create(
+            "span",
+            "member-responsive-detail",
+            `${item.profession || "—"} · ${window.MrzhI18n.t("庄园")} ${item.manor_level ?? "—"}`
+          ),
+          create(
+            "span",
+            "member-responsive-detail",
+            `${window.MrzhI18n.t("同居")}：${item.roommate_name || "—"}`
+          )
+        );
+        const metrics = create("div", "member-responsive-metrics");
+        for (const [value, label] of [
+          [item.weekly_contribution ?? 0, "本周贡献"],
+          [item.technology_points_used ?? 0, "使用科技点"],
+          [item.material_contribution ?? 0, "贡献物资"]
+        ]) {
+          const metric = create("div", "member-responsive-metric");
+          metric.append(
+            create("strong", "", String(value)),
+            create("span", "", window.MrzhI18n.t(label))
+          );
+          metrics.append(metric);
+        }
+        card.append(heading, metrics);
+        cardsRoot.append(card);
+      }
     }
   }
 
