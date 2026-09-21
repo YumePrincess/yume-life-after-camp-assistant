@@ -8,8 +8,8 @@
     <title>管理后台 · 明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css" />
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/i18n.js" defer></script>
-    <script src="/js/admin.js?v=20260909-winner-render" defer></script>
+    <script src="/js/i18n.js?v=20260921-draw-limits" defer></script>
+    <script src="/js/admin.js?v=20260921-draw-limits" defer></script>
   </head>
   <body class="admin-page">
     <div class="ambient ambient-a"></div>
@@ -465,7 +465,7 @@
               <div class="technology-catalog-toolbar">
                 <div>
                   <span class="field-label">科技目录</span>
-                  <strong id="technology-result-count">55 项科技</strong>
+                  <strong id="technology-result-count">56 项科技</strong>
                 </div>
                 <label class="technology-search">
                   <span class="sr-only">搜索科技</span>
@@ -582,6 +582,16 @@
                 <span id="daily-vote-status" class="muted" aria-live="polite"></span>
               </div>
             </div>
+            <form id="daily-vote-config-form" class="daily-vote-config-form">
+              <label class="field">
+                <span>28天内同一识别码最多中签次数</span>
+                <input id="daily-vote-max-wins-28-days" type="number" min="0" max="10000" step="1" value="4" required />
+              </label>
+              <div class="section-savebar">
+                <span id="daily-vote-config-feedback" class="feedback" role="status"></span>
+                <button class="button button-primary" type="submit">保存抽签配置</button>
+              </div>
+            </form>
             <form id="daily-vote-editor" class="daily-vote-editor" hidden>
               <input id="daily-vote-id" type="hidden" />
               <div class="section-heading">
@@ -599,6 +609,8 @@
                 <label class="field"><span>提前显示单位</span><select id="daily-vote-reveal-unit"><option value="60">分钟</option><option value="3600">小时</option><option value="86400">天</option></select></label>
                 <label id="daily-vote-max-field" class="field"><span>每人可选票数</span><input id="daily-vote-max" type="number" min="1" value="1" /></label>
                 <label id="daily-vote-draw-field" class="field" hidden><span>抽取人数</span><input id="daily-vote-draw-count" type="number" min="1" value="1" /></label>
+                <label id="daily-vote-draw-batch-field" class="field" hidden><span>批次号</span><input id="daily-vote-draw-batch" type="text" inputmode="numeric" maxlength="8" pattern="[0-9]{1,8}" value="0" /><small class="field-hint">1-8 位数字；填写 0 时不限制重复中签</small></label>
+                <label id="daily-vote-draw-limit-field" class="field" hidden><span>受中签限额限制</span><input id="daily-vote-draw-limit-enabled" type="checkbox" checked /></label>
               </div>
               <label class="field"><span>事项名称（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-title-blocks" rows="3" required></textarea></label>
               <label class="field"><span>事项描述（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-description-blocks" rows="5"></textarea></label>

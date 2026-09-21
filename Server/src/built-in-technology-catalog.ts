@@ -35,6 +35,17 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "uiLabel": "采购优惠"
   },
   {
+    "key": "tech-4b7d9e1f2a6c8d0e3f5b",
+    "name": "电视购会员",
+    "iconUrl": "/images/technology/tech-4b7d9e1f2a6c8d0e3f5b.png",
+    "description": "通过电视购买资源分类的物品时，运费降低为价格的1%。",
+    "category": "agriculture",
+    "lane": "core",
+    "enabledForVoting": true,
+    "sortOrder": 3,
+    "uiLabel": "电视购会员"
+  },
+  {
     "key": "tech-76015c500123d6487452",
     "name": "种豆得豆",
     "iconUrl": "/images/technology/tech-76015c500123d6487452.png",
@@ -42,7 +53,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 3,
+    "sortOrder": 4,
     "uiLabel": "种豆得豆"
   },
   {
@@ -53,7 +64,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 4,
+    "sortOrder": 5,
     "uiLabel": "资源收购商"
   },
   {
@@ -64,7 +75,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 5,
+    "sortOrder": 6,
     "uiLabel": "许可证扩容"
   },
   {
@@ -75,7 +86,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 6,
+    "sortOrder": 7,
     "uiLabel": "重返鱼塘"
   },
   {
@@ -86,7 +97,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 7,
+    "sortOrder": 8,
     "uiLabel": "加速印刷"
   },
   {
@@ -97,7 +108,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 8,
+    "sortOrder": 9,
     "uiLabel": "印刷新品"
   },
   {
@@ -108,7 +119,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 9,
+    "sortOrder": 10,
     "uiLabel": "墙纸印刷师"
   },
   {
@@ -119,7 +130,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 10,
+    "sortOrder": 11,
     "uiLabel": "爆炸钩"
   },
   {
@@ -130,7 +141,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 11,
+    "sortOrder": 12,
     "uiLabel": "新口味鱼饵"
   },
   {
@@ -141,7 +152,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 12,
+    "sortOrder": 13,
     "uiLabel": "捕鱼专家"
   },
   {
@@ -152,7 +163,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 13,
+    "sortOrder": 14,
     "uiLabel": "繁荣共振"
   },
   {
@@ -163,7 +174,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 14,
+    "sortOrder": 15,
     "uiLabel": "重振农业"
   },
   {
@@ -174,7 +185,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 15,
+    "sortOrder": 16,
     "uiLabel": "勤奋的牧民"
   },
   {
@@ -185,7 +196,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 16,
+    "sortOrder": 17,
     "uiLabel": "坚韧的矿工"
   },
   {
@@ -196,7 +207,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 17,
+    "sortOrder": 18,
     "uiLabel": "耐劳的农夫"
   },
   {
@@ -207,7 +218,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 18,
+    "sortOrder": 19,
     "uiLabel": "特强吸力"
   },
   {
@@ -218,7 +229,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 19,
+    "sortOrder": 20,
     "uiLabel": "生物多样性"
   },
   {
@@ -229,7 +240,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "agriculture",
     "lane": "core",
     "enabledForVoting": true,
-    "sortOrder": 20,
+    "sortOrder": 21,
     "uiLabel": "永葆青春"
   },
   {
@@ -240,7 +251,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 21,
+    "sortOrder": 22,
     "uiLabel": "科学建造"
   },
   {
@@ -251,7 +262,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 22,
+    "sortOrder": 23,
     "uiLabel": "电视推销员"
   },
   {
@@ -262,7 +273,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 23,
+    "sortOrder": 24,
     "uiLabel": "刻苦专研"
   },
   {
@@ -273,7 +284,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 24,
+    "sortOrder": 25,
     "uiLabel": "金砖戏法"
   },
   {
@@ -284,7 +295,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 25,
+    "sortOrder": 26,
     "uiLabel": "加快制作"
   },
   {
@@ -295,7 +306,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 26,
+    "sortOrder": 27,
     "uiLabel": "护甲店制作"
   },
   {
@@ -306,7 +317,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 27,
+    "sortOrder": 28,
     "uiLabel": "急速制作"
   },
   {
@@ -317,7 +328,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 28,
+    "sortOrder": 29,
     "uiLabel": "武器店制作"
   },
   {
@@ -328,7 +339,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 29,
+    "sortOrder": 30,
     "uiLabel": "高级饭堂"
   },
   {
@@ -339,7 +350,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 30,
+    "sortOrder": 31,
     "uiLabel": "美食的魅力"
   },
   {
@@ -350,7 +361,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 31,
+    "sortOrder": 32,
     "uiLabel": "雪中制甲"
   },
   {
@@ -361,7 +372,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 32,
+    "sortOrder": 33,
     "uiLabel": "热浪起武"
   },
   {
@@ -372,7 +383,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 33,
+    "sortOrder": 34,
     "uiLabel": "护甲订单"
   },
   {
@@ -383,7 +394,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 34,
+    "sortOrder": 35,
     "uiLabel": "管理至上"
   },
   {
@@ -394,7 +405,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 35,
+    "sortOrder": 36,
     "uiLabel": "加强出口"
   },
   {
@@ -405,7 +416,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "industry",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 36,
+    "sortOrder": 37,
     "uiLabel": "武装订单"
   },
   {
@@ -416,7 +427,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 37,
+    "sortOrder": 38,
     "uiLabel": "远星暴走族"
   },
   {
@@ -427,7 +438,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 38,
+    "sortOrder": 39,
     "uiLabel": "护甲保险"
   },
   {
@@ -438,7 +449,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 39,
+    "sortOrder": 40,
     "uiLabel": "家园守卫"
   },
   {
@@ -449,7 +460,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 40,
+    "sortOrder": 41,
     "uiLabel": "移动守卫"
   },
   {
@@ -460,7 +471,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 41,
+    "sortOrder": 42,
     "uiLabel": "擂台之星"
   },
   {
@@ -471,7 +482,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 42,
+    "sortOrder": 43,
     "uiLabel": "致远星城"
   },
   {
@@ -482,7 +493,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 43,
+    "sortOrder": 44,
     "uiLabel": "强袭夏尔镇"
   },
   {
@@ -493,7 +504,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 44,
+    "sortOrder": 45,
     "uiLabel": "游走动荡之城"
   },
   {
@@ -504,7 +515,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 45,
+    "sortOrder": 46,
     "uiLabel": "快速装填"
   },
   {
@@ -515,7 +526,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 46,
+    "sortOrder": 47,
     "uiLabel": "红绿瓶子"
   },
   {
@@ -526,7 +537,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 47,
+    "sortOrder": 48,
     "uiLabel": "赤色瓶子"
   },
   {
@@ -537,7 +548,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 48,
+    "sortOrder": 49,
     "uiLabel": "弱化感染者"
   },
   {
@@ -548,7 +559,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 49,
+    "sortOrder": 50,
     "uiLabel": "危险巡逻员"
   },
   {
@@ -559,7 +570,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 50,
+    "sortOrder": 51,
     "uiLabel": "阻挡入侵"
   },
   {
@@ -570,7 +581,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 51,
+    "sortOrder": 52,
     "uiLabel": "不死士兵"
   },
   {
@@ -581,7 +592,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 52,
+    "sortOrder": 53,
     "uiLabel": "安全与繁荣"
   },
   {
@@ -592,7 +603,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 53,
+    "sortOrder": 54,
     "uiLabel": "大哥的视觉"
   },
   {
@@ -603,7 +614,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 54,
+    "sortOrder": 55,
     "uiLabel": "恐怖宠物"
   }
 ];

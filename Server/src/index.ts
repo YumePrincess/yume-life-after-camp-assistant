@@ -152,9 +152,11 @@ import {
   buildPublicDailyVote,
   deleteDailyVoteItem,
   deleteDailyVoteHistory,
+  getDailyVoteConfig,
   getDailyVoteItem,
   listAdminDailyVoteItems,
   normalizeDailyVoteInput,
+  saveDailyVoteConfig,
   saveDailyVoteItem,
   saveDailyVoteResponse,
   updateDailyVoteItem
@@ -924,6 +926,17 @@ async function handleAdminApi(
         new URL(request.url).searchParams.get("locale")
       )
     );
+  }
+  if (path === "/api/admin/daily-vote/config" && method === "GET") {
+    return json({ ok: true, config: await getDailyVoteConfig(env) });
+  }
+  if (path === "/api/admin/daily-vote/config" && method === "PUT") {
+    try {
+      const body = await readJsonObject(request, 8_000);
+      return json({ ok: true, config: await saveDailyVoteConfig(env, body) });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "daily_vote_config_invalid");
+    }
   }
   const dailyVoteMatch = /^\/api\/admin\/daily-vote(?:\/([^/]+))?$/.exec(path);
   if (dailyVoteMatch && method === "GET") {

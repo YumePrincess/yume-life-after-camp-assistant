@@ -4174,6 +4174,7 @@ select option {
 }
 
 .daily-vote-editor,
+.daily-vote-config-form,
 .daily-vote-admin-card {
   display: grid;
   gap: 16px;
@@ -4182,6 +4183,20 @@ select option {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.025);
+}
+
+.daily-vote-config-form {
+  margin-top: 20px;
+}
+
+.daily-vote-config-form .field {
+  max-width: 420px;
+}
+
+#daily-vote-draw-limit-enabled {
+  width: auto;
+  min-height: auto;
+  accent-color: var(--accent);
 }
 
 .daily-vote-admin-heading {

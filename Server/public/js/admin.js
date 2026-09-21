@@ -53,6 +53,7 @@
     technologyHistoryLoading: false,
     technologyHistoryLoaded: false,
     dailyVoteItems: [],
+    dailyVoteConfig: { drawMaxWins28Days: 4 },
     dailyVotePage: 1,
     dailyVoteTotal: 0,
     dailyVoteLoading: false,
@@ -1341,8 +1342,13 @@
 
   function renderDailyVoteAdmin(payload) {
     state.dailyVoteItems = payload?.items || [];
+    state.dailyVoteConfig = payload?.config || { drawMaxWins28Days: 4 };
     state.dailyVotePage = Number(payload?.page) || 1;
     state.dailyVoteTotal = Number(payload?.total) || 0;
+    const maxWinsInput = byId("daily-vote-max-wins-28-days");
+    if (maxWinsInput && document.activeElement !== maxWinsInput) {
+      maxWinsInput.value = String(state.dailyVoteConfig.drawMaxWins28Days ?? 4);
+    }
     const root = byId("daily-vote-admin-list");
     if (!root) return;
     root.replaceChildren();
@@ -1369,9 +1375,20 @@
       titleGroup.append(title, create("span", "daily-vote-kind", item.kind === "draw" ? "抽签事项" : "投票事项"));
       heading.append(titleGroup, actions);
       card.append(heading);
-      card.append(create("p", "daily-vote-admin-meta", window.MrzhI18n.format("开放 {start} · 截止 {end}", {
-        start: formatDate(item.startAt), end: formatDate(item.endAt)
-      })));
+      card.append(create(
+        "p",
+        "daily-vote-admin-meta",
+        window.MrzhI18n.format(
+          item.kind === "draw"
+            ? "开放 {start} · 截止 {end} · 批次号 {batchNumber}"
+            : "开放 {start} · 截止 {end}",
+          {
+            start: formatDate(item.startAt),
+            end: formatDate(item.endAt),
+            batchNumber: item.batchNumber || "0"
+          }
+        )
+      ));
       if (item.kind === "poll") {
         const counts = new Map();
         for (const response of item.responses || []) {
@@ -1472,12 +1489,33 @@
     }
   }
 
+  async function saveDailyVoteConfig(event) {
+    event.preventDefault();
+    setText("daily-vote-config-feedback", "");
+    try {
+      const payload = await request("/api/admin/daily-vote/config", {
+        method: "PUT",
+        body: JSON.stringify({
+          drawMaxWins28Days: Number(byId("daily-vote-max-wins-28-days").value)
+        })
+      });
+      state.dailyVoteConfig = payload.config || state.dailyVoteConfig;
+      byId("daily-vote-max-wins-28-days").value = String(state.dailyVoteConfig.drawMaxWins28Days);
+      setText("daily-vote-config-feedback", window.MrzhI18n.t("抽签配置已保存"));
+    } catch (error) {
+      setText("daily-vote-config-feedback", localizeDailyVoteError(error));
+    }
+  }
+
   function toggleDailyVoteEditorFields() {
     const isDraw = byId("daily-vote-kind")?.value === "draw";
     byId("daily-vote-max-field").hidden = isDraw;
     byId("daily-vote-draw-field").hidden = !isDraw;
+    byId("daily-vote-draw-batch-field").hidden = !isDraw;
+    byId("daily-vote-draw-limit-field").hidden = !isDraw;
     byId("daily-vote-options-field").hidden = isDraw;
     byId("daily-vote-options").required = !isDraw;
+    byId("daily-vote-draw-batch").required = isDraw;
   }
 
   function localizeDailyVoteError(error) {
@@ -1500,6 +1538,8 @@
       revealBeforeSeconds: 0,
       maxSelections: 1,
       drawCount: 1,
+      batchNumber: "0",
+      drawLimitEnabled: true,
       localizedContent: { "zh-cn": { titleBlocks: [], descriptionBlocks: [], options: [] } }
     };
     const content = dailyContentForAdmin(source);
@@ -1511,6 +1551,8 @@
     byId("daily-vote-reveal-unit").value = source.revealBeforeSeconds >= 86400 ? "86400" : source.revealBeforeSeconds >= 3600 ? "3600" : "60";
     byId("daily-vote-max").value = source.maxSelections || 1;
     byId("daily-vote-draw-count").value = source.drawCount || 1;
+    byId("daily-vote-draw-batch").value = source.batchNumber ?? "0";
+    byId("daily-vote-draw-limit-enabled").checked = source.drawLimitEnabled !== false;
     byId("daily-vote-title-blocks").value = dailyBlocksToText(content.titleBlocks);
     byId("daily-vote-description-blocks").value = dailyBlocksToText(content.descriptionBlocks);
     byId("daily-vote-options").value = (content.options || []).map((option) => dailyBlocksToText(option.blocks)).join("\n\n");
@@ -1553,6 +1595,8 @@
       startAtLocal: byId("daily-vote-start").value,
       endAtLocal: byId("daily-vote-end").value,
       revealBeforeSeconds: Number(byId("daily-vote-reveal-value").value || 0) * Number(byId("daily-vote-reveal-unit").value || 60),
+      batchNumber: byId("daily-vote-draw-batch").value.trim(),
+      drawLimitEnabled: byId("daily-vote-draw-limit-enabled").checked,
       ...(kind === "poll"
         ? { maxSelections: Number(byId("daily-vote-max").value || 1) }
         : { drawCount: Number(byId("daily-vote-draw-count").value || 1) })
@@ -2565,7 +2609,7 @@
       ["#temporary-key-form input, #temporary-key-form button", "keys:manage"],
       ["#manual-identity-code-form input, #manual-identity-code-form select, #manual-identity-code-form button", "identity:manage"],
       ["#smtp-config-form input, #smtp-config-form select, #smtp-config-form button, #smtp-test-form input, #smtp-test-form button", "smtp:manage"],
-      ["#daily-vote-new-poll, #daily-vote-new-draw, #daily-vote-editor input, #daily-vote-editor select, #daily-vote-editor textarea, #daily-vote-editor button", "admin:daily-vote"]
+      ["#daily-vote-new-poll, #daily-vote-new-draw, #daily-vote-config-form input, #daily-vote-config-form button, #daily-vote-editor input, #daily-vote-editor select, #daily-vote-editor textarea, #daily-vote-editor button", "admin:daily-vote"]
     ]) {
       for (const control of document.querySelectorAll(selector)) {
         control.disabled = !hasPermission(permission);
@@ -3959,6 +4003,7 @@
   byId("daily-vote-cancel")?.addEventListener("click", closeDailyVoteEditor);
   byId("daily-vote-kind")?.addEventListener("change", toggleDailyVoteEditorFields);
   byId("daily-vote-editor")?.addEventListener("submit", saveDailyVoteFromEditor);
+  byId("daily-vote-config-form")?.addEventListener("submit", saveDailyVoteConfig);
   byId("refresh-daily-vote")?.addEventListener("click", () =>
     loadDailyVoteAdmin(byId("daily-vote-date").value, 1)
   );

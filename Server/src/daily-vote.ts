@@ -32,6 +32,8 @@ export interface DailyVoteItem {
   revealBeforeSeconds: number;
   maxSelections: number | null;
   drawCount: number | null;
+  batchNumber: string;
+  drawLimitEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -71,11 +73,19 @@ export interface AdminDailyVoteItem extends DailyVoteItem {
 export interface AdminDailyVotePage {
   page: number;
   total: number;
+  config: DailyVoteConfig;
   items: AdminDailyVoteItem[];
+}
+
+export interface DailyVoteConfig {
+  drawMaxWins28Days: number;
 }
 
 const LOCALES: SupportedLocale[] = ["zh-cn", "zh-tw", "en", "fr", "ja"];
 const MAX_CONTENT_BYTES = 240_000;
+const DEFAULT_DAILY_VOTE_CONFIG: DailyVoteConfig = { drawMaxWins28Days: 4 };
+const DRAW_LIMIT_WINDOW_MS = 28 * 24 * 60 * 60 * 1000;
+const DRAW_FINALIZE_LOCK_MS = 10 * 60 * 1000;
 
 function object(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -101,6 +111,38 @@ function integer(value: unknown, field: string, min: number, max: number): numbe
     throw new Error(`${field} must be an integer between ${min} and ${max}`);
   }
   return Number(value);
+}
+
+function booleanValue(value: unknown, field: string, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value !== "boolean") throw new Error(`${field} must be a boolean`);
+  return value;
+}
+
+function batchNumberValue(value: unknown): string {
+  const result = typeof value === "string"
+    ? value.trim()
+    : Number.isInteger(value) && Number(value) >= 0
+      ? String(value)
+      : "";
+  if (!/^\d{1,8}$/.test(result)) {
+    throw new Error("batchNumber must contain 1 to 8 digits");
+  }
+  return result;
+}
+
+export function normalizeDailyVoteConfig(value: unknown): DailyVoteConfig {
+  const source = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  return {
+    drawMaxWins28Days: integer(
+      source.drawMaxWins28Days ?? DEFAULT_DAILY_VOTE_CONFIG.drawMaxWins28Days,
+      "drawMaxWins28Days",
+      0,
+      10_000
+    )
+  };
 }
 
 function isoDateTime(value: unknown, field: string): string {
@@ -201,6 +243,8 @@ export function normalizeDailyVoteInput(
   revealBeforeSeconds: number;
   maxSelections: number | null;
   drawCount: number | null;
+  batchNumber: string;
+  drawLimitEnabled: boolean;
 } {
   const source = object(value, "dailyVote");
   const kind = source.kind === "draw" ? "draw" : source.kind === "poll" ? "poll" : null;
@@ -232,6 +276,12 @@ export function normalizeDailyVoteInput(
   const drawCount = kind === "draw"
     ? integer(source.drawCount, "drawCount", 1, 10_000)
     : null;
+  const batchNumber = kind === "draw"
+    ? batchNumberValue(source.batchNumber)
+    : "0";
+  const drawLimitEnabled = kind === "draw"
+    ? booleanValue(source.drawLimitEnabled, "drawLimitEnabled", existing?.drawLimitEnabled ?? true)
+    : false;
   if (existing && existing.kind !== kind) throw new Error("已存在的事项不能更改类型");
   const serialized = JSON.stringify(localizedContent);
   if (new TextEncoder().encode(serialized).byteLength > MAX_CONTENT_BYTES) {
@@ -244,7 +294,9 @@ export function normalizeDailyVoteInput(
     endAt,
     revealBeforeSeconds,
     maxSelections,
-    drawCount
+    drawCount,
+    batchNumber,
+    drawLimitEnabled
   };
 }
 
@@ -257,6 +309,8 @@ interface DailyVoteRow {
   reveal_before_seconds: number;
   max_selections: number | null;
   draw_count: number | null;
+  batch_number: string;
+  draw_limit_enabled: number;
   created_at: string;
   updated_at: string;
 }
@@ -277,6 +331,25 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
+export async function getDailyVoteConfig(env: Env): Promise<DailyVoteConfig> {
+  const row = await env.DB.prepare(
+    "SELECT value FROM settings WHERE key = 'daily_vote_config'"
+  ).first<{ value: string }>();
+  return normalizeDailyVoteConfig(parseJson(row?.value, DEFAULT_DAILY_VOTE_CONFIG));
+}
+
+export async function saveDailyVoteConfig(
+  env: Env,
+  value: unknown
+): Promise<DailyVoteConfig> {
+  const config = normalizeDailyVoteConfig(value);
+  await env.DB.prepare(
+    `INSERT INTO settings(key, value, updated_at) VALUES('daily_vote_config', ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).bind(JSON.stringify(config), new Date().toISOString()).run();
+  return config;
+}
+
 function itemFromRow(row: DailyVoteRow): DailyVoteItem {
   return {
     id: row.id,
@@ -287,6 +360,8 @@ function itemFromRow(row: DailyVoteRow): DailyVoteItem {
     revealBeforeSeconds: Number(row.reveal_before_seconds) || 0,
     maxSelections: row.max_selections === null ? null : Number(row.max_selections),
     drawCount: row.draw_count === null ? null : Number(row.draw_count),
+    batchNumber: row.batch_number || "0",
+    drawLimitEnabled: Number(row.draw_limit_enabled) === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -342,6 +417,22 @@ async function winnerRows(env: Env, itemId: string): Promise<Array<{ playerName:
   })));
 }
 
+async function winnerIdentityRows(
+  env: Env,
+  itemId: string
+): Promise<Array<{ responseId: string; identityCodeId: string }>> {
+  const result = await env.DB.prepare(
+    `SELECT response_id, identity_code_id
+     FROM daily_draw_winners
+     WHERE item_id = ?
+     ORDER BY rank ASC`
+  ).bind(itemId).all<{ response_id: string; identity_code_id: string }>();
+  return result.results.map((row) => ({
+    responseId: row.response_id,
+    identityCodeId: row.identity_code_id
+  }));
+}
+
 export async function saveDailyVoteItem(
   env: Env,
   input: ReturnType<typeof normalizeDailyVoteInput>,
@@ -351,11 +442,12 @@ export async function saveDailyVoteItem(
   await env.DB.prepare(
     `INSERT INTO daily_vote_items(
        id, kind, content_json, start_at, end_at, reveal_before_seconds,
-       max_selections, draw_count, created_at, updated_at
-     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       max_selections, draw_count, batch_number, draw_limit_enabled, created_at, updated_at
+     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, input.kind, JSON.stringify(input.localizedContent), input.startAt, input.endAt,
-    input.revealBeforeSeconds, input.maxSelections, input.drawCount, now, now
+    input.revealBeforeSeconds, input.maxSelections, input.drawCount, input.batchNumber,
+    input.drawLimitEnabled ? 1 : 0, now, now
   ).run();
   return {
     id,
@@ -366,6 +458,8 @@ export async function saveDailyVoteItem(
     revealBeforeSeconds: input.revealBeforeSeconds,
     maxSelections: input.maxSelections,
     drawCount: input.drawCount,
+    batchNumber: input.batchNumber,
+    drawLimitEnabled: input.drawLimitEnabled,
     createdAt: now,
     updatedAt: now
   };
@@ -378,14 +472,24 @@ export async function updateDailyVoteItem(
 ): Promise<DailyVoteItem | null> {
   const existing = await getDailyVoteItem(env, id);
   if (!existing) return null;
+  if (existing.kind === "draw" && existing.batchNumber !== input.batchNumber) {
+    const winnerCount = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM daily_draw_winners WHERE item_id = ?"
+    ).bind(id).first<{ count: number }>();
+    if (Number(winnerCount?.count ?? 0) > 0) {
+      throw new Error("已产生中签结果的抽签事项不能修改批次号");
+    }
+  }
   const now = new Date().toISOString();
   await env.DB.prepare(
     `UPDATE daily_vote_items SET kind = ?, content_json = ?, start_at = ?, end_at = ?,
-       reveal_before_seconds = ?, max_selections = ?, draw_count = ?, updated_at = ?
+       reveal_before_seconds = ?, max_selections = ?, draw_count = ?, batch_number = ?,
+       draw_limit_enabled = ?, updated_at = ?
      WHERE id = ?`
   ).bind(
     input.kind, JSON.stringify(input.localizedContent), input.startAt, input.endAt,
-    input.revealBeforeSeconds, input.maxSelections, input.drawCount, now, id
+    input.revealBeforeSeconds, input.maxSelections, input.drawCount, input.batchNumber,
+    input.drawLimitEnabled ? 1 : 0, now, id
   ).run();
   return { ...existing, ...input, updatedAt: now };
 }
@@ -461,20 +565,127 @@ export function selectRandomDrawWinners<T>(
   return pool.slice(0, winnerCount);
 }
 
-export async function finalizeEndedDraws(env: Env, now = new Date()): Promise<void> {
-  const ended = await listItems(env, "WHERE kind = 'draw' AND end_at <= ?", [now.toISOString()]);
-  for (const item of ended) {
-    const existing = await env.DB.prepare("SELECT 1 AS found FROM daily_draw_winners WHERE item_id = ? LIMIT 1")
-      .bind(item.id).first<{ found: number }>();
-    if (existing) continue;
-    const responses = await responseRows(env, item.id);
-    const selected = selectRandomDrawWinners(responses, item.drawCount ?? 0);
-    if (!selected.length) continue;
+async function finalizeDrawItem(
+  env: Env,
+  item: DailyVoteItem,
+  now: Date,
+  maxWins28Days: number,
+  winnerCounts: Map<string, number>
+): Promise<void> {
+  const responses = await responseRows(env, item.id);
+  const target = Math.min(Math.max(Math.trunc(item.drawCount ?? 0), 0), responses.length);
+  if (!target) return;
+
+  while (true) {
+    const current = await winnerIdentityRows(env, item.id);
+    if (current.length >= target) return;
+    const usedIdentityIds = new Set(current.map((winner) => winner.identityCodeId));
+    if (item.batchNumber !== "0") {
+      const batchWinners = await env.DB.prepare(
+        `SELECT identity_code_id
+         FROM daily_draw_winners
+         WHERE batch_number = ?`
+      ).bind(item.batchNumber).all<{ identity_code_id: string }>();
+      for (const winner of batchWinners.results) {
+        usedIdentityIds.add(winner.identity_code_id);
+      }
+    }
+    const available = responses.filter((row) =>
+      !usedIdentityIds.has(row.identity_code_id) &&
+      (!item.drawLimitEnabled || (winnerCounts.get(row.identity_code_id) ?? 0) < maxWins28Days)
+    );
+    const selected = selectRandomDrawWinners(
+      available,
+      target - current.length
+    );
+    if (!selected.length) return;
     const selectedAt = now.toISOString();
     await env.DB.batch(selected.map((row, index) => env.DB.prepare(
-      `INSERT OR IGNORE INTO daily_draw_winners(id, item_id, response_id, rank, selected_at)
-       VALUES(?, ?, ?, ?, ?)`
-    ).bind(crypto.randomUUID(), item.id, row.id, index + 1, selectedAt)));
+      `INSERT OR IGNORE INTO daily_draw_winners(
+         id, item_id, response_id, identity_code_id, batch_number, rank, selected_at
+       ) VALUES(?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      crypto.randomUUID(), item.id, row.id, row.identity_code_id,
+      item.batchNumber, current.length + index + 1, selectedAt
+    )));
+    const refreshedCounts = await drawWinnerCountsWithinWindow(env, now);
+    winnerCounts.clear();
+    for (const [identityCodeId, count] of refreshedCounts) {
+      winnerCounts.set(identityCodeId, count);
+    }
+  }
+}
+
+async function drawWinnerCountsWithinWindow(
+  env: Env,
+  now: Date
+): Promise<Map<string, number>> {
+  const windowStart = new Date(now.getTime() - DRAW_LIMIT_WINDOW_MS).toISOString();
+  const result = await env.DB.prepare(
+    `SELECT identity_code_id, COUNT(*) AS count
+     FROM daily_draw_winners
+     JOIN daily_vote_items item ON item.id = daily_draw_winners.item_id
+     WHERE item.draw_limit_enabled = 1
+       AND selected_at >= ? AND selected_at <= ?
+     GROUP BY identity_code_id`
+  ).bind(windowStart, now.toISOString()).all<{
+    identity_code_id: string;
+    count: number;
+  }>();
+  return new Map(
+    result.results.map((row) => [row.identity_code_id, Number(row.count) || 0])
+  );
+}
+
+async function acquireDrawFinalizeLock(
+  env: Env,
+  token: string,
+  now: Date
+): Promise<boolean> {
+  const nowIso = now.toISOString();
+  const lockedUntil = new Date(now.getTime() + DRAW_FINALIZE_LOCK_MS).toISOString();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO daily_draw_finalize_lock(id, token, locked_until)
+     VALUES(1, '', '1970-01-01T00:00:00.000Z')`
+  ).run();
+  const result = await env.DB.prepare(
+    `UPDATE daily_draw_finalize_lock
+     SET token = ?, locked_until = ?
+     WHERE id = 1 AND locked_until <= ?`
+  ).bind(token, lockedUntil, nowIso).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+async function releaseDrawFinalizeLock(env: Env, token: string, now: Date): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE daily_draw_finalize_lock
+     SET token = '', locked_until = ?
+     WHERE id = 1 AND token = ?`
+  ).bind(now.toISOString(), token).run();
+}
+
+export async function finalizeEndedDraws(
+  env: Env,
+  now = new Date(),
+  config?: DailyVoteConfig
+): Promise<void> {
+  const token = crypto.randomUUID();
+  if (!(await acquireDrawFinalizeLock(env, token, now))) return;
+  try {
+    const dailyVoteConfig = config ?? await getDailyVoteConfig(env);
+    const winnerCounts = await drawWinnerCountsWithinWindow(env, now);
+    const ended = await listItems(env, "WHERE kind = 'draw' AND end_at <= ?", [now.toISOString()]);
+    ended.sort((left, right) =>
+      left.endAt.localeCompare(right.endAt) ||
+      left.startAt.localeCompare(right.startAt) ||
+      left.createdAt.localeCompare(right.createdAt) ||
+      left.id.localeCompare(right.id)
+    );
+    for (const item of ended) {
+      await finalizeDrawItem(env, item, now, dailyVoteConfig.drawMaxWins28Days, winnerCounts);
+    }
+  } finally {
+    await releaseDrawFinalizeLock(env, token, now);
   }
 }
 
@@ -562,7 +773,8 @@ export async function listAdminDailyVoteItems(
   options: { date?: string; kind?: DailyVoteKind; page?: number } = {}
 ): Promise<AdminDailyVotePage> {
   const now = new Date();
-  await finalizeEndedDraws(env, now);
+  const config = await getDailyVoteConfig(env);
+  await finalizeEndedDraws(env, now, config);
   const nowIso = now.toISOString();
   const clauses: string[] = [];
   const binds: unknown[] = [];
@@ -648,5 +860,5 @@ export async function listAdminDailyVoteItems(
       winners: await winnerRows(env, item.id)
     };
   }));
-  return { page, total, items: enriched };
+  return { page, total, config, items: enriched };
 }
