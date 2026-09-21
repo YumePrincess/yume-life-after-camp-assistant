@@ -14,6 +14,8 @@
     ja: "日本語"
   };
   const translations = {
+    "zh-cn": {},
+    "zh-tw": {},
     en: {
       "查看多台本地执行器、选择唯一启用设备，并按需启动任务。":
         "View local Agents, choose the single enabled device, and start tasks on demand.",
