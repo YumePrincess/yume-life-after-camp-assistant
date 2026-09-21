@@ -2316,6 +2316,10 @@ td {
   gap: 14px;
 }
 
+.identity-password-reset-step {
+  min-width: 0;
+}
+
 .identity-password-reset-dialog {
   width: min(820px, calc(100% - 28px));
   max-height: min(80vh, 760px);
@@ -2338,6 +2342,10 @@ td {
 
 .identity-password-reset-card .identity-rules {
   margin: 0;
+}
+
+.password-policy-rules {
+  grid-column: 1 / -1;
 }
 
 #maintenance-dialog {

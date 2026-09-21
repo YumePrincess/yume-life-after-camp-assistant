@@ -160,13 +160,20 @@
   function beginIdentityPasswordReset() {
     const dialog = byId("identity-password-reset-dialog");
     if (dialog && !dialog.open) dialog.showModal();
-    byId("identity-password-verify-form").hidden = true;
-    byId("identity-password-set-form").hidden = true;
+    state.identityResetChallengeId = "";
+    state.identityResetToken = "";
+    setPasswordResetStep("request");
     setText("identity-reset-feedback", "");
     const session = identitySession();
     if (session) {
       byId("identity-reset-code").value = session.identityCode;
       byId("identity-reset-email").value = session.email || "";
+    }
+  }
+
+  function setPasswordResetStep(step) {
+    for (const element of document.querySelectorAll("[data-reset-step]")) {
+      element.hidden = element.dataset.resetStep !== step;
     }
   }
 
@@ -185,7 +192,7 @@
         })
       });
       state.identityResetChallengeId = result.challengeId;
-      byId("identity-password-verify-form").hidden = false;
+      setPasswordResetStep("verify");
       feedback.textContent = window.MrzhI18n.t("验证码已发送到预留邮箱。");
     } catch (error) {
       feedback.textContent = window.MrzhI18n.t(error.message);
@@ -205,7 +212,7 @@
         })
       });
       state.identityResetToken = result.resetToken;
-      byId("identity-password-set-form").hidden = false;
+      setPasswordResetStep("set");
       feedback.textContent = window.MrzhI18n.t("验证通过，请设置新密码。");
     } catch (error) {
       feedback.textContent = window.MrzhI18n.t(error.message);
@@ -229,7 +236,7 @@
       state.identityResetChallengeId = "";
       state.identityResetToken = "";
       byId("identity-new-password").value = "";
-      byId("identity-password-set-form").hidden = true;
+      setPasswordResetStep("request");
     } catch (error) {
       feedback.textContent = window.MrzhI18n.t(error.message);
     }

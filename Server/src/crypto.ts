@@ -89,7 +89,10 @@ export async function keyedHash(
 }
 
 const PASSWORD_HASH_ALGORITHM = "pbkdf2-sha256";
-const PASSWORD_HASH_ITERATIONS = 120_000;
+// Cloudflare Workers Web Crypto rejects PBKDF2 values above 100,000.
+// Keep the encoded value explicit so hashes can be verified consistently
+// across local workerd and the deployed Worker runtime.
+const PASSWORD_HASH_ITERATIONS = 100_000;
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   let difference = left.byteLength ^ right.byteLength;
@@ -147,7 +150,7 @@ export async function verifyPassword(
       algorithm !== PASSWORD_HASH_ALGORITHM ||
       !Number.isInteger(iterations) ||
       iterations < 100_000 ||
-      iterations > 1_000_000 ||
+      iterations > PASSWORD_HASH_ITERATIONS ||
       !saltValue ||
       !digestValue
     ) {

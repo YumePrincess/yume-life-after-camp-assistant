@@ -413,7 +413,7 @@
           </div>
           <button id="close-identity-password-reset" class="button button-quiet" type="button">关闭</button>
         </div>
-        <form id="identity-password-reset-form" class="form-grid identity-password-reset-form">
+        <form id="identity-password-reset-form" class="form-grid identity-password-reset-form identity-password-reset-step" data-reset-step="request">
           <label class="field"><span>申请编号</span><input id="identity-reset-application" maxlength="40" /></label>
           <label class="field"><span>申请时预留邮箱</span><input id="identity-reset-email" type="email" maxlength="254" /></label>
           <label class="field"><span>身份识别码</span><input id="identity-reset-code" inputmode="numeric" maxlength="8" /></label>
@@ -422,13 +422,15 @@
           </ol>
           <div class="action-row"><button class="button button-primary" type="submit">发送验证码</button></div>
         </form>
-        <form id="identity-password-verify-form" class="form-grid" hidden>
+        <form id="identity-password-verify-form" class="form-grid identity-password-reset-step" data-reset-step="verify" hidden>
           <label class="field"><span>验证码（10分钟内有效）</span><input id="identity-reset-otp" inputmode="numeric" maxlength="6" /></label>
           <div class="action-row"><button class="button button-primary" type="submit">验证验证码</button></div>
         </form>
-        <form id="identity-password-set-form" class="form-grid" hidden>
+        <form id="identity-password-set-form" class="form-grid identity-password-reset-step" data-reset-step="set" hidden>
           <label class="field"><span>新密码（12-64位）</span><input id="identity-new-password" type="password" minlength="12" maxlength="64" autocomplete="new-password" /></label>
-          <p class="muted password-policy-hint">密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。</p>
+          <ol class="identity-rules password-policy-rules">
+            <li>密码需同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。</li>
+          </ol>
           <div class="action-row"><button class="button button-primary" type="submit">设置新密码</button></div>
         </form>
         <p id="identity-reset-feedback" class="feedback" role="status"></p>
