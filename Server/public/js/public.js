@@ -105,7 +105,9 @@
   function syncDailyFeatureBackButton() {
     const button = byId("back-daily-vote");
     if (!button) return;
-    button.hidden = state.activeFeature !== "vote" || !state.dailyPanel;
+    const visible = state.activeFeature === "vote" && Boolean(state.dailyPanel);
+    button.toggleAttribute("hidden", !visible);
+    button.setAttribute("aria-hidden", String(!visible));
   }
 
   function resetFeatureSelection({ clearHash = true, restoreFocus = false } = {}) {
@@ -896,12 +898,15 @@
 
   function openDailyPanel(panel) {
     if (!["technology", "items", "history"].includes(panel)) return;
+    if (state.activeFeature !== "vote") return;
     state.dailyPanel = panel;
+    syncDailyFeatureBackButton();
     renderDailyVote(state.data?.dailyVote || {});
   }
 
   function backDailyPanels() {
     state.dailyPanel = "";
+    syncDailyFeatureBackButton();
     renderDailyVote(state.data?.dailyVote || {});
   }
 
