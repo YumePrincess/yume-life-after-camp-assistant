@@ -214,7 +214,7 @@
       : identityRenewalNoticeKey(data?.identityCodeExpiresAt);
     setText(
       "vote-success-kicker",
-      kind === "daily" ? "DAILY VOTING" : "TECHNOLOGY VOTE"
+      window.MrzhI18n.t(kind === "daily" ? "DAILY VOTING" : "TECHNOLOGY VOTE")
     );
     setText("vote-success-message", message);
     setText(
@@ -568,7 +568,7 @@
           figure.className = "highlight-image";
           const image = document.createElement("img");
           image.src = block.url;
-          image.alt = block.alt || "营地公告图片";
+          image.alt = block.alt || window.MrzhI18n.t("营地公告图片");
           image.loading = "lazy";
           image.decoding = "async";
           image.tabIndex = 0;
@@ -644,7 +644,7 @@
     const row = create("div", "identity-vote-row daily-item-identity-row");
     const label = document.createElement("label");
     label.className = "field identity-code-field";
-    label.append(create("span", "", "身份识别码（必填）"));
+    label.append(create("span", "", window.MrzhI18n.t("身份识别码（必填）")));
     const input = document.createElement("input");
     input.className = "daily-identity-code";
     input.dataset.dailyItemId = itemId;
@@ -736,7 +736,11 @@
       card.append(options);
     }
     const action = create("div", "daily-vote-item-action");
-    const submit = create("button", "button button-primary", item.kind === "draw" ? "提交抽签" : "提交投票");
+    const submit = create(
+      "button",
+      "button button-primary",
+      window.MrzhI18n.t(item.kind === "draw" ? "提交抽签" : "提交投票")
+    );
     submit.type = "button";
     submit.disabled = item.isOpen === false;
     submit.addEventListener("click", () => submitDailyVote(item, identityInput));
@@ -751,7 +755,13 @@
     root.replaceChildren();
     const technology = payload?.technologyHistory || [];
     const technologySection = create("section", "daily-history-group");
-    technologySection.append(create("h4", "daily-history-group-title", "科技投票 · 最近 7 天"));
+    technologySection.append(
+      create(
+        "h4",
+        "daily-history-group-title",
+        window.MrzhI18n.t("科技投票 · 最近 7 天")
+      )
+    );
     if (!technology.length) {
       technologySection.append(create("p", "empty-state", "当天无投票记录"));
     }
@@ -785,7 +795,15 @@
     root.append(technologySection);
     for (const [kind, items] of [["poll", payload?.history?.polls || []], ["draw", payload?.history?.draws || []]]) {
       const section = create("section", "daily-history-group");
-      section.append(create("h4", "daily-history-group-title", kind === "poll" ? "投票事项 · 最近 14 天" : "抽签事项 · 最近 14 天"));
+      section.append(
+        create(
+          "h4",
+          "daily-history-group-title",
+          window.MrzhI18n.t(
+            kind === "poll" ? "投票事项 · 最近 14 天" : "抽签事项 · 最近 14 天"
+          )
+        )
+      );
       if (!items.length) {
         section.append(create("p", "empty-state", kind === "poll" ? "暂无历史投票事项。" : "暂无历史抽签事项。"));
       }
@@ -904,7 +922,10 @@
     }
   }
 
-  function openImagePreview(url, alt = "营地公告图片") {
+  function openImagePreview(
+    url,
+    alt = window.MrzhI18n.t("营地公告图片")
+  ) {
     const dialog = byId("image-preview-dialog");
     const image = byId("image-preview");
     if (!dialog || !image) {
@@ -1056,11 +1077,17 @@
     applyPluginVisibility();
     document.documentElement.dataset.timezone =
       data.campConfig?.timezone || "Asia/Shanghai";
-    const siteName = data.siteName || "明日之后“愿”营地助手";
+    const siteName = data.siteName || window.MrzhI18n.t("明日之后“愿”营地助手");
     document.title = window.MrzhI18n.t(siteName);
     setText("site-name", window.MrzhI18n.t(siteName));
-    setText("camp-name", data.campConfig?.campName || "未命名营地");
-    setText("server-name", data.campConfig?.serverName || "中国大陆服务器");
+    setText(
+      "camp-name",
+      data.campConfig?.campName || window.MrzhI18n.t("未命名营地")
+    );
+    setText(
+      "server-name",
+      data.campConfig?.serverName || window.MrzhI18n.t("中国大陆服务器")
+    );
     setText("announcement", data.publicOverview?.announcement || "");
     setText("timezone-label", data.campConfig?.timezone || "Asia/Shanghai");
     const listedMemberCount = data.members?.length || 0;
@@ -1071,7 +1098,10 @@
     setText("hero-member-count", String(totalMemberCount));
     setText(
       "member-list-count",
-      `当前列表 ${listedMemberCount} / 总人数 ${totalMemberCount}`
+      window.MrzhI18n.format("当前列表 {listed} / 总人数 {total}", {
+        listed: listedMemberCount,
+        total: totalMemberCount
+      })
     );
     setText(
       "hero-warning-count",
@@ -1238,7 +1268,7 @@
       return;
     }
     button.disabled = true;
-    feedback.textContent = "正在提交…";
+    feedback.textContent = window.MrzhI18n.t("正在提交…");
     try {
       const summary = await request("/api/public/tech-vote", {
         method: "POST",
