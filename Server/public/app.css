@@ -2660,6 +2660,17 @@ td {
   align-items: center;
 }
 
+.identity-eligibility-value {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.identity-eligibility-value .identity-eligibility-status {
+  min-width: 0;
+}
+
 .identity-eligibility-status {
   color: var(--muted);
 }
@@ -2686,7 +2697,8 @@ td {
   display: inline-grid;
   width: 22px;
   height: 22px;
-  margin-left: 6px;
+  flex: 0 0 22px;
+  margin-left: 0;
   padding: 0;
   border: 0;
   color: var(--muted);
@@ -2706,7 +2718,10 @@ td {
 }
 
 .identity-eligibility-card {
-  width: min(560px, calc(100vw - 32px));
+  width: min(520px, calc(100vw - 28px));
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .identity-eligibility-dialog-status {
@@ -2733,7 +2748,7 @@ td {
 
 .identity-eligibility-grid > div {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(90px, 0.8fr));
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(4.5em, 0.8fr));
   gap: 12px;
   padding: 11px 14px;
   border-bottom: 1px solid var(--line);
@@ -2744,11 +2759,15 @@ td {
 }
 
 .identity-eligibility-grid span {
+  min-width: 0;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .identity-eligibility-grid strong {
-  text-align: right;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .identity-information-permanent {
