@@ -246,8 +246,8 @@ function cleanPassword(value: unknown): string {
     "letmein12345",
     "iloveyou1234"
   ]);
-  if (password.length < 12 || password.length > 64 || /\s/.test(password)) {
-    throw new Error("密码必须为12至64位且不能包含空格");
+  if (password.length < 8 || password.length > 32 || /\s/.test(password)) {
+    throw new Error("密码必须为8至32位且不能包含空格");
   }
   if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
     throw new Error("密码必须同时包含大写字母、小写字母、数字和特殊符号");

@@ -362,6 +362,11 @@
   async function setPasswordReset(event) {
     event.preventDefault();
     const feedback = byId("identity-reset-feedback");
+    const password = byId("identity-new-password").value;
+    if (password.length < 8 || password.length > 32) {
+      feedback.textContent = window.MrzhI18n.t("密码必须为8至32位且不能包含空格");
+      return;
+    }
     try {
       await request("/api/public/identity-password-reset", {
         method: "POST",
@@ -369,7 +374,7 @@
           action: "set",
           challengeId: state.identityResetChallengeId,
           resetToken: state.identityResetToken,
-          password: byId("identity-new-password").value
+          password
         })
       });
       feedback.textContent = window.MrzhI18n.t("密码设置成功，请返回登录。");
