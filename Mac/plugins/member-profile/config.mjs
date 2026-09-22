@@ -5,6 +5,14 @@ export const config = {
       ocrMinimumConfidence: 0.3,
       region: { left: 115, top: 285, right: 1800, bottom: 780 },
       rowAnchorTop: 315,
+      // Keep the member name, profession, contribution, manor level and
+      // roommate columns visible to OCR/Qwen.  The other columns contain
+      // artwork/status text that is not part of the member profile and can
+      // leak into the roommate/name fields.
+      avatarMaskRegion: { left: 115, top: 285, right: 250, bottom: 945 },
+      onlineStateMaskRegion: { left: 1209, top: 285, right: 1370, bottom: 945 },
+      sceneMaskRegion: { left: 1370, top: 285, right: 1563, bottom: 945 },
+      fixedRowMaskRegion: { left: 115, top: 810, right: 1800, bottom: 945 },
       columns: [
         { key: "identity", stackedKeys: ["name"], left: 0.08, right: 0.318 },
         { key: "profession", left: 0.318, right: 0.46 },

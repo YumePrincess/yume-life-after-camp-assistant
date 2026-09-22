@@ -139,6 +139,30 @@ test("contribution and inactivity scans wait three seconds after paging and stop
   }
   const memberTable = memberProfileConfig.tables.members;
   assert.equal(memberTable.ocrMinimumConfidence, 0.3);
+  assert.deepEqual(memberTable.avatarMaskRegion, {
+    left: 115,
+    top: 285,
+    right: 250,
+    bottom: 945
+  });
+  assert.deepEqual(memberTable.onlineStateMaskRegion, {
+    left: 1209,
+    top: 285,
+    right: 1370,
+    bottom: 945
+  });
+  assert.deepEqual(memberTable.sceneMaskRegion, {
+    left: 1370,
+    top: 285,
+    right: 1563,
+    bottom: 945
+  });
+  assert.deepEqual(memberTable.fixedRowMaskRegion, {
+    left: 115,
+    top: 810,
+    right: 1800,
+    bottom: 945
+  });
   assert.deepEqual(memberTable.pagination.from, { x: 1700, y: 700 });
   assert.deepEqual(memberTable.pagination.to, { x: 1700, y: 225 });
   assert.deepEqual(memberTable.pagination.firstPageFrom, { x: 1700, y: 700 });

@@ -76,6 +76,21 @@ describe("identity code rules", () => {
       identityPlayerNameKey("人间冷眼")
     );
   });
+
+  it("matches paired OCR circle variants without stripping a real trailing O", () => {
+    expect(identityPlayerNameKey("•简微O")).toBe(
+      identityPlayerNameKey("〇简微〇")
+    );
+    expect(identityPlayerNameKey("o简微0")).toBe(
+      identityPlayerNameKey("⭕️简微⭕️")
+    );
+    expect(identityPlayerNameKey("I简微l")).toBe(
+      identityPlayerNameKey("丨简微丨")
+    );
+    expect(identityPlayerNameKey("AlphaO")).not.toBe(
+      identityPlayerNameKey("Alpha")
+    );
+  });
 });
 
 describe("five-language public content", () => {

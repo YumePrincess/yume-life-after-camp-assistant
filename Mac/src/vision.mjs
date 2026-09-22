@@ -47,6 +47,18 @@ function memberDetailsOcrRegion(definition) {
   return { ...region, left };
 }
 
+function memberDetailsMaskRegions(definition) {
+  const regions = [
+    ["avatar-column", definition?.avatarMaskRegion],
+    ["online-state-column", definition?.onlineStateMaskRegion],
+    ["scene-column", definition?.sceneMaskRegion],
+    ["fixed-current-player-row", definition?.fixedRowMaskRegion]
+  ];
+  return regions
+    .filter(([, region]) => region && typeof region === "object")
+    .map(([key, region]) => ({ key, region }));
+}
+
 function memberDetailsReadDefinition(definition) {
   const source = definition || {};
   const pagination = source.pagination || {};
@@ -319,16 +331,30 @@ export class Vision {
         fixedRowMaskRegion
       };
     }
-    if (isMemberDetailsDefinition(definition)) {
-      // Do not run the table OCR over the avatar column.  Avatar artwork has
-      // printed year marks such as 2025, and a full-screen OCR pass can turn
-      // those marks into fake member names before the table parser gets a
-      // chance to apply the identity-column bounds.
+    if (
+      isMemberDetailsDefinition(definition) &&
+      String(label || "").startsWith("member-details")
+    ) {
+      // Keep the original screenshot dimensions, but mask non-member columns
+      // before either native OCR or Qwen sees it. Avatar artwork can contain
+      // printed year marks such as 2025; online/scene labels can otherwise be
+      // misread as roommate names. The sticky assistant row is masked across
+      // the full table so it cannot become a duplicate member.
       const frame = await this.captureSource(label, signal);
+      let maskedPath = frame.path;
+      const maskRegions = memberDetailsMaskRegions(definition);
+      for (const { key, region } of maskRegions) {
+        maskedPath = await this.maskImage(
+          maskedPath,
+          region,
+          `${label}-${key}`,
+          signal
+        );
+      }
       let observations = [];
       try {
         observations = await this.ocrRegion(
-          frame.path,
+          maskedPath,
           memberDetailsOcrRegion(definition),
           `${label}-table-values`,
           signal,
@@ -346,7 +372,14 @@ export class Vision {
         // existing empty-page/retry handling decides whether to reread it.
         observations = [];
       }
-      return { path: frame.path, observations };
+      return {
+        path: maskedPath,
+        sourcePath: frame.path,
+        observations,
+        maskRegions: Object.fromEntries(
+          maskRegions.map(({ key, region }) => [key, region])
+        )
+      };
     }
     return this.#capture(label, signal, false, this.config.vision.mode, {
       minimumConfidence

@@ -1208,7 +1208,10 @@ export async function capturePagedTable(
       if (
         !frame ||
         attemptRows.length > rows.length ||
-        (memberDetailsMode && shouldRequestMemberAdvisor && attemptRows.length >= rows.length)
+        (memberDetailsMode &&
+          (shouldRequestMemberAdvisor || localVisionPageRead) &&
+          attemptRows.length >= rows.length &&
+          preferMemberPageCandidate(attemptRows, rows, byName))
       ) {
         frame = attemptFrame;
         rows = attemptRows;
@@ -1439,10 +1442,14 @@ export async function capturePagedTable(
         byName,
         tailOverlapKeys
       );
-      // Exact OCR duplicates are not separate members.  Collapse them before
-      // counting/adding the page, while retaining the collision signal above
-      // so the row-by-row advisor recovery can still correct a bad read.
-      rows = collapseExactMemberDetailRows(rawRows);
+      // Ordinary pages must retain every visible row.  Collapsing a repeated
+      // OCR name here can delete a real player when one pass misreads a new
+      // row as the previous page's last member.  Only the locked tail
+      // geometries are allowed to remove physical overlap rows; normal pages
+      // keep the collision visible so the recovery pass can resolve it.
+      rows = fullPageRead || penultimateFixedGeometry
+        ? collapseExactMemberDetailRows(rawRows)
+        : rawRows;
       if (fullPageRead || !hasFullPageDefinition) {
         const sourceRows = rows;
         rows = applyPageNameAliases(rows, pageNameAliases);
@@ -1686,6 +1693,55 @@ export async function capturePagedTable(
           }
         );
       }
+    }
+    const unresolvedNormalMemberCollision =
+      memberDetailsMode &&
+      hasFullPageDefinition &&
+      !fullPageRead &&
+      hasNormalMemberCollision(rows, byName);
+    if (unresolvedNormalMemberCollision) {
+      const retryCount = (memberPageRetries.get(page) || 0) + 1;
+      const pageRetryLimit = maxMemberPageRetries;
+      const recognizedNames = rows
+        .map((row) => String(row?.name || "").trim())
+        .filter(Boolean);
+      if (retryCount <= pageRetryLimit) {
+        memberPageRetries.set(page, retryCount);
+        await report(
+          "warning",
+          "member_details_duplicate_retry",
+          `第 ${page + 1} 页检测到普通页重复/跨页重复候选，保留全部行并在当前位置重读，不推进到下一页（第 ${retryCount}/${pageRetryLimit} 次）；当前已读到：${recognizedNames.join("、") || "无"}`,
+          {
+            page: page + 1,
+            recognizedRows: rows.length,
+            expectedRows: memberRowsPerPage,
+            maxRetries: pageRetryLimit,
+            recognizedNames,
+            duplicateRemovalAllowed: false
+          }
+        );
+        continue;
+      }
+      stoppedOnIncompletePage = true;
+      incompletePage = page + 1;
+      incompletePageNames = recognizedNames;
+      if (scanState && typeof scanState === "object") {
+        scanState.stoppedOnIncompletePage = true;
+        scanState.incompletePage = page + 1;
+      }
+      await report(
+        "warning",
+        "member_details_duplicate_stop",
+        `第 ${page + 1} 页普通页重复候选连续重读仍未消除，已停止翻页以避免删除真实玩家；当前保留 ${rows.length} 行：${recognizedNames.join("、") || "无"}`,
+        {
+          page: page + 1,
+          recognizedRows: rows.length,
+          recognizedNames,
+          maxRetries: pageRetryLimit,
+          duplicateRemovalAllowed: false
+        }
+      );
+      stopAfterIncompletePage = true;
     }
     if (memberDetailsMode && !fullPageRead && rows.length < memberRowsPerPage) {
       const retryCount = (memberPageRetries.get(page) || 0) + 1;
@@ -3289,6 +3345,51 @@ function pageNovelMemberCount(rows, byName) {
     added += 1;
   }
   return added;
+}
+
+function hasNormalMemberCollision(rows, byName) {
+  const seen = new Set();
+  const known = byName instanceof Map ? byName : new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = memberProfileNameKey(row?.name);
+    if (!key) continue;
+    if (seen.has(key) || known.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+}
+
+function preferMemberPageCandidate(candidateRows, currentRows, byName) {
+  const candidate = memberPageCandidateQuality(candidateRows, byName);
+  const current = memberPageCandidateQuality(currentRows, byName);
+  if (candidate.rowCount !== current.rowCount) {
+    return candidate.rowCount > current.rowCount;
+  }
+  // When repeated OCR passes disagree, keep the pass that contributes more
+  // names not already present in the roster. This prevents a later Qwen pass
+  // that misreads a new row as the previous page's last member from erasing
+  // the earlier pass's unique candidate (for example model3 -> model5).
+  if (candidate.novelCount !== current.novelCount) {
+    return candidate.novelCount > current.novelCount;
+  }
+  // Prefer a candidate with fewer exact duplicates when novelty is tied.
+  if (candidate.duplicateCount !== current.duplicateCount) {
+    return candidate.duplicateCount < current.duplicateCount;
+  }
+  return false;
+}
+
+function memberPageCandidateQuality(rows, byName) {
+  const known = byName instanceof Map ? byName : new Map();
+  const keys = (Array.isArray(rows) ? rows : [])
+    .map((row) => memberProfileNameKey(row?.name))
+    .filter(Boolean);
+  const uniqueKeys = new Set(keys);
+  return {
+    rowCount: Array.isArray(rows) ? rows.length : 0,
+    novelCount: keys.filter((key) => !known.has(key)).length,
+    duplicateCount: keys.length - uniqueKeys.size
+  };
 }
 
 function restoreMemberTailLeadingOverlap(previousRows, currentRows) {

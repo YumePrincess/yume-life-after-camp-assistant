@@ -4,15 +4,28 @@ import { MumuLifecycle } from "../src/mumu.mjs";
 import { Vision } from "../src/vision.mjs";
 import { GameUi } from "../src/ui.mjs";
 import { capturePagedTable } from "../src/workflows/member-sync.mjs";
+import { waitForGameReady } from "../src/game-session.mjs";
+import { config as memberProfilePluginConfig } from "../plugins/member-profile/config.mjs";
 import {
   normalizeProfiles,
   normalizeStaffGrid
 } from "../src/table-parser.mjs";
 
 const config = await loadConfig();
-const adb = new AdbClient(config);
-const mumu = new MumuLifecycle(config, adb);
-const vision = new Vision(config, adb);
+const taskConfig = {
+  ...config,
+  tables: {
+    ...(config.tables || {}),
+    ...(memberProfilePluginConfig.tables || {})
+  },
+  flows: {
+    ...(config.flows || {}),
+    ...(memberProfilePluginConfig.flows || {})
+  }
+};
+const adb = new AdbClient(taskConfig);
+const mumu = new MumuLifecycle(taskConfig, adb);
+const vision = new Vision(taskConfig, adb);
 const controller = new AbortController();
 const report = async (level, step, message, detail = {}) => {
   const safeDetail = { ...detail };
@@ -27,14 +40,15 @@ const report = async (level, step, message, detail = {}) => {
     })
   );
 };
-const ui = new GameUi(config, adb, vision, report);
+const ui = new GameUi(taskConfig, adb, vision, report, mumu);
+ui.setPluginConfig(memberProfilePluginConfig);
 ui.setRuntimeAutomation({
   gameWatchdog: {
     actionTimeoutSeconds: 180,
     frozenScreenSeconds: 180
   }
 });
-const context = { config, adb, mumu, vision, ui, report };
+const context = { config: taskConfig, adb, mumu, vision, ui, report };
 
 for (const signalName of ["SIGINT", "SIGTERM"]) {
   process.on(signalName, () => {
@@ -53,17 +67,38 @@ let expectedProfiles = null;
 let finalPageMissingAllowed = false;
 const startedAt = Date.now();
 try {
+  advisorStarted = await vision.startAdvisor(controller.signal).catch(
+    async (error) => {
+      await report(
+        "warning",
+        "local_model_unavailable",
+        "本地模型不可用，继续使用确定性流程",
+        { reason: error.message }
+      );
+      return false;
+    }
+  );
   const instance = await mumu.resolveInstance(controller.signal, { refresh: true });
-  await adb.connect();
-  await adb.waitReady(config.mumu.adbReadyTimeoutSeconds, controller.signal);
+  await report(
+    "info",
+    "mumu_start",
+    "已解析 MuMu 实例，开始确保模拟器运行并等待 ADB 就绪"
+  );
+  await mumu.ensureStarted(controller.signal);
+  await adb.waitReady(taskConfig.mumu.adbReadyTimeoutSeconds, controller.signal);
   await report(
     "info",
     "mumu_instance_resolved",
-    `已连接 MuMu 实例 ${instance.name}(${instance.index})，ADB ${config.adb.serial}`,
-    { instance: instance.name, index: instance.index, serial: config.adb.serial }
+    `已连接 MuMu 实例 ${instance.name}(${instance.index})，ADB ${taskConfig.adb.serial}`,
+    { instance: instance.name, index: instance.index, serial: taskConfig.adb.serial }
   );
-  advisorStarted = await vision.startAdvisor(controller.signal);
-  await ui.executeFlow("resetMemberPanelForRescan", {}, controller.signal);
+  await report("info", "game_start", "正在启动明日之后");
+  await adb.launchGame();
+  await report("info", "game_ready_wait", "正在等待游戏登录完成并确认 HUD 稳定");
+  await waitForGameReady(context, controller.signal);
+  await report("info", "open_camp_panel", "从 HUD 进入营地卡片首页");
+  await ui.executeFlow("openCampPanel", {}, controller.signal);
+  await ui.executeFlow("openMemberPanel", {}, controller.signal);
   const memberCountBreakdown =
     typeof vision.readMemberExpectedBreakdown === "function"
       ? await vision.readMemberExpectedBreakdown(controller.signal)
@@ -77,11 +112,33 @@ try {
     await capturePagedTable(
       context,
       "member-details",
-      config.tables.members,
+      taskConfig.tables.members,
       controller.signal,
       { expectedCount: expectedProfiles, scanState }
     )
   );
+  const knownSceneLeaks = ["鸣鸥港", "私人营地", "茅斯小镇"];
+  const sceneLeaks = profiles.flatMap((profile) => {
+    const roommateName = String(profile?.roommateName || "");
+    return knownSceneLeaks
+      .filter((scene) => roommateName.includes(scene))
+      .map((scene) => ({ name: profile.name, roommateName, scene }));
+  });
+  await report(
+    sceneLeaks.length ? "error" : "info",
+    "member_profile_mask_validation",
+    sceneLeaks.length
+      ? `遮罩校验发现 ${sceneLeaks.length} 个场景值进入同居字段`
+      : "遮罩校验通过：未发现鸣鸥港、私人营地、茅斯小镇进入同居字段",
+    { sceneLeaks, checkedProfiles: profiles.length }
+  );
+  if (sceneLeaks.length) {
+    throw new Error(
+      `MEMBER_PROFILE_SCENE_LEAK: ${sceneLeaks
+        .map((item) => `${item.name}=${item.roommateName}`)
+        .join("、")}`
+    );
+  }
   finalPageMissingAllowed =
     scanState.finalPageMissingAllowed === true &&
     Number(scanState.finalPageMissingCount) === 1 &&
@@ -126,7 +183,7 @@ try {
   );
   staff = normalizeStaffGrid(
     staffFrame.observations,
-    config.tables.staffGrid
+    taskConfig.tables.staffGrid
   );
   const advisedStaff = await vision.extractStaffRows(
     staffFrame.path,

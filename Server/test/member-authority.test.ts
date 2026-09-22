@@ -195,6 +195,12 @@ describe("identity-code member-name calibration", () => {
     ).toBe("✨椿✨");
   });
 
+  it("calibrates OCR circle variants to the active identity display name", () => {
+    expect(
+      calibrateMemberName("•简微O", [{ name: "〇简微〇" }])
+    ).toBe("〇简微〇");
+  });
+
   it("accepts one long-name OCR typo only when the best match is unique", () => {
     expect(
       calibrateMemberName("AlphaX", [{ name: "AlphaY" }, { name: "Bravo" }])
