@@ -69,4 +69,68 @@ describe("vote eligibility thresholds", () => {
       override: { votesRemaining: 1, expiresAt: null }
     })).resolves.toMatchObject({ eligible: true, overrideApplied: true });
   });
+
+  it("keeps an administrator prohibition effective despite qualifying stats, exceptions, or disabled checks", async () => {
+    const env = {
+      DB: {
+        prepare() {
+          return {
+            all: async () => ({
+              results: [{
+                name: "已达标玩家",
+                identity_code_id: "identity-1",
+                weekly_contribution: 10_000,
+                technology_points_used: 10_000,
+                material_contribution: 100_000,
+                weekly_activity_points: 100
+              }]
+            })
+          };
+        }
+      }
+    } as unknown as Env;
+
+    await expect(evaluateVoteEligibility(env, {
+      playerName: "已达标玩家",
+      identityCodeId: "identity-1",
+      enabled: false,
+      prohibited: true,
+      thresholds: DEFAULT_VOTE_ELIGIBILITY_THRESHOLDS,
+      override: { votesRemaining: 5, expiresAt: null }
+    })).resolves.toMatchObject({
+      enabled: false,
+      eligible: false,
+      prohibited: true,
+      overrideApplied: false
+    });
+  });
+
+  it("treats an admin eligibility exemption as eligible without a break-glass request", async () => {
+    const env = {
+      DB: {
+        prepare() {
+          return { all: async () => ({ results: [] }) };
+        }
+      }
+    } as unknown as Env;
+    const input = {
+      playerName: "未达标玩家",
+      identityCodeId: "identity-1",
+      enabled: true,
+      bypassed: true,
+      thresholds: DEFAULT_VOTE_ELIGIBILITY_THRESHOLDS
+    };
+
+    await expect(evaluateVoteEligibility(env, input)).resolves.toMatchObject({
+      eligible: true,
+      bypassed: true,
+      override: null,
+      overrideApplied: false
+    });
+    await expect(evaluateVoteEligibility(env, { ...input, prohibited: true })).resolves.toMatchObject({
+      eligible: false,
+      prohibited: true,
+      bypassed: true
+    });
+  });
 });

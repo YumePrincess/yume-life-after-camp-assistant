@@ -9,8 +9,8 @@
     <title>明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260921-vote-eligibility-override" />
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/i18n.js?v=20260921-vote-eligibility-override" defer></script>
-    <script src="/js/public.js?v=20260921-vote-eligibility-override" defer></script>
+    <script src="/js/i18n.js?v=20260922-identity-controls" defer></script>
+    <script src="/js/public.js?v=20260922-identity-controls" defer></script>
   </head>
   <body class="public-page">
     <div class="ambient ambient-a"></div>
@@ -249,22 +249,26 @@
             </div>
             <div id="identity-account-logged-in" hidden>
               <div class="identity-account-summary">
-                <div class="identity-account-line"><span class="identity-account-label">玩家名称：</span><strong id="identity-account-name">—</strong></div>
-                <div class="identity-account-line"><span class="identity-account-label">识别码：</span><span id="identity-account-code" class="muted">—</span></div>
-                <div class="identity-account-line"><span class="identity-account-label">邮箱：</span><span id="identity-account-email" class="muted">—</span></div>
-                <div class="identity-account-line"><span class="identity-account-label">有效期：</span><span id="identity-account-expiry" class="muted">—</span></div>
-                <div id="identity-eligibility-line" class="identity-account-line identity-eligibility-line" hidden>
-                  <span class="identity-account-label">投票资格状态：</span>
-                  <span class="identity-eligibility-value">
-                    <strong id="identity-account-eligibility" class="identity-eligibility-status">—</strong>
-                    <button id="identity-eligibility-info" class="identity-info-button" type="button" aria-label="查看投票资格标准" title="查看投票资格标准">
-                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 10.4v6.1M12 7.6h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.2"/></svg>
-                    </button>
-                  </span>
-                </div>
-                <div id="identity-eligibility-override" class="identity-account-line identity-eligibility-override" hidden>
-                  <span class="identity-account-label">破格投票资格：</span>
-                  <strong id="identity-account-eligibility-override" class="identity-eligibility-override-value">—</strong>
+                <div class="identity-account-table">
+                  <div class="identity-account-line"><span class="identity-account-label">玩家名称：</span><strong id="identity-account-name">—</strong></div>
+                  <div class="identity-account-line"><span class="identity-account-label">识别码：</span><span id="identity-account-code" class="muted">—</span></div>
+                  <div class="identity-account-line"><span class="identity-account-label">邮箱：</span><span id="identity-account-email" class="muted">—</span></div>
+                  <div class="identity-account-line"><span class="identity-account-label">有效期：</span><span id="identity-account-expiry" class="muted">—</span></div>
+                  <div id="identity-eligibility-line" class="identity-account-line identity-eligibility-line" hidden>
+                    <span class="identity-account-label">投票资格状态：</span>
+                    <span class="identity-eligibility-value">
+                      <span class="identity-eligibility-content">
+                        <strong id="identity-account-eligibility" class="identity-eligibility-status">—</strong>
+                        <button id="identity-eligibility-info" class="identity-info-button" type="button" aria-label="查看投票资格标准" title="查看投票资格标准">
+                          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 10.4v6.1M12 7.6h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.2"/></svg>
+                        </button>
+                      </span>
+                    </span>
+                  </div>
+                  <div id="identity-eligibility-override" class="identity-account-line identity-eligibility-override" hidden>
+                    <span class="identity-account-label">破格投票资格：</span>
+                    <strong id="identity-account-eligibility-override" class="identity-eligibility-override-value">—</strong>
+                  </div>
                 </div>
               </div>
               <div class="action-row identity-account-actions">
@@ -541,7 +545,6 @@
           </div>
           <button class="button button-quiet" value="close">关闭</button>
         </div>
-        <p id="identity-eligibility-dialog-status" class="identity-eligibility-dialog-status"></p>
         <div class="identity-eligibility-grid">
           <div><span>项目</span><strong>最低值</strong><strong>当前值</strong></div>
           <div><span>本周贡献</span><strong id="identity-eligibility-threshold-contribution">—</strong><strong id="identity-eligibility-current-contribution">—</strong></div>
@@ -549,6 +552,7 @@
           <div><span>物资</span><strong id="identity-eligibility-threshold-materials">—</strong><strong id="identity-eligibility-current-materials">—</strong></div>
           <div><span>周活跃点</span><strong id="identity-eligibility-threshold-activity">—</strong><strong id="identity-eligibility-current-activity">—</strong></div>
         </div>
+        <p id="identity-eligibility-dialog-status" class="identity-eligibility-dialog-status"></p>
       </form>
     </dialog>
 
@@ -558,8 +562,11 @@
           <div><p class="eyebrow">VOTE ELIGIBILITY</p><h2>申请破格投票资格</h2></div>
           <button id="identity-eligibility-application-close" class="button button-quiet" type="button">关闭</button>
         </div>
-        <p class="section-intro">请填写申请理由，管理员将在48小时内完成审核。</p>
         <label class="field"><span>申请理由</span><textarea id="identity-eligibility-application-reason" maxlength="1000" rows="5" required></textarea></label>
+        <ol class="identity-rules">
+          <li>请填写申请理由，管理员将在48小时内完成审核。</li>
+          <li>请珍惜申请机会，恶意申请、重复申请等情况将被拒绝申请且限制后续申请资格。</li>
+        </ol>
         <p id="identity-eligibility-application-feedback" class="feedback" role="status"></p>
         <div class="action-row"><button id="identity-eligibility-application-submit" class="button button-primary" type="submit">提交申请</button></div>
       </form>

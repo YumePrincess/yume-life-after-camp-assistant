@@ -129,6 +129,8 @@ export interface IdentityCodeRow {
   password_updated_at: string | null;
   eligibility_override_votes: number | null;
   eligibility_override_expires_at: string | null;
+  vote_permission_disabled: number;
+  vote_eligibility_bypass: number;
 }
 
 export type IdentityVerification =
@@ -782,6 +784,8 @@ export async function identityAccount(
       playerName: verification.code.player_name,
       identityCodeId: verification.code.id,
       enabled: dailyVoteConfig.voteEligibilityEnabled,
+      prohibited: verification.code.vote_permission_disabled === 1,
+      bypassed: verification.code.vote_eligibility_bypass === 1,
       thresholds: dailyVoteConfig.voteEligibility,
       override: {
         votesRemaining: verification.code.eligibility_override_votes,
@@ -1678,48 +1682,112 @@ export async function requestIdentityEmailChange(
   const changeId = uuid();
   const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
   const oldOtp = generateOtp();
+  await env.DB.prepare(
+    `INSERT INTO identity_verification_challenges(
+      id, group_id, identity_code_id, purpose, channel, code_hash,
+      new_email, expires_at, created_at
+    ) VALUES(?, ?, ?, 'email_change', 'old_email', ?, ?, ?, ?)`
+  ).bind(
+    uuid(), changeId, code.id,
+    await challengeHash(env, changeId, "old_email", oldOtp),
+    newEmail, expiresAt, now()
+  ).run();
+  await sendMail(env, {
+    to: code.email,
+    ...identityEmailChangeMail({ locale: code.locale, otp: oldOtp, newEmail })
+  });
+  return { changeId, expiresAt };
+}
+
+export async function verifyIdentityEmailChangeOldOtp(
+  env: Env,
+  input: { changeId: unknown; oldOtp: unknown }
+): Promise<{ expiresAt: string }> {
+  const changeId = cleanChallengeId(input.changeId);
+  const oldOtp = cleanOtp(input.oldOtp);
+  const oldRow = await env.DB.prepare(
+    `SELECT * FROM identity_verification_challenges
+     WHERE group_id = ? AND purpose = 'email_change' AND channel = 'old_email'`
+  ).bind(changeId).first<{
+    id: string;
+    identity_code_id: string;
+    code_hash: string;
+    new_email: string;
+    attempts: number;
+    expires_at: string;
+    verified_at: string | null;
+    consumed_at: string | null;
+  }>();
+  if (
+    !oldRow || oldRow.verified_at || oldRow.consumed_at ||
+    Date.parse(oldRow.expires_at) <= Date.now()
+  ) {
+    throw new Error("邮箱验证码已失效，请重新申请");
+  }
+  if (oldRow.attempts >= 5) throw new Error("验证码尝试次数过多，请重新申请");
+  const matches = oldRow.code_hash === await challengeHash(env, changeId, "old_email", oldOtp);
+  if (!matches) {
+    await env.DB.prepare(
+      "UPDATE identity_verification_challenges SET attempts = attempts + 1 WHERE id = ?"
+    ).bind(oldRow.id).run();
+    throw new Error("邮箱验证码错误，请重新输入");
+  }
+
   const newOtp = generateOtp();
-  await env.DB.batch([
+  const timestamp = now();
+  const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+  const newChallengeId = uuid();
+  const results = await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO identity_verification_challenges(
-        id, group_id, identity_code_id, purpose, channel, code_hash,
-        new_email, expires_at, created_at
-      ) VALUES(?, ?, ?, 'email_change', 'old_email', ?, ?, ?, ?)`
-    ).bind(
-      uuid(), changeId, code.id,
-      await challengeHash(env, changeId, "old_email", oldOtp),
-      newEmail, expiresAt, now()
-    ),
+      `UPDATE identity_verification_challenges
+       SET verified_at = ?, expires_at = ?
+       WHERE id = ? AND verified_at IS NULL AND consumed_at IS NULL`
+    ).bind(timestamp, expiresAt, oldRow.id),
     env.DB.prepare(
       `INSERT INTO identity_verification_challenges(
         id, group_id, identity_code_id, purpose, channel, code_hash,
         new_email, expires_at, created_at
       ) VALUES(?, ?, ?, 'email_change', 'new_email', ?, ?, ?, ?)`
     ).bind(
-      uuid(), changeId, code.id,
+      newChallengeId, changeId, oldRow.identity_code_id,
       await challengeHash(env, changeId, "new_email", newOtp),
-      newEmail, expiresAt, now()
+      oldRow.new_email, expiresAt, timestamp
     )
   ]);
-  await Promise.all([
-    sendMail(env, {
-      to: code.email,
-      ...identityEmailChangeMail({ locale: code.locale, otp: oldOtp, newEmail })
-    }),
-    sendMail(env, {
-      to: newEmail,
-      ...identityEmailChangeMail({ locale: code.locale, otp: newOtp, newEmail })
-    })
-  ]);
-  return { changeId, expiresAt };
+  if (results[0]?.meta.changes !== 1) {
+    await env.DB.prepare("DELETE FROM identity_verification_challenges WHERE id = ?")
+      .bind(newChallengeId).run();
+    throw new Error("邮箱验证码已失效，请重新申请");
+  }
+
+  try {
+    const code = await env.DB.prepare(
+      "SELECT locale FROM identity_codes WHERE id = ?"
+    ).bind(oldRow.identity_code_id).first<{ locale: SupportedLocale }>();
+    if (!code) throw new Error("身份识别码不存在");
+    await sendMail(env, {
+      to: oldRow.new_email,
+      ...identityEmailChangeMail({ locale: code.locale, otp: newOtp, newEmail: oldRow.new_email })
+    });
+  } catch (error) {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM identity_verification_challenges WHERE id = ?")
+        .bind(newChallengeId),
+      env.DB.prepare(
+        `UPDATE identity_verification_challenges
+         SET verified_at = NULL, expires_at = ? WHERE id = ? AND verified_at = ?`
+      ).bind(oldRow.expires_at, oldRow.id, timestamp)
+    ]);
+    throw error;
+  }
+  return { expiresAt };
 }
 
 export async function confirmIdentityEmailChange(
   env: Env,
-  input: { changeId: unknown; oldOtp: unknown; newOtp: unknown }
+  input: { changeId: unknown; newOtp: unknown }
 ): Promise<{ email: string; status: "pending" }> {
   const changeId = cleanChallengeId(input.changeId);
-  const oldOtp = cleanOtp(input.oldOtp);
   const newOtp = cleanOtp(input.newOtp);
   const rows = await env.DB.prepare(
     `SELECT * FROM identity_verification_challenges
@@ -1734,21 +1802,23 @@ export async function confirmIdentityEmailChange(
       new_email: string;
       attempts: number;
       expires_at: string;
+      verified_at: string | null;
       consumed_at: string | null;
     }>();
   const oldRow = rows.results.find((row) => row.channel === "old_email");
   const newRow = rows.results.find((row) => row.channel === "new_email");
-  if (!oldRow || !newRow || oldRow.consumed_at || newRow.consumed_at || Date.parse(oldRow.expires_at) <= Date.now()) {
+  if (
+    !oldRow || !newRow || !oldRow.verified_at || oldRow.consumed_at || newRow.consumed_at ||
+    Date.parse(oldRow.expires_at) <= Date.now() || Date.parse(newRow.expires_at) <= Date.now()
+  ) {
     throw new Error("邮箱验证码已失效，请重新申请");
   }
-  if (oldRow.attempts >= 5 || newRow.attempts >= 5) throw new Error("验证码尝试次数过多，请重新申请");
-  const oldMatches = oldRow.code_hash === await challengeHash(env, changeId, "old_email", oldOtp);
+  if (newRow.attempts >= 5) throw new Error("验证码尝试次数过多，请重新申请");
   const newMatches = newRow.code_hash === await challengeHash(env, changeId, "new_email", newOtp);
-  if (!oldMatches || !newMatches) {
-    await env.DB.batch([
-      ...(oldMatches ? [] : [env.DB.prepare("UPDATE identity_verification_challenges SET attempts = attempts + 1 WHERE id = ?").bind(oldRow.id)]),
-      ...(newMatches ? [] : [env.DB.prepare("UPDATE identity_verification_challenges SET attempts = attempts + 1 WHERE id = ?").bind(newRow.id)])
-    ]);
+  if (!newMatches) {
+    await env.DB.prepare(
+      "UPDATE identity_verification_challenges SET attempts = attempts + 1 WHERE id = ?"
+    ).bind(newRow.id).run();
     throw new Error("邮箱验证码错误，请重新输入");
   }
   const timestamp = now();
@@ -2097,6 +2167,9 @@ export async function submitVoteEligibilityApplication(
     if (verification.reason === "expired") throw new Error("身份识别码已过期");
     throw new Error("身份识别码无效");
   }
+  if (verification.code.vote_permission_disabled === 1) {
+    throw new Error("该身份识别码已被管理员禁止投票，无法申请破格投票资格");
+  }
   if (!verification.code.email) throw new Error("当前识别码未绑定邮箱，无法提交投票资格申请");
   const config = await getDailyVoteConfig(env);
   if (!config.voteEligibilityEnabled) throw new Error("管理员已关闭投票资格校验，无需申请破格资格");
@@ -2105,6 +2178,7 @@ export async function submitVoteEligibilityApplication(
     playerName: verification.code.player_name,
     identityCodeId: verification.code.id,
     enabled: true,
+    bypassed: verification.code.vote_eligibility_bypass === 1,
     thresholds: config.voteEligibility,
     override: {
       votesRemaining: verification.code.eligibility_override_votes,
@@ -2587,7 +2661,14 @@ export async function listIdentityCodes(
   input: { page: number; search: string; status: string; includeCode?: boolean }
 ): Promise<{
   items: Array<
-    IdentityCodeRow & { code: string; application_number: string | null }
+    IdentityCodeRow & {
+      code: string;
+      application_number: string | null;
+      eligibility_weekly_contribution: number;
+      eligibility_technology_points: number;
+      eligibility_material_contribution: number;
+      eligibility_weekly_activity_points: number;
+    }
   >;
   page: number;
   pageSize: 10;
@@ -2666,17 +2747,135 @@ export async function listIdentityCodes(
     .all<IdentityCodeRow & { application_number: string | null }>();
   return {
     items: await Promise.all(
-      rows.results.map(async (row) => ({
-        ...row,
-        code: input.includeCode === false
-          ? "••••••••"
-          : await decryptSecret(env, "identity-code-value", row.code_encrypted)
-      }))
+      rows.results.map(async (row) => {
+        const stats = await getVoteEligibilityStats(env, row.player_name, row.id);
+        return {
+          ...row,
+          eligibility_weekly_contribution: stats.weeklyContribution,
+          eligibility_technology_points: stats.technologyPoints,
+          eligibility_material_contribution: stats.materialContribution,
+          eligibility_weekly_activity_points: stats.weeklyActivityPoints,
+          code: input.includeCode === false
+            ? "••••••••"
+            : await decryptSecret(env, "identity-code-value", row.code_encrypted)
+        };
+      })
     ),
     page,
     pageSize: 10,
     total: total?.total ?? 0
   };
+}
+
+export async function updateIdentityCodeVoteEligibility(
+  env: Env,
+  input: {
+    id: string;
+    mode: unknown;
+    votes: unknown;
+    expiresAt: unknown;
+    prohibited: unknown;
+    bypassed: unknown;
+  }
+): Promise<void> {
+  const code = await env.DB.prepare("SELECT id FROM identity_codes WHERE id = ?")
+    .bind(input.id)
+    .first<{ id: string }>();
+  if (!code) throw new Error("识别码不存在");
+  if (typeof input.prohibited !== "boolean") {
+    throw new Error("请明确设置是否禁止投票");
+  }
+  if (typeof input.bypassed !== "boolean") {
+    throw new Error("请明确设置是否豁免投票资格校验");
+  }
+
+  let votes: number | null = null;
+  let expiresAt: string | null = null;
+  if (input.mode === "votes") {
+    const parsedVotes = Number(input.votes);
+    if (!Number.isInteger(parsedVotes) || parsedVotes < 1 || parsedVotes > 10_000) {
+      throw new Error("剩余破格投票次数必须为1至10000之间的整数");
+    }
+    votes = parsedVotes;
+  } else if (input.mode === "date") {
+    const value = typeof input.expiresAt === "string" ? input.expiresAt.trim() : "";
+    const parsed = new Date(value);
+    if (!value || Number.isNaN(parsed.getTime())) {
+      throw new Error("破格投票有效期格式无效");
+    }
+    expiresAt = parsed.toISOString();
+  } else if (input.mode !== "none") {
+    throw new Error("请选择剩余破格次数、有效期或清除破格资格");
+  }
+
+  await env.DB.prepare(
+    `UPDATE identity_codes SET eligibility_override_votes = ?,
+     eligibility_override_expires_at = ?, vote_permission_disabled = ?,
+     vote_eligibility_bypass = ?,
+     updated_at = ? WHERE id = ?`
+  ).bind(
+    votes,
+    expiresAt,
+    input.prohibited ? 1 : 0,
+    input.bypassed ? 1 : 0,
+    now(),
+    input.id
+  ).run();
+}
+
+export async function deleteIdentityReviewRecord(
+  env: Env,
+  input: {
+    id: string;
+    recordType: "application" | "profile_change" | "eligibility_override";
+  }
+): Promise<void> {
+  const table = input.recordType === "profile_change"
+    ? "identity_profile_change_requests"
+    : input.recordType === "eligibility_override"
+      ? "vote_eligibility_applications"
+      : "identity_code_applications";
+  if (input.recordType === "application") {
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE identity_codes SET application_id = NULL WHERE application_id = ?"
+      ).bind(input.id),
+      env.DB.prepare("DELETE FROM identity_code_applications WHERE id = ?")
+        .bind(input.id)
+    ]);
+    if (!results[1]?.meta.changes) throw new Error("审批记录不存在");
+    return;
+  }
+  const result = await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`)
+    .bind(input.id)
+    .run();
+  if (!result.meta.changes) throw new Error("审批记录不存在");
+}
+
+export async function deleteIdentityCodeRecord(
+  env: Env,
+  id: string
+): Promise<void> {
+  const code = await env.DB.prepare("SELECT id FROM identity_codes WHERE id = ?")
+    .bind(id)
+    .first<{ id: string }>();
+  if (!code) throw new Error("识别码不存在");
+
+  // Explicitly remove all historical ballots first: daily_vote_responses has
+  // an ON DELETE RESTRICT foreign key, while technology ballots are keyed by
+  // the identity id without a foreign key. D1 batch applies these together.
+  const result = await env.DB.batch([
+    env.DB.prepare("DELETE FROM daily_draw_winners WHERE identity_code_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM daily_vote_responses WHERE identity_code_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM tech_ballots WHERE voter_id = ?").bind(id),
+    env.DB.prepare(
+      "UPDATE identity_code_applications SET identity_code_id = NULL WHERE identity_code_id = ?"
+    ).bind(id),
+    env.DB.prepare("DELETE FROM identity_codes WHERE id = ?").bind(id)
+  ]);
+  if (!result[result.length - 1]?.meta.changes) {
+    throw new Error("识别码不存在或已被删除");
+  }
 }
 
 export async function listActiveIdentityCodeOptions(

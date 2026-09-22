@@ -20,6 +20,8 @@ export interface VoteEligibilityOverride {
 export interface VoteEligibilityResult {
   enabled: boolean;
   eligible: boolean;
+  prohibited: boolean;
+  bypassed: boolean;
   thresholds: VoteEligibilityThresholds;
   current: VoteEligibilityStats;
   override: VoteEligibilityOverride | null;
@@ -176,6 +178,8 @@ export async function evaluateVoteEligibility(
     playerName: string | null | undefined;
     identityCodeId?: string | null;
     enabled: boolean;
+    prohibited?: boolean;
+    bypassed?: boolean;
     thresholds: VoteEligibilityThresholds;
     override?: {
       votesRemaining?: unknown;
@@ -186,10 +190,14 @@ export async function evaluateVoteEligibility(
   const current = await getVoteEligibilityStats(env, input.playerName, input.identityCodeId);
   const override = activeVoteEligibilityOverride(input.override);
   const eligibleByStats = isVoteEligible(current, input.thresholds);
-  const overrideApplied = input.enabled && !eligibleByStats && Boolean(override);
+  const prohibited = input.prohibited === true;
+  const bypassed = input.bypassed === true;
+  const overrideApplied = !prohibited && !bypassed && input.enabled && !eligibleByStats && Boolean(override);
   return {
     enabled: input.enabled,
-    eligible: !input.enabled || eligibleByStats || overrideApplied,
+    eligible: !prohibited && (bypassed || !input.enabled || eligibleByStats || overrideApplied),
+    prohibited,
+    bypassed,
     thresholds: input.thresholds,
     current,
     override,

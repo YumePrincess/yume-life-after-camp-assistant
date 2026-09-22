@@ -24,7 +24,11 @@ vi.mock("../src/mailer", () => ({
   sendMail: async () => undefined
 }));
 
-import { updateIdentityCode } from "../src/identity";
+import {
+  deleteIdentityCodeRecord,
+  updateIdentityCode,
+  updateIdentityCodeVoteEligibility
+} from "../src/identity";
 
 describe("identity-code vote invalidation", () => {
   afterEach(() => {
@@ -92,5 +96,82 @@ describe("identity-code vote invalidation", () => {
       "identity-1",
       "2026-07-31T04:00:00.000Z"
     ]);
+  });
+
+  it("deletes all historical voting records before deleting the identity code", async () => {
+    const batched: Array<{ sql: string; params: unknown[] }> = [];
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          return {
+            sql,
+            params: [] as unknown[],
+            bind(...params: unknown[]) {
+              this.params = params;
+              return this;
+            },
+            async first() {
+              return { id: "identity-1" };
+            }
+          };
+        },
+        async batch(statements: Array<{ sql: string; params: unknown[] }>) {
+          batched.push(...statements);
+          return statements.map(() => ({ meta: { changes: 1 } }));
+        }
+      }
+    } as unknown as Env;
+
+    await deleteIdentityCodeRecord(env, "identity-1");
+
+    expect(batched.map(({ sql }) => sql)).toEqual([
+      "DELETE FROM daily_draw_winners WHERE identity_code_id = ?",
+      "DELETE FROM daily_vote_responses WHERE identity_code_id = ?",
+      "DELETE FROM tech_ballots WHERE voter_id = ?",
+      "UPDATE identity_code_applications SET identity_code_id = NULL WHERE identity_code_id = ?",
+      "DELETE FROM identity_codes WHERE id = ?"
+    ]);
+    expect(batched.every(({ params }) => params[0] === "identity-1")).toBe(true);
+  });
+
+  it("persists exception settings, prohibition, and eligibility exemption independently", async () => {
+    const updates: Array<{ sql: string; params: unknown[] }> = [];
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          const statement = {
+            sql,
+            params: [] as unknown[],
+            bind(...params: unknown[]) {
+              this.params = params;
+              return this;
+            },
+            async first() {
+              return { id: "identity-1" };
+            },
+            async run() {
+              updates.push({ sql: this.sql, params: this.params });
+              return { meta: { changes: 1 } };
+            }
+          };
+          return statement;
+        }
+      }
+    } as unknown as Env;
+
+    await updateIdentityCodeVoteEligibility(env, {
+      id: "identity-1",
+      mode: "none",
+      votes: null,
+      expiresAt: null,
+      prohibited: true,
+      bypassed: true
+    });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.sql).toContain("vote_permission_disabled = ?");
+    expect(updates[0]?.sql).toContain("vote_eligibility_bypass = ?");
+    expect(updates[0]?.params.slice(0, 4)).toEqual([null, null, 1, 1]);
+    expect(updates[0]?.params.at(-1)).toBe("identity-1");
   });
 });

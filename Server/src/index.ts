@@ -112,6 +112,8 @@ import {
   consumeIdentityApplicationVerification,
   createIdentityApplication,
   createManualIdentityCode,
+  deleteIdentityCodeRecord,
+  deleteIdentityReviewRecord,
   identityAccount,
   listIdentityApplications,
   listIdentityCodes,
@@ -137,10 +139,12 @@ import {
   submitRenewal,
   updateIdentityPlayerName,
   updateIdentityCode,
+  updateIdentityCodeVoteEligibility,
   updateIdentityCodeInformation,
   verifyIdentityPassword,
   verifyIdentityApplicationVerification,
   submitVoteEligibilityApplication,
+  verifyIdentityEmailChangeOldOtp,
 } from "./identity";
 import {
   demoSmtpConfig,
@@ -535,6 +539,8 @@ async function handlePublicApi(
     const eligibility = await evaluateVoteEligibility(env, {
       playerName: identity.identityRecord?.code.player_name,
       identityCodeId: identity.identityRecord?.code.id,
+      prohibited: identity.identityRecord?.code.vote_permission_disabled === 1,
+      bypassed: identity.identityRecord?.code.vote_eligibility_bypass === 1,
       enabled:
         dailyVoteConfig.voteEligibilityEnabled &&
         item.eligibilityCheckEnabled,
@@ -544,6 +550,13 @@ async function handlePublicApi(
         expiresAt: identity.identityRecord?.code.eligibility_override_expires_at
       }
     });
+    if (eligibility.prohibited) {
+      return problem(
+        "该身份识别码已被管理员禁止投票。",
+        403,
+        "vote_permission_disabled"
+      );
+    }
     if (!eligibility.eligible) {
       return problem(
         "您尚未满足投票资格贡献与活跃度标准。",
@@ -784,10 +797,14 @@ async function handlePublicApi(
           password: body.identityPassword,
           newEmail: body.newEmail
         });
+      } else if (action === "verify-old-email-change") {
+        result = await verifyIdentityEmailChangeOldOtp(env, {
+          changeId: body.changeId,
+          oldOtp: body.oldOtp
+        });
       } else if (action === "confirm-email-change") {
         result = await confirmIdentityEmailChange(env, {
           changeId: body.changeId,
-          oldOtp: body.oldOtp,
           newOtp: body.newOtp
         });
       } else {
@@ -926,6 +943,8 @@ async function handlePublicApi(
     const eligibility = await evaluateVoteEligibility(env, {
       playerName: identityRecord.code.player_name,
       identityCodeId: identityRecord.code.id,
+      prohibited: identityRecord.code.vote_permission_disabled === 1,
+      bypassed: identityRecord.code.vote_eligibility_bypass === 1,
       enabled:
         dailyVoteConfig.voteEligibilityEnabled &&
         bundle.technologyConfig.voteEligibilityEnabled !== false,
@@ -935,6 +954,13 @@ async function handlePublicApi(
         expiresAt: identityRecord.code.eligibility_override_expires_at
       }
     });
+    if (eligibility.prohibited) {
+      return problem(
+        "该身份识别码已被管理员禁止投票。",
+        403,
+        "vote_permission_disabled"
+      );
+    }
     if (!eligibility.eligible) {
       return problem(
         "您尚未满足投票资格贡献与活跃度标准。",
@@ -1582,6 +1608,28 @@ async function handleAdminApi(
       });
     return json(isDemoSession(session) ? demoIdentityApplications(result) : result);
   }
+  const identityApplicationRecordMatch =
+    /^\/api\/admin\/identity-applications\/([^/]+)$/.exec(path);
+  if (identityApplicationRecordMatch && method === "DELETE") {
+    try {
+      const body = await readJsonObject(request, 2_000);
+      const recordType = body.recordType;
+      if (
+        recordType !== "application" &&
+        recordType !== "profile_change" &&
+        recordType !== "eligibility_override"
+      ) {
+        return problem("审批记录类型无效", 400, "identity_review_record_type_invalid");
+      }
+      await deleteIdentityReviewRecord(env, {
+        id: identityApplicationRecordMatch[1]!,
+        recordType
+      });
+      return json({ ok: true });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_review_record_delete_failed");
+    }
+  }
   const approvalMatch =
     /^\/api\/admin\/identity-applications\/([^/]+)\/(approve|reject)$/.exec(path);
   if (approvalMatch && method === "POST") {
@@ -1638,6 +1686,19 @@ async function handleAdminApi(
       page: Number(url.searchParams.get("page") ?? 1),
       status: url.searchParams.get("status")?.trim() ?? "pending"
     }));
+  }
+  const identityProfileChangeRecordMatch =
+    /^\/api\/admin\/identity-profile-change-requests\/([^/]+)$/.exec(path);
+  if (identityProfileChangeRecordMatch && method === "DELETE") {
+    try {
+      await deleteIdentityReviewRecord(env, {
+        id: identityProfileChangeRecordMatch[1]!,
+        recordType: "profile_change"
+      });
+      return json({ ok: true });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_review_record_delete_failed");
+    }
   }
   const profileChangeMatch =
     /^\/api\/admin\/identity-profile-change-requests\/([^/]+)\/(approve|reject)$/.exec(path);
@@ -1712,7 +1773,37 @@ async function handleAdminApi(
     }
   }
   const identityCodeMatch =
-    /^\/api\/admin\/identity-codes\/([^/]+)(?:\/(resend|information|reissue|reset-password))?$/.exec(path);
+    /^\/api\/admin\/identity-codes\/([^/]+)(?:\/(resend|information|reissue|reset-password|vote-eligibility))?$/.exec(path);
+  if (identityCodeMatch && !identityCodeMatch[2] && method === "DELETE") {
+    try {
+      await deleteIdentityCodeRecord(env, identityCodeMatch[1]!);
+      return json({ ok: true });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_code_delete_failed");
+    }
+  }
+  if (identityCodeMatch?.[2] === "vote-eligibility" && method === "PATCH") {
+    const codeId = identityCodeMatch[1];
+    if (!codeId) return problem("识别码不存在", 404);
+    try {
+      const body = await readJsonObject(request, 8_000);
+      const mode = body.eligibilityMode;
+      const expiry = mode === "date"
+        ? await resolveIdentityExpiry(env, false, body.eligibilityExpiresOn)
+        : null;
+      await updateIdentityCodeVoteEligibility(env, {
+        id: codeId,
+        mode,
+        votes: body.eligibilityVotes,
+        expiresAt: expiry?.expiresAt ?? null,
+        prohibited: body.prohibitVoting,
+        bypassed: body.bypassVoteEligibility
+      });
+      return json({ ok: true });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "identity_code_vote_eligibility_update_failed");
+    }
+  }
   if (identityCodeMatch && !identityCodeMatch[2] && method === "PATCH") {
     const codeId = identityCodeMatch[1];
     if (!codeId) return problem("识别码不存在", 404);

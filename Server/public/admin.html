@@ -8,8 +8,8 @@
     <title>管理后台 · 明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260921-vote-eligibility-override" />
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/i18n.js?v=20260921-vote-eligibility-override" defer></script>
-    <script src="/js/admin.js?v=20260921-vote-eligibility-override" defer></script>
+    <script src="/js/i18n.js?v=20260922-identity-controls" defer></script>
+    <script src="/js/admin.js?v=20260922-identity-controls" defer></script>
   </head>
   <body class="admin-page">
     <div class="ambient ambient-a"></div>
@@ -692,7 +692,7 @@
                 <label id="daily-vote-max-field" class="field"><span>每人可选票数</span><input id="daily-vote-max" type="number" min="1" value="1" /></label>
                 <label id="daily-vote-draw-field" class="field" hidden><span>抽取人数</span><input id="daily-vote-draw-count" type="number" min="1" value="1" /></label>
                 <label id="daily-vote-draw-batch-field" class="field" hidden><span>批次号</span><input id="daily-vote-draw-batch" type="text" inputmode="numeric" maxlength="8" pattern="[0-9]{1,8}" value="0" /><small class="field-hint">1-8 位数字；填写 0 时不限制重复中签</small></label>
-                <label id="daily-vote-draw-limit-field" class="field" hidden><span>受中签限额限制</span><input id="daily-vote-draw-limit-enabled" type="checkbox" checked /></label>
+                <label id="daily-vote-draw-limit-field" class="field field-checkbox" hidden><input id="daily-vote-draw-limit-enabled" type="checkbox" checked /><span>受中签限额限制</span></label>
                 <label class="field field-checkbox"><input id="daily-vote-eligibility-enabled" type="checkbox" checked /><span>该事项校验投票资格</span></label>
               </div>
               <label class="field"><span>事项名称（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-title-blocks" rows="3" required></textarea></label>
@@ -1034,16 +1034,26 @@
         </div>
         <div id="identity-eligibility-approval-fields" hidden>
           <p class="field-help">破格投票次数与破格有效日期只能选择一种批准方式。</p>
+          <label id="identity-eligibility-no-mode-label" class="field field-checkbox" hidden><input id="identity-eligibility-no-mode" name="eligibilityApprovalMode" type="radio" value="none" /><span>清除破格资格</span></label>
           <div class="form-grid">
-            <label class="field field-checkbox"><input id="identity-eligibility-votes-mode" name="eligibilityApprovalMode" type="radio" value="votes" checked /><span>按次数批准</span></label>
-            <label class="field"><span>允许破格投票次数</span><input id="identity-eligibility-approved-votes" type="number" min="1" max="10000" value="1" /></label>
-            <label class="field field-checkbox"><input id="identity-eligibility-date-mode" name="eligibilityApprovalMode" type="radio" value="date" /><span>按日期批准</span></label>
+            <label class="field field-checkbox"><input id="identity-eligibility-votes-mode" name="eligibilityApprovalMode" type="radio" value="votes" checked /><span id="identity-eligibility-votes-mode-label">按次数批准</span></label>
+            <label class="field"><span id="identity-eligibility-approved-votes-label">允许破格投票次数</span><input id="identity-eligibility-approved-votes" type="number" min="1" max="10000" value="1" /></label>
+            <label class="field field-checkbox"><input id="identity-eligibility-date-mode" name="eligibilityApprovalMode" type="radio" value="date" /><span id="identity-eligibility-date-mode-label">按日期批准</span></label>
             <label class="field"><span>破格投票有效期至</span><input id="identity-eligibility-approved-until" type="date" disabled /></label>
+          </div>
+          <div id="identity-eligibility-bypass-field" class="eligibility-prohibition-field" hidden>
+            <label class="field field-checkbox"><input id="identity-eligibility-bypass" type="checkbox" /><span>豁免投票资格校验</span></label>
+            <p class="field-help">开启后，无论四项贡献活跃值是否达标，用户卡片均显示已达标且无需申请破格资格；禁投状态仍优先生效。</p>
+          </div>
+          <div id="identity-eligibility-prohibition-field" class="eligibility-prohibition-field" hidden>
+            <label class="field field-checkbox"><input id="identity-eligibility-prohibit-voting" type="checkbox" /><span>禁止该识别码投票</span></label>
+            <p class="field-help">禁止期间无法投票或申请破格资格；贡献达标、破格资格和关闭资格校验均不会解除，只有管理员可以解除。</p>
           </div>
         </div>
         <div class="action-row">
           <button id="identity-review-approve" class="button button-primary" type="button">通过并发送邮件</button>
           <button id="identity-review-reject" class="button button-danger" type="button">拒绝并发送通知</button>
+          <button id="identity-eligibility-edit-save" class="button button-primary" type="button" hidden>保存投票资格</button>
           <span id="identity-review-feedback" class="feedback"></span>
         </div>
       </form>

@@ -19,7 +19,6 @@
     identityEmailChangeId: "",
     identityProfileMode: "",
     identityProfileStep: "",
-    identityEmailOldOtp: "",
     identitySessionRefreshedAt: 0,
     identitySessionRefreshTimer: null,
     identitySessionRefreshInFlight: false,
@@ -175,23 +174,35 @@
       if (applyButton) applyButton.hidden = true;
       return;
     }
-    // The global switch is authoritative: when it is off, do not show a
-    // status row that could suggest an item-level check is still active.
-    if (line) line.hidden = result.enabled === false;
+    // Keep the explicit administrator ban visible even when eligibility
+    // checks have otherwise been switched off.
+    if (line) {
+      line.hidden = result.enabled === false &&
+        result.prohibited !== true &&
+        result.bypassed !== true;
+    }
     if (overrideLine) overrideLine.hidden = true;
     if (applyButton) applyButton.hidden = true;
-    if (result.enabled === false) {
+    if (
+      result.enabled === false &&
+      result.prohibited !== true &&
+      result.bypassed !== true
+    ) {
       status.textContent = "—";
       status.removeAttribute("data-eligible");
       return;
     }
-    const eligible = result.enabled === false || result.eligible === true;
+    const eligible = result.prohibited !== true && (result.enabled === false || result.eligible === true);
     status.textContent = window.MrzhI18n.t(
-      eligible ? "已达标，准许投票" : "尚未达标，无法投票"
+      result.prohibited
+        ? "该身份识别码已被管理员禁止投票。"
+        : eligible
+          ? "已达标，准许投票"
+          : "尚未达标，无法投票"
     );
     status.dataset.eligible = String(eligible);
     const override = result.override;
-    if (override && overrideLine) {
+    if (!result.bypassed && !result.prohibited && override && overrideLine) {
       const value = override.votesRemaining !== null && override.votesRemaining !== undefined
         ? window.MrzhI18n.format("剩余 {count} 次", { count: formatEligibilityNumber(override.votesRemaining) })
         : override.expiresAt
@@ -204,7 +215,7 @@
         overrideLine.hidden = false;
       }
     }
-    if (!eligible && !override && applyButton) applyButton.hidden = false;
+    if (!result.prohibited && !eligible && !override && applyButton) applyButton.hidden = false;
     const thresholds = result.thresholds || {};
     const current = result.current || {};
     for (const [thresholdId, currentId, key] of [
@@ -218,11 +229,13 @@
     }
     const dialogStatus = byId("identity-eligibility-dialog-status");
     if (dialogStatus) {
-      dialogStatus.textContent = result.enabled === false
-        ? window.MrzhI18n.t("管理员已关闭投票资格校验，当前身份识别码可投票。")
-        : window.MrzhI18n.t(
-          eligible ? "已达标，准许投票" : "尚未达标，无法投票"
-        );
+      dialogStatus.textContent = result.prohibited
+        ? window.MrzhI18n.t("该身份识别码已被管理员禁止投票。")
+        : result.enabled === false && result.bypassed !== true
+          ? window.MrzhI18n.t("管理员已关闭投票资格校验，当前身份识别码可投票。")
+          : window.MrzhI18n.t(
+            eligible ? "已达标，准许投票" : "尚未达标，无法投票"
+          );
       dialogStatus.dataset.eligible = String(eligible);
     }
   }
@@ -465,7 +478,6 @@
     if (!session) return openIdentityPanel();
     state.identityProfileMode = mode;
     state.identityEmailChangeId = "";
-    state.identityEmailOldOtp = "";
     setText(
       "identity-profile-dialog-title",
       window.MrzhI18n.t(mode === "name" ? "修改玩家名称" : "绑定/修改邮箱")
@@ -520,11 +532,12 @@
         feedback.textContent = window.MrzhI18n.t("请输入旧邮箱收到的验证码");
         return;
       }
-      state.identityEmailOldOtp = oldOtp;
-      setIdentityProfileStep("new-email");
-      feedback.textContent = "";
-      return;
-    } else {
+      body = {
+        action: "verify-old-email-change",
+        changeId: state.identityEmailChangeId,
+        oldOtp
+      };
+    } else if (step === "new-email") {
       const newOtp = byId("identity-profile-new-otp").value.trim();
       if (!newOtp) {
         feedback.textContent = window.MrzhI18n.t("请输入新邮箱收到的验证码");
@@ -533,9 +546,10 @@
       body = {
         action: "confirm-email-change",
         changeId: state.identityEmailChangeId,
-        oldOtp: state.identityEmailOldOtp,
         newOtp
       };
+    } else {
+      return;
     }
     submit.disabled = true;
     feedback.textContent = window.MrzhI18n.t("正在提交…");
@@ -557,6 +571,9 @@
       } else if (step === "email") {
         state.identityEmailChangeId = result.changeId;
         setIdentityProfileStep("old-email");
+        feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
+      } else if (step === "old-email") {
+        setIdentityProfileStep("new-email");
         feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
       } else {
         byId("identity-profile-dialog").close();
@@ -1284,13 +1301,14 @@
         const title = create("div", "daily-history-card-title");
         renderRichBlocks(title, item.titleBlocks, window.MrzhI18n.t("未命名事项"));
         card.append(title, create("small", "muted", window.MrzhI18n.format(
-          "投票时间 {start} - {end} ({timezone}) · 参与 {count} 人",
+          "投票截止时间 {end} ({timezone})",
           {
-            start: formatVoteDateTime(item.startAt),
             end: formatVoteDateTime(item.endAt),
-            timezone: configuredTimezone(),
-            count: item.participantCount || 0
+            timezone: configuredTimezone()
           }
+        )), create("small", "muted", window.MrzhI18n.format(
+          "参与 {count} 人",
+          { count: item.participantCount || 0 }
         )));
         if (kind === "poll") {
           const result = create("div", "daily-history-result-list");
@@ -1402,6 +1420,8 @@
       }
       const message = error.code === "vote_eligibility_failed"
         ? window.MrzhI18n.t("您尚未满足投票资格贡献与活跃度标准。")
+        : error.code === "vote_permission_disabled"
+          ? window.MrzhI18n.t("该身份识别码已被管理员禁止投票。")
         : window.MrzhI18n.t(error.message);
       showVoteError(message, window.MrzhI18n.t("日常投票未提交"), error.code === "identity_code_expired" && error.canRenew, identityCode);
     }
@@ -1870,6 +1890,8 @@
             })
           : error.code === "vote_eligibility_failed"
             ? window.MrzhI18n.t("您尚未满足投票资格贡献与活跃度标准。")
+          : error.code === "vote_permission_disabled"
+            ? window.MrzhI18n.t("该身份识别码已被管理员禁止投票。")
           : window.MrzhI18n.t(error.message);
       showVoteError(
         message,
@@ -1923,7 +1945,14 @@
 
   function openIdentityEligibilityApplication() {
     const session = identitySession();
-    if (!session) return;
+    const eligibility = session?.voteEligibility;
+    if (
+      !session ||
+      eligibility?.prohibited ||
+      eligibility?.bypassed ||
+      eligibility?.eligible ||
+      eligibility?.enabled === false
+    ) return;
     byId("identity-eligibility-application-reason").value = "";
     setText("identity-eligibility-application-feedback", "");
     byId("identity-eligibility-application-dialog").showModal();
@@ -1933,6 +1962,11 @@
     event.preventDefault();
     const session = identitySession();
     if (!session) return;
+    if (
+      session.voteEligibility?.prohibited ||
+      session.voteEligibility?.bypassed ||
+      session.voteEligibility?.eligible
+    ) return;
     const reason = byId("identity-eligibility-application-reason").value.trim();
     const feedback = byId("identity-eligibility-application-feedback");
     if (!reason) {

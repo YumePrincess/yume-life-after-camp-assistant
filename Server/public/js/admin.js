@@ -3860,17 +3860,24 @@
       );
       operation.setAttribute("aria-haspopup", "menu");
       operation.setAttribute("aria-expanded", "false");
-      operation.disabled =
-        item.status !== "pending" || !hasPermission("identity:review");
+      operation.disabled = !hasPermission("identity:review");
       operation.addEventListener("click", (event) => {
         event.stopPropagation();
-        toggleActionMenu(operation, [
-          {
+        const menuItems = [];
+        if (item.status === "pending") {
+          menuItems.push({
             label: "审批",
             icon: "events",
             onSelect: () => openIdentityReview(item)
-          }
-        ]);
+          });
+        }
+        menuItems.push({
+          label: "删除记录",
+          icon: "stop",
+          danger: true,
+          onSelect: () => deleteIdentityApplicationRecord(item)
+        });
+        toggleActionMenu(operation, menuItems);
       });
       actionCell.append(operation);
       row.append(actionCell);
@@ -3975,6 +3982,15 @@
     }
     byId("identity-approval-expiry").hidden = isProfileChange || isEligibilityApplication;
     byId("identity-eligibility-approval-fields").hidden = !isEligibilityApplication;
+    byId("identity-eligibility-no-mode-label").hidden = true;
+    byId("identity-eligibility-bypass-field").hidden = true;
+    byId("identity-eligibility-prohibition-field").hidden = true;
+    byId("identity-eligibility-edit-save").hidden = true;
+    byId("identity-review-approve").hidden = false;
+    byId("identity-review-reject").hidden = false;
+    setText("identity-eligibility-votes-mode-label", window.MrzhI18n.t("按次数批准"));
+    setText("identity-eligibility-date-mode-label", window.MrzhI18n.t("按日期批准"));
+    setText("identity-eligibility-approved-votes-label", window.MrzhI18n.t("允许破格投票次数"));
     setText(
       "identity-review-approve",
       isProfileChange ? "批准并应用并发送邮件" : "通过并发送邮件"
@@ -3987,12 +4003,135 @@
     byId("identity-review-permanent").checked = false;
     byId("identity-eligibility-votes-mode").checked = true;
     byId("identity-eligibility-date-mode").checked = false;
+    byId("identity-eligibility-no-mode").checked = false;
+    byId("identity-eligibility-bypass").checked = false;
+    byId("identity-eligibility-prohibit-voting").checked = false;
     byId("identity-eligibility-approved-votes").value = "1";
     byId("identity-eligibility-approved-votes").disabled = false;
     byId("identity-eligibility-approved-until").value = identityExpiryDate();
     byId("identity-eligibility-approved-until").disabled = true;
     setText("identity-review-feedback", "");
     byId("identity-review-dialog").showModal();
+  }
+
+  function openIdentityVoteEligibilityEditor(item) {
+    state.selectedIdentityCode = item;
+    state.selectedIdentityApplication = null;
+    setText("identity-review-title", window.MrzhI18n.t("修改投票资格"));
+    const detail = byId("identity-review-detail");
+    detail.replaceChildren();
+    const currentRows = [
+      [window.MrzhI18n.t("身份识别码"), item.code],
+      [window.MrzhI18n.t("玩家名称"), item.player_name || "—"],
+      [window.MrzhI18n.t("本周贡献"), String(item.eligibility_weekly_contribution ?? 0)],
+      [window.MrzhI18n.t("科技点"), String(item.eligibility_technology_points ?? 0)],
+      [window.MrzhI18n.t("物资"), String(item.eligibility_material_contribution ?? 0)],
+      [window.MrzhI18n.t("周活跃点"), String(item.eligibility_weekly_activity_points ?? 0)],
+      [
+        window.MrzhI18n.t("当前破格资格"),
+        item.eligibility_override_votes !== null && item.eligibility_override_votes !== undefined
+          ? window.MrzhI18n.format("剩余 {count} 次", { count: item.eligibility_override_votes })
+          : item.eligibility_override_expires_at
+            ? window.MrzhI18n.format("有效至 {date}", {
+                date: formatIdentityExpiry(item.eligibility_override_expires_at)
+              })
+            : window.MrzhI18n.t("无")
+      ],
+      [window.MrzhI18n.t("投票资格豁免"), item.vote_eligibility_bypass === 1
+        ? window.MrzhI18n.t("已开启")
+        : window.MrzhI18n.t("未开启")],
+      [window.MrzhI18n.t("投票权限"), item.vote_permission_disabled === 1
+        ? window.MrzhI18n.t("该身份识别码已被管理员禁止投票。")
+        : window.MrzhI18n.t("正常")]
+    ];
+    for (const [label, value] of currentRows) {
+      detail.append(create("dt", "", label), create("dd", "", value));
+    }
+
+    byId("identity-approval-expiry").hidden = true;
+    byId("identity-eligibility-approval-fields").hidden = false;
+    byId("identity-eligibility-no-mode-label").hidden = false;
+    byId("identity-eligibility-bypass-field").hidden = false;
+    byId("identity-eligibility-prohibition-field").hidden = false;
+    byId("identity-eligibility-edit-save").hidden = false;
+    byId("identity-review-approve").hidden = true;
+    byId("identity-review-reject").hidden = true;
+    setText("identity-eligibility-votes-mode-label", window.MrzhI18n.t("按剩余次数设置"));
+    setText("identity-eligibility-date-mode-label", window.MrzhI18n.t("按有效期设置"));
+    setText("identity-eligibility-approved-votes-label", window.MrzhI18n.t("剩余破格投票次数"));
+    const mode = item.eligibility_override_votes !== null && item.eligibility_override_votes !== undefined
+      ? "votes"
+      : item.eligibility_override_expires_at
+        ? "date"
+        : "none";
+    byId("identity-eligibility-votes-mode").checked = mode === "votes";
+    byId("identity-eligibility-date-mode").checked = mode === "date";
+    byId("identity-eligibility-no-mode").checked = mode === "none";
+    byId("identity-eligibility-approved-votes").value = String(
+      item.eligibility_override_votes ?? 1
+    );
+    byId("identity-eligibility-approved-until").value = item.eligibility_override_expires_at
+      ? identityExpiryDate(item.eligibility_override_expires_at)
+      : identityExpiryDate();
+    byId("identity-eligibility-prohibit-voting").checked = item.vote_permission_disabled === 1;
+    byId("identity-eligibility-bypass").checked = item.vote_eligibility_bypass === 1;
+    byId("identity-eligibility-approved-votes").disabled = mode !== "votes";
+    byId("identity-eligibility-approved-until").disabled = mode !== "date";
+    setText("identity-review-feedback", "");
+    byId("identity-review-dialog").showModal();
+  }
+
+  async function saveIdentityVoteEligibility() {
+    const item = state.selectedIdentityCode;
+    if (!item) return;
+    const mode = document.querySelector('[name="eligibilityApprovalMode"]:checked')?.value;
+    const button = byId("identity-eligibility-edit-save");
+    const feedback = byId("identity-review-feedback");
+    button.disabled = true;
+    feedback.textContent = window.MrzhI18n.t("正在保存…");
+    try {
+      await request(`/api/admin/identity-codes/${encodeURIComponent(item.id)}/vote-eligibility`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          eligibilityMode: mode,
+          eligibilityVotes: byId("identity-eligibility-approved-votes").value,
+          eligibilityExpiresOn: byId("identity-eligibility-approved-until").value,
+          prohibitVoting: byId("identity-eligibility-prohibit-voting").checked,
+          bypassVoteEligibility: byId("identity-eligibility-bypass").checked
+        })
+      });
+      byId("identity-review-dialog").close();
+      byId("save-state").textContent = window.MrzhI18n.t("投票资格已更新");
+      await loadIdentityCodes();
+    } catch (error) {
+      feedback.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function deleteIdentityApplicationRecord(item) {
+    const label = item.application_number || item.player_name || "该审批记录";
+    if (!(await showAppConfirm(
+      window.MrzhI18n.format("确认永久删除审批记录「{label}」？此操作无法撤销，且不会删除身份识别码。", { label }),
+      { title: "删除审批记录", danger: true }
+    ))) return;
+    const endpoint = item.record_type === "profile_change"
+      ? `/api/admin/identity-profile-change-requests/${encodeURIComponent(item.id)}`
+      : `/api/admin/identity-applications/${encodeURIComponent(item.id)}`;
+    try {
+      await request(endpoint, {
+        method: "DELETE",
+        body: item.record_type === "profile_change"
+          ? undefined
+          : JSON.stringify({ recordType: item.record_type || "application" })
+      });
+      byId("save-state").textContent = window.MrzhI18n.t("审批记录已删除");
+      await loadIdentityApplications();
+      if (canView("identity-codes")) await loadIdentityCodes();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
   }
 
   async function reviewIdentity(action) {
@@ -4183,6 +4322,11 @@
             onSelect: () => editIdentityInformation(item)
           },
           {
+            label: "修改投票资格",
+            icon: "events",
+            onSelect: () => openIdentityVoteEligibilityEditor(item)
+          },
+          {
             label: "更换识别码",
             icon: "events",
             disabled: !item.email || !item.player_name,
@@ -4199,6 +4343,12 @@
             icon: "events",
             disabled: !item.email,
             onSelect: () => openIdentityPasswordReset(item)
+          },
+          {
+            label: "删除记录",
+            icon: "stop",
+            danger: true,
+            onSelect: () => deleteIdentityCodeItem(item)
           }
         ]);
       });
@@ -4227,6 +4377,28 @@
             : "识别码已取消";
       }
       await loadIdentityCodes();
+    } catch (error) {
+      byId("save-state").textContent = error.message;
+    }
+  }
+
+  async function deleteIdentityCodeItem(item) {
+    const label = item.player_name || item.code || "该身份识别码";
+    const confirmed = await showAppConfirm(
+      window.MrzhI18n.format(
+        "确认永久删除「{label}」的身份识别码记录？此操作会同时删除该码的全部日常投票/抽签与科技投票历史，并删除关联的破格资格申请、资料变更申请及验证记录；成员档案中的绑定会解除。身份识别码申请审批记录会保留。此操作无法恢复。",
+        { label }
+      ),
+      { title: "删除身份识别码记录", danger: true }
+    );
+    if (!confirmed) return;
+    try {
+      await request(`/api/admin/identity-codes/${encodeURIComponent(item.id)}`, {
+        method: "DELETE"
+      });
+      byId("save-state").textContent = window.MrzhI18n.t("身份识别码记录及其投票历史已删除");
+      await loadIdentityCodes();
+      await loadIdentityApplications();
     } catch (error) {
       byId("save-state").textContent = error.message;
     }
@@ -4746,10 +4918,15 @@
   for (const field of document.querySelectorAll('[name="eligibilityApprovalMode"]')) {
     field.addEventListener("change", () => {
       const votes = byId("identity-eligibility-votes-mode").checked;
+      const date = byId("identity-eligibility-date-mode").checked;
       byId("identity-eligibility-approved-votes").disabled = !votes;
-      byId("identity-eligibility-approved-until").disabled = votes;
+      byId("identity-eligibility-approved-until").disabled = !date;
     });
   }
+  byId("identity-eligibility-edit-save").addEventListener(
+    "click",
+    saveIdentityVoteEligibility
+  );
   byId("identity-information-close").addEventListener("click", () =>
     byId("identity-information-dialog").close()
   );
