@@ -3925,7 +3925,7 @@
       "自动匹配（不保存绑定）": "Automatic match (do not save binding)",
       "身份识别码": "Identity code",
       "投票资格状态": "Vote eligibility",
-      "投票资格：": "Vote eligibility:",
+      "投票资格状态：": "Vote eligibility status:",
       "查看投票资格标准": "View vote eligibility standards",
       "投票资格标准": "Vote eligibility standards",
       "项目": "Metric",
@@ -3960,6 +3960,8 @@
       "按日期批准": "Approve by date",
       "允许破格投票次数": "Allowed exceptional votes",
       "破格投票有效期至": "Exceptional eligibility valid until",
+      "审批时间": "Review time",
+      "批准设置": "Approval setting",
       "破格投票次数与破格有效日期只能选择一种批准方式。": "Choose either an exceptional vote count or an exceptional validity date, not both."
     },
     fr: {
@@ -3980,7 +3982,7 @@
       "自动匹配（不保存绑定）": "Association automatique (sans enregistrer)",
       "身份识别码": "Code d’identité",
       "投票资格状态": "Éligibilité au vote",
-      "投票资格：": "Éligibilité au vote :",
+      "投票资格状态：": "Statut d’éligibilité au vote :",
       "查看投票资格标准": "Voir les critères d’éligibilité",
       "投票资格标准": "Critères d’éligibilité",
       "项目": "Critère",
@@ -4015,6 +4017,8 @@
       "按日期批准": "Approuver par date",
       "允许破格投票次数": "Votes exceptionnels autorisés",
       "破格投票有效期至": "Éligibilité exceptionnelle valable jusqu’au",
+      "审批时间": "Date d’examen",
+      "批准设置": "Paramètre d’approbation",
       "破格投票次数与破格有效日期只能选择一种批准方式。": "Choisissez soit un nombre de votes exceptionnels, soit une date de validité, mais pas les deux."
     },
     ja: {
@@ -4035,7 +4039,7 @@
       "自动匹配（不保存绑定）": "自動照合（紐付けを保存しない）",
       "身份识别码": "本人確認コード",
       "投票资格状态": "投票資格",
-      "投票资格：": "投票資格：",
+      "投票资格状态：": "投票資格の状態：",
       "查看投票资格标准": "投票資格の基準を見る",
       "投票资格标准": "投票資格の基準",
       "项目": "項目",
@@ -4070,6 +4074,8 @@
       "按日期批准": "日付で承認",
       "允许破格投票次数": "許可する特例投票回数",
       "破格投票有效期至": "特例投票資格の有効期限",
+      "审批时间": "審査日時",
+      "批准设置": "承認設定",
       "破格投票次数与破格有效日期只能选择一种批准方式。": "特例投票回数または有効日を一つだけ選択してください。"
     },
     "zh-tw": {
@@ -4090,7 +4096,7 @@
       "自动匹配（不保存绑定）": "自動配對（不儲存綁定）",
       "身份识别码": "身分識別碼",
       "投票资格状态": "投票資格狀態",
-      "投票资格：": "投票資格：",
+      "投票资格状态：": "投票資格狀態：",
       "查看投票资格标准": "查看投票資格標準",
       "投票资格标准": "投票資格標準",
       "项目": "項目",
@@ -4125,6 +4131,8 @@
       "按日期批准": "按日期批准",
       "允许破格投票次数": "允許破格投票次數",
       "破格投票有效期至": "破格投票有效期至",
+      "审批时间": "審核時間",
+      "批准设置": "批准設定",
       "破格投票次数与破格有效日期只能选择一种批准方式。": "破格投票次數與破格有效日期只能選擇一種批准方式。"
     }
   };

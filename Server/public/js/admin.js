@@ -449,6 +449,30 @@
     }).format(new Date(value));
   }
 
+  function formatIdentityExpiry(value) {
+    if (!value) return window.MrzhI18n.t("永久有效");
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    const locale = {
+      "zh-cn": "zh-CN",
+      "zh-tw": "zh-TW",
+      en: "en",
+      fr: "fr",
+      ja: "ja"
+    }[window.MrzhI18n.language()] || "zh-CN";
+    const timezone = configuredTimezone();
+    const formatted = new Intl.DateTimeFormat(locale, {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(date);
+    return `${formatted} (${timezone})`;
+  }
+
   function formatVoteDate(value) {
     if (!value) return "—";
     const locale = {
@@ -3889,6 +3913,13 @@
     );
     const detail = byId("identity-review-detail");
     detail.replaceChildren();
+    const eligibilityApprovalSetting = isEligibilityApplication
+      ? item.approved_votes !== null && item.approved_votes !== undefined
+        ? `${window.MrzhI18n.t("允许破格投票次数")}: ${item.approved_votes}`
+        : item.approved_expires_at
+          ? `${window.MrzhI18n.t("破格投票有效期至")}: ${formatIdentityExpiry(item.approved_expires_at)}`
+          : "—"
+      : "—";
     const detailRows = isProfileChange
       ? [
           ["申请编号", item.application_number || "—"],
@@ -3917,7 +3948,13 @@
           [window.MrzhI18n.t("科技点"), String(item.eligibility_technology_points ?? 0)],
           [window.MrzhI18n.t("物资"), String(item.eligibility_material_contribution ?? 0)],
           [window.MrzhI18n.t("周活跃点"), String(item.eligibility_weekly_activity_points ?? 0)],
-          [window.MrzhI18n.t("提交时间"), formatDate(item.submitted_at)]
+          [window.MrzhI18n.t("提交时间"), formatDate(item.submitted_at)],
+          ...(item.reviewed_at
+            ? [[window.MrzhI18n.t("审批时间"), formatDate(item.reviewed_at)]]
+            : []),
+          ...(item.status === "approved"
+            ? [[window.MrzhI18n.t("批准设置"), eligibilityApprovalSetting]]
+            : [])
         ]
         : [
           ["申请编号", item.application_number],
