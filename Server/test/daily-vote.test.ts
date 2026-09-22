@@ -97,8 +97,26 @@ describe("daily draw limits", () => {
   });
 
   it("defaults the 28-day cap to four and validates configured values", () => {
-    expect(normalizeDailyVoteConfig({})).toEqual({ drawMaxWins28Days: 4 });
-    expect(normalizeDailyVoteConfig({ drawMaxWins28Days: 8 })).toEqual({ drawMaxWins28Days: 8 });
+    expect(normalizeDailyVoteConfig({})).toEqual({
+      drawMaxWins28Days: 4,
+      voteEligibilityEnabled: true,
+      voteEligibility: {
+        weeklyContribution: 1500,
+        technologyPoints: 0,
+        materialContribution: 50000,
+        weeklyActivityPoints: 25
+      }
+    });
+    expect(normalizeDailyVoteConfig({ drawMaxWins28Days: 8 })).toEqual({
+      drawMaxWins28Days: 8,
+      voteEligibilityEnabled: true,
+      voteEligibility: {
+        weeklyContribution: 1500,
+        technologyPoints: 0,
+        materialContribution: 50000,
+        weeklyActivityPoints: 25
+      }
+    });
     expect(() => normalizeDailyVoteConfig({ drawMaxWins28Days: 10_001 })).toThrow(
       "drawMaxWins28Days must be an integer between 0 and 10000"
     );

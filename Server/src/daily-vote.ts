@@ -1,6 +1,11 @@
 import { decryptSecret } from "./crypto";
 import { normalizeLocale, type SupportedLocale } from "./locale";
 import { zonedDateTimeToIso } from "./time";
+import {
+  DEFAULT_VOTE_ELIGIBILITY_THRESHOLDS,
+  normalizeVoteEligibilityThresholds,
+  type VoteEligibilityThresholds
+} from "./vote-eligibility";
 
 export type DailyVoteKind = "poll" | "draw";
 
@@ -34,6 +39,7 @@ export interface DailyVoteItem {
   drawCount: number | null;
   batchNumber: string;
   drawLimitEnabled: boolean;
+  eligibilityCheckEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,11 +85,17 @@ export interface AdminDailyVotePage {
 
 export interface DailyVoteConfig {
   drawMaxWins28Days: number;
+  voteEligibilityEnabled: boolean;
+  voteEligibility: VoteEligibilityThresholds;
 }
 
 const LOCALES: SupportedLocale[] = ["zh-cn", "zh-tw", "en", "fr", "ja"];
 const MAX_CONTENT_BYTES = 240_000;
-const DEFAULT_DAILY_VOTE_CONFIG: DailyVoteConfig = { drawMaxWins28Days: 4 };
+const DEFAULT_DAILY_VOTE_CONFIG: DailyVoteConfig = {
+  drawMaxWins28Days: 4,
+  voteEligibilityEnabled: true,
+  voteEligibility: DEFAULT_VOTE_ELIGIBILITY_THRESHOLDS
+};
 const DRAW_LIMIT_WINDOW_MS = 28 * 24 * 60 * 60 * 1000;
 const DRAW_FINALIZE_LOCK_MS = 10 * 60 * 1000;
 
@@ -141,6 +153,15 @@ export function normalizeDailyVoteConfig(value: unknown): DailyVoteConfig {
       "drawMaxWins28Days",
       0,
       10_000
+    ),
+    voteEligibilityEnabled: booleanValue(
+      source.voteEligibilityEnabled,
+      "voteEligibilityEnabled",
+      DEFAULT_DAILY_VOTE_CONFIG.voteEligibilityEnabled
+    ),
+    voteEligibility: normalizeVoteEligibilityThresholds(
+      source.voteEligibility,
+      "voteEligibility"
     )
   };
 }
@@ -245,6 +266,7 @@ export function normalizeDailyVoteInput(
   drawCount: number | null;
   batchNumber: string;
   drawLimitEnabled: boolean;
+  eligibilityCheckEnabled: boolean;
 } {
   const source = object(value, "dailyVote");
   const kind = source.kind === "draw" ? "draw" : source.kind === "poll" ? "poll" : null;
@@ -282,6 +304,11 @@ export function normalizeDailyVoteInput(
   const drawLimitEnabled = kind === "draw"
     ? booleanValue(source.drawLimitEnabled, "drawLimitEnabled", existing?.drawLimitEnabled ?? true)
     : false;
+  const eligibilityCheckEnabled = booleanValue(
+    source.eligibilityCheckEnabled,
+    "eligibilityCheckEnabled",
+    existing?.eligibilityCheckEnabled ?? true
+  );
   if (existing && existing.kind !== kind) throw new Error("已存在的事项不能更改类型");
   const serialized = JSON.stringify(localizedContent);
   if (new TextEncoder().encode(serialized).byteLength > MAX_CONTENT_BYTES) {
@@ -296,7 +323,8 @@ export function normalizeDailyVoteInput(
     maxSelections,
     drawCount,
     batchNumber,
-    drawLimitEnabled
+    drawLimitEnabled,
+    eligibilityCheckEnabled
   };
 }
 
@@ -311,6 +339,7 @@ interface DailyVoteRow {
   draw_count: number | null;
   batch_number: string;
   draw_limit_enabled: number;
+  eligibility_check_enabled: number;
   created_at: string;
   updated_at: string;
 }
@@ -362,6 +391,7 @@ function itemFromRow(row: DailyVoteRow): DailyVoteItem {
     drawCount: row.draw_count === null ? null : Number(row.draw_count),
     batchNumber: row.batch_number || "0",
     drawLimitEnabled: Number(row.draw_limit_enabled) === 1,
+    eligibilityCheckEnabled: Number(row.eligibility_check_enabled) !== 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -442,12 +472,13 @@ export async function saveDailyVoteItem(
   await env.DB.prepare(
     `INSERT INTO daily_vote_items(
        id, kind, content_json, start_at, end_at, reveal_before_seconds,
-       max_selections, draw_count, batch_number, draw_limit_enabled, created_at, updated_at
-     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       max_selections, draw_count, batch_number, draw_limit_enabled,
+       eligibility_check_enabled, created_at, updated_at
+     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, input.kind, JSON.stringify(input.localizedContent), input.startAt, input.endAt,
     input.revealBeforeSeconds, input.maxSelections, input.drawCount, input.batchNumber,
-    input.drawLimitEnabled ? 1 : 0, now, now
+    input.drawLimitEnabled ? 1 : 0, input.eligibilityCheckEnabled ? 1 : 0, now, now
   ).run();
   return {
     id,
@@ -460,6 +491,7 @@ export async function saveDailyVoteItem(
     drawCount: input.drawCount,
     batchNumber: input.batchNumber,
     drawLimitEnabled: input.drawLimitEnabled,
+    eligibilityCheckEnabled: input.eligibilityCheckEnabled,
     createdAt: now,
     updatedAt: now
   };
@@ -484,12 +516,12 @@ export async function updateDailyVoteItem(
   await env.DB.prepare(
     `UPDATE daily_vote_items SET kind = ?, content_json = ?, start_at = ?, end_at = ?,
        reveal_before_seconds = ?, max_selections = ?, draw_count = ?, batch_number = ?,
-       draw_limit_enabled = ?, updated_at = ?
+       draw_limit_enabled = ?, eligibility_check_enabled = ?, updated_at = ?
      WHERE id = ?`
   ).bind(
     input.kind, JSON.stringify(input.localizedContent), input.startAt, input.endAt,
     input.revealBeforeSeconds, input.maxSelections, input.drawCount, input.batchNumber,
-    input.drawLimitEnabled ? 1 : 0, now, id
+    input.drawLimitEnabled ? 1 : 0, input.eligibilityCheckEnabled ? 1 : 0, now, id
   ).run();
   return { ...existing, ...input, updatedAt: now };
 }

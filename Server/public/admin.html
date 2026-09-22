@@ -6,10 +6,10 @@
     <link rel="icon" href="https://www.yume.zone/img/logo.png" />
     <meta name="theme-color" content="#15221f" />
     <title>管理后台 · 明日之后“愿”营地助手</title>
-    <link rel="stylesheet" href="/app.css?v=20260921-preferences-align" />
+    <link rel="stylesheet" href="/app.css?v=20260921-vote-eligibility-override" />
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/i18n.js?v=20260921-preferences-align" defer></script>
-    <script src="/js/admin.js?v=20260921-preferences-align" defer></script>
+    <script src="/js/i18n.js?v=20260921-vote-eligibility-override" defer></script>
+    <script src="/js/admin.js?v=20260921-vote-eligibility-override" defer></script>
   </head>
   <body class="admin-page">
     <div class="ambient ambient-a"></div>
@@ -372,6 +372,44 @@
 
           <section id="vote-management-shell" class="admin-view vote-admin-shell" data-admin-view="technology" data-worker-plugin="technology" hidden>
             <div class="vote-admin-card-grid">
+              <details class="vote-admin-card" data-vote-management-card="general">
+                <summary><span>通用投票设置</span><span class="vote-admin-card-hint">点击展开</span></summary>
+                <div id="vote-management-general-host" class="vote-admin-card-body">
+                  <form id="daily-vote-config-form" class="daily-vote-config-form">
+                    <div class="form-grid">
+                      <label class="field">
+                        <span>28天内同一识别码最多中签次数</span>
+                        <input id="daily-vote-max-wins-28-days" type="number" min="0" max="10000" step="1" value="4" required />
+                      </label>
+                      <label class="field field-checkbox">
+                        <input id="vote-eligibility-enabled" type="checkbox" checked />
+                        <span>投票资格校验</span>
+                      </label>
+                      <label class="field">
+                        <span>本周贡献最低值</span>
+                        <input id="vote-eligibility-min-contribution" type="number" min="0" max="1000000000" step="1" value="1500" required />
+                      </label>
+                      <label class="field">
+                        <span>科技点最低值</span>
+                        <input id="vote-eligibility-min-technology-points" type="number" min="0" max="1000000000" step="1" value="0" required />
+                      </label>
+                      <label class="field">
+                        <span>物资最低值</span>
+                        <input id="vote-eligibility-min-materials" type="number" min="0" max="1000000000" step="1" value="50000" required />
+                      </label>
+                      <label class="field">
+                        <span>周活跃点最低值</span>
+                        <input id="vote-eligibility-min-weekly-activity" type="number" min="0" max="1000000000" step="1" value="25" required />
+                      </label>
+                    </div>
+                    <p class="field-help">投票资格在提交投票时校验；投票成功后，后续资料变化不会取消已记录的投票。</p>
+                    <div class="section-savebar">
+                      <span id="daily-vote-config-feedback" class="feedback" role="status"></span>
+                      <button class="button button-primary" type="submit">保存通用投票设置</button>
+                    </div>
+                  </form>
+                </div>
+              </details>
               <details class="vote-admin-card" data-vote-management-card="technology">
                 <summary><span>科技目录、投票与固定科技</span><span class="vote-admin-card-hint">点击展开</span></summary>
                 <div id="vote-management-technology-host" class="vote-admin-card-body"></div>
@@ -421,6 +459,10 @@
                 <label class="field technology-row-limit-field">
                   <span>第二行科技最大开放数量</span>
                   <input id="technology-general-limit" type="number" min="0" max="6" step="1" value="6" />
+                </label>
+                <label class="field field-checkbox technology-eligibility-field">
+                  <input id="technology-vote-eligibility-enabled" type="checkbox" checked />
+                  <span>科技投票校验投票资格</span>
                 </label>
               </div>
               <div class="technology-rule-workspace">
@@ -632,24 +674,6 @@
                 <button id="daily-vote-new-draw" class="button button-quiet" type="button">新建抽签</button>
               </div>
             </div>
-            <div class="technology-history-toolbar daily-vote-toolbar">
-              <div class="technology-history-query">
-                <div class="daily-vote-toolbar-actions">
-                  <button id="refresh-daily-vote" class="button button-quiet" type="button">刷新</button>
-                </div>
-                <span id="daily-vote-status" class="muted" aria-live="polite"></span>
-              </div>
-            </div>
-            <form id="daily-vote-config-form" class="daily-vote-config-form">
-              <label class="field">
-                <span>28天内同一识别码最多中签次数</span>
-                <input id="daily-vote-max-wins-28-days" type="number" min="0" max="10000" step="1" value="4" required />
-              </label>
-              <div class="section-savebar">
-                <span id="daily-vote-config-feedback" class="feedback" role="status"></span>
-                <button class="button button-primary" type="submit">保存抽签配置</button>
-              </div>
-            </form>
             <form id="daily-vote-editor" class="daily-vote-editor" hidden>
               <input id="daily-vote-id" type="hidden" />
               <div class="section-heading">
@@ -669,6 +693,7 @@
                 <label id="daily-vote-draw-field" class="field" hidden><span>抽取人数</span><input id="daily-vote-draw-count" type="number" min="1" value="1" /></label>
                 <label id="daily-vote-draw-batch-field" class="field" hidden><span>批次号</span><input id="daily-vote-draw-batch" type="text" inputmode="numeric" maxlength="8" pattern="[0-9]{1,8}" value="0" /><small class="field-hint">1-8 位数字；填写 0 时不限制重复中签</small></label>
                 <label id="daily-vote-draw-limit-field" class="field" hidden><span>受中签限额限制</span><input id="daily-vote-draw-limit-enabled" type="checkbox" checked /></label>
+                <label class="field field-checkbox"><input id="daily-vote-eligibility-enabled" type="checkbox" checked /><span>该事项校验投票资格</span></label>
               </div>
               <label class="field"><span>事项名称（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-title-blocks" rows="3" required></textarea></label>
               <label class="field"><span>事项描述（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-description-blocks" rows="5"></textarea></label>
@@ -762,7 +787,7 @@
             <div class="table-scroll">
               <table>
                 <thead>
-                  <tr><th>成员</th><th>职业</th><th>庄园</th><th>同居</th><th>本周贡献</th><th>科技点</th><th>物资</th><th>周活跃点</th></tr>
+                  <tr><th>成员</th><th>身份识别码</th><th>职业</th><th>庄园</th><th>同居</th><th>本周贡献</th><th>科技点</th><th>物资</th><th>周活跃点</th></tr>
                 </thead>
                 <tbody id="admin-member-table"></tbody>
               </table>
@@ -915,6 +940,11 @@
             <input id="member-edit-camp-title" name="campTitle" type="text" maxlength="80" />
           </label>
           <label class="field">
+            <span>绑定身份识别码</span>
+            <select id="member-edit-identity-code" name="identityCodeId"></select>
+            <small class="field-hint">留空时按有效识别码玩家名称自动匹配；绑定仅用于当前成员记录，成员下次同步不存在时会按新数据更新。</small>
+          </label>
+          <label class="field">
             <span>职业</span>
             <input id="member-edit-profession" name="profession" type="text" maxlength="80" />
           </label>
@@ -1001,6 +1031,15 @@
         <div id="identity-approval-expiry" class="form-grid">
           <label class="field"><span>发行有效期至</span><input id="identity-review-expiry" type="date" /></label>
           <label class="field field-checkbox"><input id="identity-review-permanent" type="checkbox" /><span>永久有效</span></label>
+        </div>
+        <div id="identity-eligibility-approval-fields" hidden>
+          <p class="field-help">破格投票次数与破格有效日期只能选择一种批准方式。</p>
+          <div class="form-grid">
+            <label class="field field-checkbox"><input id="identity-eligibility-votes-mode" name="eligibilityApprovalMode" type="radio" value="votes" checked /><span>按次数批准</span></label>
+            <label class="field"><span>允许破格投票次数</span><input id="identity-eligibility-approved-votes" type="number" min="1" max="10000" value="1" /></label>
+            <label class="field field-checkbox"><input id="identity-eligibility-date-mode" name="eligibilityApprovalMode" type="radio" value="date" /><span>按日期批准</span></label>
+            <label class="field"><span>破格投票有效期至</span><input id="identity-eligibility-approved-until" type="date" disabled /></label>
+          </div>
         </div>
         <div class="action-row">
           <button id="identity-review-approve" class="button button-primary" type="button">通过并发送邮件</button>

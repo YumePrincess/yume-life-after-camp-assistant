@@ -676,6 +676,12 @@ export function validateTechnologyConfig(value: unknown): TechnologyConfig {
       0,
       12
     ),
+    voteEligibilityEnabled: boolean(
+      source.voteEligibilityEnabled === undefined
+        ? true
+        : source.voteEligibilityEnabled,
+      "technologyConfig.voteEligibilityEnabled"
+    ),
     limits: {
       core: integer(
         limits.core === undefined ? 6 : limits.core,

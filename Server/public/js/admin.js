@@ -59,7 +59,16 @@
     technologyHistoryLoading: false,
     technologyHistoryLoaded: false,
     dailyVoteItems: [],
-    dailyVoteConfig: { drawMaxWins28Days: 4 },
+    dailyVoteConfig: {
+      drawMaxWins28Days: 4,
+      voteEligibilityEnabled: true,
+      voteEligibility: {
+        weeklyContribution: 1500,
+        technologyPoints: 0,
+        materialContribution: 50000,
+        weeklyActivityPoints: 25
+      }
+    },
     dailyVotePage: 1,
     dailyVoteTotal: 0,
     dailyVoteHistoryPage: 1,
@@ -1454,12 +1463,28 @@
           totalKey: "dailyVoteTotal"
         };
     state.dailyVoteItems = payload?.items || [];
-    if (!history) state.dailyVoteConfig = payload?.config || { drawMaxWins28Days: 4 };
+    if (!history) state.dailyVoteConfig = payload?.config || state.dailyVoteConfig;
     state[view.pageKey] = Number(payload?.page) || 1;
     state[view.totalKey] = Number(payload?.total) || 0;
     const maxWinsInput = byId("daily-vote-max-wins-28-days");
     if (!history && maxWinsInput && document.activeElement !== maxWinsInput) {
       maxWinsInput.value = String(state.dailyVoteConfig.drawMaxWins28Days ?? 4);
+    }
+    if (!history) {
+      const eligibility = state.dailyVoteConfig.voteEligibility || {};
+      const enabled = byId("vote-eligibility-enabled");
+      if (enabled && document.activeElement !== enabled) {
+        enabled.checked = state.dailyVoteConfig.voteEligibilityEnabled !== false;
+      }
+      for (const [id, key, fallback] of [
+        ["vote-eligibility-min-contribution", "weeklyContribution", 1500],
+        ["vote-eligibility-min-technology-points", "technologyPoints", 0],
+        ["vote-eligibility-min-materials", "materialContribution", 50000],
+        ["vote-eligibility-min-weekly-activity", "weeklyActivityPoints", 25]
+      ]) {
+        const input = byId(id);
+        if (input && document.activeElement !== input) input.value = String(eligibility[key] ?? fallback);
+      }
     }
     const root = byId(view.rootId);
     if (!root) return;
@@ -1618,12 +1643,19 @@
       const payload = await request("/api/admin/daily-vote/config", {
         method: "PUT",
         body: JSON.stringify({
-          drawMaxWins28Days: Number(byId("daily-vote-max-wins-28-days").value)
+          drawMaxWins28Days: Number(byId("daily-vote-max-wins-28-days").value),
+          voteEligibilityEnabled: byId("vote-eligibility-enabled").checked,
+          voteEligibility: {
+            weeklyContribution: Number(byId("vote-eligibility-min-contribution").value),
+            technologyPoints: Number(byId("vote-eligibility-min-technology-points").value),
+            materialContribution: Number(byId("vote-eligibility-min-materials").value),
+            weeklyActivityPoints: Number(byId("vote-eligibility-min-weekly-activity").value)
+          }
         })
       });
       state.dailyVoteConfig = payload.config || state.dailyVoteConfig;
       byId("daily-vote-max-wins-28-days").value = String(state.dailyVoteConfig.drawMaxWins28Days);
-      setText("daily-vote-config-feedback", window.MrzhI18n.t("抽签配置已保存"));
+      setText("daily-vote-config-feedback", window.MrzhI18n.t("通用投票设置已保存"));
     } catch (error) {
       setText("daily-vote-config-feedback", localizeDailyVoteError(error));
     }
@@ -1675,6 +1707,7 @@
     byId("daily-vote-draw-count").value = source.drawCount || 1;
     byId("daily-vote-draw-batch").value = source.batchNumber ?? "0";
     byId("daily-vote-draw-limit-enabled").checked = source.drawLimitEnabled !== false;
+    byId("daily-vote-eligibility-enabled").checked = source.eligibilityCheckEnabled !== false;
     byId("daily-vote-title-blocks").value = dailyBlocksToText(content.titleBlocks);
     byId("daily-vote-description-blocks").value = dailyBlocksToText(content.descriptionBlocks);
     byId("daily-vote-options").value = (content.options || []).map((option) => dailyBlocksToText(option.blocks)).join("\n\n");
@@ -1719,6 +1752,7 @@
       revealBeforeSeconds: Number(byId("daily-vote-reveal-value").value || 0) * Number(byId("daily-vote-reveal-unit").value || 60),
       batchNumber: byId("daily-vote-draw-batch").value.trim(),
       drawLimitEnabled: byId("daily-vote-draw-limit-enabled").checked,
+      eligibilityCheckEnabled: byId("daily-vote-eligibility-enabled").checked,
       ...(kind === "poll"
         ? { maxSelections: Number(byId("daily-vote-max").value || 1) }
         : { drawCount: Number(byId("daily-vote-draw-count").value || 1) })
@@ -2402,6 +2436,10 @@
         Number.isInteger(config.voteLimit) ? config.voteLimit : 6
       );
     }
+    const eligibilityInput = byId("technology-vote-eligibility-enabled");
+    if (eligibilityInput && document.activeElement !== eligibilityInput) {
+      eligibilityInput.checked = config.voteEligibilityEnabled !== false;
+    }
     for (const [id, lane] of [
       ["technology-core-limit", "core"],
       ["technology-general-limit", "general"]
@@ -2693,7 +2731,9 @@
       card.dataset.voteCardBound = "true";
       card.addEventListener("toggle", () => {
         if (!card.open) return;
-        if (card.dataset.voteManagementCard === "daily-vote") {
+        if (card.dataset.voteManagementCard === "general") {
+          void loadDailyVoteAdmin("", state.dailyVotePage, "active");
+        } else if (card.dataset.voteManagementCard === "daily-vote") {
           void loadDailyVoteAdmin("", 1, "active");
         }
       });
@@ -2796,7 +2836,8 @@
       ["#temporary-key-form input, #temporary-key-form button", "keys:manage"],
       ["#manual-identity-code-form input, #manual-identity-code-form select, #manual-identity-code-form button", "identity:manage"],
       ["#smtp-config-form input, #smtp-config-form select, #smtp-config-form button, #smtp-test-form input, #smtp-test-form button", "smtp:manage"],
-      ["#daily-vote-new-poll, #daily-vote-new-draw, #daily-vote-config-form input, #daily-vote-config-form button, #daily-vote-editor input, #daily-vote-editor select, #daily-vote-editor textarea, #daily-vote-editor button", "admin:daily-vote"]
+      ["#daily-vote-new-poll, #daily-vote-new-draw, #daily-vote-config-form input, #daily-vote-config-form button, #daily-vote-editor input, #daily-vote-editor select, #daily-vote-editor textarea, #daily-vote-editor button", "admin:daily-vote"],
+      ["#member-edit-identity-code", "identity:manage"]
     ]) {
       for (const control of document.querySelectorAll(selector)) {
         control.disabled = !hasPermission(permission);
@@ -2947,6 +2988,7 @@
       row.className = "member-admin-row";
       for (const value of [
         item.name,
+        item.identity_code || "—",
         item.profession || "—",
         item.manor_level ?? "—",
         item.roommate_name || "—",
@@ -2968,6 +3010,7 @@
     detail.replaceChildren();
     for (const [label, value] of [
       ["营地称号", member.camp_title],
+      ["身份识别码", member.identity_code],
       ["职业", member.profession],
       ["庄园等级", member.manor_level],
       ["同居", member.roommate_name],
@@ -3007,6 +3050,17 @@
     ]) {
       byId(id).value = value ?? "";
     }
+    const identitySelect = byId("member-edit-identity-code");
+    if (identitySelect) {
+      identitySelect.replaceChildren();
+      identitySelect.append(create("option", "", "自动匹配（不保存绑定）"));
+      for (const option of state.bootstrap?.identityCodeOptions || []) {
+        const item = create("option", "", `${option.code} · ${option.playerName || "—"}`);
+        item.value = option.id;
+        identitySelect.append(item);
+      }
+      identitySelect.value = member.identity_code_id || "";
+    }
     setText("member-edit-feedback", "");
     const dialog = byId("member-edit-dialog");
     if (!dialog.open) dialog.showModal();
@@ -3032,6 +3086,7 @@
       return value === "" ? null : Number(value);
     };
     const payload = {
+      identityCodeId: String(form.elements.identityCodeId?.value || "") || null,
       campTitle: optionalText("campTitle"),
       profession: optionalText("profession"),
       manorLevel: optionalInteger("manorLevel"),
@@ -3430,6 +3485,8 @@
         core: readRowLimit("technology-core-limit"),
         general: readRowLimit("technology-general-limit")
       };
+      state.technologyDraft.voteEligibilityEnabled =
+        byId("technology-vote-eligibility-enabled")?.checked !== false;
       const emptyPreset = state.technologyDraft.fixedPresets.find(
         (preset) => !preset.technologyKeys?.length
       );
@@ -3752,6 +3809,8 @@
         item.application_number,
         item.record_type === "profile_change"
           ? "资料变更"
+          : item.record_type === "eligibility_override"
+            ? window.MrzhI18n.t("投票资格")
           : item.request_type === "renewal"
             ? "延期"
             : item.request_type === "reissue"
@@ -3815,10 +3874,13 @@
   function openIdentityReview(item) {
     state.selectedIdentityApplication = item;
     const isProfileChange = item.record_type === "profile_change";
+    const isEligibilityApplication = item.record_type === "eligibility_override";
     setText(
       "identity-review-title",
       isProfileChange
         ? "审批资料变更"
+        : isEligibilityApplication
+          ? window.MrzhI18n.t("审批投票资格申请")
         : item.request_type === "renewal"
           ? "审批延期申请"
           : item.request_type === "reissue"
@@ -3845,7 +3907,19 @@
           ],
           ["提交时间", formatDate(item.submitted_at)]
         ]
-      : [
+      : isEligibilityApplication
+        ? [
+          [window.MrzhI18n.t("申请编号"), item.application_number || "—"],
+          [window.MrzhI18n.t("玩家名称"), item.player_name || "—"],
+          [window.MrzhI18n.t("接收邮箱"), item.email || "—"],
+          [window.MrzhI18n.t("申请理由"), item.eligibility_reason || "—"],
+          [window.MrzhI18n.t("本周贡献"), String(item.eligibility_weekly_contribution ?? 0)],
+          [window.MrzhI18n.t("科技点"), String(item.eligibility_technology_points ?? 0)],
+          [window.MrzhI18n.t("物资"), String(item.eligibility_material_contribution ?? 0)],
+          [window.MrzhI18n.t("周活跃点"), String(item.eligibility_weekly_activity_points ?? 0)],
+          [window.MrzhI18n.t("提交时间"), formatDate(item.submitted_at)]
+        ]
+        : [
           ["申请编号", item.application_number],
           ["玩家名称", item.player_name],
           ["接收邮箱", item.email],
@@ -3862,7 +3936,8 @@
     for (const [label, value] of detailRows) {
       detail.append(create("dt", "", label), create("dd", "", value));
     }
-    byId("identity-approval-expiry").hidden = isProfileChange;
+    byId("identity-approval-expiry").hidden = isProfileChange || isEligibilityApplication;
+    byId("identity-eligibility-approval-fields").hidden = !isEligibilityApplication;
     setText(
       "identity-review-approve",
       isProfileChange ? "批准并应用并发送邮件" : "通过并发送邮件"
@@ -3873,6 +3948,12 @@
     );
     byId("identity-review-expiry").value = identityExpiryDate();
     byId("identity-review-permanent").checked = false;
+    byId("identity-eligibility-votes-mode").checked = true;
+    byId("identity-eligibility-date-mode").checked = false;
+    byId("identity-eligibility-approved-votes").value = "1";
+    byId("identity-eligibility-approved-votes").disabled = false;
+    byId("identity-eligibility-approved-until").value = identityExpiryDate();
+    byId("identity-eligibility-approved-until").disabled = true;
     setText("identity-review-feedback", "");
     byId("identity-review-dialog").showModal();
   }
@@ -3881,11 +3962,23 @@
     const item = state.selectedIdentityApplication;
     if (!item) return;
     const isProfileChange = item.record_type === "profile_change";
+    const isEligibilityApplication = item.record_type === "eligibility_override";
     const feedback = byId("identity-review-feedback");
     let body;
     if (action === "approve") {
       body = isProfileChange
         ? {}
+        : isEligibilityApplication
+          ? {
+              recordType: "eligibility_override",
+              eligibilityMode: document.querySelector('[name="eligibilityApprovalMode"]:checked')?.value,
+              eligibilityVotes: byId("identity-eligibility-votes-mode").checked
+                ? Number(byId("identity-eligibility-approved-votes").value)
+                : null,
+              eligibilityExpiresOn: byId("identity-eligibility-date-mode").checked
+                ? byId("identity-eligibility-approved-until").value
+                : null
+            }
         : {
             permanent: byId("identity-review-permanent").checked,
             expiresOn: byId("identity-review-permanent").checked
@@ -3913,7 +4006,9 @@
         feedback.textContent = window.MrzhI18n.t("请填写拒绝理由");
         return;
       }
-      body = { reason };
+      body = isEligibilityApplication
+        ? { reason, recordType: "eligibility_override" }
+        : { reason };
     }
     feedback.textContent = "正在处理并发送邮件…";
     try {
@@ -4611,6 +4706,13 @@
   byId("identity-review-reject").addEventListener("click", () =>
     reviewIdentity("reject")
   );
+  for (const field of document.querySelectorAll('[name="eligibilityApprovalMode"]')) {
+    field.addEventListener("change", () => {
+      const votes = byId("identity-eligibility-votes-mode").checked;
+      byId("identity-eligibility-approved-votes").disabled = !votes;
+      byId("identity-eligibility-approved-until").disabled = votes;
+    });
+  }
   byId("identity-information-close").addEventListener("click", () =>
     byId("identity-information-dialog").close()
   );

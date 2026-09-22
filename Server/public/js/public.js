@@ -138,6 +138,7 @@
     if (loggedIn) loggedIn.hidden = !session;
     setText("identity-account-state", session ? window.MrzhI18n.t("已登录") : window.MrzhI18n.t("未登录"));
     setText("daily-identity-panel-state", session ? "✓" : "—");
+    renderIdentityEligibility(session);
     if (session) {
       setText("identity-account-name", session.playerName || window.MrzhI18n.t("未填写玩家名称"));
       setText("identity-account-code", session.identityCode || "—");
@@ -151,6 +152,85 @@
       const loginCode = byId("identity-login-code");
       if (loginCode) loginCode.value = session.identityCode;
     }
+  }
+
+  function formatEligibilityNumber(value) {
+    return new Intl.NumberFormat(window.MrzhI18n.language() || undefined).format(
+      Number.isFinite(Number(value)) ? Number(value) : 0
+    );
+  }
+
+  function renderIdentityEligibility(session = identitySession()) {
+    const status = byId("identity-account-eligibility");
+    const line = byId("identity-eligibility-line");
+    const overrideLine = byId("identity-eligibility-override");
+    const applyButton = byId("identity-eligibility-apply");
+    const result = session?.voteEligibility;
+    if (!status) return;
+    if (!session || !result) {
+      status.textContent = "—";
+      status.removeAttribute("data-eligible");
+      if (line) line.hidden = true;
+      if (overrideLine) overrideLine.hidden = true;
+      if (applyButton) applyButton.hidden = true;
+      return;
+    }
+    // The global switch is authoritative: when it is off, do not show a
+    // status row that could suggest an item-level check is still active.
+    if (line) line.hidden = result.enabled === false;
+    if (overrideLine) overrideLine.hidden = true;
+    if (applyButton) applyButton.hidden = true;
+    if (result.enabled === false) {
+      status.textContent = "—";
+      status.removeAttribute("data-eligible");
+      return;
+    }
+    const eligible = result.enabled === false || result.eligible === true;
+    status.textContent = window.MrzhI18n.t(
+      eligible ? "已达标，准许投票" : "尚未达标，无法投票"
+    );
+    status.dataset.eligible = String(eligible);
+    const override = result.override;
+    if (override && overrideLine) {
+      const value = override.votesRemaining !== null && override.votesRemaining !== undefined
+        ? window.MrzhI18n.format("剩余 {count} 次", { count: formatEligibilityNumber(override.votesRemaining) })
+        : override.expiresAt
+          ? window.MrzhI18n.format("有效至 {date}", {
+              date: formatIdentityExpiry(override.expiresAt, session.timezone || configuredTimezone())
+            })
+          : "";
+      if (value) {
+        setText("identity-account-eligibility-override", value);
+        overrideLine.hidden = false;
+      }
+    }
+    if (!eligible && !override && applyButton) applyButton.hidden = false;
+    const thresholds = result.thresholds || {};
+    const current = result.current || {};
+    for (const [thresholdId, currentId, key] of [
+      ["identity-eligibility-threshold-contribution", "identity-eligibility-current-contribution", "weeklyContribution"],
+      ["identity-eligibility-threshold-technology", "identity-eligibility-current-technology", "technologyPoints"],
+      ["identity-eligibility-threshold-materials", "identity-eligibility-current-materials", "materialContribution"],
+      ["identity-eligibility-threshold-activity", "identity-eligibility-current-activity", "weeklyActivityPoints"]
+    ]) {
+      setText(thresholdId, formatEligibilityNumber(thresholds[key]));
+      setText(currentId, formatEligibilityNumber(current[key]));
+    }
+    const dialogStatus = byId("identity-eligibility-dialog-status");
+    if (dialogStatus) {
+      dialogStatus.textContent = result.enabled === false
+        ? window.MrzhI18n.t("管理员已关闭投票资格校验，当前身份识别码可投票。")
+        : window.MrzhI18n.t(
+          eligible ? "已达标，准许投票" : "尚未达标，无法投票"
+        );
+      dialogStatus.dataset.eligible = String(eligible);
+    }
+  }
+
+  function openIdentityEligibilityDialog() {
+    renderIdentityEligibility();
+    const dialog = byId("identity-eligibility-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
   }
 
   function openIdentityPanel() {
@@ -1315,7 +1395,10 @@
       if (IDENTITY_SESSION_INVALID_CODES.has(error.code)) {
         clearIdentitySession({ openPanel: true });
       }
-      showVoteError(window.MrzhI18n.t(error.message), window.MrzhI18n.t("日常投票未提交"), error.code === "identity_code_expired" && error.canRenew, identityCode);
+      const message = error.code === "vote_eligibility_failed"
+        ? window.MrzhI18n.t("您尚未满足投票资格贡献与活跃度标准。")
+        : window.MrzhI18n.t(error.message);
+      showVoteError(message, window.MrzhI18n.t("日常投票未提交"), error.code === "identity_code_expired" && error.canRenew, identityCode);
     }
   }
 
@@ -1780,6 +1863,8 @@
           ? window.MrzhI18n.format("尝试次数过多，请在 {seconds} 秒后重试。", {
               seconds: error.retryAfterSeconds || "—"
             })
+          : error.code === "vote_eligibility_failed"
+            ? window.MrzhI18n.t("您尚未满足投票资格贡献与活跃度标准。")
           : window.MrzhI18n.t(error.message);
       showVoteError(
         message,
@@ -1816,12 +1901,12 @@
     if (!dialog.open) dialog.showModal();
   }
 
-  function showIdentityApplicationSuccess(message) {
+  function showIdentityApplicationSuccess(message, notice) {
     setText("identity-application-success-title", window.MrzhI18n.t("申请已提交"));
     setText("identity-application-success-message", message);
     setText(
       "identity-application-success-notice",
-      window.MrzhI18n.t(
+      notice || window.MrzhI18n.t(
         "申请已成功提交，预计于48小时内完成审核，请留意邮箱的审核结果邮件。"
       )
     );
@@ -1829,6 +1914,49 @@
     if (applicationDialog?.open) applicationDialog.close();
     const dialog = byId("identity-application-success-dialog");
     if (dialog && !dialog.open) dialog.showModal();
+  }
+
+  function openIdentityEligibilityApplication() {
+    const session = identitySession();
+    if (!session) return;
+    byId("identity-eligibility-application-reason").value = "";
+    setText("identity-eligibility-application-feedback", "");
+    byId("identity-eligibility-application-dialog").showModal();
+  }
+
+  async function submitIdentityEligibilityApplication(event) {
+    event.preventDefault();
+    const session = identitySession();
+    if (!session) return;
+    const reason = byId("identity-eligibility-application-reason").value.trim();
+    const feedback = byId("identity-eligibility-application-feedback");
+    if (!reason) {
+      feedback.textContent = window.MrzhI18n.t("请填写申请理由");
+      return;
+    }
+    const button = byId("identity-eligibility-application-submit");
+    button.disabled = true;
+    feedback.textContent = window.MrzhI18n.t("正在提交申请…");
+    try {
+      await request("/api/public/vote-eligibility-applications", {
+        method: "POST",
+        body: JSON.stringify({
+          identityCode: session.identityCode,
+          identityPassword: session.password,
+          locale: window.MrzhI18n.language(),
+          reason
+        })
+      });
+      byId("identity-eligibility-application-dialog").close();
+      showIdentityApplicationSuccess(
+        window.MrzhI18n.t("申请已提交，管理员将在48小时内完成审核。"),
+        window.MrzhI18n.t("请留意邮箱的审核结果邮件。")
+      );
+    } catch (error) {
+      feedback.textContent = window.MrzhI18n.t(error.message);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function openNewApplication() {
@@ -2281,6 +2409,12 @@
   byId("identity-reissue-logged-in").addEventListener("click", () => openReissue(identitySession()?.identityCode || ""));
   byId("identity-profile-form").addEventListener("submit", submitIdentityProfile);
   byId("close-identity-profile-dialog").addEventListener("click", () => byId("identity-profile-dialog").close());
+  byId("identity-eligibility-info")?.addEventListener("click", openIdentityEligibilityDialog);
+  byId("identity-eligibility-apply")?.addEventListener("click", openIdentityEligibilityApplication);
+  byId("identity-eligibility-application-form")?.addEventListener("submit", submitIdentityEligibilityApplication);
+  byId("identity-eligibility-application-close")?.addEventListener("click", () => {
+    byId("identity-eligibility-application-dialog").close();
+  });
   byId("identity-logout").addEventListener("click", () => {
     clearIdentitySession();
     setText("identity-profile-feedback", window.MrzhI18n.t("已退出身份识别码账号。"));

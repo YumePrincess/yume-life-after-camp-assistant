@@ -274,7 +274,19 @@ const COPY = {
     cancelled: "身份识别码注销成功",
     cancelledStatus: "状态",
     cancelledStatusValue: "已注销",
-    cancelledNote: "该身份识别码已立即失效，注销流程无法撤回。"
+    cancelledNote: "该身份识别码已立即失效，注销流程无法撤回。",
+    eligibilityApproved: "破格投票资格申请已批准",
+    eligibilityRejected: "破格投票资格申请未通过",
+    eligibilityReason: "申请理由",
+    eligibilityStats: "提交时当前数值",
+    eligibilityContribution: "本周贡献",
+    eligibilityTechnology: "科技点",
+    eligibilityMaterials: "物资",
+    eligibilityActivity: "周活跃点",
+    eligibilityVotes: "允许破格投票次数",
+    eligibilityExpiry: "破格投票有效期至",
+    eligibilityApprovedNote: "管理员已批准破格投票资格，请在有效次数或有效期内使用。",
+    eligibilityRejectedNote: "管理员已拒绝本次破格投票资格申请。"
   },
   "zh-tw": {
     approved: "身分識別碼申請已通過",
@@ -307,7 +319,19 @@ const COPY = {
     cancelled: "身分識別碼註銷成功",
     cancelledStatus: "狀態",
     cancelledStatusValue: "已註銷",
-    cancelledNote: "該身分識別碼已立即失效，註銷流程無法撤回。"
+    cancelledNote: "該身分識別碼已立即失效，註銷流程無法撤回。",
+    eligibilityApproved: "破格投票資格申請已批准",
+    eligibilityRejected: "破格投票資格申請未通過",
+    eligibilityReason: "申請理由",
+    eligibilityStats: "提交時目前數值",
+    eligibilityContribution: "本週貢獻",
+    eligibilityTechnology: "科技點",
+    eligibilityMaterials: "物資",
+    eligibilityActivity: "週活躍點",
+    eligibilityVotes: "允許破格投票次數",
+    eligibilityExpiry: "破格投票有效期至",
+    eligibilityApprovedNote: "管理員已批准破格投票資格，請在有效次數或有效期內使用。",
+    eligibilityRejectedNote: "管理員已拒絕本次破格投票資格申請。"
   },
   en: {
     approved: "Identity code application approved",
@@ -340,7 +364,19 @@ const COPY = {
     cancelled: "Identity code cancellation completed",
     cancelledStatus: "Status",
     cancelledStatusValue: "Cancelled",
-    cancelledNote: "The identity code is now invalid. This cancellation cannot be undone."
+    cancelledNote: "The identity code is now invalid. This cancellation cannot be undone.",
+    eligibilityApproved: "Exceptional voting eligibility approved",
+    eligibilityRejected: "Exceptional voting eligibility rejected",
+    eligibilityReason: "Application reason",
+    eligibilityStats: "Current values at submission",
+    eligibilityContribution: "Weekly contribution",
+    eligibilityTechnology: "Technology points",
+    eligibilityMaterials: "Materials",
+    eligibilityActivity: "Weekly activity points",
+    eligibilityVotes: "Allowed exceptional votes",
+    eligibilityExpiry: "Exceptional eligibility valid until",
+    eligibilityApprovedNote: "The administrator approved exceptional voting eligibility. Use it within the allowed count or validity period.",
+    eligibilityRejectedNote: "The administrator rejected this exceptional voting eligibility request."
   },
   fr: {
     approved: "Demande de code d’identité approuvée",
@@ -373,7 +409,19 @@ const COPY = {
     cancelled: "Résiliation du code d’identité terminée",
     cancelledStatus: "État",
     cancelledStatusValue: "Résilié",
-    cancelledNote: "Le code d’identité est maintenant invalide. Cette résiliation est irréversible."
+    cancelledNote: "Le code d’identité est maintenant invalide. Cette résiliation est irréversible.",
+    eligibilityApproved: "Éligibilité exceptionnelle au vote approuvée",
+    eligibilityRejected: "Éligibilité exceptionnelle au vote refusée",
+    eligibilityReason: "Motif de la demande",
+    eligibilityStats: "Valeurs au moment de la demande",
+    eligibilityContribution: "Contribution hebdomadaire",
+    eligibilityTechnology: "Points technologiques",
+    eligibilityMaterials: "Ressources",
+    eligibilityActivity: "Points d’activité hebdomadaire",
+    eligibilityVotes: "Votes exceptionnels autorisés",
+    eligibilityExpiry: "Éligibilité exceptionnelle valable jusqu’au",
+    eligibilityApprovedNote: "L’administrateur a approuvé l’éligibilité exceptionnelle. Utilisez-la dans la limite ou la période autorisée.",
+    eligibilityRejectedNote: "L’administrateur a refusé cette demande d’éligibilité exceptionnelle."
   },
   ja: {
     approved: "本人確認コード申請が承認されました",
@@ -406,7 +454,19 @@ const COPY = {
     cancelled: "本人確認コードの解約が完了しました",
     cancelledStatus: "状態",
     cancelledStatusValue: "解約済み",
-    cancelledNote: "本人確認コードは無効になりました。この解約は取り消せません。"
+    cancelledNote: "本人確認コードは無効になりました。この解約は取り消せません。",
+    eligibilityApproved: "特例投票資格申請が承認されました",
+    eligibilityRejected: "特例投票資格申請が却下されました",
+    eligibilityReason: "申請理由",
+    eligibilityStats: "申請時の現在値",
+    eligibilityContribution: "週間貢献度",
+    eligibilityTechnology: "技術ポイント",
+    eligibilityMaterials: "物資",
+    eligibilityActivity: "週間アクティブポイント",
+    eligibilityVotes: "許可された特例投票回数",
+    eligibilityExpiry: "特例投票資格の有効期限",
+    eligibilityApprovedNote: "管理者が特例投票資格を承認しました。許可された回数または期間内にご利用ください。",
+    eligibilityRejectedNote: "管理者がこの特例投票資格申請を却下しました。"
   }
 } as const;
 
@@ -445,6 +505,50 @@ export function identityMail(input: {
     "",
     ...rows.map(([key, value]) => `${key}: ${value}`),
     ...(notes.length ? ["", ...notes] : []),
+    "",
+    input.locale === "zh-cn"
+      ? `版权所有 © ${new Date().getUTCFullYear()} 美国雨梦互联网有限公司 保留所有权利。`
+      : `Copyright © ${new Date().getUTCFullYear()} Yume Internet LLC. All Rights Reserved.`
+  ];
+  return {
+    subject,
+    text: plain.join("\n"),
+    html: renderYumeEmail({ locale: input.locale, title: subject, rows, notes })
+  };
+}
+
+export function voteEligibilityMail(input: {
+  locale: SupportedLocale;
+  approved: boolean;
+  applicationNumber: string;
+  playerName: string;
+  reason: string;
+  weeklyContribution: number;
+  technologyPoints: number;
+  materialContribution: number;
+  weeklyActivityPoints: number;
+  votes: number | null;
+  expiresAt: string | null;
+}): { subject: string; text: string; html: string } {
+  const copy = COPY[input.locale];
+  const subject = input.approved ? copy.eligibilityApproved : copy.eligibilityRejected;
+  const rows: Array<[string, string]> = [
+    [copy.application, input.applicationNumber],
+    [copy.player, input.playerName],
+    [copy.eligibilityReason, input.reason],
+    [copy.eligibilityStats, `${copy.eligibilityContribution}: ${input.weeklyContribution}; ${copy.eligibilityTechnology}: ${input.technologyPoints}; ${copy.eligibilityMaterials}: ${input.materialContribution}; ${copy.eligibilityActivity}: ${input.weeklyActivityPoints}`]
+  ];
+  if (input.approved) {
+    if (input.votes !== null) rows.push([copy.eligibilityVotes, String(input.votes)]);
+    if (input.expiresAt) rows.push([copy.eligibilityExpiry, input.expiresAt]);
+  }
+  const notes = [input.approved ? copy.eligibilityApprovedNote : copy.eligibilityRejectedNote];
+  const plain = [
+    subject,
+    "",
+    ...rows.map(([key, value]) => `${key}: ${value}`),
+    "",
+    ...notes,
     "",
     input.locale === "zh-cn"
       ? `版权所有 © ${new Date().getUTCFullYear()} 美国雨梦互联网有限公司 保留所有权利。`

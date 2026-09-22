@@ -2656,6 +2656,101 @@ td {
   grid-template-columns: minmax(0, 1fr) minmax(170px, 0.52fr);
 }
 
+.identity-eligibility-line {
+  align-items: center;
+}
+
+.identity-eligibility-status {
+  color: var(--muted);
+}
+
+.identity-eligibility-status[data-eligible="true"] {
+  color: #69d99b;
+}
+
+.identity-eligibility-status[data-eligible="false"] {
+  color: #ff8585;
+}
+
+.identity-eligibility-override-value {
+  color: #fbbf24;
+}
+
+#identity-eligibility-application-dialog textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+}
+
+.identity-info-button {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  place-items: center;
+  cursor: pointer;
+}
+
+.identity-info-button:hover,
+.identity-info-button:focus-visible {
+  color: var(--accent);
+}
+
+.identity-info-button svg {
+  width: 19px;
+  height: 19px;
+}
+
+.identity-eligibility-card {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.identity-eligibility-dialog-status {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.identity-eligibility-dialog-status[data-eligible="true"] {
+  color: #69d99b;
+}
+
+.identity-eligibility-dialog-status[data-eligible="false"] {
+  color: #ff8585;
+}
+
+.identity-eligibility-grid {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.identity-eligibility-grid > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(90px, 0.8fr));
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.identity-eligibility-grid > div:last-child {
+  border-bottom: 0;
+}
+
+.identity-eligibility-grid span {
+  color: var(--muted);
+}
+
+.identity-eligibility-grid strong {
+  text-align: right;
+}
+
 .identity-information-permanent {
   align-self: end;
   margin-bottom: 16px;

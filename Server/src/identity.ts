@@ -13,6 +13,7 @@ import {
   identityCancellationMail,
   identityCancellationCompletedMail,
   identityProfileChangeMail,
+  voteEligibilityMail,
   identityRecoveryMail,
   normalizeLocale,
   sendMail,
@@ -32,6 +33,8 @@ import {
   zonedDateKey,
   zonedDateTimeToIso
 } from "./time";
+import { getDailyVoteConfig } from "./daily-vote";
+import { evaluateVoteEligibility, getVoteEligibilityStats } from "./vote-eligibility";
 export { isSequentialIdentityCode } from "./identity-code-utils";
 
 export interface IdentityApplicationRow {
@@ -53,9 +56,9 @@ export interface IdentityApplicationRow {
 
 export interface IdentityReviewItem {
   id: string;
-  record_type: "application" | "profile_change";
+  record_type: "application" | "profile_change" | "eligibility_override";
   application_number: string | null;
-  request_type: "new" | "renewal" | "reissue" | "profile_change";
+  request_type: "new" | "renewal" | "reissue" | "profile_change" | "eligibility_override";
   email: string | null;
   player_name: string | null;
   locale: SupportedLocale;
@@ -72,6 +75,36 @@ export interface IdentityReviewItem {
   current_email: string | null;
   requested_player_name: string | null;
   requested_email: string | null;
+  eligibility_reason: string | null;
+  eligibility_weekly_contribution: number | null;
+  eligibility_technology_points: number | null;
+  eligibility_material_contribution: number | null;
+  eligibility_weekly_activity_points: number | null;
+  approved_votes: number | null;
+  approved_expires_at: string | null;
+}
+
+export interface VoteEligibilityApplicationRow {
+  id: string;
+  application_number: string;
+  identity_code_id: string;
+  email: string;
+  player_name: string;
+  locale: SupportedLocale;
+  reason: string;
+  weekly_contribution: number;
+  technology_points: number;
+  material_contribution: number;
+  weekly_activity_points: number;
+  status: "pending" | "approved" | "rejected";
+  submitted_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  rejection_reason: string | null;
+  approved_votes: number | null;
+  approved_expires_at: string | null;
+  email_sent_at: string | null;
+  last_email_error: string | null;
 }
 
 export interface IdentityCodeRow {
@@ -94,6 +127,8 @@ export interface IdentityCodeRow {
   password_hash: string | null;
   password_set_at: string | null;
   password_updated_at: string | null;
+  eligibility_override_votes: number | null;
+  eligibility_override_expires_at: string | null;
 }
 
 export type IdentityVerification =
@@ -334,6 +369,12 @@ async function assertNoPendingIdentityRequest(
      WHERE identity_code_id = ? AND status = 'pending' LIMIT 1`
   ).bind(identityCodeId).first<{ id: string }>();
   if (profileChange) throw new Error(PENDING_IDENTITY_REQUEST_MESSAGE);
+
+  const eligibilityApplication = await env.DB.prepare(
+    `SELECT id FROM vote_eligibility_applications
+     WHERE identity_code_id = ? AND status = 'pending' LIMIT 1`
+  ).bind(identityCodeId).first<{ id: string }>();
+  if (eligibilityApplication) throw new Error(PENDING_IDENTITY_REQUEST_MESSAGE);
 }
 
 async function assertNoOtherActiveIdentityCode(
@@ -405,10 +446,12 @@ async function generateApplicationNumber(env: Env): Promise<string> {
     const value = `LA${date}-${(random % 1_000_000).toString().padStart(6, "0")}`;
     const exists = await env.DB.prepare(
       "SELECT id FROM identity_code_applications WHERE application_number = ?"
-    )
-      .bind(value)
-      .first();
-    if (!exists) return value;
+    ).bind(value).first();
+    if (exists) continue;
+    const eligibilityExists = await env.DB.prepare(
+      "SELECT id FROM vote_eligibility_applications WHERE application_number = ?"
+    ).bind(value).first();
+    if (!eligibilityExists) return value;
   }
   throw new Error("暂时无法生成申请编号，请重试");
 }
@@ -714,6 +757,7 @@ export async function identityAccount(
   email: string;
   expiresAt: string | null;
   timezone: string;
+  voteEligibility: Awaited<ReturnType<typeof evaluateVoteEligibility>>;
   passwordRequired: false;
 }> {
   const verification = await verifyIdentityPassword(env, input);
@@ -727,12 +771,23 @@ export async function identityAccount(
     throw new Error("身份识别码无效");
   }
   const bundle = await getConfigBundle(env);
+  const dailyVoteConfig = await getDailyVoteConfig(env);
   return {
     identityCode: await decryptSecret(env, "identity-code-value", verification.code.code_encrypted),
     playerName: verification.code.player_name ?? "",
     email: verification.code.email ?? "",
     expiresAt: verification.code.expires_at,
     timezone: bundle.campConfig.timezone,
+    voteEligibility: await evaluateVoteEligibility(env, {
+      playerName: verification.code.player_name,
+      identityCodeId: verification.code.id,
+      enabled: dailyVoteConfig.voteEligibilityEnabled,
+      thresholds: dailyVoteConfig.voteEligibility,
+      override: {
+        votesRemaining: verification.code.eligibility_override_votes,
+        expiresAt: verification.code.eligibility_override_expires_at
+      }
+    }),
     passwordRequired: false
   };
 }
@@ -974,6 +1029,7 @@ export async function submitReissue(
     ),
     env.DB.prepare(
       `UPDATE identity_codes SET status = 'disabled', disabled_at = ?,
+       eligibility_override_votes = NULL, eligibility_override_expires_at = NULL,
        updated_at = ? WHERE id = ?`
     ).bind(submittedAt, submittedAt, code.id),
     ...invalidateCurrentVotes
@@ -1139,6 +1195,7 @@ export async function confirmIdentityCancellation(
     ).bind(timestamp, timestamp, challenge.id),
     env.DB.prepare(
       `UPDATE identity_codes SET status = 'disabled', disabled_at = ?,
+       eligibility_override_votes = NULL, eligibility_override_expires_at = NULL,
        updated_at = ? WHERE id = ? AND status = 'active'`
     ).bind(timestamp, timestamp, challenge.identity_code_id),
     ...(await currentVoteInvalidations(env, challenge.identity_code_id, new Date(timestamp)))
@@ -1919,7 +1976,14 @@ export async function listIdentityApplications(
         NULL AS current_player_name,
         NULL AS current_email,
         NULL AS requested_player_name,
-        NULL AS requested_email
+        NULL AS requested_email,
+        NULL AS eligibility_reason,
+        NULL AS eligibility_weekly_contribution,
+        NULL AS eligibility_technology_points,
+        NULL AS eligibility_material_contribution,
+        NULL AS eligibility_weekly_activity_points,
+        NULL AS approved_votes,
+        NULL AS approved_expires_at
       FROM identity_code_applications a
       UNION ALL
       SELECT
@@ -1942,10 +2006,47 @@ export async function listIdentityApplications(
         c.player_name AS current_player_name,
         c.email AS current_email,
         r.requested_player_name,
-        r.requested_email
+        r.requested_email,
+        NULL AS eligibility_reason,
+        NULL AS eligibility_weekly_contribution,
+        NULL AS eligibility_technology_points,
+        NULL AS eligibility_material_contribution,
+        NULL AS eligibility_weekly_activity_points,
+        NULL AS approved_votes,
+        NULL AS approved_expires_at
       FROM identity_profile_change_requests r
       JOIN identity_codes c ON c.id = r.identity_code_id
       LEFT JOIN identity_code_applications a ON a.id = c.application_id
+      UNION ALL
+      SELECT
+        'eligibility_override' AS record_type,
+        v.id,
+        v.application_number,
+        'eligibility_override' AS request_type,
+        v.email,
+        v.player_name,
+        v.locale,
+        v.status,
+        v.identity_code_id,
+        v.submitted_at,
+        v.reviewed_at,
+        v.reviewed_by,
+        v.rejection_reason,
+        v.email_sent_at,
+        v.last_email_error,
+        NULL AS profile_kind,
+        NULL AS current_player_name,
+        NULL AS current_email,
+        NULL AS requested_player_name,
+        NULL AS requested_email,
+        v.reason AS eligibility_reason,
+        v.weekly_contribution AS eligibility_weekly_contribution,
+        v.technology_points AS eligibility_technology_points,
+        v.material_contribution AS eligibility_material_contribution,
+        v.weekly_activity_points AS eligibility_weekly_activity_points,
+        v.approved_votes,
+        v.approved_expires_at
+      FROM vote_eligibility_applications v
     )
   `;
   const totalRow = await env.DB.prepare(
@@ -1960,7 +2061,238 @@ export async function listIdentityApplications(
   )
     .bind(...bindings, (page - 1) * 10)
     .all<IdentityReviewItem>();
-  return { items: result.results, page, pageSize: 10, total: totalRow?.total ?? 0 };
+  const items = await Promise.all(result.results.map(async (item) => {
+    if (item.record_type !== "eligibility_override" || !item.identity_code_id) return item;
+    const current = await getVoteEligibilityStats(env, item.player_name, item.identity_code_id);
+    return {
+      ...item,
+      eligibility_weekly_contribution: current.weeklyContribution,
+      eligibility_technology_points: current.technologyPoints,
+      eligibility_material_contribution: current.materialContribution,
+      eligibility_weekly_activity_points: current.weeklyActivityPoints
+    };
+  }));
+  return { items, page, pageSize: 10, total: totalRow?.total ?? 0 };
+}
+
+export async function submitVoteEligibilityApplication(
+  env: Env,
+  input: {
+    identityCode: unknown;
+    password: unknown;
+    locale: unknown;
+    reason: unknown;
+  }
+): Promise<{ applicationNumber: string; status: "pending" }> {
+  const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 1_000) : "";
+  if (!reason) throw new Error("请填写申请理由");
+  const verification = await verifyIdentityPassword(env, {
+    identityCode: input.identityCode,
+    password: input.password
+  });
+  if (!verification.ok) {
+    if (verification.reason === "invalid_password") throw new Error("身份识别码或密码错误");
+    if (verification.reason === "password_required") throw new Error("该身份识别码尚未设置密码，请先使用忘记密码功能");
+    if (verification.reason === "disabled") throw new Error("身份识别码已被禁用");
+    if (verification.reason === "expired") throw new Error("身份识别码已过期");
+    throw new Error("身份识别码无效");
+  }
+  if (!verification.code.email) throw new Error("当前识别码未绑定邮箱，无法提交投票资格申请");
+  const config = await getDailyVoteConfig(env);
+  if (!config.voteEligibilityEnabled) throw new Error("管理员已关闭投票资格校验，无需申请破格资格");
+  await assertNoPendingIdentityRequest(env, verification.code.id);
+  const eligibility = await evaluateVoteEligibility(env, {
+    playerName: verification.code.player_name,
+    identityCodeId: verification.code.id,
+    enabled: true,
+    thresholds: config.voteEligibility,
+    override: {
+      votesRemaining: verification.code.eligibility_override_votes,
+      expiresAt: verification.code.eligibility_override_expires_at
+    }
+  });
+  if (eligibility.eligible) throw new Error("当前身份识别码已满足投票资格，无需申请破格资格");
+  const pending = await env.DB.prepare(
+    `SELECT id FROM vote_eligibility_applications
+     WHERE identity_code_id = ? AND status = 'pending' LIMIT 1`
+  ).bind(verification.code.id).first();
+  if (pending) throw new Error("已有待审核的投票资格申请，请等待管理员审核完成");
+  const id = uuid();
+  const applicationNumber = await generateApplicationNumber(env);
+  await env.DB.prepare(
+    `INSERT INTO vote_eligibility_applications(
+      id, application_number, identity_code_id, email, player_name, locale, reason,
+      weekly_contribution, technology_points, material_contribution, weekly_activity_points,
+      status, submitted_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
+  ).bind(
+    id,
+    applicationNumber,
+    verification.code.id,
+    verification.code.email ?? "",
+    verification.code.player_name ?? "",
+    normalizeLocale(input.locale),
+    reason,
+    eligibility.current.weeklyContribution,
+    eligibility.current.technologyPoints,
+    eligibility.current.materialContribution,
+    eligibility.current.weeklyActivityPoints,
+    now()
+  ).run();
+  return { applicationNumber, status: "pending" };
+}
+
+async function voteEligibilityApplicationById(
+  env: Env,
+  id: string
+): Promise<VoteEligibilityApplicationRow | null> {
+  return env.DB.prepare(
+    "SELECT * FROM vote_eligibility_applications WHERE id = ?"
+  ).bind(id).first<VoteEligibilityApplicationRow>();
+}
+
+function parseVoteEligibilityApproval(input: {
+  mode: unknown;
+  votes: unknown;
+  expiresAt: unknown;
+}): { votes: number | null; expiresAt: string | null } {
+  const mode = input.mode === "date" ? "date" : input.mode === "votes" ? "votes" : "";
+  if (mode === "votes") {
+    const votes = Number(input.votes);
+    if (!Number.isInteger(votes) || votes < 1 || votes > 10_000 || input.expiresAt) {
+      throw new Error("破格投票次数与破格有效日期只能选择一种批准方式");
+    }
+    return { votes, expiresAt: null };
+  }
+  if (mode === "date") {
+    const value = typeof input.expiresAt === "string" ? input.expiresAt.trim() : "";
+    const parsed = new Date(value);
+    if (!value || Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now() || input.votes !== null && input.votes !== undefined && input.votes !== "") {
+      throw new Error("破格投票次数与破格有效日期只能选择一种批准方式");
+    }
+    return { votes: null, expiresAt: parsed.toISOString() };
+  }
+  throw new Error("请选择破格投票次数或破格有效日期中的一种批准方式");
+}
+
+export async function approveVoteEligibilityApplication(
+  env: Env,
+  input: {
+    id: string;
+    mode: unknown;
+    votes: unknown;
+    expiresAt: unknown;
+    reviewedBy: string;
+  }
+): Promise<{ emailSent: boolean; emailError: string | null }> {
+  const application = await voteEligibilityApplicationById(env, input.id);
+  if (!application) throw new Error("申请不存在");
+  if (application.status !== "pending") throw new Error("申请已处理");
+  const approval = parseVoteEligibilityApproval(input);
+  const current = await getVoteEligibilityStats(env, application.player_name, application.identity_code_id);
+  const currentApplication = {
+    ...application,
+    weekly_contribution: current.weeklyContribution,
+    technology_points: current.technologyPoints,
+    material_contribution: current.materialContribution,
+    weekly_activity_points: current.weeklyActivityPoints
+  };
+  const reviewedAt = now();
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE identity_codes SET eligibility_override_votes = ?,
+       eligibility_override_expires_at = ?, updated_at = ? WHERE id = ?`
+    ).bind(approval.votes, approval.expiresAt, reviewedAt, application.identity_code_id),
+    env.DB.prepare(
+      `UPDATE vote_eligibility_applications SET status = 'approved', reviewed_at = ?,
+       reviewed_by = ?, rejection_reason = NULL, approved_votes = ?,
+       approved_expires_at = ? WHERE id = ?`
+    ).bind(
+      reviewedAt,
+      input.reviewedBy,
+      approval.votes,
+      approval.expiresAt,
+      application.id
+    )
+  ]);
+  try {
+    await sendVoteEligibilityApplicationMail(env, currentApplication, {
+      approved: true,
+      votes: approval.votes,
+      expiresAt: approval.expiresAt
+    });
+    await recordVoteEligibilityMailResult(env, application.id, null);
+    return { emailSent: true, emailError: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await recordVoteEligibilityMailResult(env, application.id, message);
+    return { emailSent: false, emailError: message };
+  }
+}
+
+export async function rejectVoteEligibilityApplication(
+  env: Env,
+  input: { id: string; reason: string; reviewedBy: string }
+): Promise<{ emailSent: boolean; emailError: string | null }> {
+  const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 500) : "";
+  if (!reason) throw new Error("请填写拒绝理由");
+  const application = await voteEligibilityApplicationById(env, input.id);
+  if (!application) throw new Error("申请不存在");
+  if (application.status !== "pending") throw new Error("申请已处理");
+  const current = await getVoteEligibilityStats(env, application.player_name, application.identity_code_id);
+  const currentApplication = {
+    ...application,
+    weekly_contribution: current.weeklyContribution,
+    technology_points: current.technologyPoints,
+    material_contribution: current.materialContribution,
+    weekly_activity_points: current.weeklyActivityPoints
+  };
+  const reviewedAt = now();
+  await env.DB.prepare(
+    `UPDATE vote_eligibility_applications SET status = 'rejected', reviewed_at = ?,
+     reviewed_by = ?, rejection_reason = ? WHERE id = ?`
+  ).bind(reviewedAt, input.reviewedBy, reason, application.id).run();
+  try {
+    await sendVoteEligibilityApplicationMail(env, currentApplication, { approved: false, reason });
+    await recordVoteEligibilityMailResult(env, application.id, null);
+    return { emailSent: true, emailError: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await recordVoteEligibilityMailResult(env, application.id, message);
+    return { emailSent: false, emailError: message };
+  }
+}
+
+async function sendVoteEligibilityApplicationMail(
+  env: Env,
+  application: VoteEligibilityApplicationRow,
+  input: { approved: boolean; votes?: number | null; expiresAt?: string | null; reason?: string }
+): Promise<void> {
+  const locale = normalizeLocale(application.locale);
+  const message = voteEligibilityMail({
+    locale,
+    approved: input.approved,
+    applicationNumber: application.application_number,
+    playerName: application.player_name,
+    reason: input.reason ?? application.reason,
+    weeklyContribution: application.weekly_contribution,
+    technologyPoints: application.technology_points,
+    materialContribution: application.material_contribution,
+    weeklyActivityPoints: application.weekly_activity_points,
+    votes: input.votes ?? null,
+    expiresAt: await localizedExpiry(env, input.expiresAt ?? null, locale)
+  });
+  await sendMail(env, { to: application.email, ...message });
+}
+
+async function recordVoteEligibilityMailResult(
+  env: Env,
+  applicationId: string,
+  error: string | null
+): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE vote_eligibility_applications SET email_sent_at = ?, last_email_error = ? WHERE id = ?`
+  ).bind(error ? null : now(), error, applicationId).run();
 }
 
 function parseExpiry(input: { permanent: unknown; expiresAt: unknown }): string | null {
@@ -2069,7 +2401,8 @@ export async function approveIdentityApplication(
         `UPDATE identity_codes SET
            code_hash = ?, code_encrypted = ?, player_name = ?, email = ?,
            locale = ?, status = 'active', expires_at = ?, disabled_at = NULL,
-           renewal_grace_vote_used_at = NULL, password_hash = ?,
+           renewal_grace_vote_used_at = NULL, eligibility_override_votes = NULL,
+           eligibility_override_expires_at = NULL, password_hash = ?,
            password_set_at = ?, password_updated_at = ?, updated_at = ?
          WHERE id = ?`
       ).bind(
@@ -2189,6 +2522,7 @@ export async function rejectIdentityApplication(
     statements.push(
       env.DB.prepare(
         `UPDATE identity_codes SET status = 'disabled', disabled_at = ?,
+         eligibility_override_votes = NULL, eligibility_override_expires_at = NULL,
          updated_at = ? WHERE id = ?`
       ).bind(reviewedAt, reviewedAt, application.identity_code_id)
     );
@@ -2342,6 +2676,27 @@ export async function listIdentityCodes(
     pageSize: 10,
     total: total?.total ?? 0
   };
+}
+
+export async function listActiveIdentityCodeOptions(
+  env: Env
+): Promise<Array<{ id: string; code: string; playerName: string }>> {
+  const rows = await env.DB.prepare(
+    `SELECT id, code_encrypted, player_name
+     FROM identity_codes
+     WHERE status = 'active'
+       AND (expires_at IS NULL OR expires_at > ?)
+     ORDER BY player_name ASC`
+  ).bind(now()).all<{
+    id: string;
+    code_encrypted: string;
+    player_name: string | null;
+  }>();
+  return Promise.all(rows.results.map(async (row) => ({
+    id: row.id,
+    code: await decryptSecret(env, "identity-code-value", row.code_encrypted),
+    playerName: row.player_name?.trim() || ""
+  })));
 }
 
 export async function listVoteBallotDetails(
@@ -2545,11 +2900,15 @@ export async function updateIdentityCode(
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
       `UPDATE identity_codes SET status = ?, expires_at = ?, disabled_at = ?,
+       eligibility_override_votes = CASE WHEN ? = 'disabled' THEN NULL ELSE eligibility_override_votes END,
+       eligibility_override_expires_at = CASE WHEN ? = 'disabled' THEN NULL ELSE eligibility_override_expires_at END,
        updated_at = ? WHERE id = ?`
     ).bind(
       status,
       expiresAt,
       status === "disabled" ? timestamp : null,
+      status,
+      status,
       timestamp,
       input.id
     )

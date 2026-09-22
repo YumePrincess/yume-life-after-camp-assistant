@@ -106,6 +106,7 @@ import {
 import { localizeTechnology } from "../plugins/technology/localizations";
 import {
   approveIdentityApplication,
+  approveVoteEligibilityApplication,
   confirmIdentityEmailChange,
   confirmIdentityCancellation,
   consumeIdentityApplicationVerification,
@@ -114,12 +115,14 @@ import {
   identityAccount,
   listIdentityApplications,
   listIdentityCodes,
+  listActiveIdentityCodeOptions,
   listIdentityProfileChangeRequests,
   listVoteBallotDetails,
   reissueIdentityCode,
   reissuePreview,
   recoverIdentityCode,
   rejectIdentityApplication,
+  rejectVoteEligibilityApplication,
   requestIdentityEmailChange,
   requestIdentityCancellation,
   requestIdentityApplicationVerification,
@@ -137,6 +140,7 @@ import {
   updateIdentityCodeInformation,
   verifyIdentityPassword,
   verifyIdentityApplicationVerification,
+  submitVoteEligibilityApplication,
 } from "./identity";
 import {
   demoSmtpConfig,
@@ -179,6 +183,7 @@ import {
   updateDailyVoteItem
 } from "./daily-vote";
 import type { LiveUpdateScope } from "./live-updates";
+import { consumeVoteEligibilityOverride, evaluateVoteEligibility } from "./vote-eligibility";
 export { LiveUpdates } from "./live-updates";
 export { AgentLogStream } from "./agent-log-stream";
 
@@ -526,6 +531,26 @@ async function handlePublicApi(
     } else if (rawSelections.length > 0) {
       return problem("抽签事项不需要选择选项", 400, "invalid_daily_draw_selection");
     }
+    const dailyVoteConfig = await getDailyVoteConfig(env);
+    const eligibility = await evaluateVoteEligibility(env, {
+      playerName: identity.identityRecord?.code.player_name,
+      identityCodeId: identity.identityRecord?.code.id,
+      enabled:
+        dailyVoteConfig.voteEligibilityEnabled &&
+        item.eligibilityCheckEnabled,
+      thresholds: dailyVoteConfig.voteEligibility,
+      override: {
+        votesRemaining: identity.identityRecord?.code.eligibility_override_votes,
+        expiresAt: identity.identityRecord?.code.eligibility_override_expires_at
+      }
+    });
+    if (!eligibility.eligible) {
+      return problem(
+        "您尚未满足投票资格贡献与活跃度标准。",
+        403,
+        "vote_eligibility_failed"
+      );
+    }
     let renewalGraceUsed = false;
     if (identity.identityRecord?.ok) {
       const consumed = identity.identityRecord.grace
@@ -553,6 +578,9 @@ async function handlePublicApi(
         playerName: identity.identityRecord.code.player_name ?? "",
         selections
       });
+      if (eligibility.overrideApplied) {
+        await consumeVoteEligibilityOverride(env, identity.identityRecord.code.id);
+      }
     }
     return json(
       {
@@ -652,6 +680,22 @@ async function handlePublicApi(
           : "identity_login_failed",
         cors
       );
+    }
+  }
+  if (path === "/api/public/vote-eligibility-applications" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_PASSWORD_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 16_000);
+    try {
+      const result = await submitVoteEligibilityApplication(env, {
+        identityCode: body.identityCode,
+        password: body.identityPassword,
+        locale: body.locale,
+        reason: body.reason
+      });
+      return json({ ...result, message: "申请已提交，管理员将在48小时内完成审核。" }, 200, cors);
+    } catch (error) {
+      return problem(errorMessage(error), 400, "vote_eligibility_application_failed", cors);
     }
   }
   if (path === "/api/public/identity-password-reset" && method === "POST") {
@@ -837,6 +881,7 @@ async function handlePublicApi(
       return problem("selections must be an array", 400);
     }
     const bundle = await getConfigBundle(env);
+    const dailyVoteConfig = await getDailyVoteConfig(env);
     const summary = await buildVoteSummary(env, bundle);
     if (!summary.isOpen) {
       return problem(
@@ -878,6 +923,25 @@ async function handlePublicApi(
         "invalid_selections"
       );
     }
+    const eligibility = await evaluateVoteEligibility(env, {
+      playerName: identityRecord.code.player_name,
+      identityCodeId: identityRecord.code.id,
+      enabled:
+        dailyVoteConfig.voteEligibilityEnabled &&
+        bundle.technologyConfig.voteEligibilityEnabled !== false,
+      thresholds: dailyVoteConfig.voteEligibility,
+      override: {
+        votesRemaining: identityRecord.code.eligibility_override_votes,
+        expiresAt: identityRecord.code.eligibility_override_expires_at
+      }
+    });
+    if (!eligibility.eligible) {
+      return problem(
+        "您尚未满足投票资格贡献与活跃度标准。",
+        403,
+        "vote_eligibility_failed"
+      );
+    }
     let renewalGraceUsed = false;
     if (identityRecord.ok) {
       const consumed = identityRecord.grace
@@ -906,6 +970,9 @@ async function handlePublicApi(
         voterName: identityRecord.code.player_name ?? "",
         selections
       });
+      if (eligibility.overrideApplied) {
+        await consumeVoteEligibilityOverride(env, identityRecord.code.id);
+      }
     }
     return json(
       {
@@ -1244,14 +1311,27 @@ async function handleAdminApi(
     try {
       const id = boundedText(decodeURIComponent(memberMatch[1] ?? ""), "memberId", 120);
       const body = await readJsonObject(request, 16_000);
+      const canManageIdentity = hasPermission(session, "identity:manage");
+      const memberChanges = sanitizeMemberDetailsUpdate(body);
+      if (!canManageIdentity) delete memberChanges.identityCodeId;
       const updated = await updateMemberDetails(env, {
         id,
-        ...sanitizeMemberDetailsUpdate(body)
+        ...memberChanges
       });
       if (!updated) {
         return problem("成员不存在或已被同步移除", 404, "member_not_found");
       }
-      return json({ ok: true, member: updated });
+      const safeUpdated = canManageIdentity
+        ? updated
+        : (() => {
+            const { identity_code_id: _identityCodeId, ...member } = updated;
+            return member;
+          })();
+      const hydrated = canManageIdentity
+        ? (await listMembers(env, 500, { includeIdentityCodes: true }))
+          .find((member) => member.id === updated.id) ?? safeUpdated
+        : safeUpdated;
+      return json({ ok: true, member: hydrated });
     } catch (error) {
       return problem(errorMessage(error), 400, "member_update_invalid");
     }
@@ -1510,6 +1590,27 @@ async function handleAdminApi(
     if (!applicationId || !action) return problem("申请不存在", 404);
     const body = await readJsonObject(request, 16_000);
     try {
+      const isEligibilityApplication = body.recordType === "eligibility_override";
+      if (isEligibilityApplication) {
+        const eligibilityExpiry =
+          action === "approve" && body.eligibilityMode === "date"
+            ? await resolveIdentityExpiry(env, false, body.eligibilityExpiresOn)
+            : null;
+        const result = action === "approve"
+          ? await approveVoteEligibilityApplication(env, {
+              id: applicationId,
+              mode: body.eligibilityMode,
+              votes: body.eligibilityVotes,
+              expiresAt: eligibilityExpiry?.expiresAt ?? null,
+              reviewedBy: session.email
+            })
+          : await rejectVoteEligibilityApplication(env, {
+              id: applicationId,
+              reason: typeof body.reason === "string" ? body.reason.trim() : "",
+              reviewedBy: session.email
+            });
+        return json({ ok: true, ...result });
+      }
       const expiry =
         action === "approve"
           ? await resolveIdentityExpiry(env, body.permanent, body.expiresOn)
@@ -2627,16 +2728,22 @@ async function buildAdminBootstrap(
     canViewAdminModule(session, "admin:technology");
   const canMembers = Boolean(pluginEnabled.get("member-profile")) &&
     canViewAdminModule(session, "admin:members");
+  const canManageIdentity = hasPermission(session, "identity:manage");
   const canHistory = canViewAdminModule(session, "admin:history");
-  const [voteSummary, heartbeats, recentRuns, staff, members, memberSummary] = await Promise.all([
+  const [voteSummary, heartbeats, recentRuns, staff, members, memberSummary, identityCodeOptions] = await Promise.all([
     buildVoteSummary(env, bundle),
     canOverview
       ? listHeartbeats(env)
       : Promise.resolve([]),
     canHistory ? listRecentRuns(env, 100) : Promise.resolve([]),
     canMembers ? listStaff(env) : Promise.resolve([]),
-    canMembers ? listMembers(env) : Promise.resolve([]),
-    canMembers ? getMemberScanSummary(env) : Promise.resolve(null)
+    canMembers
+      ? listMembers(env, 500, { includeIdentityCodes: canManageIdentity && !demo })
+      : Promise.resolve([]),
+    canMembers ? getMemberScanSummary(env) : Promise.resolve(null),
+    canMembers && canManageIdentity && !demo
+      ? listActiveIdentityCodeOptions(env)
+      : Promise.resolve([])
   ]);
   const voteBallots = canTechnology
     ? demo
@@ -2696,6 +2803,9 @@ async function buildAdminBootstrap(
       .map((run) => localizeWorkerRun(run, locale)),
     staffAssignments: canMembers ? staff : [],
     members: canMembers ? members : [],
+    identityCodeOptions: canMembers && canManageIdentity && !demo
+      ? identityCodeOptions
+      : [],
     memberSummary: canMembers
       ? memberSummary ?? (members.length
         ? {
@@ -3185,7 +3295,11 @@ function sanitizeMembers(value: unknown) {
 }
 
 function sanitizeMemberDetailsUpdate(value: Record<string, unknown>) {
+  const identityCodeId = value.identityCodeId === undefined
+    ? undefined
+    : nullableText(value.identityCodeId, 120);
   return {
+    ...(identityCodeId === undefined ? {} : { identityCodeId }),
     profession: nullableText(value.profession, 80),
     manorLevel: nullableInteger(value.manorLevel, 0, 1000),
     roommateName: nullableText(value.roommateName, 80),

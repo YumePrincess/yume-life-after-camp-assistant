@@ -100,6 +100,7 @@ export interface TechnologyConfig {
   fixedByWeekday: Record<string, string[]>;
   fixedByDate: Record<string, string[]>;
   voteLimit: number;
+  voteEligibilityEnabled?: boolean;
   limits: {
     core: number;
     general: number;

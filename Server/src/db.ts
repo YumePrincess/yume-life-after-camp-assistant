@@ -18,6 +18,7 @@ import {
 } from "./validate";
 import { zonedDateKey, zonedDateTimeToIso } from "./time";
 import { identityPlayerNameKey } from "./identity-code-utils";
+import { decryptSecret } from "./crypto";
 
 function isoNow(): string {
   return new Date().toISOString();
@@ -610,11 +611,16 @@ export async function deleteTechnologyVoteHistory(
   return result.meta.changes ?? 0;
 }
 
-export async function listMembers(env: Env, limit = 200): Promise<Record<string, unknown>[]> {
+export async function listMembers(
+  env: Env,
+  limit = 200,
+  options: { includeIdentityCodes?: boolean } = {}
+): Promise<Record<string, unknown>[]> {
   const result = await env.DB.prepare(
     `SELECT id, name, profession, manor_level, roommate_name, camp_title,
             weekly_contribution, technology_points_used, material_contribution,
             weekly_activity_points,
+            identity_code_id,
             last_seen_at
      FROM members
      ORDER BY weekly_contribution DESC, name ASC
@@ -622,18 +628,60 @@ export async function listMembers(env: Env, limit = 200): Promise<Record<string,
   )
     .bind(limit)
     .all<Record<string, unknown>>();
-  return result.results;
+  if (!options.includeIdentityCodes) {
+    return result.results.map(({ identity_code_id: _identityCodeId, ...member }) => member);
+  }
+  const identityRows = await env.DB.prepare(
+    `SELECT id, code_encrypted, player_name
+     FROM identity_codes
+     WHERE status = 'active'
+       AND (expires_at IS NULL OR expires_at > ?)
+     ORDER BY player_name ASC`
+  ).bind(isoNow()).all<{
+    id: string;
+    code_encrypted: string;
+    player_name: string | null;
+  }>();
+  const identityOptions = await Promise.all(identityRows.results.map(async (row) => ({
+    id: row.id,
+    playerName: row.player_name?.trim() || "",
+    code: await decryptSecret(env, "identity-code-value", row.code_encrypted)
+  })));
+  const byId = new Map(identityOptions.map((item) => [item.id, item]));
+  const activeNames = identityOptions
+    .filter((item) => item.playerName)
+    .map((item) => ({ name: item.playerName }));
+  return result.results.map((member) => {
+    const explicit = typeof member.identity_code_id === "string"
+      ? byId.get(member.identity_code_id)
+      : undefined;
+    const automaticName = explicit
+      ? explicit.playerName
+      : calibrateMemberName(String(member.name || ""), activeNames);
+    const automatic = explicit || identityOptions.find(
+      (item) => item.playerName === automaticName && automaticName
+    );
+    return {
+      ...member,
+      identity_code_id: explicit?.id ?? null,
+      identity_code: automatic?.code ?? null,
+      identity_code_player_name: automatic?.playerName ?? null,
+      identity_code_binding: explicit ? "manual" : automatic ? "automatic" : null
+    };
+  });
 }
 
 const MEMBER_DETAILS_SELECT = `
   SELECT id, name, profession, manor_level, roommate_name, camp_title,
          weekly_contribution, technology_points_used, material_contribution,
          weekly_activity_points,
+         identity_code_id,
          last_seen_at
   FROM members`;
 
 export type MemberDetailsUpdate = {
   id: string;
+  identityCodeId?: string | null;
   profession: string | null;
   manorLevel: number | null;
   roommateName: string | null;
@@ -657,25 +705,51 @@ export async function updateMemberDetails(
   env: Env,
   input: MemberDetailsUpdate
 ): Promise<Record<string, unknown> | null> {
-  const result = await env.DB.prepare(
-    `UPDATE members
-     SET profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
-         weekly_contribution = ?, technology_points_used = ?,
-         material_contribution = ?, weekly_activity_points = ?
-     WHERE id = ?`
-  )
-    .bind(
-      input.profession,
-      input.manorLevel,
-      input.roommateName,
-      input.campTitle,
-      input.weeklyContribution,
-      input.technologyPointsUsed,
-      input.materialContribution,
-      input.weeklyActivityPoints,
-      input.id
-    )
-    .run();
+  if (input.identityCodeId) {
+    const identity = await env.DB.prepare(
+      `SELECT id FROM identity_codes
+       WHERE id = ? AND status = 'active'
+         AND (expires_at IS NULL OR expires_at > ?)`
+    ).bind(input.identityCodeId, isoNow()).first<{ id: string }>();
+    if (!identity) throw new Error("只能绑定有效且未过期的身份识别码");
+  }
+  const hasIdentityBinding = Object.prototype.hasOwnProperty.call(input, "identityCodeId");
+  const result = hasIdentityBinding
+    ? await env.DB.prepare(
+        `UPDATE members
+         SET profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
+             weekly_contribution = ?, technology_points_used = ?,
+             material_contribution = ?, weekly_activity_points = ?, identity_code_id = ?
+         WHERE id = ?`
+      ).bind(
+        input.profession,
+        input.manorLevel,
+        input.roommateName,
+        input.campTitle,
+        input.weeklyContribution,
+        input.technologyPointsUsed,
+        input.materialContribution,
+        input.weeklyActivityPoints,
+        input.identityCodeId ?? null,
+        input.id
+      ).run()
+    : await env.DB.prepare(
+        `UPDATE members
+         SET profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
+             weekly_contribution = ?, technology_points_used = ?,
+             material_contribution = ?, weekly_activity_points = ?
+         WHERE id = ?`
+      ).bind(
+        input.profession,
+        input.manorLevel,
+        input.roommateName,
+        input.campTitle,
+        input.weeklyContribution,
+        input.technologyPointsUsed,
+        input.materialContribution,
+        input.weeklyActivityPoints,
+        input.id
+      ).run();
   if (!(result.meta.changes ?? 0)) return null;
   return getMemberById(env, input.id);
 }
