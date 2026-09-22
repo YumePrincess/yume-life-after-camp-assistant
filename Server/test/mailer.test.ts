@@ -9,6 +9,7 @@ import {
   identityMail,
   identityProfileChangeMail,
   identityRecoveryMail,
+  voteEligibilityMail,
   type SupportedLocale
 } from "../src/mailer";
 
@@ -89,6 +90,27 @@ describe("identity email templates", () => {
     });
     expect(rejected.subject).toContain("Identity profile change rejected");
     expect(rejected.text).toContain("Not allowed");
+  });
+
+  it("includes the administrator rejection reason separately from the application reason", () => {
+    const message = voteEligibilityMail({
+      locale: "zh-cn",
+      approved: false,
+      applicationNumber: "APP-ELIGIBILITY-123",
+      playerName: "玩家",
+      reason: "申请人希望参加本次投票。",
+      rejectionReason: "当前资料未达到破格审批条件。",
+      weeklyContribution: 1200,
+      technologyPoints: 0,
+      materialContribution: 42000,
+      weeklyActivityPoints: 18,
+      votes: null,
+      expiresAt: null
+    });
+
+    expect(message.text).toContain("申请理由: 申请人希望参加本次投票。");
+    expect(message.text).toContain("管理员拒绝理由: 当前资料未达到破格审批条件。");
+    expect(message.html).toContain("当前资料未达到破格审批条件。");
   });
 
   it("renders a localized cancellation completion notice", () => {

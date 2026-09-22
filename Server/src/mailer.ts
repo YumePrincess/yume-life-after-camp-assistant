@@ -278,6 +278,7 @@ const COPY = {
     eligibilityApproved: "破格投票资格申请已批准",
     eligibilityRejected: "破格投票资格申请未通过",
     eligibilityReason: "申请理由",
+    eligibilityRejectionReason: "管理员拒绝理由",
     eligibilityStats: "提交时当前数值",
     eligibilityContribution: "本周贡献",
     eligibilityTechnology: "科技点",
@@ -323,6 +324,7 @@ const COPY = {
     eligibilityApproved: "破格投票資格申請已批准",
     eligibilityRejected: "破格投票資格申請未通過",
     eligibilityReason: "申請理由",
+    eligibilityRejectionReason: "管理員拒絕理由",
     eligibilityStats: "提交時目前數值",
     eligibilityContribution: "本週貢獻",
     eligibilityTechnology: "科技點",
@@ -368,6 +370,7 @@ const COPY = {
     eligibilityApproved: "Exceptional voting eligibility approved",
     eligibilityRejected: "Exceptional voting eligibility rejected",
     eligibilityReason: "Application reason",
+    eligibilityRejectionReason: "Administrator's rejection reason",
     eligibilityStats: "Current values at submission",
     eligibilityContribution: "Weekly contribution",
     eligibilityTechnology: "Technology points",
@@ -413,6 +416,7 @@ const COPY = {
     eligibilityApproved: "Éligibilité exceptionnelle au vote approuvée",
     eligibilityRejected: "Éligibilité exceptionnelle au vote refusée",
     eligibilityReason: "Motif de la demande",
+    eligibilityRejectionReason: "Motif du refus de l’administrateur",
     eligibilityStats: "Valeurs au moment de la demande",
     eligibilityContribution: "Contribution hebdomadaire",
     eligibilityTechnology: "Points technologiques",
@@ -458,6 +462,7 @@ const COPY = {
     eligibilityApproved: "特例投票資格申請が承認されました",
     eligibilityRejected: "特例投票資格申請が却下されました",
     eligibilityReason: "申請理由",
+    eligibilityRejectionReason: "管理者の却下理由",
     eligibilityStats: "申請時の現在値",
     eligibilityContribution: "週間貢献度",
     eligibilityTechnology: "技術ポイント",
@@ -523,6 +528,7 @@ export function voteEligibilityMail(input: {
   applicationNumber: string;
   playerName: string;
   reason: string;
+  rejectionReason?: string | null;
   weeklyContribution: number;
   technologyPoints: number;
   materialContribution: number;
@@ -538,6 +544,9 @@ export function voteEligibilityMail(input: {
     [copy.eligibilityReason, input.reason],
     [copy.eligibilityStats, `${copy.eligibilityContribution}: ${input.weeklyContribution}; ${copy.eligibilityTechnology}: ${input.technologyPoints}; ${copy.eligibilityMaterials}: ${input.materialContribution}; ${copy.eligibilityActivity}: ${input.weeklyActivityPoints}`]
   ];
+  if (!input.approved && input.rejectionReason) {
+    rows.splice(3, 0, [copy.eligibilityRejectionReason, input.rejectionReason]);
+  }
   if (input.approved) {
     if (input.votes !== null) rows.push([copy.eligibilityVotes, String(input.votes)]);
     if (input.expiresAt) rows.push([copy.eligibilityExpiry, input.expiresAt]);
