@@ -2524,9 +2524,11 @@
   }
 
   function renderRuns(runs) {
-    closeRunActionMenu();
     const root = byId("run-table");
+    const activeTrigger = state.runActionMenu?.trigger;
+    const replacingActiveTrigger = Boolean(activeTrigger && root.contains(activeTrigger));
     root.replaceChildren();
+    if (replacingActiveTrigger) closeRunActionMenu();
     for (const run of runs || []) {
       const row = document.createElement("tr");
       row.append(
@@ -2615,6 +2617,39 @@
     state.runActionMenu = null;
   }
 
+  function positionRunActionMenu() {
+    const active = state.runActionMenu;
+    if (!active) return;
+    if (!active.trigger?.isConnected || !active.menu?.isConnected) {
+      closeRunActionMenu();
+      return;
+    }
+
+    const { menu, trigger } = active;
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+    const edge = 8;
+    const gap = 8;
+    const menuHeight = Math.min(menuRect.height, viewportHeight - edge * 2);
+    const belowTop = triggerRect.bottom + gap;
+    const aboveTop = triggerRect.top - gap - menuHeight;
+    const top = belowTop + menuHeight <= viewportHeight - edge
+      ? belowTop
+      : aboveTop >= edge
+        ? aboveTop
+        : Math.max(edge, Math.min(belowTop, viewportHeight - edge - menuHeight));
+    const left = Math.max(
+      edge,
+      Math.min(triggerRect.right - menuRect.width, viewportWidth - edge - menuRect.width)
+    );
+
+    menu.style.top = `${Math.round(top)}px`;
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.visibility = "visible";
+  }
+
   function toggleRunActionMenu(run, trigger) {
     const cancellationPending = run.state === "cancelling";
     toggleActionMenu(trigger, [
@@ -2659,9 +2694,11 @@
       menu.append(button);
     }
     menu.addEventListener("click", (event) => event.stopPropagation());
+    menu.style.visibility = "hidden";
     document.body.append(menu);
     trigger.setAttribute("aria-expanded", "true");
     state.runActionMenu = { menu, trigger };
+    positionRunActionMenu();
   }
 
   function activateView(view) {
@@ -2674,6 +2711,8 @@
       availableViews.has(view) && canView(view)
         ? view
         : [...availableViews].find((candidate) => canView(candidate)) || "overview";
+    const viewChanged = state.activeView !== resolved;
+    if (viewChanged) closeRunActionMenu();
     if (state.activeView === "technology" && resolved !== "technology") {
       if (state.dirtySections.has("technology")) {
         discardTechnologyDraft();
@@ -2693,10 +2732,22 @@
       if (active) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     }
-    if (resolved === "identity-applications" && canView(resolved)) {
+    const preserveOpenIdentityMenu =
+      !viewChanged &&
+      state.runActionMenu?.trigger?.isConnected &&
+      (state.activeView === "identity-applications" || state.activeView === "identity-codes");
+    if (
+      resolved === "identity-applications" &&
+      canView(resolved) &&
+      !preserveOpenIdentityMenu
+    ) {
       loadIdentityApplications();
     }
-    if (resolved === "identity-codes" && canView(resolved)) {
+    if (
+      resolved === "identity-codes" &&
+      canView(resolved) &&
+      !preserveOpenIdentityMenu
+    ) {
       loadIdentityCodes();
     }
     if (resolved === "smtp" && canView(resolved)) {
@@ -2786,6 +2837,11 @@
     state.bootstrap = data;
     document.documentElement.dataset.timezone =
       data.configBundle?.campConfig?.timezone || "Asia/Shanghai";
+    if (!input("keyExpiresAt")?.value) setDefaultKeyExpiry();
+    const identityExpiryInput = input("identityExpiresAt");
+    if (identityExpiryInput && !identityExpiryInput.value) {
+      identityExpiryInput.value = identityExpiryDate();
+    }
     state.csrfToken = data.session.csrfToken;
     renderPermissionOptions();
     renderTaskActions();
@@ -3826,7 +3882,10 @@
     const payload = state.identityApplications;
     const pages = Math.max(1, Math.ceil(payload.total / 10));
     const root = byId("identity-application-table");
+    const activeTrigger = state.runActionMenu?.trigger;
+    const replacingActiveTrigger = Boolean(activeTrigger && root.contains(activeTrigger));
     root.replaceChildren();
+    if (replacingActiveTrigger) closeRunActionMenu();
     for (const item of payload.items) {
       const row = document.createElement("tr");
       for (const value of [
@@ -4273,7 +4332,10 @@
     const payload = state.identityCodes;
     const pages = Math.max(1, Math.ceil(payload.total / 10));
     const root = byId("identity-code-table");
+    const activeTrigger = state.runActionMenu?.trigger;
+    const replacingActiveTrigger = Boolean(activeTrigger && root.contains(activeTrigger));
     root.replaceChildren();
+    if (replacingActiveTrigger) closeRunActionMenu();
     for (const item of payload.items) {
       const row = document.createElement("tr");
       const expired =
@@ -4879,8 +4941,8 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeRunActionMenu();
   });
-  window.addEventListener("resize", closeRunActionMenu);
-  window.addEventListener("scroll", closeRunActionMenu, true);
+  window.addEventListener("resize", positionRunActionMenu);
+  window.addEventListener("scroll", positionRunActionMenu, true);
   byId("copy-temporary-key").addEventListener("click", async () => {
     await navigator.clipboard.writeText(byId("temporary-key-value").textContent);
     byId("save-state").textContent = "临时 Key 已复制";
@@ -4999,8 +5061,6 @@
     }
     if (!document.hidden) connectLiveUpdates();
   });
-  setDefaultKeyExpiry();
-  input("identityExpiresAt").value = identityExpiryDate();
   refresh(true);
   connectLiveUpdates();
 })();

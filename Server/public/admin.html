@@ -6,10 +6,10 @@
     <link rel="icon" href="https://www.yume.zone/img/logo.png" />
     <meta name="theme-color" content="#15221f" />
     <title>管理后台 · 明日之后“愿”营地助手</title>
-    <link rel="stylesheet" href="/app.css?v=20260921-vote-eligibility-override" />
+    <link rel="stylesheet" href="/app.css?v=20260922-identity-action-menu" />
     <script src="/js/preferences.js" defer></script>
     <script src="/js/i18n.js?v=20260922-identity-controls" defer></script>
-    <script src="/js/admin.js?v=20260922-identity-controls" defer></script>
+    <script src="/js/admin.js?v=20260922-identity-action-menu" defer></script>
   </head>
   <body class="admin-page">
     <div class="ambient ambient-a"></div>
@@ -1035,11 +1035,15 @@
         <div id="identity-eligibility-approval-fields" hidden>
           <p class="field-help">破格投票次数与破格有效日期只能选择一种批准方式。</p>
           <label id="identity-eligibility-no-mode-label" class="field field-checkbox" hidden><input id="identity-eligibility-no-mode" name="eligibilityApprovalMode" type="radio" value="none" /><span>清除破格资格</span></label>
-          <div class="form-grid">
-            <label class="field field-checkbox"><input id="identity-eligibility-votes-mode" name="eligibilityApprovalMode" type="radio" value="votes" checked /><span id="identity-eligibility-votes-mode-label">按次数批准</span></label>
-            <label class="field"><span id="identity-eligibility-approved-votes-label">允许破格投票次数</span><input id="identity-eligibility-approved-votes" type="number" min="1" max="10000" value="1" /></label>
-            <label class="field field-checkbox"><input id="identity-eligibility-date-mode" name="eligibilityApprovalMode" type="radio" value="date" /><span id="identity-eligibility-date-mode-label">按日期批准</span></label>
-            <label class="field"><span>破格投票有效期至</span><input id="identity-eligibility-approved-until" type="date" disabled /></label>
+          <div class="identity-eligibility-mode-rows">
+            <div class="identity-eligibility-mode-row">
+              <label class="field field-checkbox"><input id="identity-eligibility-votes-mode" name="eligibilityApprovalMode" type="radio" value="votes" checked /><span id="identity-eligibility-votes-mode-label">按次数批准</span></label>
+              <label class="field"><span id="identity-eligibility-approved-votes-label">允许破格投票次数</span><input id="identity-eligibility-approved-votes" type="number" min="1" max="10000" value="1" /></label>
+            </div>
+            <div class="identity-eligibility-mode-row">
+              <label class="field field-checkbox"><input id="identity-eligibility-date-mode" name="eligibilityApprovalMode" type="radio" value="date" /><span id="identity-eligibility-date-mode-label">按日期批准</span></label>
+              <label class="field"><span>破格投票有效期至</span><input id="identity-eligibility-approved-until" type="date" disabled /></label>
+            </div>
           </div>
           <div id="identity-eligibility-bypass-field" class="eligibility-prohibition-field" hidden>
             <label class="field field-checkbox"><input id="identity-eligibility-bypass" type="checkbox" /><span>豁免投票资格校验</span></label>
