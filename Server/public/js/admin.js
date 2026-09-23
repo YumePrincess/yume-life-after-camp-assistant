@@ -3203,18 +3203,18 @@
   }
 
   async function refresh(forceAll = false) {
-    if (state.refreshing || state.saving) return;
+    if (state.refreshing || state.saving) {
+      state.liveDirty = true;
+      return;
+    }
     state.refreshing = true;
     try {
       const data = await request(
         `/api/admin/bootstrap?t=${Date.now()}&locale=${encodeURIComponent(window.MrzhI18n.language())}`
       );
       // The technology editor is a local draft, not a read-only projection of
-      // the latest bootstrap response.  While that view is open, replacing it
-      // every ten seconds clears the selected rule and all unsaved technology
-      // choices. Keep the live bootstrap (agents, votes, history, etc.) fresh,
-      // but let the editor be replaced only by an explicit full refresh or by
-      // its save/discard flow.
+      // the latest bootstrap response. Preserve its unsaved choices while still
+      // applying WebSocket-triggered updates to the other bootstrap sections.
       const preserveTechnologyEditor =
         !forceAll &&
         state.activeView === "technology" &&
@@ -3231,7 +3231,19 @@
       byId("save-state").textContent = error.message;
     } finally {
       state.refreshing = false;
+      flushLiveRefresh();
     }
+  }
+
+  function flushLiveRefresh() {
+    if (
+      !state.liveDirty ||
+      document.hidden ||
+      state.refreshing ||
+      state.saving
+    ) return;
+    state.liveDirty = false;
+    void refresh(false);
   }
 
   function scheduleLiveReconnect() {
@@ -3725,6 +3737,7 @@
     } finally {
       state.saving = false;
       setConfigReadOnly();
+      flushLiveRefresh();
     }
   }
 
@@ -5057,11 +5070,11 @@
     refresh(false);
   });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && state.liveDirty) {
-      state.liveDirty = false;
-      void refresh(false);
+    if (!document.hidden) {
+      state.liveDirty = true;
+      flushLiveRefresh();
+      connectLiveUpdates();
     }
-    if (!document.hidden) connectLiveUpdates();
   });
   refresh(true);
   connectLiveUpdates();

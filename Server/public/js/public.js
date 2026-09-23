@@ -20,8 +20,8 @@
     identityProfileMode: "",
     identityProfileStep: "",
     identitySessionRefreshedAt: 0,
-    identitySessionRefreshTimer: null,
     identitySessionRefreshInFlight: false,
+    identitySessionRefreshQueued: false,
     voteErrorRenewalCode: "",
     activeFeature: "",
     dailyPanel: "",
@@ -36,6 +36,8 @@
       dailyOpenItemIds: [],
       dailyParticipatedItemIds: []
     },
+    voteParticipationRefreshInFlight: null,
+    voteParticipationRefreshQueued: false,
     identityCodeEdited: false,
     liveSocket: null,
     liveReconnectTimer: null,
@@ -282,7 +284,10 @@
     const session = identitySession();
     if (!session?.identityCode || !session.password) return;
     if (!force && Date.now() - state.identitySessionRefreshedAt < IDENTITY_SESSION_REFRESH_INTERVAL_MS) return;
-    if (state.identitySessionRefreshInFlight) return;
+    if (state.identitySessionRefreshInFlight) {
+      if (force) state.identitySessionRefreshQueued = true;
+      return;
+    }
     state.identitySessionRefreshInFlight = true;
     try {
       const account = await request("/api/public/identity-login", {
@@ -303,9 +308,13 @@
       if (isIdentitySessionInvalidError(error)) {
         clearIdentitySession({ openPanel: state.dailyPanel === "identity" });
       }
-      // Keep the cached session on transient failures and retry on the next interval.
+      // Keep the cached session on transient failures and retry on the next live update or resume.
     } finally {
       state.identitySessionRefreshInFlight = false;
+      if (state.identitySessionRefreshQueued) {
+        state.identitySessionRefreshQueued = false;
+        void refreshIdentitySession({ force: true });
+      }
     }
   }
 
@@ -891,6 +900,12 @@
       state.voteParticipation.identityCode === session.identityCode &&
       state.voteParticipation.scopeKey === scopeKey
     ) return;
+    if (state.voteParticipationRefreshInFlight) {
+      if (force) state.voteParticipationRefreshQueued = true;
+      return;
+    }
+    const requestState = { identityCode: session.identityCode, scopeKey };
+    state.voteParticipationRefreshInFlight = requestState;
     try {
       const result = await request("/api/public/vote-participation", {
         method: "POST",
@@ -926,6 +941,14 @@
       }
     } catch {
       // Server-side insert guards remain authoritative if this status refresh fails.
+    } finally {
+      if (state.voteParticipationRefreshInFlight === requestState) {
+        state.voteParticipationRefreshInFlight = null;
+      }
+      if (state.voteParticipationRefreshQueued) {
+        state.voteParticipationRefreshQueued = false;
+        void refreshVoteParticipation({ force: true });
+      }
     }
   }
 
@@ -2126,7 +2149,11 @@
     state.liveRefreshInFlight = true;
     state.liveDirty = false;
     try {
-      await load();
+      await Promise.all([
+        load(),
+        refreshIdentitySession({ force: true })
+      ]);
+      await refreshVoteParticipation({ force: true });
     } finally {
       state.liveRefreshInFlight = false;
       if (state.liveRefreshQueued) {
@@ -2868,15 +2895,11 @@
     load();
   });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && state.liveDirty) void refreshFromLiveUpdate();
     if (!document.hidden) {
       connectLiveUpdates();
-      void refreshIdentitySession({ force: true });
+      void refreshFromLiveUpdate();
     }
   });
-  state.identitySessionRefreshTimer = window.setInterval(() => {
-    if (!document.hidden) void refreshIdentitySession({ force: true });
-  }, IDENTITY_SESSION_REFRESH_INTERVAL_MS);
   load();
   connectLiveUpdates();
   void refreshIdentitySession({ force: true });

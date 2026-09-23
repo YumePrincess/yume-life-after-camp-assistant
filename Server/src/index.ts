@@ -188,6 +188,7 @@ import {
   saveDailyVoteResponse,
   updateDailyVoteItem
 } from "./daily-vote";
+import { liveUpdateScopes } from "./live-update-scopes";
 import type { LiveUpdateScope } from "./live-updates";
 import { consumeVoteEligibilityOverride, evaluateVoteEligibility } from "./vote-eligibility";
 export { LiveUpdates } from "./live-updates";
@@ -434,21 +435,6 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
 
   const asset = await env.ASSETS.fetch(request);
   return asset.status === 404 ? problem("Not found", 404, "not_found") : asset;
-}
-
-function liveUpdateScopes(
-  request: Request,
-  response: Response
-): LiveUpdateScope[] {
-  if (response.status < 200 || response.status >= 300) return [];
-  const url = new URL(request.url);
-  const method = request.method.toUpperCase();
-  if (["GET", "HEAD", "OPTIONS"].includes(method)) return [];
-  if (url.pathname.startsWith("/api/public/")) return ["public", "admin"];
-  if (url.pathname.startsWith("/api/admin/") || url.pathname.startsWith("/api/agent/")) {
-    return ["public", "admin"];
-  }
-  return [];
 }
 
 async function publishLiveUpdate(
