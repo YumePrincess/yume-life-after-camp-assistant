@@ -97,7 +97,8 @@ import {
   nextScheduledTaskPollingWindowStart,
   scheduledTaskClocks,
   zonedDateTimeToIso,
-  zonedDateKey
+  zonedDateKey,
+  zonedParts
 } from "./time";
 import {
   preserveAutomationScheduleTimes,
@@ -190,6 +191,7 @@ import {
 } from "./daily-vote";
 import { liveUpdateScopes } from "./live-update-scopes";
 import type { LiveUpdateScope } from "./live-updates";
+import { upcomingLiveVoteTransitions } from "./live-vote-transitions";
 import { consumeVoteEligibilityOverride, evaluateVoteEligibility } from "./vote-eligibility";
 export { LiveUpdates } from "./live-updates";
 export { AgentLogStream } from "./agent-log-stream";
@@ -284,7 +286,10 @@ const handler = {
       if (scopes.length) {
         // The response must not wait for a best-effort UI invalidation. Keeping
         // it in waitUntil also avoids adding latency to a vote or admin save.
-        ctx.waitUntil(publishLiveUpdate(env, scopes, request.url));
+        ctx.waitUntil((async () => {
+          await publishLiveUpdate(env, scopes, request.url);
+          await syncLiveVoteTransitions(env, new Date());
+        })());
       }
       return withSecurityHeaders(response);
     } catch (error) {
@@ -308,9 +313,15 @@ const handler = {
   ): Promise<void> {
     const now = new Date(controller.scheduledTime);
     const result = await runScheduler(env, now);
-    if (result.enqueued.length || result.timedOut.length) {
+    const bundle = await getConfigBundle(env);
+    const localParts = zonedParts(now, bundle.campConfig.timezone);
+    const resetParts = bundle.campConfig.gameResetTime.split(":").map(Number);
+    const atDailyReset = localParts.hour === resetParts[0] &&
+      localParts.minute === resetParts[1];
+    if (result.enqueued.length || result.timedOut.length || atDailyReset) {
       await publishLiveUpdate(env, ["public", "admin"], "scheduler");
     }
+    await syncLiveVoteTransitions(env, now);
     console.log(JSON.stringify({ event: "scheduler_tick", ...result }));
   }
 } satisfies ExportedHandler<Env>;
@@ -456,6 +467,67 @@ async function publishLiveUpdate(
   } catch (error) {
     console.error(JSON.stringify({
       event: "live_update_broadcast_failed",
+      message: error instanceof Error ? error.message : String(error)
+    }));
+  }
+}
+
+async function syncLiveVoteTransitions(env: Env, now: Date): Promise<void> {
+  try {
+    const bundle = await getConfigBundle(env);
+    const nowIso = now.toISOString();
+    const horizonIso = new Date(now.getTime() + 8 * 24 * 60 * 60_000).toISOString();
+    const [dailyItems, identityExpiries] = await Promise.all([
+      env.DB.prepare(
+        `SELECT start_at, end_at, reveal_before_seconds
+         FROM daily_vote_items
+         WHERE end_at > ?
+         ORDER BY start_at
+         LIMIT 5000`
+      ).bind(nowIso).all<{
+        start_at: string;
+        end_at: string;
+        reveal_before_seconds: number;
+      }>(),
+      env.DB.prepare(
+        `SELECT event_at FROM (
+           SELECT expires_at AS event_at FROM identity_codes
+           WHERE status = 'active' AND expires_at > ? AND expires_at <= ?
+           UNION ALL
+           SELECT eligibility_override_expires_at AS event_at FROM identity_codes
+           WHERE status = 'active'
+             AND eligibility_override_expires_at > ?
+             AND eligibility_override_expires_at <= ?
+         ) ORDER BY event_at LIMIT 18000`
+      ).bind(nowIso, horizonIso, nowIso, horizonIso).all<{ event_at: string }>()
+    ]);
+    const times = upcomingLiveVoteTransitions({
+      now,
+      timezone: bundle.campConfig.timezone,
+      campConfig: bundle.campConfig,
+      dailyItems: dailyItems.results.map((item) => ({
+        startAt: item.start_at,
+        endAt: item.end_at,
+        revealBeforeSeconds: item.reveal_before_seconds
+      })),
+      identityExpiryTimes: identityExpiries.results.map((row) => row.event_at)
+    });
+    const response = await env.LIVE_UPDATES.getByName("global").fetch(
+      new Request("https://live.internal/schedule-transitions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ times })
+      })
+    );
+    if (!response.ok) {
+      console.error(JSON.stringify({
+        event: "live_transition_schedule_failed",
+        status: response.status
+      }));
+    }
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "live_transition_schedule_failed",
       message: error instanceof Error ? error.message : String(error)
     }));
   }
@@ -1559,11 +1631,15 @@ async function handleAdminApi(
       ? statusValue
       : undefined;
     const pageValue = Number(params.get("page") ?? 1);
+    const timezone = date
+      ? (await getConfigBundle(env)).campConfig.timezone
+      : undefined;
     const result = await listAdminDailyVoteItems(env, {
       date,
       kind,
       status,
-      page: Number.isFinite(pageValue) ? pageValue : 1
+      page: Number.isFinite(pageValue) ? pageValue : 1,
+      ...(timezone ? { timezone } : {})
     });
     return json({
       ...result,
@@ -1603,7 +1679,8 @@ async function handleAdminApi(
     if (date && !isDateKey(date)) {
       return problem("日期格式必须为 YYYY-MM-DD", 400, "invalid_daily_vote_date");
     }
-    return json({ ok: true, deleted: await deleteDailyVoteHistory(env, date) });
+    const timezone = (await getConfigBundle(env)).campConfig.timezone;
+    return json({ ok: true, deleted: await deleteDailyVoteHistory(env, date, timezone) });
   }
   if (dailyVoteMatch && (method === "PATCH" || method === "DELETE") && dailyVoteMatch[1]) {
     const id = decodeURIComponent(dailyVoteMatch[1]);
@@ -2257,7 +2334,7 @@ async function handleAdminApi(
             publicOverview: submitted.publicOverview,
             automationConfig: {
               ...current.automationConfig,
-              timezone: submitted.automationConfig.timezone
+              timezone: submitted.campConfig.timezone
             }
           }
         : {}),

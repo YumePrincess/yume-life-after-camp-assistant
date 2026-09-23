@@ -172,7 +172,7 @@
       setText("identity-account-email", session.email || window.MrzhI18n.t("未绑定邮箱"));
       setText(
         "identity-account-expiry",
-        session.expiresAt ? formatIdentityExpiry(session.expiresAt, session.timezone || configuredTimezone()) : window.MrzhI18n.t("永久有效")
+        session.expiresAt ? formatIdentityExpiry(session.expiresAt, configuredTimezone()) : window.MrzhI18n.t("永久有效")
       );
       const codeInput = byId("identity-reset-code");
       if (codeInput && !codeInput.value) codeInput.value = session.identityCode;
@@ -235,7 +235,7 @@
         ? window.MrzhI18n.format("剩余 {count} 次", { count: formatEligibilityNumber(override.votesRemaining) })
         : override.expiresAt
           ? window.MrzhI18n.format("有效至 {date}", {
-              date: formatIdentityExpiry(override.expiresAt, session.timezone || configuredTimezone())
+              date: formatIdentityExpiry(override.expiresAt, configuredTimezone())
             })
           : "";
       if (value) {

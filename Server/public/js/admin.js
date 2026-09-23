@@ -58,7 +58,12 @@
     technologyHistory: { dates: [], history: null },
     technologyHistoryLoading: false,
     technologyHistoryLoaded: false,
+    technologyHistoryReloadQueued: false,
+    technologyHistoryReloadDate: "",
+    activeVoteDetail: null,
     dailyVoteItems: [],
+    dailyVoteItemsByMode: { active: [], history: [] },
+    activeDailyVoteDetail: null,
     dailyVoteConfig: {
       drawMaxWins28Days: 4,
       voteEligibilityEnabled: true,
@@ -74,6 +79,7 @@
     dailyVoteHistoryPage: 1,
     dailyVoteHistoryTotal: 0,
     dailyVoteLoading: false,
+    dailyVoteReloadRequest: null,
     dailyVoteEditorItem: null,
     activeView: "overview",
     accessAllowed: false,
@@ -87,6 +93,7 @@
     runActionMenu: null,
     identityApplications: { page: 1, total: 0, items: [] },
     identityCodes: { page: 1, total: 0, items: [] },
+    identityListRefreshQueued: false,
     temporaryKeys: { page: 1, total: 0, items: [] },
     identityApplicationSearch: "",
     identityApplicationStatus: "",
@@ -1197,12 +1204,14 @@
             option,
             ballots.filter((ballot) =>
               (ballot.selections || []).includes(option.key)
-            )
+            ),
+            { source: "current", optionKey: option.key }
           )
         );
       }
       root.append(item);
     }
+    refreshOpenVoteDetails("current");
   }
 
   function historyTechnologyItem(item, tag = "article", source = "") {
@@ -1301,7 +1310,10 @@
     const empty = byId("technology-history-empty");
     content.hidden = !history;
     empty.hidden = Boolean(history);
-    if (!history) return;
+    if (!history) {
+      refreshOpenVoteDetails("history");
+      return;
+    }
     byId("technology-history-ballots").textContent = window.MrzhI18n.format(
       "{count} 人最终投票",
       { count: history.ballotCount || 0 }
@@ -1349,7 +1361,8 @@
             item,
             ballots.filter((ballot) =>
               (ballot.selections || []).includes(item.key)
-            )
+            ),
+            { source: "history", pollDate: history.pollDate, optionKey: item.key }
           )
         );
         row.append(
@@ -1363,10 +1376,16 @@
         votes.append(row);
       }
     }
+    refreshOpenVoteDetails("history");
   }
 
   async function loadTechnologyHistory(date = "") {
-    if (!canView("technology-history") || state.technologyHistoryLoading) return;
+    if (!canView("technology-history")) return;
+    if (state.technologyHistoryLoading) {
+      state.technologyHistoryReloadQueued = true;
+      state.technologyHistoryReloadDate = date;
+      return;
+    }
     state.technologyHistoryLoading = true;
     byId("technology-history-status").textContent = window.MrzhI18n.t(
       "正在读取历史记录…"
@@ -1388,6 +1407,12 @@
       state.technologyHistoryLoading = false;
       state.technologyHistoryLoaded = true;
       renderTechnologyHistory(state.technologyHistory);
+      if (state.technologyHistoryReloadQueued) {
+        const queuedDate = state.technologyHistoryReloadDate;
+        state.technologyHistoryReloadQueued = false;
+        state.technologyHistoryReloadDate = "";
+        void loadTechnologyHistory(queuedDate);
+      }
     }
   }
 
@@ -1487,6 +1512,7 @@
           totalKey: "dailyVoteTotal"
         };
     state.dailyVoteItems = payload?.items || [];
+    state.dailyVoteItemsByMode[mode] = state.dailyVoteItems;
     if (!history) state.dailyVoteConfig = payload?.config || state.dailyVoteConfig;
     state[view.pageKey] = Number(payload?.page) || 1;
     state[view.totalKey] = Number(payload?.total) || 0;
@@ -1587,7 +1613,8 @@
                   identityCode: response.identityCode,
                   playerName: response.playerName,
                   votedAt: response.submittedAt
-                }))
+                })),
+              { mode, type: "poll-option", itemId: item.id, optionId: option.id }
             )
           );
           optionList.append(optionButton);
@@ -1608,7 +1635,8 @@
               identityCode: response.identityCode,
               playerName: response.playerName,
               votedAt: response.submittedAt
-            }))
+            })),
+            { mode, type: "draw-participants", itemId: item.id }
           )
         );
         const winners = create("button", "button button-quiet daily-vote-admin-detail-button", "抽签中签人员");
@@ -1620,7 +1648,8 @@
             (item.winners || []).map((winner) => ({
               identityCode: winner.identityCode,
               playerName: `${winner.rank}. ${winner.playerName}`
-            }))
+            })),
+            { mode, type: "draw-winners", itemId: item.id }
           )
         );
         detailActions.append(participants, winners);
@@ -1635,11 +1664,16 @@
     byId(view.nextId).disabled = page >= pages;
     byId(view.jumpId).max = String(pages);
     byId(view.jumpId).value = String(page);
+    refreshOpenDailyVoteDetails(mode);
   }
 
   async function loadDailyVoteAdmin(date = "", page = state.dailyVotePage, mode = "active") {
     const history = mode === "history";
-    if (!canView("daily-vote") || state.dailyVoteLoading) return;
+    if (!canView("daily-vote")) return;
+    if (state.dailyVoteLoading) {
+      state.dailyVoteReloadRequest = { date, page, mode };
+      return;
+    }
     state.dailyVoteLoading = true;
     setText(history ? "daily-vote-history-status" : "daily-vote-status", window.MrzhI18n.t("正在读取历史记录…"));
     try {
@@ -1657,6 +1691,9 @@
       setText(history ? "daily-vote-history-status" : "daily-vote-status", error.message);
     } finally {
       state.dailyVoteLoading = false;
+      const queued = state.dailyVoteReloadRequest;
+      state.dailyVoteReloadRequest = null;
+      if (queued) void loadDailyVoteAdmin(queued.date, queued.page, queued.mode);
     }
   }
 
@@ -1819,7 +1856,13 @@
     }
   }
 
-  function openVoteDetails(option, ballots) {
+  function openVoteDetails(option, ballots, context = {}) {
+    state.activeDailyVoteDetail = null;
+    state.activeVoteDetail = {
+      source: context.source || "current",
+      optionKey: context.optionKey || option.key,
+      pollDate: context.pollDate || ""
+    };
     renderVoteDetails(
       option.name,
       window.MrzhI18n.format(
@@ -1829,6 +1872,32 @@
       ballots
     );
     byId("vote-detail-dialog").showModal();
+  }
+
+  function refreshOpenVoteDetails(source) {
+    const dialog = byId("vote-detail-dialog");
+    const active = state.activeVoteDetail;
+    if (!dialog?.open || !active || active.source !== source) return;
+    const summary = source === "current"
+      ? state.bootstrap?.voteSummary
+      : state.technologyHistory?.history;
+    if (source === "history" && active.pollDate !== summary?.pollDate) return;
+    const option = (summary?.options || []).find((item) => item.key === active.optionKey);
+    if (!option) return;
+    const ballots = source === "current"
+      ? state.bootstrap?.voteBallots || []
+      : state.technologyHistory?.voteBallots || [];
+    const entries = ballots.filter((ballot) =>
+      (ballot.selections || []).includes(active.optionKey)
+    );
+    renderVoteDetails(
+      option.name,
+      window.MrzhI18n.format(
+        "共 {count} 份投票；每个识别码在单个开放投票期只计一份提交记录。",
+        { count: entries.length }
+      ),
+      entries
+    );
   }
 
   function renderVoteDetails(title, summary, entries) {
@@ -1854,9 +1923,61 @@
     }
   }
 
-  function openDailyVoteDetails(title, summary, entries) {
+  function openDailyVoteDetails(title, summary, entries, context) {
+    state.activeVoteDetail = null;
+    state.activeDailyVoteDetail = context || null;
     renderVoteDetails(title, summary, entries);
     byId("vote-detail-dialog").showModal();
+  }
+
+  function refreshOpenDailyVoteDetails(mode) {
+    const dialog = byId("vote-detail-dialog");
+    const active = state.activeDailyVoteDetail;
+    if (!dialog?.open || !active || active.mode !== mode) return;
+    const item = (state.dailyVoteItemsByMode[mode] || []).find(
+      (entry) => entry.id === active.itemId
+    );
+    if (!item) return;
+    let title = "";
+    let summary = "";
+    let entries = [];
+    if (active.type === "poll-option") {
+      const option = (dailyContentForAdmin(item).options || []).find(
+        (entry) => entry.id === active.optionId
+      );
+      if (!option) return;
+      title = dailyOptionLabel(option);
+      entries = (item.responses || [])
+        .filter((response) => (response.selections || []).includes(active.optionId))
+        .map((response) => ({
+          identityCode: response.identityCode,
+          playerName: response.playerName,
+          votedAt: response.submittedAt
+        }));
+      summary = window.MrzhI18n.format(
+        "共 {count} 份投票；每个识别码在单个开放投票期只计一份提交记录。",
+        { count: entries.length }
+      );
+    } else if (active.type === "draw-participants") {
+      title = "抽签参与人员";
+      entries = (item.responses || []).map((response) => ({
+        identityCode: response.identityCode,
+        playerName: response.playerName,
+        votedAt: response.submittedAt
+      }));
+      summary = window.MrzhI18n.format(
+        "共 {count} 人报名；同一识别码重复报名时仅保留最后一次提交。",
+        { count: entries.length }
+      );
+    } else if (active.type === "draw-winners") {
+      title = "抽签中签人员";
+      entries = (item.winners || []).map((winner) => ({
+        identityCode: winner.identityCode,
+        playerName: `${winner.rank}. ${winner.playerName}`
+      }));
+      summary = window.MrzhI18n.format("共 {count} 人中签。", { count: entries.length });
+    }
+    renderVoteDetails(title, summary, entries);
   }
 
   function datePlusDays(dateKey, days) {
@@ -2615,6 +2736,14 @@
     active.trigger?.setAttribute("aria-expanded", "false");
     active.menu.remove();
     state.runActionMenu = null;
+    if (state.identityListRefreshQueued) {
+      state.identityListRefreshQueued = false;
+      if (state.activeView === "identity-applications") {
+        void loadIdentityApplications();
+      } else if (state.activeView === "identity-codes") {
+        void loadIdentityCodes();
+      }
+    }
   }
 
   function positionRunActionMenu() {
@@ -3246,6 +3375,49 @@
     void refresh(false);
   }
 
+  function refreshOpenAdminViews() {
+    const preserveIdentityMenu = state.runActionMenu?.trigger?.isConnected &&
+      (state.activeView === "identity-applications" || state.activeView === "identity-codes");
+    if (preserveIdentityMenu) {
+      state.identityListRefreshQueued = true;
+    } else if (state.activeView === "identity-applications") {
+      void loadIdentityApplications();
+    } else if (state.activeView === "identity-codes") {
+      void loadIdentityCodes();
+    }
+
+    const technologyHistoryCard = document.querySelector(
+      '[data-vote-history-card="technology"]'
+    );
+    if (technologyHistoryCard?.open && state.activeView === "technology-history") {
+      state.technologyHistoryLoaded = false;
+      void loadTechnologyHistory(byId("technology-history-date")?.value || "");
+    }
+    const dailyHistoryCard = document.querySelector(
+      '[data-vote-history-card="daily-vote"]'
+    );
+    if (dailyHistoryCard?.open && state.activeView === "technology-history") {
+      void loadDailyVoteAdmin(
+        byId("daily-vote-history-date")?.value || "",
+        state.dailyVoteHistoryPage,
+        "history"
+      );
+    }
+
+    const generalVoteCard = document.querySelector(
+      '[data-vote-management-card="general"]'
+    );
+    if (generalVoteCard?.open && state.activeView === "technology") {
+      void loadDailyVoteAdmin("", state.dailyVotePage, "active");
+    }
+    const dailyVoteCard = document.querySelector(
+      '[data-vote-management-card="daily-vote"]'
+    );
+    if (dailyVoteCard?.open && state.activeView === "technology") {
+      void loadDailyVoteAdmin("", 1, "active");
+    }
+  }
+
   function scheduleLiveReconnect() {
     if (state.liveReconnectTimer) return;
     const delay = Math.min(30_000, 1_000 * 2 ** state.liveReconnectAttempt);
@@ -3294,6 +3466,7 @@
           state.liveDirty = true;
         } else {
           void refresh(false);
+          refreshOpenAdminViews();
         }
       }
     });
@@ -4941,6 +5114,10 @@
     });
   }
   byId("run-dialog").addEventListener("close", stopEventRefresh);
+  byId("vote-detail-dialog").addEventListener("close", () => {
+    state.activeVoteDetail = null;
+    state.activeDailyVoteDetail = null;
+  });
   byId("clear-rate-limits").addEventListener("click", () =>
     openMaintenanceDialog("rate-limits")
   );

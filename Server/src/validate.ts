@@ -977,11 +977,13 @@ function weekdays(value: unknown, field: string): number[] {
 
 export function validateConfigBundle(value: unknown): ConfigBundle {
   const source = object(value, "config");
+  const campConfig = validateCampConfig(source.campConfig);
+  const automationConfig = validateAutomationConfig(source.automationConfig);
   return {
-    campConfig: validateCampConfig(source.campConfig),
+    campConfig,
     authConfig: validateAuthConfig(source.authConfig),
     publicOverview: validatePublicOverview(source.publicOverview),
     technologyConfig: validateTechnologyConfig(source.technologyConfig),
-    automationConfig: validateAutomationConfig(source.automationConfig)
+    automationConfig: { ...automationConfig, timezone: campConfig.timezone }
   };
 }

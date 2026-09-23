@@ -28,10 +28,8 @@ import {
 } from "./identity-code-utils";
 import { getConfigBundle } from "./db";
 import {
-  addDaysToDateKey,
-  nextTechnologyTargetDate,
-  zonedDateKey,
-  zonedDateTimeToIso
+  isWithinDailyClockWindow,
+  nextTechnologyTargetDate
 } from "./time";
 import { getDailyVoteConfig } from "./daily-vote";
 import { evaluateVoteEligibility, getVoteEligibilityStats } from "./vote-eligibility";
@@ -152,48 +150,39 @@ async function currentVoteInvalidations(
   identityCodeId: string,
   at = new Date()
 ): Promise<D1PreparedStatement[]> {
-  // Public OTP cancellation and admin disabling must use this same statement
-  // set: the active technology ballot, every still-open daily vote response,
-  // and unresolved draw responses are all invalidated together with the code.
+  // Public OTP cancellation and admin disabling may invalidate an active
+  // technology ballot and unfinished daily responses. Closed/archived results
+  // are immutable and must survive identity status changes.
   const bundle = await getConfigBundle(env);
-  const timezone = bundle.automationConfig.timezone;
+  const timezone = bundle.campConfig.timezone;
+  const statements: D1PreparedStatement[] = [];
   const pollDate = nextTechnologyTargetDate(
     at,
     timezone,
     bundle.automationConfig.tasks.tech_switch.time,
     bundle.campConfig.gameResetTime
   );
-  const localDate = zonedDateKey(at, timezone);
-  const localDayStart = zonedDateTimeToIso(localDate, "00:00", timezone);
-  const localDayEnd = zonedDateTimeToIso(
-    addDaysToDateKey(localDate, 1),
-    "00:00",
-    timezone
-  );
-  return [
-    env.DB.prepare(
+  if (isWithinDailyClockWindow(
+    at,
+    timezone,
+    bundle.campConfig.voteWindowStart,
+    bundle.campConfig.voteWindowEnd
+  )) {
+    statements.push(env.DB.prepare(
       `DELETE FROM tech_ballots
-       WHERE voter_id = ?
-         AND (poll_date = ? OR (updated_at >= ? AND updated_at < ?))`
-    ).bind(identityCodeId, pollDate, localDayStart, localDayEnd),
-    env.DB.prepare(
+       WHERE voter_id = ? AND poll_date = ?`
+    ).bind(identityCodeId, pollDate));
+  }
+  statements.push(env.DB.prepare(
       `DELETE FROM daily_vote_responses
        WHERE identity_code_id = ?
          AND item_id IN (
            SELECT item.id
            FROM daily_vote_items item
-           WHERE item.end_at > ?
-              OR (
-                item.kind = 'draw'
-                AND NOT EXISTS (
-                  SELECT 1
-                  FROM daily_draw_winners winner
-                  WHERE winner.item_id = item.id
-                )
-              )
+           WHERE item.start_at <= ? AND item.end_at > ?
          )`
-    ).bind(identityCodeId, at.toISOString())
-  ];
+  ).bind(identityCodeId, at.toISOString(), at.toISOString()));
+  return statements;
 }
 
 async function localizedExpiry(

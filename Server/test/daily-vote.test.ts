@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  localDailyDateRange,
   normalizeDailyVoteConfig,
   normalizeDailyVoteInput,
   selectRandomDrawWinners
@@ -24,6 +25,17 @@ function drawInput(batchNumber?: unknown) {
 }
 
 describe("daily vote admin local times", () => {
+  it("filters a selected calendar date using the configured timezone, including DST days", () => {
+    expect(localDailyDateRange("2026-09-23", "Asia/Taipei")).toEqual({
+      startAt: "2026-09-22T16:00:00.000Z",
+      endAt: "2026-09-23T16:00:00.000Z"
+    });
+    expect(localDailyDateRange("2026-11-01", "America/New_York")).toEqual({
+      startAt: "2026-11-01T04:00:00.000Z",
+      endAt: "2026-11-02T05:00:00.000Z"
+    });
+  });
+
   it("interprets datetime-local values in the configured camp timezone", () => {
     const input = normalizeDailyVoteInput(
       {

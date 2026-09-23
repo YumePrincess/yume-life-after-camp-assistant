@@ -150,17 +150,26 @@ export async function getConfigBundle(env: Env): Promise<ConfigBundle> {
       }))
       .filter((preset) => preset.technologyKeys.length > 0);
   }
+  const campConfig = validateCampConfig(camp);
+  const automationConfig = validateAutomationConfig(automation);
   return {
-    campConfig: validateCampConfig(camp),
+    campConfig,
     authConfig: validateAuthConfig(auth),
     publicOverview: validatePublicOverview(overview),
     technologyConfig,
-    automationConfig: validateAutomationConfig(automation)
+    // The administrator-facing site timezone is the single source of truth.
+    // Older settings may contain a different automation timezone; normalize
+    // it on read so all scheduling and vote logic follows the site setting.
+    automationConfig: { ...automationConfig, timezone: campConfig.timezone }
   };
 }
 
 export async function saveConfigBundle(env: Env, bundle: ConfigBundle): Promise<void> {
   const now = isoNow();
+  const automationConfig = {
+    ...bundle.automationConfig,
+    timezone: bundle.campConfig.timezone
+  };
   await env.DB.batch([
     env.DB.prepare(
       "INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
@@ -176,7 +185,7 @@ export async function saveConfigBundle(env: Env, bundle: ConfigBundle): Promise<
     ).bind("technology_config", JSON.stringify(bundle.technologyConfig), now),
     env.DB.prepare(
       "INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
-    ).bind("automation_config", JSON.stringify(bundle.automationConfig), now),
+    ).bind("automation_config", JSON.stringify(automationConfig), now),
   ]);
 }
 

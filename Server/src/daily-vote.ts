@@ -1,6 +1,6 @@
 import { decryptSecret } from "./crypto";
 import { normalizeLocale, type SupportedLocale } from "./locale";
-import { zonedDateTimeToIso } from "./time";
+import { addDaysToDateKey, zonedDateTimeToIso } from "./time";
 import {
   DEFAULT_VOTE_ELIGIBILITY_THRESHOLDS,
   normalizeVoteEligibilityThresholds,
@@ -87,6 +87,16 @@ export interface DailyVoteConfig {
   drawMaxWins28Days: number;
   voteEligibilityEnabled: boolean;
   voteEligibility: VoteEligibilityThresholds;
+}
+
+export function localDailyDateRange(date: string, timezone: string): {
+  startAt: string;
+  endAt: string;
+} {
+  return {
+    startAt: zonedDateTimeToIso(date, "00:00", timezone),
+    endAt: zonedDateTimeToIso(addDaysToDateKey(date, 1), "00:00", timezone)
+  };
 }
 
 const LOCALES: SupportedLocale[] = ["zh-cn", "zh-tw", "en", "fr", "ja"];
@@ -542,16 +552,22 @@ export async function deleteDailyVoteItem(env: Env, id: string): Promise<boolean
 
 export async function deleteDailyVoteHistory(
   env: Env,
-  date?: string
+  date: string | undefined,
+  timezone: string
 ): Promise<number> {
   const now = new Date().toISOString();
-  const statement = date
-    ? env.DB.prepare(
+  let statement: D1PreparedStatement;
+  if (date) {
+    const range = localDailyDateRange(date, timezone);
+    statement = env.DB.prepare(
         `DELETE FROM daily_vote_items
          WHERE end_at <= ?
-           AND (substr(start_at, 1, 10) = ? OR substr(end_at, 1, 10) = ?)`
-      ).bind(now, date, date)
-    : env.DB.prepare("DELETE FROM daily_vote_items WHERE end_at <= ?").bind(now);
+           AND start_at < ?
+           AND end_at > ?`
+      ).bind(now, range.endAt, range.startAt);
+  } else {
+    statement = env.DB.prepare("DELETE FROM daily_vote_items WHERE end_at <= ?").bind(now);
+  }
   const result = await statement.run();
   return result.meta.changes ?? 0;
 }
@@ -810,6 +826,7 @@ export async function listAdminDailyVoteItems(
     kind?: DailyVoteKind;
     status?: "active" | "history";
     page?: number;
+    timezone?: string;
   } = {}
 ): Promise<AdminDailyVotePage> {
   const now = new Date();
@@ -820,8 +837,10 @@ export async function listAdminDailyVoteItems(
   const binds: unknown[] = [];
   if (options.kind) { clauses.push("kind = ?"); binds.push(options.kind); }
   if (options.date) {
-    clauses.push("(substr(start_at, 1, 10) = ? OR substr(end_at, 1, 10) = ?)");
-    binds.push(options.date, options.date);
+    if (!options.timezone) throw new Error("timezone is required for a date filter");
+    const range = localDailyDateRange(options.date, options.timezone);
+    clauses.push("start_at < ? AND end_at > ?");
+    binds.push(range.endAt, range.startAt);
   }
   if (options.status === "active") clauses.push("end_at > ?");
   if (options.status === "history") clauses.push("end_at <= ?");
