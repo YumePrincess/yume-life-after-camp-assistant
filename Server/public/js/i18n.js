@@ -1964,6 +1964,9 @@
     }
   };
   const voterListTranslations = {
+    "zh-cn": {
+      "VOTE PARTICIPANTS": "VOTE PARTICIPANTS"
+    },
     en: {
       "VOTE PARTICIPANTS": "VOTE PARTICIPANTS",
       "投票人名单": "Voter list",
@@ -1979,7 +1982,7 @@
       "请先完成本期投票后再查看名单。": "Submit this vote before viewing its participants."
     },
     fr: {
-      "VOTE PARTICIPANTS": "PARTICIPANTS AU VOTE",
+      "VOTE PARTICIPANTS": "VOTE PARTICIPANTS",
       "投票人名单": "Liste des votants",
       "查看参与人名单": "Voir les participants",
       "抽签参与人名单": "Participants au tirage",
@@ -1993,7 +1996,7 @@
       "请先完成本期投票后再查看名单。": "Votez avant de consulter les participants."
     },
     ja: {
-      "VOTE PARTICIPANTS": "投票参加者",
+      "VOTE PARTICIPANTS": "VOTE PARTICIPANTS",
       "投票人名单": "投票者一覧",
       "查看参与人名单": "参加者一覧を見る",
       "抽签参与人名单": "抽選参加者一覧",
@@ -2007,7 +2010,7 @@
       "请先完成本期投票后再查看名单。": "今回の投票を送信してから参加者一覧をご覧ください。"
     },
     "zh-tw": {
-      "VOTE PARTICIPANTS": "投票參與者",
+      "VOTE PARTICIPANTS": "VOTE PARTICIPANTS",
       "投票人名单": "投票人名單",
       "查看参与人名单": "查看參與人名單",
       "抽签参与人名单": "抽籤參與人名單",
@@ -3085,19 +3088,19 @@
   }
   const verificationSendLimitTranslations = {
     "zh-cn": {
-      "当前1小时内验证码发送已达5次，请稍后重试。": "当前1小时内验证码发送已达5次，请稍后重试。"
+      "验证码发送过于频繁：每分钟最多1次、每小时最多5次，请稍后重试。": "验证码发送过于频繁：每分钟最多1次、每小时最多5次，请稍后重试。"
     },
     "zh-tw": {
-      "当前1小时内验证码发送已达5次，请稍后重试。": "目前 1 小時內驗證碼已傳送 5 次，請稍後再試。"
+      "验证码发送过于频繁：每分钟最多1次、每小时最多5次，请稍后重试。": "驗證碼傳送過於頻繁：每分鐘最多 1 次、每小時最多 5 次，請稍後再試。"
     },
     en: {
-      "当前1小时内验证码发送已达5次，请稍后重试。": "You have sent 5 verification codes in the past hour. Please try again later."
+      "验证码发送过于频繁：每分钟最多1次、每小时最多5次，请稍后重试。": "Too many verification code requests. You can request 1 per minute and 5 per hour. Please try again later."
     },
     fr: {
-      "当前1小时内验证码发送已达5次，请稍后重试。": "Vous avez envoyé 5 codes de vérification au cours de la dernière heure. Réessayez plus tard."
+      "验证码发送过于频繁：每分钟最多1次、每小时最多5次，请稍后重试。": "Demandes de code trop fréquentes : 1 par minute et 5 par heure au maximum. Réessayez plus tard."
     },
     ja: {
-      "当前1小时内验证码发送已达5次，请稍后重试。": "過去1時間に確認コードを5回送信しました。しばらくしてからもう一度お試しください。"
+      "验证码发送过于频繁：每分钟最多1次、每小时最多5次，请稍后重试。": "確認コードの送信が頻繁すぎます。1分に1回、1時間に5回までです。しばらくしてからもう一度お試しください。"
     }
   };
   for (const [language, additions] of Object.entries(verificationSendLimitTranslations)) {
