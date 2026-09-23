@@ -1166,7 +1166,12 @@
     const root = byId("vote-options");
     root.replaceChildren();
     const alreadyParticipated = hasTechnologyParticipation(summary);
-    renderVoteSelection(summary, byId("vote-selection-preview"), Boolean(alreadyParticipated && summary.isOpen !== false));
+    renderVoteSelection(
+      summary,
+      byId("vote-selection-preview"),
+      Boolean(alreadyParticipated),
+      Boolean(alreadyParticipated && summary.isOpen !== false)
+    );
     const submit = byId("submit-vote");
     submit.textContent = window.MrzhI18n.t(
       alreadyParticipated ? "已参与" : "提交投票"
@@ -1252,7 +1257,12 @@
     }
   }
 
-  function renderVoteSelection(summary, target = byId("vote-selection-preview"), allowParticipants = false) {
+  function renderVoteSelection(
+    summary,
+    target = byId("vote-selection-preview"),
+    allowParticipants = false,
+    requiresIdentity = allowParticipants
+  ) {
     const root = target;
     if (!root) return;
     root.replaceChildren();
@@ -1279,9 +1289,12 @@
             ? " is-fixed"
             : " is-voted"
           : "";
+        const canViewParticipants = Boolean(
+          allowParticipants && option && !fixedKeys.has(option.key)
+        );
         const slot = create(
           "span",
-          `vote-selection-slot${option ? " is-filled" : ""}${sourceClass}${allowParticipants && option ? " is-clickable" : ""}`
+          `vote-selection-slot${option ? " is-filled" : ""}${sourceClass}${canViewParticipants ? " is-clickable" : ""}`
         );
         if (option?.iconUrl) {
           const image = document.createElement("img");
@@ -1294,7 +1307,7 @@
           slot.textContent = "+";
         }
         if (option) slot.title = option.name;
-        if (allowParticipants && option) {
+        if (canViewParticipants) {
           slot.tabIndex = 0;
           slot.setAttribute("role", "button");
           slot.setAttribute("aria-label", window.MrzhI18n.format("查看 {name} 的投票人名单", { name: option.name }));
@@ -1303,7 +1316,7 @@
             title: window.MrzhI18n.format("{name} · 投票人名单", { name: option.name }),
             pollDate: summary.pollDate,
             optionKey: option.key,
-            requiresIdentity: true
+            requiresIdentity
           });
           slot.addEventListener("click", open);
           slot.addEventListener("keydown", (event) => {
@@ -1546,7 +1559,7 @@
       const hasRecords = Number(item.ballotCount || 0) > 0 || fixedTechnologies.length > 0;
       if (hasRecords) {
         const preview = create("div", "vote-selection-preview daily-history-selection-preview");
-        renderVoteSelection(item, preview);
+        renderVoteSelection(item, preview, true, false);
         card.append(preview);
         const fixedKeys = new Set(fixedTechnologies.map((fixed) => fixed.key));
         const result = create("div", "daily-history-result-list");

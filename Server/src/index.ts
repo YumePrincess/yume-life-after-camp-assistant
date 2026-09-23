@@ -103,6 +103,7 @@ import {
   preserveAutomationScheduleTimes,
   validateConfigBundle
 } from "./validate";
+import { technologyVoteOptionsForParticipants } from "./vote-participants";
 import { localizeTechnology } from "../plugins/technology/localizations";
 import {
   approveIdentityApplication,
@@ -557,26 +558,29 @@ async function handlePublicApi(
       }
       const bundle = await getConfigBundle(env);
       const summary = await buildVoteSummary(env, bundle, now);
-      const isOpen = summary.isOpen && summary.pollDate === pollDate;
-      let eligibleBallot = false;
+      const isCurrentPoll = summary.pollDate === pollDate;
+      const isOpen = summary.isOpen && isCurrentPoll;
+      const history = isCurrentPoll ? null : await getTechnologyVoteHistory(env, pollDate);
+      const availableOptions = technologyVoteOptionsForParticipants(
+        pollDate,
+        summary.pollDate,
+        summary.options,
+        history
+      );
+      if (!availableOptions) {
+        return problem("投票结果暂不可查看", 404, "vote_result_unavailable");
+      }
       if (isOpen) {
         const identity = await verifyPublicActionIdentity(request, env, cors, body);
         if (identity instanceof Response) return identity;
-        eligibleBallot = Boolean(await env.DB.prepare(
+        const eligibleBallot = Boolean(await env.DB.prepare(
           "SELECT 1 AS participated FROM tech_ballots WHERE poll_date = ? AND voter_id = ? LIMIT 1"
         ).bind(pollDate, identity.identityRecord.code.id).first<{ participated: number }>());
         if (!eligibleBallot) {
           return problem("请先完成本期投票后再查看投票人名单", 403, "vote_participation_required");
         }
-      } else {
-        const history = await getTechnologyVoteHistory(env, pollDate);
-        if (!history) return problem("投票结果暂不可查看", 404, "vote_result_unavailable");
-        if (!history.options.some((option) => option.key === optionKey)) {
-          return problem("投票选项不存在", 404, "vote_option_not_found");
-        }
       }
-      const availableOptions = isOpen ? summary.options : [];
-      if (isOpen && !availableOptions.some((option) => option.key === optionKey)) {
+      if (!availableOptions.some((option) => option.key === optionKey)) {
         return problem("投票选项不存在", 404, "vote_option_not_found");
       }
       const ballots = await env.DB.prepare(
