@@ -3083,6 +3083,26 @@
   for (const [language, additions] of Object.entries(identityAccountTranslations)) {
     Object.assign(translations[language], additions);
   }
+  const verificationSendLimitTranslations = {
+    "zh-cn": {
+      "当前1小时内验证码发送已达5次，请稍后重试。": "当前1小时内验证码发送已达5次，请稍后重试。"
+    },
+    "zh-tw": {
+      "当前1小时内验证码发送已达5次，请稍后重试。": "目前 1 小時內驗證碼已傳送 5 次，請稍後再試。"
+    },
+    en: {
+      "当前1小时内验证码发送已达5次，请稍后重试。": "You have sent 5 verification codes in the past hour. Please try again later."
+    },
+    fr: {
+      "当前1小时内验证码发送已达5次，请稍后重试。": "Vous avez envoyé 5 codes de vérification au cours de la dernière heure. Réessayez plus tard."
+    },
+    ja: {
+      "当前1小时内验证码发送已达5次，请稍后重试。": "過去1時間に確認コードを5回送信しました。しばらくしてからもう一度お試しください。"
+    }
+  };
+  for (const [language, additions] of Object.entries(verificationSendLimitTranslations)) {
+    Object.assign(translations[language], additions);
+  }
   const identityUiLabelTranslations = {
     en: {
       "玩家名称：": "Player name:",

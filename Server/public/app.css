@@ -1278,6 +1278,18 @@ h2 {
   gap: 5px;
 }
 
+.daily-history-participant-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.daily-history-participant-row > small {
+  margin: 0;
+}
+
 .daily-vote-item-title .daily-rich-text,
 .daily-history-card-title .daily-rich-text {
   margin: 0;
@@ -1389,6 +1401,14 @@ h2 {
 .daily-history-result.is-winner {
   border-color: rgba(235, 184, 97, 0.42);
   color: var(--accent);
+}
+
+.daily-history-participant-button {
+  flex: 0 0 auto;
+  font: inherit;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.025);
+  white-space: nowrap;
 }
 
 .daily-history-result.is-voted {

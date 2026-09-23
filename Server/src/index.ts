@@ -153,6 +153,7 @@ import {
   sendMail,
   updateSmtpConfig
 } from "./mailer";
+import { IdentityVerificationSendLimitError } from "./identity-verification-rate-limit";
 import { normalizeLocale } from "./locale";
 import { localizeWorkerEvent, localizeWorkerRun } from "./task-localization";
 import {
@@ -812,6 +813,9 @@ async function handlePublicApi(
       ]);
       return json(result, 200, cors);
     } catch (error) {
+      if (error instanceof IdentityVerificationSendLimitError) {
+        return problem(error.message, 429, "identity_verification_send_rate_limited", cors);
+      }
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_APPLICATION_LIMIT),
         recordValueRateLimitAttempt(target, env, IDENTITY_VALUE_CHECK_LIMIT)
@@ -921,6 +925,9 @@ async function handlePublicApi(
       ]);
       return json(result, 200, cors);
     } catch (error) {
+      if (error instanceof IdentityVerificationSendLimitError) {
+        return problem(error.message, 429, "identity_verification_send_rate_limited", cors);
+      }
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_PASSWORD_LIMIT),
         recordValueRateLimitAttempt(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
@@ -978,6 +985,9 @@ async function handlePublicApi(
       ]);
       return json(result, 200, cors);
     } catch (error) {
+      if (error instanceof IdentityVerificationSendLimitError) {
+        return problem(error.message, 429, "identity_verification_send_rate_limited", cors);
+      }
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_PASSWORD_LIMIT),
         recordValueRateLimitAttempt(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
@@ -1024,6 +1034,9 @@ async function handlePublicApi(
       ]);
       return json(result, 200, cors);
     } catch (error) {
+      if (error instanceof IdentityVerificationSendLimitError) {
+        return problem(error.message, 429, "identity_verification_send_rate_limited", cors);
+      }
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_APPLICATION_LIMIT),
         recordValueRateLimitAttempt(target, env, IDENTITY_VALUE_CHECK_LIMIT)

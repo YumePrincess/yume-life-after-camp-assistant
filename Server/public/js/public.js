@@ -1599,10 +1599,27 @@
             end: formatVoteDateTime(item.endAt),
             timezone: configuredTimezone()
           }
-        )), create("small", "muted", window.MrzhI18n.format(
+        )));
+        const participantRow = create("div", "daily-history-participant-row");
+        participantRow.append(create("small", "muted", window.MrzhI18n.format(
           "参与 {count} 人",
           { count: item.participantCount || 0 }
         )));
+        if (kind === "draw") {
+          const participants = create(
+            "button",
+            "daily-history-result is-winner daily-history-participant-button",
+            window.MrzhI18n.t("查看参与人名单")
+          );
+          participants.type = "button";
+          participants.addEventListener("click", () => void openVoteParticipants({
+            kind: "draw",
+            title: window.MrzhI18n.t("抽签参与人名单"),
+            itemId: item.id
+          }));
+          participantRow.append(participants);
+        }
+        card.append(participantRow);
         if (kind === "poll") {
           const result = create("div", "daily-history-result-list");
           for (const option of item.options || []) {
@@ -1631,14 +1648,6 @@
             winners.append(create("span", "daily-history-result is-winner", winner.playerName));
           }
           card.append(winners.childElementCount ? winners : create("p", "empty-state", "本次抽签无人报名"));
-          const participants = create("button", "button button-quiet", window.MrzhI18n.t("查看参与人名单"));
-          participants.type = "button";
-          participants.addEventListener("click", () => void openVoteParticipants({
-            kind: "draw",
-            title: window.MrzhI18n.t("抽签参与人名单"),
-            itemId: item.id
-          }));
-          card.append(participants);
         }
         section.append(card);
       }

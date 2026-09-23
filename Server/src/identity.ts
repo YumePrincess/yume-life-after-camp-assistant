@@ -35,6 +35,7 @@ import {
 } from "./time";
 import { getDailyVoteConfig } from "./daily-vote";
 import { evaluateVoteEligibility, getVoteEligibilityStats } from "./vote-eligibility";
+import { reserveIdentityVerificationSend } from "./identity-verification-rate-limit";
 export { isSequentialIdentityCode } from "./identity-code-utils";
 
 export interface IdentityApplicationRow {
@@ -1104,6 +1105,10 @@ export async function requestIdentityCancellation(
     email: input.email
   });
   if (!code.email) throw new Error("申请预留信息不足，请联系市长处理");
+  await reserveIdentityVerificationSend(env, {
+    identityCodeId: code.id,
+    email: code.email
+  });
   const challengeId = uuid();
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
@@ -1333,6 +1338,10 @@ export async function requestIdentityApplicationVerification(
     identityCodeId = code.id;
     applicationId = application.id;
   }
+  await reserveIdentityVerificationSend(env, {
+    identityCodeId,
+    email
+  });
   const challengeId = uuid();
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
@@ -1453,6 +1462,10 @@ export async function requestIdentityPasswordReset(
   }
 ): Promise<{ challengeId: string; expiresAt: string }> {
   const { code } = await findPasswordResetIdentity(env, input);
+  await reserveIdentityVerificationSend(env, {
+    identityCodeId: code.id,
+    email: code.email || ""
+  });
   const challengeId = uuid();
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
@@ -1640,6 +1653,10 @@ export async function requestIdentityEmailChange(
     playerName: null,
     excludeId: code.id
   });
+  await reserveIdentityVerificationSend(env, {
+    identityCodeId: code.id,
+    email: newEmail
+  });
   const changeId = uuid();
   const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
   const oldOtp = generateOtp();
@@ -1694,6 +1711,10 @@ export async function verifyIdentityEmailChangeOldOtp(
     throw new Error("邮箱验证码错误，请重新输入");
   }
 
+  await reserveIdentityVerificationSend(env, {
+    identityCodeId: oldRow.identity_code_id,
+    email: oldRow.new_email
+  });
   const newOtp = generateOtp();
   const timestamp = now();
   const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
