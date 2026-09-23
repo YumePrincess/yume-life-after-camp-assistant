@@ -376,8 +376,8 @@
     event.preventDefault();
     const feedback = byId("identity-reset-feedback");
     const password = byId("identity-new-password").value;
-    if (password.length < 8 || password.length > 32) {
-      feedback.textContent = window.MrzhI18n.t("密码必须为8至32位且不能包含空格");
+    if (password.length < 6 || password.length > 32) {
+      feedback.textContent = window.MrzhI18n.t("密码必须为6至32位");
       return;
     }
     try {

@@ -12,6 +12,17 @@ export interface RateLimitState {
   retryAfterSeconds: number;
 }
 
+// Bound both the attempt window and lockout, including legacy rows persisted with longer expiries.
+const MAX_RATE_LIMIT_PERIOD_SECONDS = 15 * 60;
+
+function effectiveBlockSeconds(policy: RateLimitPolicy): number {
+  return Math.max(1, Math.min(policy.blockSeconds, MAX_RATE_LIMIT_PERIOD_SECONDS));
+}
+
+function effectiveWindowSeconds(policy: RateLimitPolicy): number {
+  return Math.max(1, Math.min(policy.windowSeconds, MAX_RATE_LIMIT_PERIOD_SECONDS));
+}
+
 async function requestIdentifier(
   request: Request,
   env: Env,
@@ -51,14 +62,28 @@ async function checkIdentifierRateLimit(
     }>();
   if (!row) return { allowed: true, retryAfterSeconds: 0 };
   const timestamp = Date.now();
-  const blockedUntil = row.blocked_until ? Date.parse(row.blocked_until) : 0;
+  let blockedUntil = row.blocked_until ? Date.parse(row.blocked_until) : 0;
   if (blockedUntil > timestamp) {
+    const maximumBlockedUntil = timestamp + effectiveBlockSeconds(policy) * 1000;
+    if (blockedUntil > maximumBlockedUntil) {
+      blockedUntil = maximumBlockedUntil;
+      await env.DB.prepare(
+        `UPDATE public_rate_limits SET blocked_until = ?, updated_at = ?
+         WHERE identifier_hash = ?`
+      )
+        .bind(
+          new Date(blockedUntil).toISOString(),
+          new Date(timestamp).toISOString(),
+          key
+        )
+        .run();
+    }
     return {
       allowed: false,
       retryAfterSeconds: Math.max(1, Math.ceil((blockedUntil - timestamp) / 1000))
     };
   }
-  const windowEnds = Date.parse(row.window_started_at) + policy.windowSeconds * 1000;
+  const windowEnds = Date.parse(row.window_started_at) + effectiveWindowSeconds(policy) * 1000;
   if (row.attempts >= policy.maximum && windowEnds > timestamp) {
     return {
       allowed: false,
@@ -74,6 +99,7 @@ async function recordIdentifierRateLimitAttempt(
   policy: RateLimitPolicy
 ): Promise<RateLimitState> {
   const timestamp = new Date();
+  const windowSeconds = effectiveWindowSeconds(policy);
   const current = await env.DB.prepare(
     `SELECT attempts, window_started_at FROM public_rate_limits
      WHERE identifier_hash = ?`
@@ -82,7 +108,7 @@ async function recordIdentifierRateLimitAttempt(
     .first<{ attempts: number; window_started_at: string }>();
   const withinWindow =
     current &&
-    Date.parse(current.window_started_at) + policy.windowSeconds * 1000 >
+    Date.parse(current.window_started_at) + windowSeconds * 1000 >
       timestamp.getTime();
   const attempts = withinWindow ? current.attempts + 1 : 1;
   const windowStartedAt = withinWindow
@@ -90,7 +116,9 @@ async function recordIdentifierRateLimitAttempt(
     : timestamp.toISOString();
   const blockedUntil =
     attempts >= policy.maximum
-      ? new Date(timestamp.getTime() + policy.blockSeconds * 1000).toISOString()
+      ? new Date(
+          timestamp.getTime() + effectiveBlockSeconds(policy) * 1000
+        ).toISOString()
       : null;
   await env.DB.prepare(
     `INSERT INTO public_rate_limits(
@@ -113,7 +141,7 @@ async function recordIdentifierRateLimitAttempt(
     )
     .run();
   return blockedUntil
-    ? { allowed: false, retryAfterSeconds: policy.blockSeconds }
+    ? { allowed: false, retryAfterSeconds: effectiveBlockSeconds(policy) }
     : { allowed: true, retryAfterSeconds: 0 };
 }
 

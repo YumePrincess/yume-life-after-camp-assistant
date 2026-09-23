@@ -213,44 +213,44 @@ const IDENTITY_CHECK_LIMIT: RateLimitPolicy = {
 
 const IDENTITY_APPLICATION_LIMIT: RateLimitPolicy = {
   scope: "identity-application",
-  maximum: 10,
-  windowSeconds: 30 * 60,
-  blockSeconds: 30 * 60
+  maximum: 20,
+  windowSeconds: 15 * 60,
+  blockSeconds: 15 * 60
 };
 
 const IDENTITY_VALUE_CHECK_LIMIT: RateLimitPolicy = {
   scope: "identity-code-value",
-  maximum: 12,
-  windowSeconds: 30 * 60,
-  blockSeconds: 30 * 60
+  maximum: 20,
+  windowSeconds: 15 * 60,
+  blockSeconds: 15 * 60
 };
 
 const IDENTITY_RECOVERY_LIMIT: RateLimitPolicy = {
   scope: "identity-recovery",
-  maximum: 10,
-  windowSeconds: 30 * 60,
-  blockSeconds: 30 * 60
+  maximum: 20,
+  windowSeconds: 15 * 60,
+  blockSeconds: 15 * 60
 };
 
 const IDENTITY_RECOVERY_TARGET_LIMIT: RateLimitPolicy = {
   scope: "identity-recovery-target",
-  maximum: 6,
-  windowSeconds: 30 * 60,
-  blockSeconds: 60 * 60
+  maximum: 10,
+  windowSeconds: 15 * 60,
+  blockSeconds: 15 * 60
 };
 
 const IDENTITY_PASSWORD_LIMIT: RateLimitPolicy = {
   scope: "identity-password",
-  maximum: 8,
-  windowSeconds: 30 * 60,
-  blockSeconds: 60 * 60
+  maximum: 30,
+  windowSeconds: 15 * 60,
+  blockSeconds: 15 * 60
 };
 
 const IDENTITY_PASSWORD_TARGET_LIMIT: RateLimitPolicy = {
   scope: "identity-password-target",
-  maximum: 5,
-  windowSeconds: 30 * 60,
-  blockSeconds: 60 * 60
+  maximum: 10,
+  windowSeconds: 15 * 60,
+  blockSeconds: 15 * 60
 };
 
 function identityLookupFingerprint(

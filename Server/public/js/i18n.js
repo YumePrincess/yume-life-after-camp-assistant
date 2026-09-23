@@ -3968,9 +3968,9 @@
 
   const voteEligibilityTranslations = {
     en: {
-      "新密码（8-32位）": "New password (8–32 characters)",
-      "密码需为8-32位，并同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "Use an 8–32 character password with uppercase, lowercase, a number, and a special character. Avoid common, sequential, or repeated passwords, and do not include your identity code, player name, or email username.",
-      "密码必须为8至32位且不能包含空格": "Password must be 8–32 characters with no spaces.",
+      "新密码（6-32位）": "New password (6–32 characters)",
+      "密码长度为6-32位。为保障账号安全，建议不要设置简单密码；可尝试组合大小写字母、数字和特殊符号，并尽量避免常见、连续或重复字符，以及身份识别码、玩家名称或邮箱用户名。": "Passwords may be 6–32 characters. For account security, avoid simple passwords; consider mixing uppercase and lowercase letters, numbers, and symbols, and avoid common, sequential, or repeated strings or details such as your identity code, player name, or email username.",
+      "密码必须为6至32位": "Password must be 6–32 characters.",
       "通用投票设置": "General voting settings",
       "28天内同一识别码最多中签次数": "Maximum wins per identity code within 28 days",
       "投票资格校验": "Vote eligibility checks",
@@ -4042,9 +4042,9 @@
       "破格投票次数与破格有效日期只能选择一种批准方式。": "Choose either an exceptional vote count or an exceptional validity date, not both."
     },
     fr: {
-      "新密码（8-32位）": "Nouveau mot de passe (8 à 32 caractères)",
-      "密码需为8-32位，并同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "Utilisez un mot de passe de 8 à 32 caractères avec une majuscule, une minuscule, un chiffre et un caractère spécial. Évitez les mots de passe courants, séquentiels ou répétés, ainsi que le code, le nom ou l’identifiant e-mail.",
-      "密码必须为8至32位且不能包含空格": "Le mot de passe doit contenir 8 à 32 caractères sans espaces.",
+      "新密码（6-32位）": "Nouveau mot de passe (6 à 32 caractères)",
+      "密码长度为6-32位。为保障账号安全，建议不要设置简单密码；可尝试组合大小写字母、数字和特殊符号，并尽量避免常见、连续或重复字符，以及身份识别码、玩家名称或邮箱用户名。": "Le mot de passe peut contenir de 6 à 32 caractères. Pour la sécurité du compte, évitez les mots de passe simples ; vous pouvez combiner majuscules, minuscules, chiffres et symboles, et éviter les suites courantes, consécutives ou répétées, ainsi que le code d’identité, le nom du joueur ou l’identifiant e-mail.",
+      "密码必须为6至32位": "Le mot de passe doit contenir 6 à 32 caractères.",
       "通用投票设置": "Paramètres généraux des votes",
       "28天内同一识别码最多中签次数": "Nombre maximal de gains par code en 28 jours",
       "投票资格校验": "Contrôle d’éligibilité",
@@ -4116,9 +4116,9 @@
       "破格投票次数与破格有效日期只能选择一种批准方式。": "Choisissez soit un nombre de votes exceptionnels, soit une date de validité, mais pas les deux."
     },
     ja: {
-      "新密码（8-32位）": "新しいパスワード（8～32文字）",
-      "密码需为8-32位，并同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "8～32文字で、大文字・小文字・数字・特殊記号を含めてください。一般的なパスワードや連続・反復文字、コード・プレイヤー名・メール名は使用しないでください。",
-      "密码必须为8至32位且不能包含空格": "パスワードは8～32文字で、空白は使用できません。",
+      "新密码（6-32位）": "新しいパスワード（6～32文字）",
+      "密码长度为6-32位。为保障账号安全，建议不要设置简单密码；可尝试组合大小写字母、数字和特殊符号，并尽量避免常见、连续或重复字符，以及身份识别码、玩家名称或邮箱用户名。": "パスワードは6～32文字です。アカウントの安全のため、単純なパスワードは避けることをおすすめします。大文字・小文字・数字・記号を組み合わせ、よくある文字列や連続・反復する文字、本人確認コード・プレイヤー名・メールのユーザー名を含めないようにしてください。",
+      "密码必须为6至32位": "パスワードは6～32文字です。",
       "通用投票设置": "投票共通設定",
       "28天内同一识别码最多中签次数": "同じ本人確認コードの28日間の当選上限",
       "投票资格校验": "投票資格チェック",
@@ -4190,9 +4190,9 @@
       "破格投票次数与破格有效日期只能选择一种批准方式。": "特例投票回数または有効日を一つだけ選択してください。"
     },
     "zh-tw": {
-      "新密码（8-32位）": "新密碼（8–32 個字元）",
-      "密码需为8-32位，并同时包含大写字母、小写字母、数字和特殊符号；不能使用常见密码、连续字符、重复字符，也不能包含身份识别码、玩家名称或邮箱用户名。": "密碼需為8–32個字元，且同時包含大寫字母、小寫字母、數字與特殊符號；不可使用常見、連續或重複密碼，也不可包含身分識別碼、玩家名稱或信箱使用者名稱。",
-      "密码必须为8至32位且不能包含空格": "密碼必須為8至32位且不可包含空格",
+      "新密码（6-32位）": "新密碼（6–32 個字元）",
+      "密码长度为6-32位。为保障账号安全，建议不要设置简单密码；可尝试组合大小写字母、数字和特殊符号，并尽量避免常见、连续或重复字符，以及身份识别码、玩家名称或邮箱用户名。": "密碼長度為6–32個字元。為保障帳戶安全，建議不要設定簡單密碼；可嘗試組合大小寫字母、數字與特殊符號，並盡量避免常見、連續或重複字元，以及身分識別碼、玩家名稱或信箱使用者名稱。",
+      "密码必须为6至32位": "密碼必須為6至32個字元",
       "通用投票设置": "通用投票設定",
       "28天内同一识别码最多中签次数": "28天內同一身分識別碼最多中籤次數",
       "投票资格校验": "投票資格檢查",

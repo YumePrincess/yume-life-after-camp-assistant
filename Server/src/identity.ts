@@ -236,37 +236,9 @@ function generateInitialPassword(): string {
 }
 
 function cleanPassword(value: unknown): string {
-  const password = typeof value === "string" ? value.trim() : "";
-  const normalized = password.toLowerCase();
-  const weakPasswords = new Set([
-    "passwordpassword",
-    "password123456",
-    "qwertyuiop123",
-    "123456789012",
-    "abcdefghijkl",
-    "adminadmin12",
-    "letmein12345",
-    "iloveyou1234"
-  ]);
-  if (password.length < 8 || password.length > 32 || /\s/.test(password)) {
-    throw new Error("密码必须为8至32位且不能包含空格");
-  }
-  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-    throw new Error("密码必须同时包含大写字母、小写字母、数字和特殊符号");
-  }
-  if (weakPasswords.has(normalized) || /(.)\1{3,}/.test(normalized)) {
-    throw new Error("密码过于简单，请避免常见密码或重复字符");
-  }
-  let ascendingRun = 1;
-  let descendingRun = 1;
-  for (let index = 1; index < normalized.length; index += 1) {
-    const previous = normalized.charCodeAt(index - 1);
-    const current = normalized.charCodeAt(index);
-    ascendingRun = current === previous + 1 ? ascendingRun + 1 : 1;
-    descendingRun = current === previous - 1 ? descendingRun + 1 : 1;
-    if (ascendingRun >= 4 || descendingRun >= 4) {
-      throw new Error("密码过于简单，请避免连续字符");
-    }
+  const password = typeof value === "string" ? value : "";
+  if (password.length < 6 || password.length > 32) {
+    throw new Error("密码必须为6至32位");
   }
   return password;
 }
@@ -1590,22 +1562,11 @@ export async function setIdentityPassword(
     throw new Error("验证码验证已失效，请重新申请");
   }
   const identity = await env.DB.prepare(
-    "SELECT code_encrypted, player_name, email FROM identity_codes WHERE id = ?"
+    "SELECT id FROM identity_codes WHERE id = ?"
   ).bind(challenge.identity_code_id).first<{
-    code_encrypted: string;
-    player_name: string | null;
-    email: string | null;
+    id: string;
   }>();
   if (!identity) throw new Error("身份识别码不存在");
-  const plaintextCode = await decryptSecret(env, "identity-code-value", identity.code_encrypted);
-  const passwordLower = password.toLowerCase();
-  if (
-    passwordLower.includes(plaintextCode.toLowerCase()) ||
-    (identity.player_name && passwordLower.includes(identity.player_name.toLowerCase())) ||
-    (identity.email && passwordLower.includes(identity.email.split("@")[0]!.toLowerCase()))
-  ) {
-    throw new Error("密码不能包含身份识别码、玩家名称或邮箱用户名");
-  }
   const timestamp = now();
   await env.DB.batch([
     env.DB.prepare(
