@@ -442,15 +442,12 @@ export async function saveBallot(
     voterName: string;
     selections: string[];
   }
-): Promise<void> {
+): Promise<boolean> {
   const now = isoNow();
-  await env.DB.prepare(
+  const result = await env.DB.prepare(
     `INSERT INTO tech_ballots(id, poll_date, voter_id, voter_name, selections_json, created_at, updated_at)
      VALUES(?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(poll_date, voter_id) DO UPDATE SET
-       voter_name = excluded.voter_name,
-       selections_json = excluded.selections_json,
-       updated_at = excluded.updated_at`
+     ON CONFLICT(poll_date, voter_id) DO NOTHING`
   )
     .bind(
       crypto.randomUUID(),
@@ -462,6 +459,7 @@ export async function saveBallot(
       now
     )
     .run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 export async function listBallots(

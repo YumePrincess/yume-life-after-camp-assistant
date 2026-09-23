@@ -27,6 +27,15 @@
     dailyPanel: "",
     dailyIdentityCodes: {},
     dailySelections: {},
+    voteParticipation: {
+      revision: 0,
+      identityCode: "",
+      scopeKey: "",
+      technologyPollDate: "",
+      technologyParticipated: false,
+      dailyOpenItemIds: [],
+      dailyParticipatedItemIds: []
+    },
     identityCodeEdited: false,
     liveSocket: null,
     liveReconnectTimer: null,
@@ -60,6 +69,8 @@
     "identity_password_required",
     "identity_login_failed"
   ]);
+  let operationProgressSequence = 0;
+  const activeOperationProgress = new Map();
 
   function isIdentitySessionInvalidError(error) {
     return IDENTITY_SESSION_INVALID_CODES.has(error?.code) ||
@@ -118,14 +129,29 @@
 
   function clearIdentitySession({ openPanel = false } = {}) {
     persistIdentitySession(null);
-    setText("technology-identity-hint", window.MrzhI18n.t("请先在身份识别码卡片登录，登录后即可投票。"));
+    state.voteParticipation = {
+      revision: (state.voteParticipation.revision || 0) + 1,
+      identityCode: "",
+      scopeKey: "",
+      technologyPollDate: "",
+      technologyParticipated: false,
+      dailyOpenItemIds: [],
+      dailyParticipatedItemIds: []
+    };
+    if (state.data) {
+      renderVote(state.data.voteSummary || {});
+      renderDailyVote(state.data.dailyVote || {});
+    }
     if (openPanel) openIdentityPanel();
   }
 
   function requireIdentitySession() {
     if (identitySession()) return true;
-    setText("technology-identity-hint", window.MrzhI18n.t("请先在身份识别码卡片登录，登录后即可投票。"));
     openDailyPanel("identity");
+    showOperationNotice(
+      window.MrzhI18n.t("请先在身份识别码卡片登录，登录后即可投票。"),
+      { kicker: "IDENTITY CODE" }
+    );
     return false;
   }
 
@@ -272,6 +298,7 @@
       ) return;
       persistIdentitySession({ ...session, ...account, password: session.password });
       state.identitySessionRefreshedAt = Date.now();
+      await refreshVoteParticipation();
     } catch (error) {
       if (isIdentitySessionInvalidError(error)) {
         clearIdentitySession({ openPanel: state.dailyPanel === "identity" });
@@ -284,29 +311,37 @@
 
   async function loginIdentity(event) {
     event.preventDefault();
-    const feedback = byId("identity-login-feedback");
     const identityCode = byId("identity-login-code").value.trim();
     const password = byId("identity-login-password").value;
     if (!/^\d{8}$/.test(identityCode) || !password) {
-      feedback.textContent = window.MrzhI18n.t("请输入有效的身份识别码和密码。");
+      showOperationNotice(
+        window.MrzhI18n.t("请输入有效的身份识别码和密码。"),
+        { kicker: "IDENTITY CODE" }
+      );
       return;
     }
-    feedback.textContent = window.MrzhI18n.t("正在验证…");
+    const submit = event.currentTarget.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    const progressToken = showOperationProgress("IDENTITY CODE");
     try {
       const account = await request("/api/public/identity-login", {
         method: "POST",
         body: JSON.stringify({ identityCode, identityPassword: password })
       });
+      state.voteParticipation.revision = (state.voteParticipation.revision || 0) + 1;
       persistIdentitySession({ ...account, password });
       state.identitySessionRefreshedAt = Date.now();
-      feedback.textContent = window.MrzhI18n.t("登录成功。");
+      void refreshVoteParticipation({ force: true });
       byId("identity-login-password").value = "";
-      setText("technology-identity-hint", window.MrzhI18n.t("身份识别码已登录，可以提交投票。"));
+      showOperationNotice(window.MrzhI18n.t("登录成功。"), { kicker: "IDENTITY CODE" });
     } catch (error) {
-      feedback.textContent = window.MrzhI18n.t(error.message);
       if (error.code === "identity_password_required") {
         beginIdentityPasswordReset();
       }
+      showOperationNotice(window.MrzhI18n.t(error.message), { kicker: "IDENTITY CODE" });
+    } finally {
+      if (submit) submit.disabled = false;
+      hideOperationProgress(progressToken);
     }
   }
 
@@ -316,7 +351,6 @@
     state.identityResetChallengeId = "";
     state.identityResetToken = "";
     setPasswordResetStep("request");
-    setText("identity-reset-feedback", "");
     const session = identitySession();
     if (session) {
       byId("identity-reset-code").value = session.identityCode;
@@ -332,8 +366,9 @@
 
   async function requestPasswordReset(event) {
     event.preventDefault();
-    const feedback = byId("identity-reset-feedback");
-    feedback.textContent = window.MrzhI18n.t("正在发送验证码…");
+    const submit = event.currentTarget.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    const progressToken = showOperationProgress("IDENTITY CODE");
     try {
       const result = await request("/api/public/identity-password-reset", {
         method: "POST",
@@ -346,15 +381,20 @@
       });
       state.identityResetChallengeId = result.challengeId;
       setPasswordResetStep("verify");
-      feedback.textContent = window.MrzhI18n.t("验证码已发送到预留邮箱。");
+      showOperationNotice(window.MrzhI18n.t("验证码已发送到预留邮箱。"), { kicker: "IDENTITY CODE" });
     } catch (error) {
-      feedback.textContent = window.MrzhI18n.t(error.message);
+      showOperationNotice(window.MrzhI18n.t(error.message), { kicker: "IDENTITY CODE" });
+    } finally {
+      if (submit) submit.disabled = false;
+      hideOperationProgress(progressToken);
     }
   }
 
   async function verifyPasswordReset(event) {
     event.preventDefault();
-    const feedback = byId("identity-reset-feedback");
+    const submit = event.currentTarget.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    const progressToken = showOperationProgress("IDENTITY CODE");
     try {
       const result = await request("/api/public/identity-password-reset", {
         method: "POST",
@@ -366,20 +406,25 @@
       });
       state.identityResetToken = result.resetToken;
       setPasswordResetStep("set");
-      feedback.textContent = window.MrzhI18n.t("验证通过，请设置新密码。");
+      showOperationNotice(window.MrzhI18n.t("验证通过，请设置新密码。"), { kicker: "IDENTITY CODE" });
     } catch (error) {
-      feedback.textContent = window.MrzhI18n.t(error.message);
+      showOperationNotice(window.MrzhI18n.t(error.message), { kicker: "IDENTITY CODE" });
+    } finally {
+      if (submit) submit.disabled = false;
+      hideOperationProgress(progressToken);
     }
   }
 
   async function setPasswordReset(event) {
     event.preventDefault();
-    const feedback = byId("identity-reset-feedback");
     const password = byId("identity-new-password").value;
     if (password.length < 6 || password.length > 32) {
-      feedback.textContent = window.MrzhI18n.t("密码必须为6至32位");
+      showOperationNotice(window.MrzhI18n.t("密码必须为6至32位"), { kicker: "IDENTITY CODE" });
       return;
     }
+    const submit = event.currentTarget.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    const progressToken = showOperationProgress("IDENTITY CODE");
     try {
       await request("/api/public/identity-password-reset", {
         method: "POST",
@@ -390,13 +435,16 @@
           password
         })
       });
-      feedback.textContent = window.MrzhI18n.t("密码设置成功，请返回登录。");
       state.identityResetChallengeId = "";
       state.identityResetToken = "";
       byId("identity-new-password").value = "";
       setPasswordResetStep("request");
+      showOperationNotice(window.MrzhI18n.t("密码设置成功，请返回登录。"), { kicker: "IDENTITY CODE" });
     } catch (error) {
-      feedback.textContent = window.MrzhI18n.t(error.message);
+      showOperationNotice(window.MrzhI18n.t(error.message), { kicker: "IDENTITY CODE" });
+    } finally {
+      if (submit) submit.disabled = false;
+      hideOperationProgress(progressToken);
     }
   }
 
@@ -413,7 +461,6 @@
     byId("identity-cancel-email").value = session?.email || "";
     byId("identity-cancel-code").value = session?.identityCode || "";
     byId("identity-cancel-otp").value = "";
-    setText("identity-cancellation-feedback", "");
     setIdentityCancellationStep("request");
     const dialog = byId("identity-cancellation-dialog");
     if (dialog && !dialog.open) dialog.showModal();
@@ -421,11 +468,12 @@
 
   async function submitIdentityCancellation(event) {
     event.preventDefault();
-    const feedback = byId("identity-cancellation-feedback");
     const step = document.querySelector("[data-cancellation-step]:not([hidden])")?.dataset.cancellationStep;
+    const submit = event.submitter || event.currentTarget.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    const progressToken = showOperationProgress("IDENTITY CODE");
     try {
       if (step === "request") {
-        feedback.textContent = window.MrzhI18n.t("正在发送验证码…");
         const result = await request("/api/public/identity-cancellation", {
           method: "POST",
           body: JSON.stringify({
@@ -437,10 +485,9 @@
         });
         state.identityCancellationChallengeId = result.challengeId;
         setIdentityCancellationStep("verify");
-        feedback.textContent = window.MrzhI18n.t("验证码已发送到预留邮箱。");
+        showOperationNotice(window.MrzhI18n.t("验证码已发送到预留邮箱。"), { kicker: "IDENTITY CODE" });
         return;
       }
-      feedback.textContent = window.MrzhI18n.t("正在提交…");
       await request("/api/public/identity-cancellation", {
         method: "POST",
         body: JSON.stringify({
@@ -451,9 +498,12 @@
       });
       byId("identity-cancellation-dialog").close();
       clearIdentitySession();
-      setText("identity-profile-feedback", window.MrzhI18n.t("身份识别码已注销，已立即失效。"));
+      showOperationNotice(window.MrzhI18n.t("身份识别码已注销，已立即失效。"), { kicker: "IDENTITY CODE" });
     } catch (error) {
-      feedback.textContent = window.MrzhI18n.t(error.message);
+      showOperationNotice(window.MrzhI18n.t(error.message), { kicker: "IDENTITY CODE" });
+    } finally {
+      if (submit) submit.disabled = false;
+      hideOperationProgress(progressToken);
     }
   }
 
@@ -486,7 +536,6 @@
     byId("identity-profile-email").value = session.email || "";
     byId("identity-profile-old-otp").value = "";
     byId("identity-profile-new-otp").value = "";
-    setText("identity-profile-dialog-feedback", "");
     setIdentityProfileStep(mode === "name" ? "name" : "email");
     const dialog = byId("identity-profile-dialog");
     if (dialog && !dialog.open) dialog.showModal();
@@ -496,7 +545,6 @@
     event.preventDefault();
     const session = identitySession();
     if (!session) return openIdentityPanel();
-    const feedback = byId("identity-profile-dialog-feedback");
     const submit = byId("identity-profile-submit");
     const mode = state.identityProfileMode;
     const step = state.identityProfileStep;
@@ -505,7 +553,7 @@
     if (mode === "name") {
       const playerName = byId("identity-profile-name").value.trim();
       if (!playerName) {
-        feedback.textContent = window.MrzhI18n.t("请输入新的玩家名称");
+        showOperationNotice(window.MrzhI18n.t("请输入新的玩家名称"), { kicker: "IDENTITY CODE" });
         return;
       }
       body = {
@@ -517,7 +565,7 @@
     } else if (step === "email") {
       const newEmail = byId("identity-profile-email").value.trim();
       if (!newEmail) {
-        feedback.textContent = window.MrzhI18n.t("请输入新的邮箱地址");
+        showOperationNotice(window.MrzhI18n.t("请输入新的邮箱地址"), { kicker: "IDENTITY CODE" });
         return;
       }
       body = {
@@ -529,7 +577,7 @@
     } else if (step === "old-email") {
       const oldOtp = byId("identity-profile-old-otp").value.trim();
       if (!oldOtp) {
-        feedback.textContent = window.MrzhI18n.t("请输入旧邮箱收到的验证码");
+        showOperationNotice(window.MrzhI18n.t("请输入旧邮箱收到的验证码"), { kicker: "IDENTITY CODE" });
         return;
       }
       body = {
@@ -540,7 +588,7 @@
     } else if (step === "new-email") {
       const newOtp = byId("identity-profile-new-otp").value.trim();
       if (!newOtp) {
-        feedback.textContent = window.MrzhI18n.t("请输入新邮箱收到的验证码");
+        showOperationNotice(window.MrzhI18n.t("请输入新邮箱收到的验证码"), { kicker: "IDENTITY CODE" });
         return;
       }
       body = {
@@ -552,7 +600,7 @@
       return;
     }
     submit.disabled = true;
-    feedback.textContent = window.MrzhI18n.t("正在提交…");
+    const progressToken = showOperationProgress("IDENTITY CODE");
     try {
       const result = await request(endpoint, {
         method: "POST",
@@ -571,10 +619,10 @@
       } else if (step === "email") {
         state.identityEmailChangeId = result.changeId;
         setIdentityProfileStep("old-email");
-        feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
+        showOperationNotice(window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。"), { kicker: "IDENTITY CODE" });
       } else if (step === "old-email") {
         setIdentityProfileStep("new-email");
-        feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
+        showOperationNotice(window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。"), { kicker: "IDENTITY CODE" });
       } else {
         byId("identity-profile-dialog").close();
         showVoteSuccessDialog({
@@ -587,9 +635,10 @@
         void refreshIdentitySession({ force: true });
       }
     } catch (error) {
-      feedback.textContent = window.MrzhI18n.t(error.message);
+      showOperationNotice(window.MrzhI18n.t(error.message), { kicker: "IDENTITY CODE" });
     } finally {
       submit.disabled = false;
+      hideOperationProgress(progressToken);
     }
   }
 
@@ -750,6 +799,44 @@
     if (dialog && !dialog.open) dialog.showModal();
   }
 
+  function showOperationNotice(message, { title = "操作提示", kicker = "CAMP ASSISTANT" } = {}) {
+    if (!message) return;
+    showVoteSuccessDialog({
+      kind: "technology",
+      data: { publicTestVote: true },
+      message,
+      title,
+      kicker
+    });
+  }
+
+  function renderOperationProgress() {
+    const dialog = byId("operation-progress-dialog");
+    const progressEntries = [...activeOperationProgress.values()];
+    const latestKicker = progressEntries[progressEntries.length - 1];
+    if (!latestKicker) {
+      if (dialog?.open) dialog.close();
+      return;
+    }
+    const message = window.MrzhI18n.t("正在处理…");
+    setText("operation-progress-kicker", window.MrzhI18n.t(latestKicker));
+    setText("operation-progress-title", message);
+    dialog?.querySelector('[role="progressbar"]')?.setAttribute("aria-label", message);
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
+  function showOperationProgress(kicker = "CAMP ASSISTANT") {
+    const token = ++operationProgressSequence;
+    activeOperationProgress.set(token, kicker);
+    renderOperationProgress();
+    return token;
+  }
+
+  function hideOperationProgress(token) {
+    activeOperationProgress.delete(token);
+    renderOperationProgress();
+  }
+
   async function request(path, options = {}) {
     const response = await fetch(path, {
       ...options,
@@ -765,6 +852,143 @@
       throw error;
     }
     return payload;
+  }
+
+  function participationScopeKey(pollDate, dailyItemIds) {
+    return JSON.stringify({
+      pollDate: String(pollDate || ""),
+      dailyItemIds: [...new Set(dailyItemIds || [])].map(String).sort()
+    });
+  }
+
+  function currentParticipationScopeKey() {
+    const pollDate = state.data?.voteSummary?.pollDate || "";
+    const dailyItemIds = (state.data?.dailyVote?.items || [])
+      .filter((item) => item.isOpen)
+      .map((item) => item.id);
+    return participationScopeKey(pollDate, dailyItemIds);
+  }
+
+  function hasTechnologyParticipation(summary = state.data?.voteSummary) {
+    return Boolean(
+      summary?.pollDate &&
+      state.voteParticipation.technologyParticipated &&
+      state.voteParticipation.technologyPollDate === summary.pollDate
+    );
+  }
+
+  function hasDailyParticipation(itemId) {
+    return state.voteParticipation.dailyParticipatedItemIds.includes(itemId);
+  }
+
+  async function refreshVoteParticipation({ force = false } = {}) {
+    const session = identitySession();
+    if (!session?.identityCode || !session.password) return;
+    const scopeKey = currentParticipationScopeKey();
+    const revision = state.voteParticipation.revision || 0;
+    if (
+      !force &&
+      state.voteParticipation.identityCode === session.identityCode &&
+      state.voteParticipation.scopeKey === scopeKey
+    ) return;
+    try {
+      const result = await request("/api/public/vote-participation", {
+        method: "POST",
+        body: JSON.stringify({
+          identityCode: session.identityCode,
+          identityPassword: session.password
+        })
+      });
+      if (
+        identitySession()?.identityCode !== session.identityCode ||
+        identitySession()?.password !== session.password ||
+        revision !== (state.voteParticipation.revision || 0) ||
+        scopeKey !== currentParticipationScopeKey()
+      ) return;
+      const dailyOpenItemIds = Array.isArray(result.dailyOpenItemIds)
+        ? [...new Set(result.dailyOpenItemIds.map(String))]
+        : [];
+      const dailyParticipatedItemIds = Array.isArray(result.dailyParticipatedItemIds)
+        ? [...new Set(result.dailyParticipatedItemIds.map(String))]
+        : [];
+      state.voteParticipation = {
+        revision,
+        identityCode: session.identityCode,
+        scopeKey: participationScopeKey(result.technologyPollDate, dailyOpenItemIds),
+        technologyPollDate: String(result.technologyPollDate || ""),
+        technologyParticipated: result.technologyParticipated === true,
+        dailyOpenItemIds,
+        dailyParticipatedItemIds
+      };
+      if (state.data) {
+        renderVote(state.data.voteSummary || {});
+        renderDailyVote(state.data.dailyVote || {});
+      }
+    } catch {
+      // Server-side insert guards remain authoritative if this status refresh fails.
+    }
+  }
+
+  async function openVoteParticipants({
+    kind,
+    title = "投票人名单",
+    pollDate = "",
+    optionKey = "",
+    itemId = "",
+    optionId = "",
+    requiresIdentity = false
+  }) {
+    const session = identitySession();
+    if (requiresIdentity && !session) {
+      openDailyPanel("identity");
+      showOperationNotice(
+        window.MrzhI18n.t("请先登录并完成本期投票后查看名单。"),
+        { kicker: "DAILY VOTING" }
+      );
+      return;
+    }
+    const dialog = byId("vote-participants-dialog");
+    const list = byId("vote-participants-list");
+    list.replaceChildren();
+    setText("vote-participants-title", title);
+    setText("vote-participants-status", "");
+    if (!dialog.open) dialog.showModal();
+    const progressToken = showOperationProgress("DAILY VOTING");
+    try {
+      const result = await request("/api/public/vote-participants", {
+        method: "POST",
+        body: JSON.stringify({
+          kind,
+          pollDate,
+          optionKey,
+          itemId,
+          optionId,
+          locale: window.MrzhI18n.language(),
+          ...(requiresIdentity && session ? {
+            identityCode: session.identityCode,
+            identityPassword: session.password
+          } : {})
+        })
+      });
+      list.replaceChildren();
+      const names = Array.isArray(result.names) ? result.names : [];
+      if (names.length) {
+        for (const name of names) list.append(create("li", "vote-participant-name", String(name || "—")));
+        setText("vote-participants-status", window.MrzhI18n.format("共 {count} 人", { count: names.length }));
+      } else {
+        showOperationNotice(window.MrzhI18n.t("暂无参与人。"), { kicker: "DAILY VOTING" });
+      }
+    } catch (error) {
+      list.replaceChildren();
+      showOperationNotice(
+        window.MrzhI18n.t(error.code === "vote_participation_required"
+          ? "请先完成本期投票后再查看名单。"
+          : "参与人名单暂时无法加载，请稍后重试。"),
+        { kicker: "DAILY VOTING" }
+      );
+    } finally {
+      hideOperationProgress(progressToken);
+    }
   }
 
   function categoryName(value) {
@@ -875,15 +1099,15 @@
   }
 
   function toggleVote(summary, option) {
-    const feedback = byId("vote-feedback");
+    if (hasTechnologyParticipation(summary)) return;
     if (state.selections.has(option.key)) {
       const removed = removeVoteAndDependents(summary, option.key);
-      feedback.textContent =
-        removed > 1
-          ? window.MrzhI18n.t(
-              "取消前置科技时，依赖它的科技也会一并取消。"
-            )
-          : "";
+      if (removed > 1) {
+        showOperationNotice(
+          window.MrzhI18n.t("取消前置科技时，依赖它的科技也会一并取消。"),
+          { kicker: "TECHNOLOGY VOTE" }
+        );
+      }
       renderVote(summary);
       return;
     }
@@ -891,19 +1115,25 @@
     const additions = [...required].filter((key) => !state.selections.has(key));
     const voteLimit = configuredVoteLimit(summary);
     if (state.selections.size + additions.length > voteLimit) {
-      feedback.textContent = window.MrzhI18n.format(
-        "选择该科技及其前置科技后将超过 {limit} 票。",
-        { limit: voteLimit }
+      showOperationNotice(
+        window.MrzhI18n.format(
+          "选择该科技及其前置科技后将超过 {limit} 票。",
+          { limit: voteLimit }
+        ),
+        { kicker: "TECHNOLOGY VOTE" }
       );
       return;
     }
     for (const key of additions) state.selections.add(key);
-    feedback.textContent = option.prerequisiteName
-      ? window.MrzhI18n.format(
+    if (option.prerequisiteName) {
+      showOperationNotice(
+        window.MrzhI18n.format(
           "已同时选择前置科技：{name}",
           { name: option.prerequisiteName }
-        )
-      : "";
+        ),
+        { kicker: "TECHNOLOGY VOTE" }
+      );
+    }
     renderVote(summary);
   }
 
@@ -922,7 +1152,7 @@
     setText(
       "vote-limit-description",
       window.MrzhI18n.format(
-        "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。",
+        "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。",
         { limit: voteLimit }
       )
     );
@@ -935,9 +1165,14 @@
     }
     const root = byId("vote-options");
     root.replaceChildren();
-    renderVoteSelection(summary);
-    byId("submit-vote").disabled =
-      summary.isOpen === false || !summary.options?.length;
+    const alreadyParticipated = hasTechnologyParticipation(summary);
+    renderVoteSelection(summary, byId("vote-selection-preview"), Boolean(alreadyParticipated && summary.isOpen !== false));
+    const submit = byId("submit-vote");
+    submit.textContent = window.MrzhI18n.t(
+      alreadyParticipated ? "已参与" : "提交投票"
+    );
+    submit.disabled =
+      alreadyParticipated || summary.isOpen === false || !summary.options?.length;
     if (!summary.options?.length) {
       root.append(create("p", "empty-state", "管理员尚未开放科技投票。"));
       return;
@@ -959,7 +1194,7 @@
       for (const option of options) {
         const button = create("button", "vote-option");
         button.type = "button";
-        button.disabled = summary.isOpen === false;
+        button.disabled = summary.isOpen === false || alreadyParticipated;
         button.dataset.key = option.key;
         button.dataset.selected = String(state.selections.has(option.key));
         if (option.iconUrl) {
@@ -1017,7 +1252,7 @@
     }
   }
 
-  function renderVoteSelection(summary, target = byId("vote-selection-preview")) {
+  function renderVoteSelection(summary, target = byId("vote-selection-preview"), allowParticipants = false) {
     const root = target;
     if (!root) return;
     root.replaceChildren();
@@ -1046,7 +1281,7 @@
           : "";
         const slot = create(
           "span",
-          `vote-selection-slot${option ? " is-filled" : ""}${sourceClass}`
+          `vote-selection-slot${option ? " is-filled" : ""}${sourceClass}${allowParticipants && option ? " is-clickable" : ""}`
         );
         if (option?.iconUrl) {
           const image = document.createElement("img");
@@ -1059,6 +1294,25 @@
           slot.textContent = "+";
         }
         if (option) slot.title = option.name;
+        if (allowParticipants && option) {
+          slot.tabIndex = 0;
+          slot.setAttribute("role", "button");
+          slot.setAttribute("aria-label", window.MrzhI18n.format("查看 {name} 的投票人名单", { name: option.name }));
+          const open = () => void openVoteParticipants({
+            kind: "technology",
+            title: window.MrzhI18n.format("{name} · 投票人名单", { name: option.name }),
+            pollDate: summary.pollDate,
+            optionKey: option.key,
+            requiresIdentity: true
+          });
+          slot.addEventListener("click", open);
+          slot.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              open();
+            }
+          });
+        }
         slots.append(slot);
       }
       row.append(slots);
@@ -1166,6 +1420,7 @@
   }
 
   function renderDailyItem(item) {
+    const alreadyParticipated = hasDailyParticipation(item.id);
     const card = create("article", `daily-vote-item daily-vote-item-${item.kind}`);
     const heading = create("div", "daily-vote-item-heading");
     const title = create("div", "daily-vote-item-title");
@@ -1201,7 +1456,7 @@
       const selected = new Set(dailySelections(item.id));
       const options = create("div", "daily-vote-options");
       for (const option of item.options || []) {
-        const button = create("button", `daily-vote-option${selected.has(option.id) ? " is-selected" : ""}`);
+        const button = create("button", `daily-vote-option${selected.has(option.id) ? " is-selected" : ""}${alreadyParticipated ? " is-participated" : ""}`);
         button.type = "button";
         button.disabled = item.isOpen === false;
         const content = create("span", "daily-vote-option-content");
@@ -1210,11 +1465,24 @@
           count: option.votes || 0
         })));
         button.addEventListener("click", () => {
+          if (alreadyParticipated && item.isOpen) {
+            void openVoteParticipants({
+              kind: "daily-poll",
+              title: window.MrzhI18n.t("投票人名单"),
+              itemId: item.id,
+              optionId: option.id,
+              requiresIdentity: true
+            });
+            return;
+          }
           const next = new Set(dailySelections(item.id));
           if (next.has(option.id)) next.delete(option.id);
           else if (next.size < Number(item.maxSelections || 0)) next.add(option.id);
           else {
-            setText("daily-vote-status", window.MrzhI18n.format("最多选择 {count} 项", { count: item.maxSelections }));
+            showOperationNotice(
+              window.MrzhI18n.format("最多选择 {count} 项", { count: item.maxSelections }),
+              { kicker: "DAILY VOTING" }
+            );
             return;
           }
           state.dailySelections[item.id] = [...next];
@@ -1228,12 +1496,29 @@
     const submit = create(
       "button",
       "button button-primary",
-      window.MrzhI18n.t(item.kind === "draw" ? "提交抽签" : "提交投票")
+      window.MrzhI18n.t(
+        alreadyParticipated
+          ? "已参与"
+          : item.kind === "draw"
+            ? "提交抽签"
+            : "提交投票"
+      )
     );
     submit.type = "button";
-    submit.disabled = item.isOpen === false;
+    submit.disabled = item.isOpen === false || alreadyParticipated;
     submit.addEventListener("click", () => submitDailyVote(item));
     action.append(submit);
+    if (item.kind === "draw" && item.isOpen && alreadyParticipated) {
+      const participants = create("button", "button button-quiet", window.MrzhI18n.t("查看参与人名单"));
+      participants.type = "button";
+      participants.addEventListener("click", () => void openVoteParticipants({
+        kind: "draw",
+        title: window.MrzhI18n.t("抽签参与人名单"),
+        itemId: item.id,
+        requiresIdentity: true
+      }));
+      action.append(participants);
+    }
     card.append(action);
     return card;
   }
@@ -1265,12 +1550,20 @@
         card.append(preview);
         const fixedKeys = new Set(fixedTechnologies.map((fixed) => fixed.key));
         const result = create("div", "daily-history-result-list");
-        for (const tech of [...(item.projectedPlan?.core || []), ...(item.projectedPlan?.general || [])]) {
+        for (const tech of (item.options || []).filter((option) => Number(option.votes) > 0)) {
           if (fixedKeys.has(tech.key)) continue;
-          result.append(create("span", "daily-history-result is-voted", window.MrzhI18n.format("{name} · {count} 票", {
+          const resultButton = create("button", "daily-history-result is-voted", window.MrzhI18n.format("{name} · {count} 票", {
             name: tech.name,
             count: (item.options || []).find((option) => option.key === tech.key)?.votes || 0
-          })));
+          }));
+          resultButton.type = "button";
+          resultButton.addEventListener("click", () => void openVoteParticipants({
+            kind: "technology",
+            title: window.MrzhI18n.format("{name} · 投票人名单", { name: tech.name }),
+            pollDate: item.pollDate,
+            optionKey: tech.key
+          }));
+          result.append(resultButton);
         }
         for (const fixed of fixedTechnologies) {
           result.append(create("span", "daily-history-result is-fixed", window.MrzhI18n.format("{name} · 固定", { name: fixed.name })));
@@ -1313,9 +1606,16 @@
         if (kind === "poll") {
           const result = create("div", "daily-history-result-list");
           for (const option of item.options || []) {
-            const optionText = create("span", "daily-history-result");
+            const optionText = create("button", "daily-history-result daily-history-result-button");
+            optionText.type = "button";
             renderRichBlocks(optionText, option.blocks);
             optionText.append(create("strong", "daily-history-result-count", window.MrzhI18n.format("{count} 票", { count: option.votes || 0 })));
+            optionText.addEventListener("click", () => void openVoteParticipants({
+              kind: "daily-poll",
+              title: window.MrzhI18n.t("投票人名单"),
+              itemId: item.id,
+              optionId: option.id
+            }));
             result.append(optionText);
           }
           card.append(result);
@@ -1331,6 +1631,14 @@
             winners.append(create("span", "daily-history-result is-winner", winner.playerName));
           }
           card.append(winners.childElementCount ? winners : create("p", "empty-state", "本次抽签无人报名"));
+          const participants = create("button", "button button-quiet", window.MrzhI18n.t("查看参与人名单"));
+          participants.type = "button";
+          participants.addEventListener("click", () => void openVoteParticipants({
+            kind: "draw",
+            title: window.MrzhI18n.t("抽签参与人名单"),
+            itemId: item.id
+          }));
+          card.append(participants);
         }
         section.append(card);
       }
@@ -1352,7 +1660,9 @@
     setText("daily-tech-panel-count", "1");
     setText("daily-items-panel-count", String(items.length));
     setText("daily-history-panel-count", String(historyCount));
-    setText("daily-vote-status", items.length ? "" : window.MrzhI18n.t("当前没有开放事项。"));
+    if (!items.length) {
+      root.append(create("p", "empty-state", window.MrzhI18n.t("当前没有开放事项。")));
+    }
     for (const item of items) root.append(renderDailyItem(item));
     renderDailyHistory(payload || {});
     const panelList = byId("daily-vote-panels");
@@ -1385,14 +1695,15 @@
 
   async function submitDailyVote(item) {
     if (!requireIdentitySession()) return;
+    if (hasDailyParticipation(item.id)) return;
     const { identityCode, password } = identitySession();
     const selections = item.kind === "poll" ? dailySelections(item.id) : [];
     if (item.kind === "poll" && !selections.length) {
-      setText("daily-vote-status", window.MrzhI18n.t("请至少选择一项。"));
+      showOperationNotice(window.MrzhI18n.t("请至少选择一项。"), { kicker: "DAILY VOTING" });
       return;
     }
+    const progressToken = showOperationProgress("DAILY VOTING");
     try {
-      setText("daily-vote-status", window.MrzhI18n.t("正在提交…"));
       const payload = await request("/api/public/daily-vote", {
         method: "POST",
         body: JSON.stringify({
@@ -1403,10 +1714,13 @@
           selections
         })
       });
+      state.voteParticipation.revision = (state.voteParticipation.revision || 0) + 1;
+      state.voteParticipation.dailyParticipatedItemIds = [
+        ...new Set([...state.voteParticipation.dailyParticipatedItemIds, item.id])
+      ];
       state.dailySelections[item.id] = [];
       if (state.data) state.data.dailyVote = payload;
       renderDailyVote(payload);
-      setText("daily-vote-status", window.MrzhI18n.t("提交成功，票数已更新。"));
       showVoteSuccessDialog({
         kind: "daily",
         data: payload,
@@ -1415,6 +1729,15 @@
             : window.MrzhI18n.t("提交成功，票数已更新。")
       });
     } catch (error) {
+      if (error.code === "daily_vote_already_participated") {
+        state.voteParticipation.revision = (state.voteParticipation.revision || 0) + 1;
+        state.voteParticipation.dailyParticipatedItemIds = [
+          ...new Set([...state.voteParticipation.dailyParticipatedItemIds, item.id])
+        ];
+        renderDailyVote(state.data?.dailyVote || {});
+        showOperationNotice(window.MrzhI18n.t("本事项已参与，不能重复提交。"), { kicker: "DAILY VOTING" });
+        return;
+      }
       if (IDENTITY_SESSION_INVALID_CODES.has(error.code)) {
         clearIdentitySession({ openPanel: true });
       }
@@ -1422,8 +1745,10 @@
         ? window.MrzhI18n.t("您尚未满足投票资格贡献与活跃度标准。")
         : error.code === "vote_permission_disabled"
           ? window.MrzhI18n.t("该身份识别码已被管理员禁止投票。")
-        : window.MrzhI18n.t(error.message);
+          : window.MrzhI18n.t(error.message);
       showVoteError(message, window.MrzhI18n.t("日常投票未提交"), error.code === "identity_code_expired" && error.canRenew, identityCode);
+    } finally {
+      hideOperationProgress(progressToken);
     }
   }
 
@@ -1664,6 +1989,7 @@
 
   function render(data) {
     state.data = data;
+    if (identitySession()) void refreshVoteParticipation();
     applyPluginVisibility();
     document.documentElement.dataset.timezone =
       data.campConfig?.timezone || "Asia/Shanghai";
@@ -1841,21 +2167,32 @@
 
   async function submitVote() {
     const button = byId("submit-vote");
-    const feedback = byId("vote-feedback");
     if (state.data?.voteSummary?.isOpen === false) {
-      feedback.textContent = window.MrzhI18n.t("当前不在科技投票开放时间内。");
+      showOperationNotice(window.MrzhI18n.t("当前不在科技投票开放时间内。"), { kicker: "TECHNOLOGY VOTE" });
+      return;
+    }
+    if (hasTechnologyParticipation(state.data?.voteSummary)) {
+      showOperationNotice(window.MrzhI18n.t("本次开放投票已参与，不能重复提交。"), { kicker: "TECHNOLOGY VOTE" });
+      renderVote(state.data?.voteSummary || {});
+      return;
+    }
+    if (!state.selections.size) {
+      showOperationNotice(window.MrzhI18n.t("请至少选择一项科技。"), { kicker: "TECHNOLOGY VOTE" });
       return;
     }
     if (state.selections.size > configuredVoteLimit(state.data?.voteSummary)) {
-      feedback.textContent = window.MrzhI18n.format("每人最多选择 {limit} 项科技。", {
-        limit: configuredVoteLimit(state.data?.voteSummary)
-      });
+      showOperationNotice(
+        window.MrzhI18n.format("每人最多选择 {limit} 项科技。", {
+          limit: configuredVoteLimit(state.data?.voteSummary)
+        }),
+        { kicker: "TECHNOLOGY VOTE" }
+      );
       return;
     }
     if (!requireIdentitySession()) return;
     const { identityCode, password } = identitySession();
     button.disabled = true;
-    feedback.textContent = window.MrzhI18n.t("正在提交…");
+    const progressToken = showOperationProgress("TECHNOLOGY VOTE");
     try {
       const summary = await request("/api/public/tech-vote", {
         method: "POST",
@@ -1867,21 +2204,38 @@
         })
       });
       state.selections.clear();
+      const revision = (state.voteParticipation.revision || 0) + 1;
+      state.voteParticipation = {
+        ...state.voteParticipation,
+        revision,
+        identityCode,
+        scopeKey: currentParticipationScopeKey(),
+        technologyPollDate: summary.pollDate || "",
+        technologyParticipated: true
+      };
       if (state.data) state.data.voteSummary = summary;
       renderVote(summary);
-      feedback.textContent = summary.voteWithdrawn
-        ? window.MrzhI18n.t("投票已撤回，当前不计入投票人数。")
-        : window.MrzhI18n.t("投票已保存，可在截止前再次修改。");
       showVoteSuccessDialog({
         kind: "technology",
         data: summary,
-        message: summary.voteWithdrawn
-          ? window.MrzhI18n.t("投票已撤回，当前不计入投票人数。")
-          : summary.renewalGraceUsed
+        message: summary.renewalGraceUsed
               ? window.MrzhI18n.t("投票已提交；本次已使用延期审批期间唯一一次过期投票机会。")
-              : window.MrzhI18n.t("投票已保存，可在截止前再次修改。")
+              : window.MrzhI18n.t("投票已提交，截止前不可修改或撤回。")
       });
     } catch (error) {
+      if (error.code === "vote_already_participated") {
+        const revision = (state.voteParticipation.revision || 0) + 1;
+        state.voteParticipation = {
+          ...state.voteParticipation,
+          revision,
+          identityCode,
+          technologyPollDate: state.data?.voteSummary?.pollDate || "",
+          technologyParticipated: true
+        };
+        renderVote(state.data?.voteSummary || {});
+        showOperationNotice(window.MrzhI18n.t("本次开放投票已参与，不能重复提交。"), { kicker: "TECHNOLOGY VOTE" });
+        return;
+      }
       const message =
         error.code === "rate_limited" ||
         error.code === "identity_code_rate_limited"
@@ -1903,7 +2257,8 @@
         clearIdentitySession({ openPanel: true });
       }
     } finally {
-      button.disabled = false;
+      renderVote(state.data?.voteSummary || {});
+      hideOperationProgress(progressToken);
     }
   }
 
@@ -1913,7 +2268,6 @@
     canRenew = false,
     identityCode = ""
   ) {
-    setText("vote-feedback", message);
     setText("vote-error-title", title);
     setText("vote-error-message", message);
     state.voteErrorRenewalCode = canRenew ? identityCode : "";
@@ -1954,7 +2308,6 @@
       eligibility?.enabled === false
     ) return;
     byId("identity-eligibility-application-reason").value = "";
-    setText("identity-eligibility-application-feedback", "");
     byId("identity-eligibility-application-dialog").showModal();
   }
 
@@ -1968,14 +2321,13 @@
       session.voteEligibility?.eligible
     ) return;
     const reason = byId("identity-eligibility-application-reason").value.trim();
-    const feedback = byId("identity-eligibility-application-feedback");
     if (!reason) {
-      feedback.textContent = window.MrzhI18n.t("请填写申请理由");
+      showOperationNotice(window.MrzhI18n.t("请填写申请理由"), { kicker: "VOTE ELIGIBILITY" });
       return;
     }
     const button = byId("identity-eligibility-application-submit");
     button.disabled = true;
-    feedback.textContent = window.MrzhI18n.t("正在提交申请…");
+    const progressToken = showOperationProgress("VOTE ELIGIBILITY");
     try {
       await request("/api/public/vote-eligibility-applications", {
         method: "POST",
@@ -1992,9 +2344,10 @@
         window.MrzhI18n.t("请留意邮箱的审核结果邮件。")
       );
     } catch (error) {
-      feedback.textContent = window.MrzhI18n.t(error.message);
+      showOperationNotice(window.MrzhI18n.t(error.message), { kicker: "VOTE ELIGIBILITY" });
     } finally {
       button.disabled = false;
+      hideOperationProgress(progressToken);
     }
   }
 
@@ -2021,7 +2374,6 @@
     byId("identity-renewal-lookup-rules").hidden = true;
     setText("identity-email-label", window.MrzhI18n.t("接收识别码邮箱"));
     setText("submit-identity-application", window.MrzhI18n.t("提交申请"));
-    setText("identity-application-feedback", "");
     byId("identity-application-verification-field").hidden = true;
     byId("identity-application-verification-code").value = "";
     byId("identity-application-dialog").showModal();
@@ -2059,13 +2411,12 @@
     setText("submit-identity-application", window.MrzhI18n.t("提交延期申请"));
     byId("identity-email").value = preview.email;
     byId("identity-player-name").value = preview.playerName;
-    setText("identity-application-feedback", "");
     const dialog = byId("identity-application-dialog");
     if (!dialog.open) dialog.showModal();
   }
 
   async function openRenewal(identityCode, applicationNumber = "") {
-    const feedback = byId("vote-feedback");
+    const progressToken = showOperationProgress("IDENTITY CODE");
     try {
       const preview = await request("/api/public/identity-code-renewal-preview", {
         method: "POST",
@@ -2073,13 +2424,17 @@
       });
       showRenewalConfirmation(preview, { identityCode, applicationNumber });
     } catch (error) {
-      feedback.textContent =
+      showOperationNotice(
         error.code === "rate_limited" ||
         error.code === "identity_code_rate_limited"
           ? window.MrzhI18n.format("尝试次数过多，请在 {seconds} 秒后重试。", {
               seconds: error.retryAfterSeconds || "—"
             })
-          : window.MrzhI18n.t(error.message);
+          : window.MrzhI18n.t(error.message),
+        { kicker: "IDENTITY CODE" }
+      );
+    } finally {
+      hideOperationProgress(progressToken);
     }
   }
 
@@ -2103,7 +2458,6 @@
     byId("identity-renewal-application-number").value = "";
     byId("identity-renewal-code").value = identityCode;
     setText("submit-identity-application", window.MrzhI18n.t("下一步：核对信息"));
-    setText("identity-application-feedback", "");
     byId("identity-application-dialog").showModal();
   }
 
@@ -2136,7 +2490,6 @@
     byId("identity-reissue-code").value = identityCode;
     byId("identity-email").value = "";
     byId("identity-player-name").value = "";
-    setText("identity-application-feedback", "");
     byId("identity-application-verification-field").hidden = true;
     byId("identity-application-verification-code").value = "";
     byId("identity-application-dialog").showModal();
@@ -2172,7 +2525,6 @@
     setText("submit-identity-application", window.MrzhI18n.t("提交更换申请"));
     byId("identity-email").value = lookup.email || preview.email;
     byId("identity-player-name").value = "";
-    setText("identity-application-feedback", "");
   }
 
   function openIdentityRecovery() {
@@ -2201,14 +2553,12 @@
     byId("identity-email").value = "";
     byId("identity-player-name").value = "";
     setText("submit-identity-application", window.MrzhI18n.t("发送识别码到预留邮箱"));
-    setText("identity-application-feedback", "");
     byId("identity-application-dialog").showModal();
   }
 
   async function submitIdentityApplication(event) {
     event.preventDefault();
     const button = byId("submit-identity-application");
-    const feedback = byId("identity-application-feedback");
     const renewalLookup = state.identityMode === "renewal-lookup";
     const reissueLookup = state.identityMode === "reissue-lookup";
     const renewalLookupApplicationNumber =
@@ -2219,9 +2569,7 @@
       !renewalLookupApplicationNumber &&
       !renewalLookupCode
     ) {
-      feedback.textContent = window.MrzhI18n.t(
-        "请填写申请编号或身份识别码"
-      );
+      showOperationNotice(window.MrzhI18n.t("请填写申请编号或身份识别码"), { kicker: "IDENTITY CODE" });
       return;
     }
     if (
@@ -2230,8 +2578,9 @@
       !byId("identity-reissue-code").value.trim() &&
       !byId("identity-email").value.trim()
     ) {
-      feedback.textContent = window.MrzhI18n.t(
-        "请至少填写申请编号、申请时预留邮箱或旧识别码中的一项。"
+      showOperationNotice(
+        window.MrzhI18n.t("请至少填写申请编号、申请时预留邮箱或旧识别码中的一项。"),
+        { kicker: "IDENTITY CODE" }
       );
       return;
     }
@@ -2239,19 +2588,18 @@
       state.identityMode === "reissue" &&
         !byId("identity-email").value.trim()
     ) {
-      feedback.textContent = window.MrzhI18n.t(
-        "请核对申请时预留邮箱"
-      );
+      showOperationNotice(window.MrzhI18n.t("请核对申请时预留邮箱"), { kicker: "IDENTITY CODE" });
       return;
     }
     const email = byId("identity-email").value.trim();
     const playerName = byId("identity-player-name").value.trim();
     if (state.identityMode === "new" && !state.identityApplicationVerificationId) {
       if (!email || !playerName) {
-        feedback.textContent = window.MrzhI18n.t("请填写邮箱和玩家名称。");
+        showOperationNotice(window.MrzhI18n.t("请填写邮箱和玩家名称。"), { kicker: "IDENTITY CODE" });
         return;
       }
       button.disabled = true;
+      const progressToken = showOperationProgress("IDENTITY CODE");
       try {
         const challenge = await request("/api/public/identity-application-verification", {
           method: "POST",
@@ -2260,16 +2608,17 @@
         state.identityApplicationVerificationId = challenge.challengeId;
         byId("identity-application-verification-field").hidden = false;
         setText("submit-identity-application", window.MrzhI18n.t("验证邮箱并提交申请"));
-        feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
+        showOperationNotice(window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。"), { kicker: "IDENTITY CODE" });
       } catch (error) {
-        feedback.textContent = window.MrzhI18n.t(error.message);
+        showIdentityApplicationError(window.MrzhI18n.t(error.message));
       } finally {
         button.disabled = false;
+        hideOperationProgress(progressToken);
       }
       return;
     }
     button.disabled = true;
-    feedback.textContent = window.MrzhI18n.t("正在提交…");
+    const progressToken = showOperationProgress("IDENTITY CODE");
     try {
       if ((state.identityMode === "new" || state.identityMode === "reissue") &&
           state.identityApplicationVerificationId && !state.identityApplicationVerificationToken) {
@@ -2333,7 +2682,7 @@
         state.identityApplicationVerificationId = challenge.challengeId;
         byId("identity-application-verification-field").hidden = false;
         setText("submit-identity-application", window.MrzhI18n.t("验证邮箱并提交更换申请"));
-        feedback.textContent = window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。");
+        showOperationNotice(window.MrzhI18n.t("验证码已发送到邮箱，请填写后再次提交。"), { kicker: "IDENTITY CODE" });
         return;
       }
       const common = {
@@ -2381,11 +2730,11 @@
                 })
               });
       if (state.identityMode === "recovery") {
-        feedback.textContent = window.MrzhI18n.t(
+        showOperationNotice(window.MrzhI18n.t(
           result.expired
             ? "识别码已发送至预留邮箱；该识别码已过期，可以申请延期。"
             : "识别码已发送至预留邮箱。"
-        );
+        ), { kicker: "IDENTITY CODE" });
       } else {
         const applicationMessage = window.MrzhI18n.format(
           state.identityMode === "renewal"
@@ -2395,7 +2744,6 @@
             : "申请已提交，申请编号：{number}。",
           { number: result.applicationNumber }
         );
-        feedback.textContent = applicationMessage;
         showIdentityApplicationSuccess(applicationMessage);
       }
     } catch (error) {
@@ -2406,19 +2754,24 @@
               seconds: error.retryAfterSeconds || "—"
             })
           : window.MrzhI18n.t(error.message);
-      feedback.textContent = message;
       if (
         error.message === ACTIVE_IDENTITY_CONFLICT ||
         error.message === EXPIRED_IDENTITY_CONFLICT
       ) {
         showIdentityApplicationError(error.message);
+      } else {
+        showOperationNotice(message, { kicker: "IDENTITY CODE" });
       }
     } finally {
       button.disabled = false;
+      hideOperationProgress(progressToken);
     }
   }
 
   byId("submit-vote").addEventListener("click", submitVote);
+  byId("operation-progress-dialog").addEventListener("cancel", event => {
+    event.preventDefault();
+  });
   state.identitySession = loadIdentitySession();
   renderIdentityAccount();
   for (const panel of document.querySelectorAll("[data-daily-panel]")) {
@@ -2456,12 +2809,18 @@
   });
   byId("identity-logout").addEventListener("click", () => {
     clearIdentitySession();
-    setText("identity-profile-feedback", window.MrzhI18n.t("已退出身份识别码账号。"));
+    showOperationNotice(window.MrzhI18n.t("已退出身份识别码账号。"), { kicker: "IDENTITY CODE" });
   });
   byId("vote-error-renew").addEventListener("click", () => {
     const identityCode = state.voteErrorRenewalCode;
     byId("vote-error-dialog").close();
     if (identityCode) openRenewal(identityCode);
+  });
+  byId("vote-participants-close").addEventListener("click", () => {
+    byId("vote-participants-dialog").close();
+  });
+  byId("vote-participants-dialog").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) event.currentTarget.close();
   });
   byId("image-preview-dialog").addEventListener("click", (event) => {
     if (event.target === event.currentTarget) event.currentTarget.close();

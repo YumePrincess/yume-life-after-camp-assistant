@@ -191,14 +191,15 @@ describe("buildTechnologyPlan", () => {
     });
   });
 
-  it("accepts an empty ballot as a withdrawal", () => {
-    expect(
-      normalizeBallotSelections({
-        selections: [],
-        catalog: technologyConfig.catalog,
-        allowedKeys: new Set(technologyConfig.catalog.map((item) => item.key))
-      })
-    ).toEqual({ selections: [] });
+  it("rejects an empty ballot instead of treating it as a withdrawal", () => {
+    const result = normalizeBallotSelections({
+      selections: [],
+      catalog: technologyConfig.catalog,
+      allowedKeys: new Set(technologyConfig.catalog.map((item) => item.key))
+    });
+
+    expect(result.selections).toEqual([]);
+    expect(result.error).toBe("请至少选择一项科技");
   });
 
   it("enforces the configured per-person vote limit", () => {

@@ -1578,7 +1578,7 @@
             openDailyVoteDetails(
               dailyOptionLabel(option),
               window.MrzhI18n.format(
-                "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。",
+                "共 {count} 份投票；每个识别码在单个开放投票期只计一份提交记录。",
                 { count: counts.get(option.id) || 0 }
               ),
               (item.responses || [])
@@ -1823,7 +1823,7 @@
     renderVoteDetails(
       option.name,
       window.MrzhI18n.format(
-        "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。",
+        "共 {count} 份投票；每个识别码在单个开放投票期只计一份提交记录。",
         { count: ballots.length }
       ),
       ballots
@@ -4042,8 +4042,8 @@
     byId("identity-approval-expiry").hidden = isProfileChange || isEligibilityApplication;
     byId("identity-eligibility-approval-fields").hidden = !isEligibilityApplication;
     byId("identity-eligibility-no-mode-label").hidden = true;
-    byId("identity-eligibility-bypass-field").hidden = true;
-    byId("identity-eligibility-prohibition-field").hidden = true;
+    byId("identity-eligibility-bypass-field").hidden = !isEligibilityApplication;
+    byId("identity-eligibility-prohibition-field").hidden = !isEligibilityApplication;
     byId("identity-eligibility-edit-save").hidden = true;
     byId("identity-review-approve").hidden = false;
     byId("identity-review-reject").hidden = false;
@@ -4212,7 +4212,9 @@
                 : null,
               eligibilityExpiresOn: byId("identity-eligibility-date-mode").checked
                 ? byId("identity-eligibility-approved-until").value
-                : null
+                : null,
+              prohibitVoting: byId("identity-eligibility-prohibit-voting").checked,
+              bypassVoteEligibility: byId("identity-eligibility-bypass").checked
             }
         : {
             permanent: byId("identity-review-permanent").checked,

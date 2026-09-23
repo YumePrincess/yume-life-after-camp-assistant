@@ -136,6 +136,9 @@ export function normalizeBallotSelections(input: {
     const error = include(key);
     if (error) return { selections: [], error };
   }
+  if (normalized.length === 0) {
+    return { selections: [], error: "请至少选择一项科技" };
+  }
   if (normalized.length > maximum) {
     return {
       selections: [],

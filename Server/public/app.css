@@ -1300,6 +1300,13 @@ h2 {
   font-size: 12px;
 }
 
+.daily-history-result-button {
+  font: inherit;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.025);
+  text-align: left;
+}
+
 .daily-vote-options {
   display: grid;
   gap: 9px;
@@ -1452,6 +1459,16 @@ h2 {
   border-radius: 11px;
   color: var(--muted);
   background: rgba(255, 255, 255, 0.025);
+}
+
+.vote-selection-slot.is-clickable {
+  cursor: pointer;
+}
+
+.vote-selection-slot.is-clickable:hover,
+.vote-selection-slot.is-clickable:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 2px;
 }
 
 .vote-selection-slot.is-filled.is-fixed {
@@ -2218,7 +2235,7 @@ td {
 
 .identity-eligibility-mode-rows {
   display: grid;
-  gap: 4px;
+  gap: 14px;
 }
 
 .identity-eligibility-mode-row {
@@ -2234,6 +2251,14 @@ td {
 
 .identity-eligibility-mode-row .field {
   margin-bottom: 0;
+}
+
+.identity-eligibility-mode-rows + .eligibility-prohibition-field {
+  margin-top: 14px;
+}
+
+.eligibility-prohibition-field + .eligibility-prohibition-field {
+  margin-top: 12px;
 }
 
 .run-action-menu-item {
@@ -2350,9 +2375,89 @@ td {
   padding: 30px 32px;
 }
 
+.vote-participants-card {
+  display: grid;
+  width: auto;
+  max-height: min(78vh, 680px);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.vote-participants-card .eyebrow,
+.vote-participants-card h2,
+.vote-participants-card > p {
+  margin: 0;
+}
+
+.vote-participants-list {
+  display: grid;
+  gap: 8px;
+  max-height: 48vh;
+  margin: 0;
+  padding: 2px 4px 2px 22px;
+  overflow: auto;
+}
+
+.vote-participant-name {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.vote-participants-card > .button {
+  justify-self: center;
+  min-width: 148px;
+}
+
 .vote-success-card .button {
   justify-self: center;
   min-width: 148px;
+}
+
+.operation-progress-dialog {
+  width: min(420px, calc(100% - 28px));
+}
+
+.operation-progress-card {
+  gap: 14px;
+  padding: 28px;
+}
+
+.operation-progress-card .eyebrow,
+.operation-progress-card h2 {
+  margin: 0;
+}
+
+.operation-progress-track {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.operation-progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 36%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c58d45, #f4cf8a);
+  animation: operation-progress-sweep 1.2s linear infinite;
+}
+
+@keyframes operation-progress-sweep {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(310%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .operation-progress-bar {
+    width: 100%;
+    animation: none;
+  }
 }
 
 .identity-rules {

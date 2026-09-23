@@ -204,14 +204,12 @@
               <div class="date-badge" id="poll-date">--</div>
             </div>
             <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
-            <p id="vote-limit-description" class="muted vote-limit-description">每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。</p>
+            <p id="vote-limit-description" class="muted vote-limit-description">每人最多选择 6 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。</p>
             <p id="vote-window-state" class="vote-window-state">当前未开放</p>
-            <p id="technology-identity-hint" class="muted identity-login-hint"></p>
             <div id="vote-selection-preview" class="vote-selection-preview" aria-live="polite"></div>
             <div id="vote-options" class="vote-options" aria-live="polite"></div>
             <div class="action-row vote-action-row">
               <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
-              <span id="vote-feedback" class="feedback" role="status"></span>
             </div>
           </section>
           <section class="daily-identity-section" data-daily-panel-content="identity" hidden>
@@ -223,20 +221,19 @@
               <span id="identity-account-state" class="date-badge">未登录</span>
             </div>
             <div id="identity-account-logged-out">
-              <form id="identity-login-form" class="form-grid identity-account-form">
+              <form id="identity-login-form" class="form-grid identity-account-form" novalidate>
                 <label class="field">
                   <span>身份识别码</span>
-                  <input id="identity-login-code" inputmode="numeric" maxlength="8" autocomplete="username" required />
+                  <input id="identity-login-code" inputmode="numeric" maxlength="8" autocomplete="username" />
                 </label>
                 <label class="field">
                   <span>密码</span>
-                  <input id="identity-login-password" type="password" autocomplete="current-password" required />
+                  <input id="identity-login-password" type="password" autocomplete="current-password" />
                 </label>
                 <div class="action-row identity-login-actions">
                   <button class="button button-primary" type="submit">登录身份识别码</button>
                 </div>
               </form>
-              <p id="identity-login-feedback" class="feedback" role="status"></p>
               <div class="identity-login-divider" aria-hidden="true"></div>
               <div class="action-row identity-account-actions">
                 <button id="identity-apply" class="button button-quiet" type="button">申请身份识别码</button>
@@ -280,7 +277,6 @@
                 <button id="identity-cancel-logged-in" class="button button-quiet" type="button">申请注销身份识别码</button>
                 <button id="identity-logout" class="button button-quiet" type="button">退出身份识别码账号</button>
               </div>
-              <p id="identity-profile-feedback" class="feedback" role="status"></p>
             </div>
           </section>
           <section class="daily-items-section" data-daily-panel-content="items" hidden>
@@ -288,7 +284,6 @@
               <div>
                 <h3>开放事项</h3>
               </div>
-              <span id="daily-vote-status" class="muted"></span>
             </div>
             <div id="daily-vote-items" class="daily-vote-items" aria-live="polite"></div>
           </section>
@@ -350,7 +345,7 @@
     </main>
 
     <dialog id="identity-application-dialog">
-      <form id="identity-application-form" class="dialog-card identity-application-card">
+      <form id="identity-application-form" class="dialog-card identity-application-card" novalidate>
         <div class="section-heading">
           <div>
             <p class="eyebrow">IDENTITY CODE</p>
@@ -423,7 +418,6 @@
           <button id="submit-identity-application" class="button button-primary" type="submit">
             提交申请
           </button>
-          <span id="identity-application-feedback" class="feedback" role="status"></span>
         </div>
       </form>
     </dialog>
@@ -437,7 +431,7 @@
           </div>
           <button id="close-identity-password-reset" class="button button-quiet" type="button">关闭</button>
         </div>
-        <form id="identity-password-reset-form" class="form-grid identity-password-reset-form identity-password-reset-step" data-reset-step="request">
+        <form id="identity-password-reset-form" class="form-grid identity-password-reset-form identity-password-reset-step" data-reset-step="request" novalidate>
           <label class="field"><span>申请编号</span><input id="identity-reset-application" maxlength="40" /></label>
           <label class="field"><span>申请时预留邮箱</span><input id="identity-reset-email" type="email" maxlength="254" /></label>
           <label class="field"><span>身份识别码</span><input id="identity-reset-code" inputmode="numeric" maxlength="8" /></label>
@@ -446,23 +440,22 @@
           </ol>
           <div class="action-row"><button class="button button-primary" type="submit">发送验证码</button></div>
         </form>
-        <form id="identity-password-verify-form" class="form-grid identity-password-reset-step" data-reset-step="verify" hidden>
+        <form id="identity-password-verify-form" class="form-grid identity-password-reset-step" data-reset-step="verify" hidden novalidate>
           <label class="field"><span>验证码（10分钟内有效）</span><input id="identity-reset-otp" inputmode="numeric" maxlength="6" /></label>
           <div class="action-row"><button class="button button-primary" type="submit">验证验证码</button></div>
         </form>
-        <form id="identity-password-set-form" class="form-grid identity-password-reset-step" data-reset-step="set" hidden>
-          <label class="field"><span>新密码（6-32位）</span><input id="identity-new-password" type="password" minlength="6" maxlength="32" autocomplete="new-password" /></label>
+        <form id="identity-password-set-form" class="form-grid identity-password-reset-step" data-reset-step="set" hidden novalidate>
+          <label class="field"><span>新密码（6-32位）</span><input id="identity-new-password" type="password" maxlength="32" autocomplete="new-password" /></label>
           <ol class="identity-rules password-policy-rules">
             <li>密码长度为6-32位。为保障账号安全，建议不要设置简单密码；可尝试组合大小写字母、数字和特殊符号，并尽量避免常见、连续或重复字符，以及身份识别码、玩家名称或邮箱用户名。</li>
           </ol>
           <div class="action-row"><button class="button button-primary" type="submit">设置新密码</button></div>
         </form>
-        <p id="identity-reset-feedback" class="feedback" role="status"></p>
       </div>
     </dialog>
 
 <dialog id="identity-profile-dialog" class="identity-profile-dialog">
-      <form id="identity-profile-form" class="dialog-card identity-profile-card">
+      <form id="identity-profile-form" class="dialog-card identity-profile-card" novalidate>
         <div class="section-heading">
           <div>
             <p class="eyebrow">IDENTITY CODE</p>
@@ -497,12 +490,11 @@
         <div class="action-row">
           <button id="identity-profile-submit" class="button button-primary" type="submit">确认变更</button>
         </div>
-        <p id="identity-profile-dialog-feedback" class="feedback" role="status"></p>
   </form>
 </dialog>
 
 <dialog id="identity-cancellation-dialog" class="identity-profile-dialog identity-cancellation-dialog">
-  <form id="identity-cancellation-form" class="dialog-card identity-profile-card">
+  <form id="identity-cancellation-form" class="dialog-card identity-profile-card" novalidate>
     <div class="section-heading">
       <div>
         <p class="eyebrow">IDENTITY CODE</p>
@@ -532,7 +524,6 @@
         <button id="confirm-identity-cancellation" class="button button-danger" type="submit">确认注销身份识别码</button>
       </div>
     </div>
-    <p id="identity-cancellation-feedback" class="feedback" role="status"></p>
   </form>
     </dialog>
 
@@ -557,17 +548,16 @@
     </dialog>
 
     <dialog id="identity-eligibility-application-dialog" class="compact-dialog">
-      <form id="identity-eligibility-application-form" class="dialog-card">
+      <form id="identity-eligibility-application-form" class="dialog-card" novalidate>
         <div class="section-heading">
           <div><p class="eyebrow">VOTE ELIGIBILITY</p><h2>申请破格投票资格</h2></div>
           <button id="identity-eligibility-application-close" class="button button-quiet" type="button">关闭</button>
         </div>
-        <label class="field"><span>申请理由</span><textarea id="identity-eligibility-application-reason" maxlength="1000" rows="5" required></textarea></label>
+        <label class="field"><span>申请理由</span><textarea id="identity-eligibility-application-reason" maxlength="1000" rows="5"></textarea></label>
         <ol class="identity-rules">
           <li>请填写申请理由，管理员将在48小时内完成审核。</li>
           <li>请珍惜申请机会，恶意申请、重复申请等情况将被拒绝申请且限制后续申请资格。</li>
         </ol>
-        <p id="identity-eligibility-application-feedback" class="feedback" role="status"></p>
         <div class="action-row"><button id="identity-eligibility-application-submit" class="button button-primary" type="submit">提交申请</button></div>
       </form>
     </dialog>
@@ -604,6 +594,15 @@
         <button class="button button-primary" value="close">关闭</button>
       </form>
     </dialog>
+    <dialog id="operation-progress-dialog" class="compact-dialog operation-progress-dialog" aria-labelledby="operation-progress-title">
+      <div class="dialog-card vote-success-card operation-progress-card" role="status" aria-live="polite">
+        <p id="operation-progress-kicker" class="eyebrow">CAMP ASSISTANT</p>
+        <h2 id="operation-progress-title">正在处理…</h2>
+        <div class="operation-progress-track" role="progressbar" aria-label="正在处理…" aria-valuemin="0" aria-valuemax="100">
+          <span class="operation-progress-bar"></span>
+        </div>
+      </div>
+    </dialog>
     <dialog id="vote-error-dialog" class="compact-dialog">
       <form method="dialog" class="dialog-card vote-success-card">
         <p class="eyebrow">TECHNOLOGY VOTE</p>
@@ -614,6 +613,16 @@
         </button>
         <button class="button button-primary" value="close">关闭</button>
       </form>
+    </dialog>
+
+    <dialog id="vote-participants-dialog" class="compact-dialog" aria-labelledby="vote-participants-title">
+      <div class="dialog-card vote-participants-card">
+        <p class="eyebrow">投票参与者</p>
+        <h2 id="vote-participants-title">投票人名单</h2>
+        <p id="vote-participants-status" class="muted" role="status"></p>
+        <ul id="vote-participants-list" class="vote-participants-list"></ul>
+        <button id="vote-participants-close" class="button button-primary" type="button">关闭</button>
+      </div>
     </dialog>
 
     <dialog id="image-preview-dialog" class="image-preview-dialog">

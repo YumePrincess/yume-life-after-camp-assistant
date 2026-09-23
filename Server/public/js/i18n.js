@@ -230,8 +230,13 @@
         "Open {opensAt}–{closesAt} {timezone} · {count} voters",
       "当前可投票": "Voting is open",
       "当前未开放": "Voting is closed",
-      "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。":
-        "Each person may cast up to {limit} votes. When voting more than once, the latest result is used. Submit without selecting technologies to withdraw your vote or submit a blank ballot.",
+      "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。":
+        "Each person may select up to {limit} technologies and submit once per open voting period. A submitted vote cannot be changed or withdrawn.",
+      "已参与": "Already participated",
+      "本次开放投票已参与，不能重复提交。": "You have already participated in this open vote.",
+      "本事项已参与，不能重复提交。": "You have already participated in this item.",
+      "本事项已参与，开放期间只能提交一次。": "You have participated. Only one submission is allowed while this item is open.",
+      "投票已提交，截止前不可修改或撤回。": "Vote submitted. It cannot be changed or withdrawn before the deadline.",
       "当前不在科技投票开放时间内。": "Technology voting is currently closed.",
       "更新于 {date}": "Updated {date}",
       "已同步 {date}": "Synced {date}",
@@ -329,10 +334,7 @@
       "成员信息保存失败": "Failed to save member information",
       "成员不存在或已被同步移除": "Member not found or removed by sync task",
       "未命名营地": "Unnamed camp",
-      "投票已保存，可在截止前再次修改。":
-        "Vote saved. You can change it again before the deadline.",
-      "投票已撤回，当前不计入投票人数。": "Vote withdrawn. It is not counted.",
-      "不选择任何科技并提交，可撤回当前投票且不计入投票人数。": "Submit with no technology selected to withdraw your current vote; it will not be counted.",
+      "投票已提交，截止前不可修改或撤回。": "Vote submitted. It cannot be changed or withdrawn before the deadline.",
       "请至少选择一项科技。": "Select at least one technology.",
       "正在提交…": "Submitting…",
       "登录状态已失效，请重新登录。": "Your sign-in state expired. Please sign in again.",
@@ -598,8 +600,13 @@
         "Ouvert de {opensAt} à {closesAt} {timezone} · {count} votants",
       "当前可投票": "Le vote est ouvert",
       "当前未开放": "Le vote est fermé",
-      "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。":
-        "Chaque personne peut voter au maximum {limit} fois. En cas de votes multiples, le dernier résultat est retenu. Envoyez sans sélectionner de technologie pour retirer votre vote ou envoyer un bulletin blanc.",
+      "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。":
+        "Chaque personne peut choisir jusqu’à {limit} technologies et envoyer une seule fois par période ouverte. Un vote envoyé ne peut être modifié ni retiré.",
+      "已参与": "Participation enregistrée",
+      "本次开放投票已参与，不能重复提交。": "Vous avez déjà participé à ce vote ouvert.",
+      "本事项已参与，不能重复提交。": "Vous avez déjà participé à ce sujet.",
+      "本事项已参与，开放期间只能提交一次。": "Participation enregistrée. Un seul envoi est autorisé pendant l’ouverture.",
+      "投票已提交，截止前不可修改或撤回。": "Vote envoyé. Il ne peut être modifié ni retiré avant la clôture.",
       "当前不在科技投票开放时间内。": "Le vote technologique est actuellement fermé.",
       "更新于 {date}": "Mis à jour {date}",
       "已同步 {date}": "Synchronisé {date}",
@@ -696,10 +703,7 @@
       "成员信息保存失败": "Échec de l’enregistrement des informations du membre",
       "成员不存在或已被同步移除": "Membre introuvable ou supprimé par la synchronisation",
       "未命名营地": "Camp sans nom",
-      "投票已保存，可在截止前再次修改。":
-        "Vote enregistré. Vous pouvez le modifier avant la date limite.",
-      "投票已撤回，当前不计入投票人数。": "Vote retiré. Il n’est pas comptabilisé.",
-      "不选择任何科技并提交，可撤回当前投票且不计入投票人数。": "Envoyez le formulaire sans sélectionner de technologie pour retirer votre vote ; il ne sera pas comptabilisé.",
+      "投票已提交，截止前不可修改或撤回。": "Vote envoyé. Il ne peut être modifié ni retiré avant la clôture.",
       "请至少选择一项科技。": "Sélectionnez au moins une technologie.",
       "正在提交…": "Envoi…",
       "登录状态已失效，请重新登录。": "Votre session a expiré. Reconnectez-vous.",
@@ -968,8 +972,13 @@
         "受付時間 {opensAt}～{closesAt} {timezone} · {count}人が投票",
       "当前可投票": "現在投票できます",
       "当前未开放": "現在は受付時間外です",
-      "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。":
-        "1人あたり最大{limit}票まで投票できます。複数回投票した場合は最新の結果が有効です。技術を選択せずに送信すると投票を撤回、または空票を送信できます。",
+      "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。":
+        "1人あたり最大{limit}件の技術を選択でき、受付期間中の送信は1回限りです。送信後の変更・取り消しはできません。",
+      "已参与": "参加済み",
+      "本次开放投票已参与，不能重复提交。": "この投票にはすでに参加済みです。",
+      "本事项已参与，不能重复提交。": "この項目にはすでに参加済みです。",
+      "本事项已参与，开放期间只能提交一次。": "参加済みです。受付期間中に送信できるのは1回だけです。",
+      "投票已提交，截止前不可修改或撤回。": "投票を送信しました。締切前でも変更・取り消しはできません。",
       "当前不在科技投票开放时间内。": "現在は技術投票の受付時間外です。",
       "更新于 {date}": "更新 {date}",
       "已同步 {date}": "同期済み {date}",
@@ -1066,10 +1075,7 @@
       "成员信息保存失败": "メンバー情報の保存に失敗しました",
       "成员不存在或已被同步移除": "メンバーが見つからないか、同期で削除されました",
       "未命名营地": "名称未設定の野営地",
-      "投票已保存，可在截止前再次修改。":
-        "投票を保存しました。締切前であれば再度変更できます。",
-      "投票已撤回，当前不计入投票人数。": "投票を撤回しました。投票人数には含まれません。",
-      "不选择任何科技并提交，可撤回当前投票且不计入投票人数。": "科技を選択せずに送信すると、現在の投票を撤回できます。投票人数には含まれません。",
+      "投票已提交，截止前不可修改或撤回。": "投票を送信しました。締切前でも変更・取り消しはできません。",
       "请至少选择一项科技。": "技術を1つ以上選択してください。",
       "正在提交…": "送信中…",
       "登录状态已失效，请重新登录。": "ログイン状態が失効しました。再度ログインしてください。",
@@ -1331,8 +1337,13 @@
         "開放時間 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票",
       "当前可投票": "目前可投票",
       "当前未开放": "目前未開放",
-      "每人最多可投票 {limit} 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。":
-        "每人最多可投票 {limit} 票，多次投票以最新一次投票結果為準，不選擇科技提交投票可以撤回投票或投空票。",
+      "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。":
+        "每人最多選擇 {limit} 項科技；每個開放投票期只能提交一次，提交後不可修改或撤回。",
+      "已参与": "已參與",
+      "本次开放投票已参与，不能重复提交。": "本次開放投票已參與，不能重複提交。",
+      "本事项已参与，不能重复提交。": "本事項已參與，不能重複提交。",
+      "本事项已参与，开放期间只能提交一次。": "本事項已參與，開放期間只能提交一次。",
+      "投票已提交，截止前不可修改或撤回。": "投票已提交，截止前不可修改或撤回。",
       "当前不在科技投票开放时间内。": "目前不在科技投票開放時間內。",
       "更新于 {date}": "更新於 {date}",
       "已同步 {date}": "已同步 {date}",
@@ -1429,9 +1440,7 @@
       "成员信息保存失败": "成員資訊儲存失敗",
       "成员不存在或已被同步移除": "找不到成員，或已被同步移除",
       "未命名营地": "未命名營地",
-      "投票已保存，可在截止前再次修改。": "投票已儲存，可在截止前再次修改。",
-      "投票已撤回，当前不计入投票人数。": "投票已撤回，目前不計入投票人數。",
-      "不选择任何科技并提交，可撤回当前投票且不计入投票人数。": "不選擇任何科技並提交，即可撤回目前投票，且不計入投票人數。",
+      "投票已提交，截止前不可修改或撤回。": "投票已提交，截止前不可修改或撤回。",
       "请至少选择一项科技。": "請至少選擇一項科技。",
       "正在提交…": "正在提交…",
       "登录状态已失效，请重新登录。": "登入狀態已失效，請重新登入。",
@@ -1553,8 +1562,8 @@
       "确认删除{label}吗？删除后无法从后台恢复。":
         "Delete {label}? This cannot be restored from the admin console.",
       "已删除 {count} 条历史结果。": "Deleted {count} historical result(s).",
-      "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。":
-        "{count} vote(s); only the latest submission for each identity code is retained.",
+      "共 {count} 份投票；每个识别码在单个开放投票期只计一份提交记录。":
+        "{count} ballot(s); each identity code has one recorded submission per open voting period.",
       "暂无投票记录": "No voting records",
       "编辑权限": "Edit permissions",
       "编辑 Key 权限": "Edit key permissions",
@@ -1607,8 +1616,8 @@
       "确认删除{label}吗？删除后无法从后台恢复。":
         "Supprimer {label} ? Cette opération est irréversible depuis l’administration.",
       "已删除 {count} 条历史结果。": "{count} résultat(s) historique(s) supprimé(s).",
-      "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。":
-        "{count} vote(s) ; seul le dernier envoi de chaque code d’identité est conservé.",
+      "共 {count} 份投票；每个识别码在单个开放投票期只计一份提交记录。":
+        "{count} bulletin(s) ; un seul envoi par code d’identité et période ouverte.",
       "暂无投票记录": "Aucun vote enregistré",
       "编辑权限": "Modifier les autorisations",
       "编辑 Key 权限": "Modifier les autorisations de la clé",
@@ -1661,8 +1670,8 @@
       "确认删除{label}吗？删除后无法从后台恢复。":
         "{label} を削除しますか？管理画面からは復元できません。",
       "已删除 {count} 条历史结果。": "履歴結果を {count} 件削除しました。",
-      "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。":
-        "{count}票。同じ本人識別コードの投票は最後の送信のみ保持されます。",
+      "共 {count} 份投票；每个识别码在单个开放投票期只计一份提交记录。":
+        "{count}票。本人確認コードごとに受付期間中の記録は1件です。",
       "暂无投票记录": "投票記録はありません",
       "编辑权限": "権限を編集",
       "编辑 Key 权限": "キー権限を編集",
@@ -1715,8 +1724,8 @@
       "确认删除{label}吗？删除后无法从后台恢复。":
         "確認刪除{label}嗎？刪除後無法從後台恢復。",
       "已删除 {count} 条历史结果。": "已刪除 {count} 條歷史結果。",
-      "共 {count} 票；同一识别码重复投票时仅保留最后一次提交。":
-        "共 {count} 票；相同識別碼重複投票時僅保留最後一次提交。",
+      "共 {count} 份投票；每个识别码在单个开放投票期只计一份提交记录。":
+        "共 {count} 份投票；每個識別碼在單一開放投票期只計一份提交記錄。",
       "暂无投票记录": "暫無投票記錄",
       "编辑权限": "編輯權限",
       "编辑 Key 权限": "編輯 Key 權限",
@@ -1954,6 +1963,67 @@
       "{name} · 固定": "{name} · 固定"
     }
   };
+  const voterListTranslations = {
+    en: {
+      "VOTE PARTICIPANTS": "VOTE PARTICIPANTS",
+      "投票人名单": "Voter list",
+      "查看参与人名单": "View participant list",
+      "抽签参与人名单": "Draw participants",
+      "{name} · 投票人名单": "{name} · voters",
+      "查看 {name} 的投票人名单": "View voters for {name}",
+      "共 {count} 人": "{count} participants",
+      "暂无参与人。": "No participants.",
+      "正在加载参与人名单…": "Loading participants…",
+      "参与人名单暂时无法加载，请稍后重试。": "The participant list is temporarily unavailable. Please try again.",
+      "请先登录并完成本期投票后查看名单。": "Log in and submit this vote to view its participants.",
+      "请先完成本期投票后再查看名单。": "Submit this vote before viewing its participants."
+    },
+    fr: {
+      "VOTE PARTICIPANTS": "PARTICIPANTS AU VOTE",
+      "投票人名单": "Liste des votants",
+      "查看参与人名单": "Voir les participants",
+      "抽签参与人名单": "Participants au tirage",
+      "{name} · 投票人名单": "{name} · votants",
+      "查看 {name} 的投票人名单": "Voir les votants pour {name}",
+      "共 {count} 人": "{count} participants",
+      "暂无参与人。": "Aucun participant.",
+      "正在加载参与人名单…": "Chargement des participants…",
+      "参与人名单暂时无法加载，请稍后重试。": "La liste est momentanément indisponible. Réessayez plus tard.",
+      "请先登录并完成本期投票后查看名单。": "Connectez-vous et votez pour consulter les participants.",
+      "请先完成本期投票后再查看名单。": "Votez avant de consulter les participants."
+    },
+    ja: {
+      "VOTE PARTICIPANTS": "投票参加者",
+      "投票人名单": "投票者一覧",
+      "查看参与人名单": "参加者一覧を見る",
+      "抽签参与人名单": "抽選参加者一覧",
+      "{name} · 投票人名单": "{name} · 投票者一覧",
+      "查看 {name} 的投票人名单": "{name}の投票者一覧を見る",
+      "共 {count} 人": "参加者 {count} 人",
+      "暂无参与人。": "参加者はいません。",
+      "正在加载参与人名单…": "参加者一覧を読み込み中…",
+      "参与人名单暂时无法加载，请稍后重试。": "参加者一覧を読み込めません。後でもう一度お試しください。",
+      "请先登录并完成本期投票后查看名单。": "ログインして今回の投票を送信すると参加者一覧を確認できます。",
+      "请先完成本期投票后再查看名单。": "今回の投票を送信してから参加者一覧をご覧ください。"
+    },
+    "zh-tw": {
+      "VOTE PARTICIPANTS": "投票參與者",
+      "投票人名单": "投票人名單",
+      "查看参与人名单": "查看參與人名單",
+      "抽签参与人名单": "抽籤參與人名單",
+      "{name} · 投票人名单": "{name} · 投票人名單",
+      "查看 {name} 的投票人名单": "查看 {name} 的投票人名單",
+      "共 {count} 人": "共 {count} 人",
+      "暂无参与人。": "暫無參與人。",
+      "正在加载参与人名单…": "正在載入參與人名單…",
+      "参与人名单暂时无法加载，请稍后重试。": "參與人名單暫時無法載入，請稍後重試。",
+      "请先登录并完成本期投票后查看名单。": "請先登入並完成本期投票後查看名單。",
+      "请先完成本期投票后再查看名单。": "請先完成本期投票後再查看名單。"
+    }
+  };
+  for (const [language, additions] of Object.entries(voterListTranslations)) {
+    Object.assign(translations[language], additions);
+  }
   for (const [language, additions] of Object.entries(dailyVoteTranslations)) {
     Object.assign(translations[language], additions);
   }
@@ -3019,28 +3089,36 @@
       "识别码：": "Identity code:",
       "邮箱：": "Email:",
       "有效期：": "Validity:",
-      "确认变更": "Confirm change"
+      "确认变更": "Confirm change",
+      "操作提示": "Notice",
+      "正在处理…": "Processing…"
     },
     "zh-tw": {
       "玩家名称：": "玩家名稱：",
       "识别码：": "身分識別碼：",
       "邮箱：": "信箱：",
       "有效期：": "有效期：",
-      "确认变更": "確認變更"
+      "确认变更": "確認變更",
+      "操作提示": "操作提示",
+      "正在处理…": "正在處理…"
     },
     fr: {
       "玩家名称：": "Nom du joueur :",
       "识别码：": "Code d’identité :",
       "邮箱：": "E-mail :",
       "有效期：": "Validité :",
-      "确认变更": "Confirmer la modification"
+      "确认变更": "Confirmer la modification",
+      "操作提示": "Information",
+      "正在处理…": "Traitement en cours…"
     },
     ja: {
       "玩家名称：": "プレイヤー名：",
       "识别码：": "本人確認コード：",
       "邮箱：": "メール：",
       "有效期：": "有効期限：",
-      "确认变更": "変更を確認"
+      "确认变更": "変更を確認",
+      "操作提示": "お知らせ",
+      "正在处理…": "処理中…"
     }
   };
   for (const [language, additions] of Object.entries(identityUiLabelTranslations)) {
@@ -3666,7 +3744,7 @@
       "审批重新发行申请": "Approve reissue request",
       "未知配置分区": "Unknown configuration section",
       "申请类型": "Application type",
-      "每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。": "Each person may cast up to 6 votes. The latest submission is used; submit without selecting technologies to withdraw or submit a blank ballot.",
+      "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。": "Each person may select up to {limit} technologies and submit once per open voting period. A submitted vote cannot be changed or withdrawn.",
       "{tasks} 个任务 · {permissions} 项权限": "{tasks} tasks · {permissions} permissions",
       "从市政厅沙盘更新成员贡献数据。": "Update member contributions from the town-hall sandbox.",
       "更新成员离线时间与公共斩杀预警数据。": "Update member offline times and public removal-warning data.",
@@ -3747,7 +3825,7 @@
       "审批重新发行申请": "Approuver la réémission",
       "未知配置分区": "Section de configuration inconnue",
       "申请类型": "Type de demande",
-      "每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。": "Chaque personne peut voter jusqu’à 6 fois. Le dernier envoi est retenu ; envoyez sans technologie pour retirer le vote ou envoyer un bulletin blanc.",
+      "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。": "Chaque personne peut choisir jusqu’à {limit} technologies et envoyer une seule fois par période ouverte. Un vote envoyé ne peut être modifié ni retiré.",
       "{tasks} 个任务 · {permissions} 项权限": "{tasks} tâches · {permissions} autorisations",
       "从市政厅沙盘更新成员贡献数据。": "Mettre à jour les contributions depuis le bac à sable de la mairie.",
       "更新成员离线时间与公共斩杀预警数据。": "Mettre à jour les absences des membres et les alertes publiques.",
@@ -3828,7 +3906,7 @@
       "审批重新发行申请": "再発行申請を承認",
       "未知配置分区": "不明な設定セクション",
       "申请类型": "申請種別",
-      "每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。": "1人最大6票まで投票できます。複数回投票した場合は最新の送信を使用し、技術を選ばず送信すると投票を取り消せます。",
+      "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。": "1人あたり最大{limit}件の技術を選択でき、受付期間中の送信は1回限りです。送信後の変更・取り消しはできません。",
       "{tasks} 个任务 · {permissions} 项权限": "タスク {tasks} 件・権限 {permissions} 件",
       "从市政厅沙盘更新成员贡献数据。": "市役所サンドボックスからメンバー貢献を更新します。",
       "更新成员离线时间与公共斩杀预警数据。": "メンバーのオフライン時間と公開除名警告を更新します。",
@@ -3909,7 +3987,7 @@
       "审批重新发行申请": "審核重新發行申請",
       "未知配置分区": "未知設定分區",
       "申请类型": "申請類型",
-      "每人最多可投票 6 票，多次投票以最新一次投票结果为准，不选择科技提交投票可以撤回投票或投空票。": "每人最多可投票 6 票，多次投票以最新一次結果為準；不選擇科技送出即可撤回投票或送出空白投票。",
+      "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。": "每人最多選擇 {limit} 項科技；每個開放投票期只能提交一次，提交後不可修改或撤回。",
       "{tasks} 个任务 · {permissions} 项权限": "{tasks} 個任務 · {permissions} 項權限",
       "从市政厅沙盘更新成员贡献数据。": "從市政廳沙盤更新成員貢獻資料。",
       "更新成员离线时间与公共斩杀预警数据。": "更新成員離線時間與公開斬殺預警資料。",

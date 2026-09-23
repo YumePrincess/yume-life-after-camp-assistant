@@ -2217,12 +2217,17 @@ export async function approveVoteEligibilityApplication(
     mode: unknown;
     votes: unknown;
     expiresAt: unknown;
+    prohibited: unknown;
+    bypassed: unknown;
     reviewedBy: string;
   }
 ): Promise<{ emailSent: boolean; emailError: string | null }> {
   const application = await voteEligibilityApplicationById(env, input.id);
   if (!application) throw new Error("申请不存在");
   if (application.status !== "pending") throw new Error("申请已处理");
+  if (typeof input.prohibited !== "boolean" || typeof input.bypassed !== "boolean") {
+    throw new Error("请明确设置投票资格豁免与禁止投票状态");
+  }
   const approval = parseVoteEligibilityApproval(input);
   const current = await getVoteEligibilityStats(env, application.player_name, application.identity_code_id);
   const currentApplication = {
@@ -2236,8 +2241,16 @@ export async function approveVoteEligibilityApplication(
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE identity_codes SET eligibility_override_votes = ?,
-       eligibility_override_expires_at = ?, updated_at = ? WHERE id = ?`
-    ).bind(approval.votes, approval.expiresAt, reviewedAt, application.identity_code_id),
+       eligibility_override_expires_at = ?, vote_permission_disabled = ?,
+       vote_eligibility_bypass = ?, updated_at = ? WHERE id = ?`
+    ).bind(
+      approval.votes,
+      approval.expiresAt,
+      input.prohibited ? 1 : 0,
+      input.bypassed ? 1 : 0,
+      reviewedAt,
+      application.identity_code_id
+    ),
     env.DB.prepare(
       `UPDATE vote_eligibility_applications SET status = 'approved', reviewed_at = ?,
        reviewed_by = ?, rejection_reason = NULL, approved_votes = ?,

@@ -410,9 +410,11 @@ function resolvedContent(item: DailyVoteItem, localeValue: unknown): DailyVoteCo
 
 async function responseRows(env: Env, itemId: string): Promise<DailyVoteResponseRow[]> {
   const result = await env.DB.prepare(
-    `SELECT r.id, r.item_id, r.identity_code_id, r.player_name,
+    `SELECT r.id, r.item_id, r.identity_code_id,
+            COALESCE(NULLIF(TRIM(c.player_name), ''), r.player_name) AS player_name,
             r.selections_json, r.created_at, r.updated_at
      FROM daily_vote_responses r
+     LEFT JOIN identity_codes c ON c.id = r.identity_code_id
      WHERE r.item_id = ?
      ORDER BY r.updated_at DESC`
   ).bind(itemId).all<DailyVoteResponseRow>();
@@ -432,7 +434,9 @@ function countsFor(item: DailyVoteItem, rows: DailyVoteResponseRow[]): Map<strin
 
 async function winnerRows(env: Env, itemId: string): Promise<Array<{ playerName: string; identityCode: string; rank: number }>> {
   const rows = await env.DB.prepare(
-    `SELECT w.rank, r.player_name, c.code_encrypted
+    `SELECT w.rank,
+            COALESCE(NULLIF(TRIM(c.player_name), ''), r.player_name) AS player_name,
+            c.code_encrypted
      FROM daily_draw_winners w
      JOIN daily_vote_responses r ON r.id = w.response_id
      LEFT JOIN identity_codes c ON c.id = r.identity_code_id
@@ -785,19 +789,18 @@ export async function buildPublicDailyVote(
 export async function saveDailyVoteResponse(
   env: Env,
   input: { itemId: string; identityCodeId: string; playerName: string; selections: string[] }
-): Promise<void> {
+): Promise<boolean> {
   const now = new Date().toISOString();
-  await env.DB.prepare(
+  const result = await env.DB.prepare(
     `INSERT INTO daily_vote_responses(
        id, item_id, identity_code_id, player_name, selections_json, created_at, updated_at
      ) VALUES(?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(item_id, identity_code_id) DO UPDATE SET
-       player_name = excluded.player_name, selections_json = excluded.selections_json,
-       updated_at = excluded.updated_at`
+     ON CONFLICT(item_id, identity_code_id) DO NOTHING`
   ).bind(
     crypto.randomUUID(), input.itemId, input.identityCodeId, input.playerName || null,
     JSON.stringify(input.selections), now, now
   ).run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 export async function listAdminDailyVoteItems(

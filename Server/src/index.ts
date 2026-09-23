@@ -500,6 +500,159 @@ async function handlePublicApi(
       cors
     );
   }
+  if (path === "/api/public/vote-participation" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 8_000);
+    const identity = await verifyPublicActionIdentity(request, env, cors, body);
+    if (identity instanceof Response) return identity;
+    const identityCodeId = identity.identityRecord.code.id;
+    const now = new Date().toISOString();
+    const [bundle, dailyOpenItems, dailyParticipations] = await Promise.all([
+      getConfigBundle(env),
+      env.DB.prepare(
+        "SELECT id FROM daily_vote_items WHERE start_at <= ? AND end_at > ? ORDER BY start_at, id"
+      ).bind(now, now).all<{ id: string }>(),
+      env.DB.prepare(
+        `SELECT r.item_id FROM daily_vote_responses r
+         JOIN daily_vote_items i ON i.id = r.item_id
+         WHERE r.identity_code_id = ? AND i.start_at <= ? AND i.end_at > ?`
+      ).bind(identityCodeId, now, now).all<{ item_id: string }>()
+    ]);
+    const summary = await buildVoteSummary(env, bundle);
+    const ballot = summary.isOpen
+      ? await env.DB.prepare(
+          "SELECT 1 AS participated FROM tech_ballots WHERE poll_date = ? AND voter_id = ? LIMIT 1"
+        ).bind(summary.pollDate, identityCodeId).first<{ participated: number }>()
+      : null;
+    const openItemIds = dailyOpenItems.results.map((item) => item.id);
+    const openItemIdSet = new Set(openItemIds);
+    return json(
+      {
+        technologyPollDate: summary.pollDate,
+        technologyParticipated: Boolean(ballot),
+        dailyOpenItemIds: openItemIds,
+        dailyParticipatedItemIds: dailyParticipations.results
+          .map((item) => item.item_id)
+          .filter((itemId) => openItemIdSet.has(itemId))
+      },
+      200,
+      cors
+    );
+  }
+  if (path === "/api/public/vote-participants" && method === "POST") {
+    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
+    if (limited) return limited;
+    const body = await readJsonObject(request, 8_000);
+    const kind = String(body.kind || "");
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    if (kind === "technology") {
+      const pollDate = String(body.pollDate || "").trim();
+      const optionKey = String(body.optionKey || "").trim();
+      if (!isDateKey(pollDate) || !optionKey) {
+        return problem("投票结果参数无效", 400, "invalid_vote_result");
+      }
+      const bundle = await getConfigBundle(env);
+      const summary = await buildVoteSummary(env, bundle, now);
+      const isOpen = summary.isOpen && summary.pollDate === pollDate;
+      let eligibleBallot = false;
+      if (isOpen) {
+        const identity = await verifyPublicActionIdentity(request, env, cors, body);
+        if (identity instanceof Response) return identity;
+        eligibleBallot = Boolean(await env.DB.prepare(
+          "SELECT 1 AS participated FROM tech_ballots WHERE poll_date = ? AND voter_id = ? LIMIT 1"
+        ).bind(pollDate, identity.identityRecord.code.id).first<{ participated: number }>());
+        if (!eligibleBallot) {
+          return problem("请先完成本期投票后再查看投票人名单", 403, "vote_participation_required");
+        }
+      } else {
+        const history = await getTechnologyVoteHistory(env, pollDate);
+        if (!history) return problem("投票结果暂不可查看", 404, "vote_result_unavailable");
+        if (!history.options.some((option) => option.key === optionKey)) {
+          return problem("投票选项不存在", 404, "vote_option_not_found");
+        }
+      }
+      const availableOptions = isOpen ? summary.options : [];
+      if (isOpen && !availableOptions.some((option) => option.key === optionKey)) {
+        return problem("投票选项不存在", 404, "vote_option_not_found");
+      }
+      const ballots = await env.DB.prepare(
+        `SELECT COALESCE(NULLIF(TRIM(c.player_name), ''), b.voter_name) AS player_name,
+                b.selections_json
+         FROM tech_ballots b
+         LEFT JOIN identity_codes c ON c.id = b.voter_id
+         WHERE b.poll_date = ? ORDER BY b.created_at ASC`
+      ).bind(pollDate).all<{ player_name: string | null; selections_json: string }>();
+      const names = ballots.results.flatMap((ballot) => {
+        let selections: unknown;
+        try {
+          selections = JSON.parse(ballot.selections_json);
+        } catch {
+          return [];
+        }
+        if (!Array.isArray(selections) || !selections.includes(optionKey)) return [];
+        return [ballot.player_name?.trim() || "—"];
+      });
+      return json({ kind, pollDate, optionKey, names }, 200, cors);
+    }
+
+    if (kind === "daily-poll" || kind === "draw") {
+      const itemId = String(body.itemId || "").trim();
+      const optionId = String(body.optionId || "").trim();
+      if (!itemId || (kind === "daily-poll" && !optionId)) {
+        return problem("投票结果参数无效", 400, "invalid_vote_result");
+      }
+      const item = await getDailyVoteItem(env, itemId);
+      if (!item || item.kind !== (kind === "draw" ? "draw" : "poll")) {
+        return problem("投票事项不存在", 404, "vote_item_not_found");
+      }
+      const isOpen = nowIso >= item.startAt && nowIso < item.endAt;
+      if (nowIso < item.startAt) {
+        return problem("投票事项尚未开放", 409, "vote_item_not_open");
+      }
+      if (isOpen) {
+        const identity = await verifyPublicActionIdentity(request, env, cors, body);
+        if (identity instanceof Response) return identity;
+        const response = await env.DB.prepare(
+          "SELECT 1 AS participated FROM daily_vote_responses WHERE item_id = ? AND identity_code_id = ? LIMIT 1"
+        ).bind(itemId, identity.identityRecord.code.id).first<{ participated: number }>();
+        if (!response) {
+          return problem("请先完成本事项投票后再查看参与人名单", 403, "vote_participation_required");
+        }
+      }
+      if (kind === "daily-poll") {
+        const hasOption = Object.values(item.localizedContent).some((content) =>
+          Array.isArray(content?.options) &&
+          content.options.some((option) => option.id === optionId)
+        );
+        if (!hasOption) return problem("投票选项不存在", 404, "vote_option_not_found");
+      }
+      const rows = await env.DB.prepare(
+        `SELECT COALESCE(NULLIF(TRIM(c.player_name), ''), r.player_name) AS player_name,
+                r.selections_json
+         FROM daily_vote_responses r
+         LEFT JOIN identity_codes c ON c.id = r.identity_code_id
+         WHERE r.item_id = ? ORDER BY r.created_at ASC`
+      ).bind(itemId).all<{ player_name: string | null; selections_json: string }>();
+      const names = rows.results.flatMap((row) => {
+        if (kind === "daily-poll") {
+          let selections: unknown;
+          try {
+            selections = JSON.parse(row.selections_json);
+          } catch {
+            return [];
+          }
+          if (!Array.isArray(selections) || !selections.includes(optionId)) return [];
+        }
+        return [row.player_name?.trim() || "—"];
+      });
+      return json({ kind, itemId, optionId: kind === "daily-poll" ? optionId : undefined, names }, 200, cors);
+    }
+
+    return problem("投票结果类型无效", 400, "invalid_vote_result");
+  }
   if (path === "/api/public/daily-vote" && method === "POST") {
     const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
     if (limited) return limited;
@@ -534,6 +687,12 @@ async function handlePublicApi(
       }
     } else if (rawSelections.length > 0) {
       return problem("抽签事项不需要选择选项", 400, "invalid_daily_draw_selection");
+    }
+    const existingResponse = await env.DB.prepare(
+      "SELECT 1 AS participated FROM daily_vote_responses WHERE item_id = ? AND identity_code_id = ? LIMIT 1"
+    ).bind(itemId, identity.identityRecord.code.id).first<{ participated: number }>();
+    if (existingResponse) {
+      return problem("本事项已参与，每个开放期间只能提交一次。", 409, "daily_vote_already_participated");
     }
     const dailyVoteConfig = await getDailyVoteConfig(env);
     const eligibility = await evaluateVoteEligibility(env, {
@@ -585,12 +744,15 @@ async function handlePublicApi(
         );
       }
       renewalGraceUsed = identity.identityRecord.grace;
-      await saveDailyVoteResponse(env, {
+      const saved = await saveDailyVoteResponse(env, {
         itemId,
         identityCodeId: identity.identityRecord.code.id,
         playerName: identity.identityRecord.code.player_name ?? "",
         selections
       });
+      if (!saved) {
+        return problem("本事项已参与，每个开放期间只能提交一次。", 409, "daily_vote_already_participated");
+      }
       if (eligibility.overrideApplied) {
         await consumeVoteEligibilityOverride(env, identity.identityRecord.code.id);
       }
@@ -920,25 +1082,30 @@ async function handlePublicApi(
       satisfiedKeys: fixed,
       maximum: bundle.technologyConfig.voteLimit
     });
-    const isWithdrawal = rawSelections.length === 0;
     if (
-      (!isWithdrawal && !normalized.selections.length) ||
-      (!isWithdrawal && normalized.error)
+      !normalized.selections.length ||
+      normalized.error
     ) {
       return problem(
         normalized.error ??
-          `每人请选择 1 至 ${bundle.technologyConfig.voteLimit} 项开放投票的科技`,
+          `每人请选择 1 至 ${bundle.technologyConfig.voteLimit} 项开放投票的科技，提交后不可修改或撤回`,
         400,
         "invalid_selections"
       );
     }
-    const selections = isWithdrawal ? [] : normalized.selections;
+    const selections = normalized.selections;
     if (selections.length > bundle.technologyConfig.voteLimit) {
       return problem(
         `每人请选择 1 至 ${bundle.technologyConfig.voteLimit} 项开放投票的科技`,
         400,
         "invalid_selections"
       );
+    }
+    const existingBallot = await env.DB.prepare(
+      "SELECT 1 AS participated FROM tech_ballots WHERE poll_date = ? AND voter_id = ? LIMIT 1"
+    ).bind(summary.pollDate, identityRecord.code.id).first<{ participated: number }>();
+    if (existingBallot) {
+      return problem("本次科技投票已参与，不能重复提交、修改或撤回。", 409, "vote_already_participated");
     }
     const eligibility = await evaluateVoteEligibility(env, {
       playerName: identityRecord.code.player_name,
@@ -990,12 +1157,15 @@ async function handlePublicApi(
         );
       }
       renewalGraceUsed = identityRecord.grace;
-      await saveBallot(env, {
+      const saved = await saveBallot(env, {
         pollDate: summary.pollDate,
         voterId: identityRecord.code.id,
         voterName: identityRecord.code.player_name ?? "",
         selections
       });
+      if (!saved) {
+        return problem("本次科技投票已参与，不能重复提交、修改或撤回。", 409, "vote_already_participated");
+      }
       if (eligibility.overrideApplied) {
         await consumeVoteEligibilityOverride(env, identityRecord.code.id);
       }
@@ -1005,7 +1175,6 @@ async function handlePublicApi(
         ...localizeVoteSummary(await buildVoteSummary(env, bundle), body.locale),
         renewalGraceUsed,
         identityCodeExpiresAt: identityRecord.code.expires_at,
-        voteWithdrawn: isWithdrawal,
         publicTestVote: false
       },
       200,
@@ -1650,6 +1819,8 @@ async function handleAdminApi(
               mode: body.eligibilityMode,
               votes: body.eligibilityVotes,
               expiresAt: eligibilityExpiry?.expiresAt ?? null,
+              prohibited: body.prohibitVoting,
+              bypassed: body.bypassVoteEligibility,
               reviewedBy: session.email
             })
           : await rejectVoteEligibilityApplication(env, {
