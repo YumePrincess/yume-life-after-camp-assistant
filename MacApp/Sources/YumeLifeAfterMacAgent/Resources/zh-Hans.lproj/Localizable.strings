@@ -23,10 +23,6 @@
 "The local Node.js installer is missing." = "本地 Node.js 安装器缺失。";
 "Local Node.js could not be installed." = "本地 Node.js 安装失败。";
 "Start" = "启动";
-"Restore activity" = "恢复活跃";
-"Enter lazy mode" = "解除活跃";
-"Agent activity restored." = "Agent 已恢复活跃。";
-"Agent entered lazy mode." = "Agent 已进入 lazy 状态。";
 "Stop" = "停止";
 "Restart" = "重新启动";
 "Install / Repair" = "安装 / 修复";

@@ -8,7 +8,6 @@ import { MumuLifecycle } from "./mumu.mjs";
 import { Vision } from "./vision.mjs";
 import { GameUi } from "./ui.mjs";
 import { withGameSession } from "./game-session.mjs";
-import { delay } from "./process.mjs";
 import { loadTaskPlugins } from "./plugin-loader.mjs";
 import {
   clearTaskDebugArtifacts,
@@ -39,20 +38,16 @@ const once = process.argv.includes("--once");
 let active = null;
 let activeTaskDebug = null;
 let stopping = false;
-let manualActive = false;
-let pollingMode = "lazy";
-let nextScheduledAt = null;
-let scheduledTaskTimes = [];
-let scheduledWindowMinutes = 15;
-let lastPollingPolicySignature = "";
 const runtimeLocale = {
   value: normalizeTaskLocale(config.server.locale)
 };
-let nextPollSeconds = config.server.pollSeconds;
-let resolvePollWake = null;
-let lastHeartbeatAt = 0;
+let controlStream = null;
+let commandWakePending = false;
+let resolveCommandWake = null;
+let commandRetryTimer = null;
+let commandRetryAttempt = 0;
 const shutdownController = new AbortController();
-const HEARTBEAT_INTERVAL_MS = 15_000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
 
 const pluginRegistry = await loadTaskPlugins({
   builtinDirectory: resolve(MAC_ROOT, "plugins"),
@@ -100,56 +95,47 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     stopping = true;
     active?.controller.abort(new Error(`Agent received ${signal}`));
     shutdownController.abort(new Error(`Agent received ${signal}`));
+    wakeAgentLoop();
   });
 }
 
-do {
+if (!once) {
+  controlStream = api.startControlStream({
+    onOpen: () => {
+      console.log(JSON.stringify({ event: "agent_control_connected" }));
+      sendAgentPresence();
+      // The queue is authoritative, so sweep it after every connection or reconnect.
+      wakeAgentLoop();
+    },
+    onCommandAvailable: () => wakeAgentLoop(),
+    onPresenceAck: (ack) => {
+      if (active && (ack.cancelRequested === true || ack.activeRunMissing === true)) {
+        active.controller.abort(new Error("Workers 请求中断当前任务"));
+      }
+    },
+    onDisconnect: () => {
+      console.warn(JSON.stringify({ event: "agent_control_disconnected" }));
+    },
+    onError: (error) => {
+      console.error(JSON.stringify({ event: "agent_control_error", message: error.message }));
+    }
+  });
+}
+const presenceTimer = once
+  ? null
+  : setInterval(() => sendAgentPresence(), HEARTBEAT_INTERVAL_MS);
+
+while (!stopping) {
+  if (!once) await waitForAgentWake();
+  if (stopping) break;
   try {
     const pollResponse = await api.nextCommand(
       Boolean(active),
       runtimeLocale.value,
-      shutdownController.signal,
-      manualActive
+      shutdownController.signal
     );
     const { command } = pollResponse;
-    pollingMode = ["active", "scheduled", "lazy"].includes(pollResponse.pollingMode)
-      ? pollResponse.pollingMode
-      : "lazy";
-    nextScheduledAt = typeof pollResponse.nextScheduledAt === "string"
-      ? pollResponse.nextScheduledAt
-      : null;
-    if (Array.isArray(pollResponse.scheduledTaskTimes)) {
-      scheduledTaskTimes = pollResponse.scheduledTaskTimes.filter(
-        (value) => typeof value === "string"
-      );
-    }
-    if (Number.isFinite(pollResponse.scheduledWindowMinutes)) {
-      scheduledWindowMinutes = pollResponse.scheduledWindowMinutes;
-    }
-    const pollingPolicySignature = JSON.stringify({
-      pollingMode,
-      nextScheduledAt,
-      scheduledTaskTimes,
-      scheduledWindowMinutes
-    });
-    if (pollingPolicySignature !== lastPollingPolicySignature) {
-      lastPollingPolicySignature = pollingPolicySignature;
-      console.log(JSON.stringify({
-        event: "polling_policy_refreshed",
-        pollingMode,
-        nextScheduledAt,
-        scheduledTaskTimes,
-        scheduledWindowMinutes,
-        manualActive
-      }));
-    }
-    if (Number.isFinite(pollResponse.pollAfterSeconds)) {
-      nextPollSeconds = Math.max(1, Math.min(86_400, pollResponse.pollAfterSeconds));
-    }
-    // Refresh the server-side presence after the policy exchange so the first
-    // request on a lazy->active/scheduled transition always uses the latest
-    // task plan returned by Workers.
-    await sendHeartbeat(shutdownController.signal);
+    commandRetryAttempt = 0;
     if (command?.type === "interrupt_task") {
       const target = command.payload?.runId;
       if (active && active.command.runId === target) {
@@ -158,6 +144,7 @@ do {
       } else {
         await api.completeCommand(command, "cancelled", "目标任务当前未在本 Agent 运行");
       }
+      sendAgentPresence();
     } else if (command?.type === "run_task" && !active) {
       const payloadRunId = command.payload?.runId;
       if (
@@ -182,10 +169,7 @@ do {
       } else {
         startCommand(command);
       }
-      // The command was claimed during an idle poll. Poll again immediately
-      // so the server can switch us to its active interval and deliver an
-      // interrupt without waiting for the (possibly five-minute) idle delay.
-      nextPollSeconds = 1;
+      sendAgentPresence();
     }
 
     if (once) {
@@ -204,29 +188,38 @@ do {
       process.exitCode = 1;
       break;
     }
+    const retryMs = Math.min(30_000, 1_000 * 2 ** Math.min(commandRetryAttempt, 5));
+    commandRetryAttempt = Math.min(commandRetryAttempt + 1, 5);
+    commandRetryTimer = setTimeout(() => {
+      commandRetryTimer = null;
+      wakeAgentLoop();
+    }, retryMs);
   }
-  if (!once && !stopping) {
-    await waitForNextPoll(nextPollSeconds).catch(() => undefined);
-  }
-} while (!stopping);
+  if (once) break;
+}
 
-if (stopping) await sendOfflineHeartbeat();
+if (presenceTimer) clearInterval(presenceTimer);
+if (commandRetryTimer) clearTimeout(commandRetryTimer);
+if (stopping && controlStream) {
+  await controlStream.sendPresenceAndWait({
+    ...heartbeatPayload("offline"),
+    agentId: config.server.agentId,
+    displayName: config.server.agentName || config.server.agentId,
+    activeRunId: null,
+    activeTaskKey: null
+  });
+  api.closeControlStream();
+}
 if (active) await active.promise.catch(() => undefined);
 await closeDebugServer(debugServer);
 
-function heartbeatPayload(status = "auto") {
-  const activityStatus = active
-    ? "running"
-    : manualActive
-      ? "active"
-      : pollingMode === "scheduled"
-        ? "scheduled"
-        : "lazy";
+function heartbeatPayload(status) {
+  const activityStatus = status || (active ? "running" : "idle");
   return {
     locale: runtimeLocale.value,
     activeRunId: active?.command.runId || null,
     activeTaskKey: active?.command.payload?.taskKey || null,
-    status: status === "auto" ? activityStatus : status,
+    status: status || activityStatus,
     capabilities: {
       backgroundAdbMouse: true,
       visionOcr: true,
@@ -235,8 +228,6 @@ function heartbeatPayload(status = "auto") {
     },
     detail: {
       activityMode: activityStatus,
-      manualActive,
-      lazy: activityStatus === "lazy",
       adbSerial: config.adb.serial,
       emulatorInstance:
         mumu.currentInstance()?.index ?? config.mumu.instanceIndex,
@@ -246,75 +237,32 @@ function heartbeatPayload(status = "auto") {
   };
 }
 
-async function sendHeartbeat(signal) {
-  if (
-    lastHeartbeatAt > 0 &&
-    Date.now() - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS
-  ) {
-    return { skipped: true };
-  }
-  const heartbeat = await api.heartbeat(heartbeatPayload(), signal);
-  lastHeartbeatAt = Date.now();
-  if (active && heartbeat.cancelRequested === true) {
-    active.controller.abort(new Error("管理员请求中断"));
-  }
+function sendAgentPresence() {
+  return controlStream?.sendPresence({
+    agentId: config.server.agentId,
+    displayName: config.server.agentName || config.server.agentId,
+    ...heartbeatPayload()
+  }) ?? false;
 }
 
-async function sendOfflineHeartbeat() {
-  try {
-    await api.heartbeat(
-      {
-        ...heartbeatPayload("offline"),
-        activeRunId: null,
-        activeTaskKey: null
-      }
-    );
-  } catch (error) {
-    console.error(
-      JSON.stringify({ event: "offline_heartbeat_failed", message: error.message })
-    );
-  }
+function wakeAgentLoop() {
+  commandWakePending = true;
+  const resolve = resolveCommandWake;
+  resolveCommandWake = null;
+  resolve?.();
 }
 
-async function waitForNextPoll(seconds) {
-  const deadline = Date.now() + Math.max(1, seconds) * 1000;
-  while (!stopping && Date.now() < deadline) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) return;
-    const shouldHeartbeat = Boolean(
-      active || manualActive || pollingMode === "scheduled"
-    );
-    const waitMs = shouldHeartbeat
-      ? Math.min(remaining, HEARTBEAT_INTERVAL_MS)
-      : remaining;
-    let wake;
-    let wokeByActivity = false;
-    try {
-      wake = new Promise((resolve) => {
-        resolvePollWake = () => {
-          wokeByActivity = true;
-          resolve();
-        };
-      });
-      await Promise.race([
-        delay(waitMs, shutdownController.signal).catch(() => undefined),
-        wake
-      ]);
-    } finally {
-      resolvePollWake = null;
-    }
-    if (wokeByActivity) return;
-    if (Date.now() < deadline && !stopping && shouldHeartbeat) {
-      try {
-        await sendHeartbeat(shutdownController.signal);
-      } catch (error) {
-        if (shutdownController.signal.aborted) return;
-        console.error(
-          JSON.stringify({ event: "heartbeat_refresh_failed", message: error.message })
-        );
-      }
-    }
+function waitForAgentWake() {
+  if (commandWakePending || stopping) {
+    commandWakePending = false;
+    return Promise.resolve();
   }
+  return new Promise((resolve) => {
+    resolveCommandWake = () => {
+      commandWakePending = false;
+      resolve();
+    };
+  });
 }
 
 async function closeDebugServer(server) {
@@ -344,6 +292,8 @@ function startCommand(command) {
     })
     .finally(() => {
       if (active === record) active = null;
+      sendAgentPresence();
+      wakeAgentLoop();
     });
 }
 
@@ -821,12 +771,7 @@ function createDebugServer() {
           locale: runtimeLocale.value,
           activeRunId: active?.command.runId || null,
           activeTaskKey: active?.command.payload?.taskKey || null,
-          manualActive,
-          pollingMode,
-          nextScheduledAt,
-          scheduledTaskTimes,
-          scheduledWindowMinutes,
-          lazy: !active && !manualActive && pollingMode === "lazy",
+          activityMode: active ? "running" : "idle",
           adbSerial: config.adb.serial,
           stopEmulatorAfterTask: config.mumu.stopEmulatorAfterTask,
           debugCaptureScreenshots: config.debug.captureScreenshots === true,
@@ -839,29 +784,6 @@ function createDebugServer() {
           }))
         })
       );
-      return;
-    }
-    if (request.method === "POST" && request.url === "/activity") {
-      const body = await readJsonRequest(request);
-      manualActive = body.active === true;
-      pollingMode = manualActive ? "active" : "lazy";
-      lastHeartbeatAt = 0;
-      resolvePollWake?.();
-      try {
-        await sendHeartbeat();
-      } catch (error) {
-        console.error(
-          JSON.stringify({
-            event: "activity_heartbeat_failed",
-            message: error.message
-          })
-        );
-      }
-      response.end(JSON.stringify({
-        ok: true,
-        manualActive,
-        lazy: !manualActive && !active
-      }));
       return;
     }
     if (request.method === "POST" && request.url === "/locale") {
@@ -881,10 +803,9 @@ function createDebugServer() {
       stopping = true;
       active?.controller.abort(new Error("本机调试端点请求停止 Agent"));
       shutdownController.abort(new Error("本机调试端点请求停止 Agent"));
-      resolvePollWake?.();
-      // The main loop publishes the final offline heartbeat before it closes
-      // the debug server. Waking it here also prevents a scheduled/lazy poll
-      // from surviving until its next long interval.
+      wakeAgentLoop();
+      // The main loop publishes the final offline presence before closing the
+      // persistent Workers control channel.
       response.end(JSON.stringify({ ok: true, stopping: true, interrupted }));
       return;
     }

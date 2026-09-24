@@ -19,6 +19,7 @@ import {
 import { zonedDateKey, zonedDateTimeToIso } from "./time";
 import { identityPlayerNameKey } from "./identity-code-utils";
 import { decryptSecret } from "./crypto";
+import { notifyAgentCommandAvailable } from "./agent-notifications";
 
 function isoNow(): string {
   return new Date().toISOString();
@@ -207,6 +208,7 @@ export async function activateAgentIdentity(
       "UPDATE command_queue SET agent_id = ? WHERE agent_id <> ? AND state = 'queued'"
     ).bind(agentId, agentId)
   ]);
+  await notifyAgentCommandAvailable(env, agentId);
   return next;
 }
 
@@ -2224,7 +2226,7 @@ export async function createCommand(
 ): Promise<CommandRow> {
   const id = crypto.randomUUID();
   const now = isoNow();
-  return env.DB.prepare(
+  const command = await env.DB.prepare(
     `INSERT INTO command_queue(
        id, run_id, agent_id, type, payload_json, state, priority,
        attempt_count, created_at, available_at
@@ -2241,11 +2243,10 @@ export async function createCommand(
       now,
       input.availableAt ?? now
     )
-    .first<CommandRow>()
-    .then((row) => {
-      if (!row) throw new Error("Unable to create command");
-      return row;
-    });
+    .first<CommandRow>();
+  if (!command) throw new Error("Unable to create command");
+  await notifyAgentCommandAvailable(env, input.agentId);
+  return command;
 }
 
 export async function claimNextCommand(

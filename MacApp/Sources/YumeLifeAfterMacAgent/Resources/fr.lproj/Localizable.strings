@@ -14,10 +14,6 @@
 "Idle" = "Inactif";
 "ADB not connected" = "ADB non connecté";
 "Start" = "Démarrer";
-"Restore activity" = "Reprendre l’activité";
-"Enter lazy mode" = "Passer en mode différé";
-"Agent activity restored." = "L’activité de l’Agent a été rétablie.";
-"Agent entered lazy mode." = "L’Agent est passé en mode différé.";
 "Stop" = "Arrêter";
 "Restart" = "Redémarrer";
 "Install / Repair" = "Installer / Réparer";

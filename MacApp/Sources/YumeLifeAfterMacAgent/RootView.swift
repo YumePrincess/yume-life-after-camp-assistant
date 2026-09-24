@@ -159,13 +159,6 @@ struct SidebarView: View {
                         await model.performAgentAction("stop")
                     }
                 }
-                SidebarAgentButton(
-                    symbol: model.health?.manualActive == true ? "pause.fill" : "bolt.fill",
-                    title: model.health?.manualActive == true ? "Enter lazy mode" : "Restore activity",
-                    tint: model.health?.manualActive == true ? .orange : YumePalette.gold
-                ) {
-                    await model.toggleAgentActivity()
-                }
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 20)

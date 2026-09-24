@@ -14,10 +14,6 @@
 "Idle" = "待機中";
 "ADB not connected" = "ADB 未接続";
 "Start" = "開始";
-"Restore activity" = "アクティブ状態に戻す";
-"Enter lazy mode" = "遅延モードにする";
-"Agent activity restored." = "Agent をアクティブ状態に戻しました。";
-"Agent entered lazy mode." = "Agent を遅延モードにしました。";
 "Stop" = "停止";
 "Restart" = "再起動";
 "Install / Repair" = "インストール / 修復";

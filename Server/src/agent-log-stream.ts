@@ -1,10 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   appendRunEvent,
+  getConfigBundle,
+  getHeartbeat,
   getRun,
+  touchHeartbeat,
   updateRun
 } from "./db";
-import type { RunState } from "./domain";
+import type { RunState, TaskKey } from "./domain";
 
 const TERMINAL_RUN_STATES = new Set<RunState>([
   "interrupted",
@@ -26,6 +29,21 @@ const RUN_STATES = new Set<RunState>([
 const EVENT_LEVELS = new Set(["debug", "info", "warning", "error"]);
 const MAX_BATCH_SIZE = 100;
 const MAX_FRAME_BYTES = 512_000;
+const TASK_KEYS = new Set<TaskKey>([
+  "tech_switch",
+  "contribution_sync",
+  "inactivity_sync",
+  "member_profile_sync",
+  "weekly_activity_sync",
+  "patrol"
+]);
+
+interface SocketAttachment {
+  connectedAt: number;
+  channel: "control" | "logs";
+  agentId: string | null;
+  presenceSignature: string | null;
+}
 
 function objectValue(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -83,6 +101,31 @@ export interface AgentRunUpdateBatch {
 
 export class AgentLogStream extends DurableObject {
   override async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/notify") {
+      let payload: Record<string, unknown>;
+      try {
+        payload = parseMessage(await request.text());
+      } catch {
+        return new Response("Invalid notification payload", { status: 400 });
+      }
+      if (payload.type !== "command-available") {
+        return new Response("Unsupported notification", { status: 400 });
+      }
+      const agentId = textValue(payload.agentId, "agentId", 80);
+      let notified = 0;
+      for (const socket of this.ctx.getWebSockets()) {
+        const attachment = this.socketAttachment(socket);
+        if (attachment.channel !== "control" || attachment.agentId !== agentId) continue;
+        try {
+          socket.send(JSON.stringify({ type: "command-available" }));
+          notified += 1;
+        } catch {
+          // A reconnect will perform a queue sweep if this socket is stale.
+        }
+      }
+      return Response.json({ ok: true, notified });
+    }
     if (
       request.method !== "GET" ||
       request.headers.get("Upgrade")?.toLowerCase() !== "websocket"
@@ -96,8 +139,18 @@ export class AgentLogStream extends DurableObject {
     const client = pair[0];
     const server = pair[1];
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ connectedAt: Date.now() });
-    server.send(JSON.stringify({ type: "ready", at: new Date().toISOString() }));
+    const channel = url.searchParams.get("channel") === "control" ? "control" : "logs";
+    const agentId = channel === "control"
+      ? textValue(url.searchParams.get("agentId"), "agentId", 80)
+      : null;
+    const attachment: SocketAttachment = {
+      connectedAt: Date.now(),
+      channel,
+      agentId,
+      presenceSignature: null
+    };
+    server.serializeAttachment(attachment);
+    server.send(JSON.stringify({ type: "ready", channel, at: new Date().toISOString() }));
     return new Response(null, {
       status: 101,
       headers: { "Sec-WebSocket-Protocol": protocol },
@@ -109,6 +162,10 @@ export class AgentLogStream extends DurableObject {
     let sequence: number | null = null;
     try {
       const payload = parseMessage(message);
+      if (payload.type === "presence") {
+        await this.handlePresence(ws, payload);
+        return;
+      }
       if (payload.type === "ping") {
         ws.send(JSON.stringify({ type: "pong", at: new Date().toISOString() }));
         return;
@@ -139,16 +196,133 @@ export class AgentLogStream extends DurableObject {
   }
 
   override async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
+    const attachment = this.socketAttachment(ws);
+    if (
+      attachment.channel === "control" &&
+      attachment.agentId &&
+      !this.ctx.getWebSockets().some((candidate) => {
+        if (candidate === ws) return false;
+        const other = this.socketAttachment(candidate);
+        return other.channel === "control" && other.agentId === attachment.agentId;
+      })
+    ) {
+      await this.markAgentOffline(attachment.agentId);
+    }
     ws.close(code, reason);
   }
 
-  private async publishAdminUpdate(): Promise<void> {
+  private socketAttachment(ws: WebSocket): SocketAttachment {
+    const attachment = ws.deserializeAttachment() as Partial<SocketAttachment> | null;
+    return {
+      connectedAt: Number(attachment?.connectedAt) || Date.now(),
+      channel: attachment?.channel === "control" ? "control" : "logs",
+      agentId: typeof attachment?.agentId === "string" ? attachment.agentId : null,
+      presenceSignature:
+        typeof attachment?.presenceSignature === "string"
+          ? attachment.presenceSignature
+          : null
+    };
+  }
+
+  private async handlePresence(
+    ws: WebSocket,
+    payload: Record<string, unknown>
+  ): Promise<void> {
+    const attachment = this.socketAttachment(ws);
+    if (attachment.channel !== "control" || !attachment.agentId) {
+      throw new Error("Presence is only accepted on the Agent control channel");
+    }
+    const agentId = textValue(payload.agentId, "agentId", 80);
+    if (agentId !== attachment.agentId) throw new Error("Agent identity does not match channel");
+    const status = ["idle", "running", "offline"].includes(String(payload.status))
+      ? String(payload.status)
+      : "idle";
+    const activeRunId = typeof payload.activeRunId === "string"
+      ? payload.activeRunId.slice(0, 80)
+      : null;
+    const activeTaskValue = typeof payload.activeTaskKey === "string"
+      ? payload.activeTaskKey
+      : null;
+    const activeTaskKey = activeTaskValue && TASK_KEYS.has(activeTaskValue as TaskKey)
+      ? activeTaskValue as TaskKey
+      : null;
+    const displayName = typeof payload.displayName === "string"
+      ? payload.displayName.slice(0, 80)
+      : agentId;
+    const capabilities = payload.capabilities && typeof payload.capabilities === "object" &&
+      !Array.isArray(payload.capabilities)
+      ? payload.capabilities
+      : {};
+    const detail = payload.detail && typeof payload.detail === "object" &&
+      !Array.isArray(payload.detail)
+      ? payload.detail
+      : {};
+
+    await touchHeartbeat(this.env, {
+      agentId,
+      displayName,
+      activeRunId,
+      activeTaskKey,
+      status,
+      capabilities,
+      detail
+    });
+    const bundle = await getConfigBundle(this.env);
+    const activeRun = activeRunId ? await getRun(this.env, activeRunId) : null;
+    const activeRunMissing = Boolean(activeRunId && !activeRun);
+    const signature = JSON.stringify({ status, activeRunId, activeTaskKey });
+    const statusChanged = attachment.presenceSignature !== signature;
+    if (statusChanged) {
+      ws.serializeAttachment({ ...attachment, presenceSignature: signature });
+    }
+    ws.send(JSON.stringify({
+      type: "presence-ack",
+      ...(Number.isSafeInteger(payload.sequence) ? { sequence: payload.sequence } : {}),
+      enabled: bundle.campConfig.agentId === agentId,
+      activeAgentId: bundle.campConfig.agentId || null,
+      cancelRequested: activeRunMissing || activeRun?.cancel_requested === 1,
+      activeRunMissing
+    }));
+    if (statusChanged) this.ctx.waitUntil(this.publishAdminUpdate("agent-presence"));
+  }
+
+  private async markAgentOffline(agentId: string): Promise<void> {
+    const heartbeat = await getHeartbeat(this.env, agentId);
+    if (!heartbeat || heartbeat.status === "offline") return;
+    await touchHeartbeat(this.env, {
+      agentId,
+      displayName: heartbeat.display_name || agentId,
+      activeRunId: heartbeat.active_run_id,
+      activeTaskKey: heartbeat.active_task_key &&
+        TASK_KEYS.has(heartbeat.active_task_key as TaskKey)
+        ? heartbeat.active_task_key as TaskKey
+        : null,
+      status: "offline",
+      capabilities: this.parseStoredObject(heartbeat.capabilities_json),
+      detail: this.parseStoredObject(heartbeat.detail_json)
+    });
+    await this.publishAdminUpdate("agent-offline");
+  }
+
+  private parseStoredObject(value: string | null): Record<string, unknown> {
+    if (!value) return {};
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private async publishAdminUpdate(reason = "agent-log-stream"): Promise<void> {
     try {
       await this.env.LIVE_UPDATES.getByName("global").fetch(
         new Request("https://live.internal/broadcast", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scopes: ["admin"], reason: "agent-log-stream" })
+          body: JSON.stringify({ scopes: ["admin"], reason })
         })
       );
     } catch (error) {

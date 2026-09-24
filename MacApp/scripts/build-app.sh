@@ -36,9 +36,12 @@ for helper in mrzh-vision-ocr mrzh-pixel-probe; do
   }
 done
 
-# A development build may still be running directly from dist. Stop it before
-# replacing the bundle so a stale process cannot write into the new runtime.
-killall YumeLifeAfterMacAgent 2>/dev/null || true
+# A development build may still be running directly from the destination
+# bundle. Stop it only when that bundle will actually be replaced; a release
+# build into a separate dist directory must not terminate an installed Agent.
+if [[ -d "${APP_BUNDLE}" ]]; then
+  killall YumeLifeAfterMacAgent 2>/dev/null || true
+fi
 
 cd "${APP_ROOT}"
 rm -rf -- "${SWIFT_SCRATCH}"

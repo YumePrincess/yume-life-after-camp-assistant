@@ -1240,11 +1240,8 @@
     }
     if (sections.includes("agent")) {
       for (const [name, value] of Object.entries({
-        pollActiveSeconds: automation.agentPolling.activeSeconds,
-        pollScheduledWindowMinutes: automation.agentPolling.scheduledWindowMinutes ?? 15,
-        pollIdleSeconds: automation.agentPolling.idleSeconds,
         queueClaimTimeoutMinutes:
-          automation.agentPolling.claimTimeoutMinutes,
+          automation.agent.claimTimeoutMinutes,
         watchdogEnabled: automation.gameWatchdog.enabled,
         watchdogHealthSeconds: automation.gameWatchdog.healthCheckSeconds,
         watchdogActionSeconds: automation.gameWatchdog.actionTimeoutSeconds,
@@ -1254,11 +1251,6 @@
       })) {
         setField(name, value);
       }
-      byId("polling-windows-json").value = JSON.stringify(
-        automation.agentPolling.windows,
-        null,
-        2
-      );
     }
     if (sections.includes("technology")) {
       for (const [name, value] of Object.entries({
@@ -4072,18 +4064,8 @@
         }
       };
     } else if (section === "agent") {
-      let pollingWindows;
-      try {
-        pollingWindows = JSON.parse(byId("polling-windows-json").value);
-      } catch {
-        throw new Error("轮询窗口 JSON 格式错误");
-      }
-      next.automationConfig.agentPolling = {
-        activeSeconds: Number(getField("pollActiveSeconds")),
-        scheduledWindowMinutes: Number(getField("pollScheduledWindowMinutes")),
-        idleSeconds: Number(getField("pollIdleSeconds")),
+      next.automationConfig.agent = {
         claimTimeoutMinutes: Number(getField("queueClaimTimeoutMinutes")),
-        windows: pollingWindows
       };
       next.automationConfig.gameWatchdog = {
         enabled: getField("watchdogEnabled"),

@@ -162,3 +162,93 @@ test("in-progress run updates use the acknowledged WebSocket stream without HTTP
     globalThis.WebSocket = originalWebSocket;
   }
 });
+
+test("the persistent control stream authenticates, sends presence, and wakes command checks", async () => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  const events = [];
+  class FakeWebSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+
+    constructor(url, protocols) {
+      this.url = String(url);
+      this.protocols = protocols;
+      this.readyState = FakeWebSocket.CONNECTING;
+      this.listeners = new Map();
+      this.sent = [];
+      sockets.push(this);
+      queueMicrotask(() => {
+        this.readyState = FakeWebSocket.OPEN;
+        this.emit("open", {});
+        this.emit("message", { data: JSON.stringify({ type: "ready", channel: "control" }) });
+      });
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) || [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    send(value) {
+      this.sent.push(JSON.parse(value));
+    }
+
+    close() {
+      this.readyState = 3;
+      this.emit("close", {});
+    }
+
+    emit(type, event) {
+      for (const listener of this.listeners.get(type) || []) listener(event);
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  try {
+    const api = new AgentApi({
+      server: {
+        baseUrl: "https://lifeafter.yume.zone",
+        agentToken: "agent-secret",
+        agentId: "mac-test",
+        agentName: "Test Mac"
+      }
+    });
+    const stream = api.startControlStream({
+      onOpen: () => events.push("open"),
+      onReady: ({ channel }) => events.push(channel),
+      onCommandAvailable: () => events.push("wake"),
+      onPresenceAck: ({ enabled }) => events.push(enabled ? "enabled" : "disabled")
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(sockets.length, 1);
+    assert.match(sockets[0].url, /channel=control/);
+    assert.match(sockets[0].url, /agentId=mac-test/);
+    assert.deepEqual(sockets[0].protocols, [
+      "mrzh-agent-stream",
+      `mrzh-agent-token.${Buffer.from("agent-secret").toString("base64url")}`
+    ]);
+    assert.equal(stream.sendPresence({
+      agentId: "mac-test",
+      status: "idle",
+      activeRunId: null
+    }), true);
+    assert.deepEqual(sockets[0].sent[0], {
+      type: "presence",
+      sequence: 1,
+      agentId: "mac-test",
+      status: "idle",
+      activeRunId: null
+    });
+    sockets[0].emit("message", { data: JSON.stringify({ type: "command-available" }) });
+    sockets[0].emit("message", { data: JSON.stringify({
+      type: "presence-ack",
+      sequence: 1,
+      enabled: true
+    }) });
+    assert.deepEqual(events, ["open", "control", "wake", "enabled"]);
+    api.closeControlStream();
+  } finally {
+    globalThis.WebSocket = originalWebSocket;
+  }
+});

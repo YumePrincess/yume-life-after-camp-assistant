@@ -5,8 +5,7 @@
     "agentId": "mac-life-after-agent",
     "agentName": "Mac Agent",
     "locale": "zh-cn",
-    "timezone": "Asia/Shanghai",
-    "pollSeconds": 5
+    "timezone": "Asia/Shanghai"
   },
   "debug": {
     "host": "127.0.0.1",

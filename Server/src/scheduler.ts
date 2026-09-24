@@ -45,7 +45,7 @@ export async function runScheduler(
   };
   result.timedOut = await expireUnclaimedRuns(
     env,
-    bundle.automationConfig.agentPolling.claimTimeoutMinutes,
+    bundle.automationConfig.agent.claimTimeoutMinutes,
     now
   );
   await finalizeExpiredCancellations(env, now);

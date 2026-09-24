@@ -253,10 +253,14 @@
       "终止已提交": "Termination requested",
       "排队任务已终止": "Queued task terminated",
       "终止指令已发送": "Termination request sent",
-      "轮询与无响应恢复": "Polling and unresponsive-game recovery",
-      "设置执行器轮询节奏和游戏恢复策略。":
-        "Configure agent polling and game recovery.",
-      "轮询窗口 JSON 格式错误": "Invalid polling-window JSON",
+      "Agent 连接与无响应恢复": "Agent connection and recovery",
+      "Agent 通过常驻 WebSocket 接收任务通知；这里仅设置队列超时和游戏恢复策略。":
+        "The Agent receives task notifications over a persistent WebSocket; configure only queue timeout and game recovery here.",
+      "任务通知与恢复": "Task notifications and recovery",
+      "Agent 在线时由 Workers 通过 WebSocket 推送新命令通知；命令仍先写入持久队列，连接重建后会自动检查队列。":
+        "Workers sends new-command notifications over WebSocket while the Agent is online. Commands stay in the durable queue and are checked again after reconnect.",
+      "定时任务仍由后台调度器按配置时区入队；入队后会立即尝试唤醒在线 Agent。接取超时仅影响队列任务的超时处理。":
+        "The scheduler enqueues tasks using the configured time zone and immediately attempts to wake the online Agent. Claim timeout only affects queued-task expiration.",
       "完整成员同步": "Full member sync",
       "完整读取贡献、离线时间、职业、庄园、同居与公职，并替换当前成员名单":
         "Read contributions, offline time, professions, manors, roommates and officers, then replace the current roster",
@@ -297,10 +301,6 @@
       "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。":
         "Under camp practice, players offline for more than {days} days may be removed.",
       "斩杀预警天数": "Warning threshold (days)",
-      "轮询、无响应恢复与任务例程": "Polling, recovery and task routines",
-      "任务执行中轮询（秒）": "Active-task polling (seconds)",
-      "任务时间前后活跃窗口（分钟）": "Active window around task time (minutes)",
-      "默认空闲轮询（秒）": "Default idle polling (seconds)",
       "等待 Agent 接取超时（分钟）": "Agent claim timeout (minutes)",
       "游戏无响应自动重启": "Restart the game when unresponsive",
       "营地成员完整信息": "Full camp member information",
@@ -620,10 +620,14 @@
       "终止已提交": "Arrêt demandé",
       "排队任务已终止": "Tâche en attente arrêtée",
       "终止指令已发送": "Demande d’arrêt envoyée",
-      "轮询与无响应恢复": "Interrogation et récupération du jeu",
-      "设置执行器轮询节奏和游戏恢复策略。":
-        "Configurer l’interrogation de l’agent et la récupération du jeu.",
-      "轮询窗口 JSON 格式错误": "JSON des fenêtres d’interrogation invalide",
+      "Agent 连接与无响应恢复": "Connexion Agent et récupération",
+      "Agent 通过常驻 WebSocket 接收任务通知；这里仅设置队列超时和游戏恢复策略。":
+        "L’Agent reçoit les notifications par WebSocket persistant ; configurez ici le délai de file et la récupération du jeu.",
+      "任务通知与恢复": "Notifications et récupération",
+      "Agent 在线时由 Workers 通过 WebSocket 推送新命令通知；命令仍先写入持久队列，连接重建后会自动检查队列。":
+        "Workers envoie les nouvelles commandes par WebSocket lorsque l’Agent est en ligne. La file durable reste la référence et sera vérifiée après reconnexion.",
+      "定时任务仍由后台调度器按配置时区入队；入队后会立即尝试唤醒在线 Agent。接取超时仅影响队列任务的超时处理。":
+        "Le planificateur utilise le fuseau configuré et tente de réveiller l’Agent dès la mise en file. Le délai ne concerne que l’expiration des tâches en attente.",
       "完整成员同步": "Synchronisation complète des membres",
       "完整读取贡献、离线时间、职业、庄园、同居与公职，并替换当前成员名单":
         "Lire contributions, absence, professions, manoirs, cohabitants et responsables, puis remplacer la liste actuelle",
@@ -664,9 +668,6 @@
       "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。":
         "Selon les usages du camp, les joueurs hors ligne depuis plus de {days} jours peuvent être exclus.",
       "斩杀预警天数": "Seuil d’alerte (jours)",
-      "轮询、无响应恢复与任务例程": "Interrogation, récupération et routines",
-      "任务执行中轮询（秒）": "Interrogation en tâche (secondes)",
-      "默认空闲轮询（秒）": "Interrogation au repos (secondes)",
       "等待 Agent 接取超时（分钟）": "Délai d’attribution à l’agent (minutes)",
       "游戏无响应自动重启": "Redémarrer le jeu s’il ne répond plus",
       "营地成员完整信息": "Informations complètes des membres",
@@ -989,10 +990,14 @@
       "终止已提交": "終了要求済み",
       "排队任务已终止": "待機タスクを終了しました",
       "终止指令已发送": "終了要求を送信しました",
-      "轮询与无响应恢复": "ポーリングと無応答復旧",
-      "设置执行器轮询节奏和游戏恢复策略。":
-        "エージェントのポーリングとゲーム復旧を設定します。",
-      "轮询窗口 JSON 格式错误": "ポーリング時間帯 JSON の形式が正しくありません",
+      "Agent 连接与无响应恢复": "Agent 接続と復旧",
+      "Agent 通过常驻 WebSocket 接收任务通知；这里仅设置队列超时和游戏恢复策略。":
+        "Agent は常時接続の WebSocket で通知を受信します。ここではキューの期限とゲーム復旧のみを設定します。",
+      "任务通知与恢复": "タスク通知と復旧",
+      "Agent 在线时由 Workers 通过 WebSocket 推送新命令通知；命令仍先写入持久队列，连接重建后会自动检查队列。":
+        "Agent がオンラインの場合、Workers は WebSocket で新しい命令を通知します。永続キューを正とし、再接続時に再確認します。",
+      "定时任务仍由后台调度器按配置时区入队；入队后会立即尝试唤醒在线 Agent。接取超时仅影响队列任务的超时处理。":
+        "スケジューラーは設定タイムゾーンでタスクを登録し、オンラインの Agent をすぐに起動します。取得タイムアウトは待機中タスクの期限にのみ適用されます。",
       "完整成员同步": "メンバー完全同期",
       "完整读取贡献、离线时间、职业、庄园、同居与公职，并替换当前成员名单":
         "貢献・オフライン時間・職業・荘園・同居人・役職を読み取り、現在の名簿を置き換える",
@@ -1033,9 +1038,6 @@
       "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。":
         "キャンプの慣例により、{days}日を超えてオフラインのプレイヤーは除名される場合があります。",
       "斩杀预警天数": "警告日数",
-      "轮询、无响应恢复与任务例程": "ポーリング、無応答復旧、タスクルーチン",
-      "任务执行中轮询（秒）": "タスク中のポーリング（秒）",
-      "默认空闲轮询（秒）": "待機中のポーリング（秒）",
       "等待 Agent 接取超时（分钟）": "エージェント取得待ちタイムアウト（分）",
       "游戏无响应自动重启": "ゲーム無応答時に自動再起動",
       "营地成员完整信息": "野営地メンバー詳細",
@@ -1351,10 +1353,14 @@
       "终止已提交": "已提交終止",
       "排队任务已终止": "排隊任務已終止",
       "终止指令已发送": "終止指令已傳送",
-      "轮询与无响应恢复": "輪詢與無回應復原",
-      "设置执行器轮询节奏和游戏恢复策略。":
-        "設定執行器輪詢節奏和遊戲復原策略。",
-      "轮询窗口 JSON 格式错误": "輪詢視窗 JSON 格式錯誤",
+      "Agent 连接与无响应恢复": "Agent 連線與無回應復原",
+      "Agent 通过常驻 WebSocket 接收任务通知；这里仅设置队列超时和游戏恢复策略。":
+        "Agent 透過常駐 WebSocket 接收任務通知；此處僅設定佇列逾時與遊戲復原策略。",
+      "任务通知与恢复": "任務通知與復原",
+      "Agent 在线时由 Workers 通过 WebSocket 推送新命令通知；命令仍先写入持久队列，连接重建后会自动检查队列。":
+        "Agent 在線時由 Workers 透過 WebSocket 推送新命令通知；命令仍以持久佇列為準，重新連線後會自動檢查佇列。",
+      "定时任务仍由后台调度器按配置时区入队；入队后会立即尝试唤醒在线 Agent。接取超时仅影响队列任务的超时处理。":
+        "定時任務仍由後台排程器依設定時區入列；入列後會立即嘗試喚醒在線 Agent。接取逾時僅影響佇列任務的逾時處理。",
       "完整成员同步": "完整成員同步",
       "完整读取贡献、离线时间、职业、庄园、同居与公职，并替换当前成员名单":
         "完整讀取貢獻、離線時間、職業、莊園、同居與公職，並取代目前成員名單",
@@ -1395,9 +1401,6 @@
       "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。":
         "根據營地慣例，離線超過 {days} 天的玩家可能會被請離營地。",
       "斩杀预警天数": "斬殺預警天數",
-      "轮询、无响应恢复与任务例程": "輪詢、無回應恢復與任務例程",
-      "任务执行中轮询（秒）": "任務執行中輪詢（秒）",
-      "默认空闲轮询（秒）": "預設閒置輪詢（秒）",
       "等待 Agent 接取超时（分钟）": "等待 Agent 接取逾時（分鐘）",
       "游戏无响应自动重启": "遊戲無回應自動重啟",
       "营地成员完整信息": "營地成員完整資訊",

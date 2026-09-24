@@ -181,19 +181,14 @@ describe("five-task automation configuration", () => {
     expect(config.tasks.patrol.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(config.tasks).not.toHaveProperty("member_sync");
     expect(config.routines).toEqual([]);
-    expect(config.agentPolling.claimTimeoutMinutes).toBe(45);
+    expect(config.agent.claimTimeoutMinutes).toBe(45);
   });
 
   it("accepts a custom Agent claim timeout", () => {
     const config = validateAutomationConfig({
       timezone: "Asia/Shanghai",
       schedulerGraceMinutes: 5,
-      agentPolling: {
-        activeSeconds: 2,
-        idleSeconds: 15,
-        claimTimeoutMinutes: 90,
-        windows: []
-      },
+      agent: { claimTimeoutMinutes: 90 },
       gameWatchdog: {
         enabled: true,
         healthCheckSeconds: 10,
@@ -213,7 +208,34 @@ describe("five-task automation configuration", () => {
         }
       }
     });
-    expect(config.agentPolling.claimTimeoutMinutes).toBe(90);
+    expect(config.agent.claimTimeoutMinutes).toBe(90);
+    expect(config).not.toHaveProperty("agentPolling");
+  });
+
+  it("normalizes legacy polling settings without retaining obsolete intervals", () => {
+    const config = validateAutomationConfig({
+      timezone: "Asia/Shanghai",
+      schedulerGraceMinutes: 5,
+      agentPolling: {
+        activeSeconds: 1,
+        idleSeconds: 2,
+        scheduledWindowMinutes: 1,
+        claimTimeoutMinutes: 73,
+        windows: [{ malformed: true }]
+      },
+      tasks: {
+        patrol: {
+          enabled: true,
+          time: "19:20",
+          teamReadyTime: "19:30",
+          shareIntervalMinutes: 10,
+          chatPollSeconds: 5,
+          deadline: "21:25"
+        }
+      }
+    });
+    expect(config.agent.claimTimeoutMinutes).toBe(73);
+    expect(config).not.toHaveProperty("agentPolling");
   });
 
   it("preserves the execution policy values used by the Mac Agent", () => {

@@ -93,9 +93,6 @@ import {
 } from "./tasks";
 import {
   nextTechnologyTargetDate,
-  isWithinScheduledTaskPollingWindow,
-  nextScheduledTaskPollingWindowStart,
-  scheduledTaskClocks,
   zonedDateTimeToIso,
   zonedDateKey,
   zonedParts
@@ -405,6 +402,14 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     }
     const agentAuth = await requireAgentAuth(request, env);
     if (agentAuth) return agentAuth;
+    const url = new URL(request.url);
+    if (url.searchParams.get("channel") === "control") {
+      const requestedAgentId = url.searchParams.get("agentId") || "";
+      const bundle = await getConfigBundle(env);
+      if (!requestedAgentId || requestedAgentId !== bundle.campConfig.agentId) {
+        return problem("Agent is not enabled for this deployment", 403, "agent_disabled");
+      }
+    }
     return env.AGENT_LOGS.getByName("global").fetch(request);
   }
   if (path === "/login") {
@@ -2355,7 +2360,7 @@ async function handleAdminApi(
         ? {
             automationConfig: {
               ...current.automationConfig,
-              agentPolling: submitted.automationConfig.agentPolling,
+              agent: submitted.automationConfig.agent,
               gameWatchdog: submitted.automationConfig.gameWatchdog,
               routines: submitted.automationConfig.routines
             }
@@ -2562,7 +2567,7 @@ async function handleAgentApi(
     await finalizeExpiredCancellations(env);
     await expireUnclaimedRuns(
       env,
-      bundle.automationConfig.agentPolling.claimTimeoutMinutes
+      bundle.automationConfig.agent.claimTimeoutMinutes
     );
     let command = enabled
       ? await claimNextCommand(env, {
@@ -2627,14 +2632,6 @@ async function handleAgentApi(
             attemptCount: command.attempt_count
           }
         : null,
-      ...pollingDecision(
-        bundle.automationConfig,
-        body.busy === true,
-        new Date(),
-        body.manualActive === true
-      ),
-      scheduledTaskTimes: scheduledTaskClocks(bundle.automationConfig.tasks),
-      scheduledWindowMinutes: bundle.automationConfig.agentPolling.scheduledWindowMinutes
     });
   }
   if (path === "/api/agent/bootstrap" && method === "POST") {
@@ -3165,8 +3162,8 @@ async function buildAdminBootstrap(
           }
         : null)
       : null,
-    // Agent heartbeats are independent from the (potentially five-minute)
-    // idle command poll. A stopped device should therefore expire quickly.
+    // The persistent control channel maintains the latest online status. Keep
+    // a finite threshold so an uncleanly disconnected Agent expires promptly.
     agentOnlineThresholdSeconds: 45,
     temporaryKeys: [],
     nextTechnologyTargetDate: nextTechnologyTargetDate(
@@ -3332,55 +3329,6 @@ function demoTemporaryKeys(result: TemporaryKeysResult): TemporaryKeysResult {
       permissions_json: JSON.stringify(["demo:preview"]),
       created_by: "demo"
     }))
-  };
-}
-
-function pollingDecision(
-  automation: ConfigBundle["automationConfig"],
-  busy: boolean,
-  now: Date,
-  manualActive: boolean
-): { pollAfterSeconds: number; pollingMode: "active" | "scheduled" | "lazy"; nextScheduledAt: string | null } {
-  if (busy || manualActive) {
-    return {
-      pollAfterSeconds: automation.agentPolling.activeSeconds,
-      pollingMode: "active",
-      nextScheduledAt: null
-    };
-  }
-  const scheduled = isWithinScheduledTaskPollingWindow(
-    now,
-    automation.timezone,
-    automation.tasks,
-    automation.agentPolling.scheduledWindowMinutes
-  );
-  if (scheduled) {
-    return {
-      pollAfterSeconds: automation.agentPolling.activeSeconds,
-      pollingMode: "scheduled",
-      nextScheduledAt: null
-    };
-  }
-  const nextScheduled = nextScheduledTaskPollingWindowStart(
-    now,
-    automation.timezone,
-    automation.tasks,
-    automation.agentPolling.scheduledWindowMinutes
-  );
-  if (nextScheduled) {
-    return {
-      pollAfterSeconds: Math.max(
-        1,
-        Math.min(86_400, Math.ceil((nextScheduled.getTime() - now.getTime()) / 1000))
-      ),
-      pollingMode: "lazy",
-      nextScheduledAt: nextScheduled.toISOString()
-    };
-  }
-  return {
-    pollAfterSeconds: automation.agentPolling.idleSeconds,
-    pollingMode: "lazy",
-    nextScheduledAt: null
   };
 }
 

@@ -14,6 +14,165 @@ function websocketTokenProtocol(token) {
   return `mrzh-agent-token.${Buffer.from(String(token), "utf8").toString("base64url")}`;
 }
 
+class AgentControlStream {
+  constructor(api, callbacks = {}) {
+    this.api = api;
+    this.callbacks = callbacks;
+    this.socket = null;
+    this.connected = false;
+    this.closed = false;
+    this.reconnectTimer = null;
+    this.reconnectAttempt = 0;
+    this.presenceSequence = 0;
+    this.presenceWaiters = new Map();
+  }
+
+  start() {
+    this.connect();
+    return this;
+  }
+
+  connect() {
+    const WebSocketCtor = globalThis.WebSocket;
+    const connecting = typeof WebSocketCtor === "function" &&
+      this.socket?.readyState === WebSocketCtor.CONNECTING;
+    const open = typeof WebSocketCtor === "function" &&
+      this.socket?.readyState === WebSocketCtor.OPEN;
+    if (
+      this.closed ||
+      connecting ||
+      open ||
+      this.reconnectTimer
+    ) return;
+    if (typeof WebSocketCtor !== "function") {
+      this.notify("onError", new Error("当前 Node.js 运行时不支持 WebSocket Agent 控制通道"));
+      this.scheduleReconnect();
+      return;
+    }
+    const query = new URLSearchParams({ channel: "control", agentId: this.api.agentId });
+    const socket = new WebSocketCtor(
+      `${this.api.websocketBaseUrl}/api/agent/run-stream?${query}`,
+      ["mrzh-agent-stream", websocketTokenProtocol(this.api.token)]
+    );
+    this.socket = socket;
+    socket.addEventListener("open", () => {
+      if (this.socket !== socket || this.closed) return;
+      this.connected = true;
+      this.reconnectAttempt = 0;
+      this.notify("onOpen");
+    });
+    socket.addEventListener("message", (event) => {
+      if (this.socket !== socket) return;
+      let payload;
+      try {
+        payload = JSON.parse(String(event.data || ""));
+      } catch {
+        return;
+      }
+      if (payload?.type === "ready") {
+        this.notify("onReady", payload);
+      } else if (payload?.type === "command-available") {
+        this.notify("onCommandAvailable");
+      } else if (payload?.type === "presence-ack") {
+        const waiter = this.presenceWaiters.get(payload.sequence);
+        if (waiter) {
+          clearTimeout(waiter.timer);
+          this.presenceWaiters.delete(payload.sequence);
+          waiter.resolve(payload);
+        }
+        this.notify("onPresenceAck", payload);
+      } else if (payload?.type === "error") {
+        this.notify("onError", new Error(`Agent control stream: ${payload.message || "server rejected message"}`));
+      }
+    });
+    socket.addEventListener("close", () => {
+      if (this.socket !== socket) return;
+      this.connected = false;
+      this.socket = null;
+      this.resolvePresenceWaiters();
+      if (this.closed) return;
+      this.notify("onDisconnect");
+      this.scheduleReconnect();
+    });
+    socket.addEventListener("error", () => {
+      if (this.socket === socket) socket.close();
+    });
+  }
+
+  sendPresence(payload) {
+    const sequence = ++this.presenceSequence;
+    return this.send({ type: "presence", sequence, ...payload });
+  }
+
+  sendPresenceAndWait(payload, timeoutMs = 2_000) {
+    const sequence = ++this.presenceSequence;
+    return new Promise((resolve) => {
+      if (!this.connected || !this.socket) {
+        resolve(null);
+        return;
+      }
+      const timer = setTimeout(() => {
+        this.presenceWaiters.delete(sequence);
+        resolve(null);
+      }, timeoutMs);
+      this.presenceWaiters.set(sequence, { resolve, timer });
+      if (!this.send({ type: "presence", sequence, ...payload })) {
+        clearTimeout(timer);
+        this.presenceWaiters.delete(sequence);
+        resolve(null);
+      }
+    });
+  }
+
+  send(payload) {
+    if (!this.connected || !this.socket) return false;
+    try {
+      this.socket.send(JSON.stringify(payload));
+      return true;
+    } catch {
+      this.socket.close();
+      return false;
+    }
+  }
+
+  notify(name, value) {
+    try {
+      this.callbacks[name]?.(value);
+    } catch (error) {
+      this.callbacks.onError?.(error);
+    }
+  }
+
+  scheduleReconnect() {
+    if (this.closed || this.reconnectTimer) return;
+    const delayMs = Math.min(30_000, 1_000 * 2 ** this.reconnectAttempt);
+    this.reconnectAttempt = Math.min(this.reconnectAttempt + 1, 5);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delayMs);
+  }
+
+  resolvePresenceWaiters() {
+    for (const [sequence, waiter] of this.presenceWaiters) {
+      clearTimeout(waiter.timer);
+      this.presenceWaiters.delete(sequence);
+      waiter.resolve(null);
+    }
+  }
+
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.resolvePresenceWaiters();
+    this.socket?.close();
+    this.socket = null;
+    this.connected = false;
+  }
+}
+
 class RunLogStream {
   constructor(api, runId, signal) {
     this.api = api;
@@ -202,6 +361,7 @@ export class AgentApi {
     this.agentId = config.server.agentId;
     this.displayName = config.server.agentName || this.agentId;
     this.runStreams = new Map();
+    this.controlStream = null;
   }
 
   async request(path, body, signal, { maximumAttempts = 1 } = {}) {
@@ -249,7 +409,18 @@ export class AgentApi {
     );
   }
 
-  nextCommand(busy, localeOrSignal, maybeSignal, manualActive = false) {
+  startControlStream(callbacks = {}) {
+    this.closeControlStream();
+    this.controlStream = new AgentControlStream(this, callbacks).start();
+    return this.controlStream;
+  }
+
+  closeControlStream() {
+    this.controlStream?.close();
+    this.controlStream = null;
+  }
+
+  nextCommand(busy, localeOrSignal, maybeSignal) {
     // Keep the old two-argument shape working for diagnostic scripts and
     // third-party local callers while the Agent now sends its UI locale.
     const hasLocale = typeof localeOrSignal === "string";
@@ -257,7 +428,7 @@ export class AgentApi {
     const signal = hasLocale ? maybeSignal : localeOrSignal;
     return this.request(
       "/api/agent/next-command",
-      { agentId: this.agentId, busy, manualActive: manualActive === true, locale },
+      { agentId: this.agentId, busy, locale },
       signal
     );
   }

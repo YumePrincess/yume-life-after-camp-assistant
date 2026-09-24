@@ -749,52 +749,16 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     assertClock(clock, field);
   }
 
-  const pollingSource =
+  // Accept the previous storage shape during rollout, but normalize it to the
+  // queue-only shape now that command delivery is driven by WebSocket wakeups.
+  const legacyAgent =
     source.agentPolling && typeof source.agentPolling === "object"
       ? object(source.agentPolling, "automationConfig.agentPolling")
       : {};
-  const pollingWindows = Array.isArray(pollingSource.windows)
-    ? pollingSource.windows.map((raw, index) => {
-        const window = object(raw, `automationConfig.agentPolling.windows[${index}]`);
-        const start = text(
-          window.start,
-          `automationConfig.agentPolling.windows[${index}].start`,
-          { max: 5 }
-        );
-        const end = text(
-          window.end,
-          `automationConfig.agentPolling.windows[${index}].end`,
-          { max: 5 }
-        );
-        assertClock(start, `automationConfig.agentPolling.windows[${index}].start`);
-        assertClock(end, `automationConfig.agentPolling.windows[${index}].end`);
-        return {
-          id: text(window.id, `automationConfig.agentPolling.windows[${index}].id`, {
-            max: 64
-          }),
-          name: text(
-            window.name,
-            `automationConfig.agentPolling.windows[${index}].name`,
-            { max: 80 }
-          ),
-          start,
-          end,
-          seconds: integer(
-            window.seconds,
-            `automationConfig.agentPolling.windows[${index}].seconds`,
-            1,
-            3600
-          ),
-          weekdays: weekdays(
-            window.weekdays,
-            `automationConfig.agentPolling.windows[${index}].weekdays`
-          )
-        };
-      })
-    : [];
-  if (pollingWindows.length > 24) {
-    throw new Error("automationConfig.agentPolling.windows is too large");
-  }
+  const agentSource =
+    source.agent && typeof source.agent === "object"
+      ? object(source.agent, "automationConfig.agent")
+      : {};
 
   const watchdogSource =
     source.gameWatchdog && typeof source.gameWatchdog === "object"
@@ -816,44 +780,17 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
       source.manualRetryCount === undefined
         ? 0
         : integer(source.manualRetryCount, "automationConfig.manualRetryCount", 0, 6),
-    agentPolling: {
-      activeSeconds:
-        pollingSource.activeSeconds === undefined
-          ? 2
-          : integer(
-              pollingSource.activeSeconds,
-              "automationConfig.agentPolling.activeSeconds",
-              1,
-              60
-            ),
-      idleSeconds:
-        pollingSource.idleSeconds === undefined
-          ? 300
-          : integer(
-              pollingSource.idleSeconds,
-              "automationConfig.agentPolling.idleSeconds",
-              2,
-              3600
-            ),
-      scheduledWindowMinutes:
-        pollingSource.scheduledWindowMinutes === undefined
-          ? 15
-          : integer(
-              pollingSource.scheduledWindowMinutes,
-              "automationConfig.agentPolling.scheduledWindowMinutes",
-              1,
-              240
-            ),
+    agent: {
       claimTimeoutMinutes:
-        pollingSource.claimTimeoutMinutes === undefined
+        agentSource.claimTimeoutMinutes === undefined &&
+        legacyAgent.claimTimeoutMinutes === undefined
           ? 45
           : integer(
-              pollingSource.claimTimeoutMinutes,
-              "automationConfig.agentPolling.claimTimeoutMinutes",
+              agentSource.claimTimeoutMinutes ?? legacyAgent.claimTimeoutMinutes,
+              "automationConfig.agent.claimTimeoutMinutes",
               1,
               10_080
-            ),
-      windows: pollingWindows
+            )
     },
     gameWatchdog: {
       enabled:

@@ -120,12 +120,8 @@ export interface AutomationConfig {
   schedulerGraceMinutes: number;
   scheduledRetryCount: number;
   manualRetryCount: number;
-  agentPolling: {
-    activeSeconds: number;
-    idleSeconds: number;
-    scheduledWindowMinutes: number;
+  agent: {
     claimTimeoutMinutes: number;
-    windows: PollingWindow[];
   };
   gameWatchdog: {
     enabled: boolean;
@@ -149,15 +145,6 @@ export interface AutomationConfig {
     };
   };
   routines: AutomationRoutine[];
-}
-
-export interface PollingWindow {
-  id: string;
-  name: string;
-  start: string;
-  end: string;
-  seconds: number;
-  weekdays: number[];
 }
 
 export interface AutomationRoutine {

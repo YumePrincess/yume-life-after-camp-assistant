@@ -337,14 +337,11 @@
               <div class="section-heading">
                 <div>
                   <p class="eyebrow">AGENT POLICY</p>
-                  <h1>轮询与无响应恢复</h1>
-                  <p class="section-intro">设置执行器轮询节奏和游戏恢复策略。</p>
+                  <h1>Agent 连接与无响应恢复</h1>
+                  <p class="section-intro">Agent 通过常驻 WebSocket 接收任务通知；这里仅设置队列超时和游戏恢复策略。</p>
                 </div>
               </div>
               <div class="form-grid">
-                <label class="field"><span>任务执行中轮询（秒）</span><input name="pollActiveSeconds" type="number" min="1" max="60" /></label>
-                <label class="field"><span>任务时间前后活跃窗口（分钟）</span><input name="pollScheduledWindowMinutes" type="number" min="1" max="240" /></label>
-                <label class="field"><span>默认空闲轮询（秒）</span><input name="pollIdleSeconds" type="number" min="2" max="3600" /></label>
                 <label class="field"><span>等待 Agent 接取超时（分钟）</span><input name="queueClaimTimeoutMinutes" type="number" min="1" max="10080" /></label>
                 <label class="field field-checkbox"><input name="watchdogEnabled" type="checkbox" /><span>游戏无响应自动重启</span></label>
                 <label class="field"><span>健康检查（秒）</span><input name="watchdogHealthSeconds" type="number" min="2" max="120" /></label>
@@ -353,15 +350,10 @@
                 <label class="field"><span>最多重启次数</span><input name="watchdogMaxRestarts" type="number" min="0" max="10" /></label>
                 <label class="field"><span>重启冷却（秒）</span><input name="watchdogCooldownSeconds" type="number" min="1" max="120" /></label>
               </div>
-              <label class="field">
-                <span>旧版分时轮询窗口 JSON（仅兼容保存，不作为任务唤醒依据）</span>
-                <textarea id="polling-windows-json" class="code-editor" rows="10" spellcheck="false"></textarea>
-              </label>
               <div class="policy-advice">
-                <strong>减少 Worker 请求的建议</strong>
-                <p>Agent 会从任务计划中的启用任务时间自动生成活跃窗口，默认覆盖每个任务时间前后 15 分钟；窗口内保持 Workers-Agent 交互，窗口外进入懒惰状态并直接睡到下一个窗口。</p>
-                <p>手动点击 Mac Agent 左下角“恢复活跃”可随时解除懒惰；再次点击“解除活跃”恢复懒惰。定时任务窗口仍会自动唤醒，进入窗口后先向 Workers 请求最新计划再开始工作。</p>
-                <p>下方旧版 JSON 保留用于兼容已有配置，不再决定自动任务的唤醒时间；请使用上方的活跃窗口分钟数和任务计划设置。</p>
+                <strong>任务通知与恢复</strong>
+                <p>Agent 在线时由 Workers 通过 WebSocket 推送新命令通知；命令仍先写入持久队列，连接重建后会自动检查队列。</p>
+                <p>定时任务仍由后台调度器按配置时区入队；入队后会立即尝试唤醒在线 Agent。接取超时仅影响队列任务的超时处理。</p>
               </div>
               <div class="section-savebar">
                 <span class="feedback" data-save-feedback>当前配置已同步</span>
