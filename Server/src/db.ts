@@ -688,6 +688,7 @@ const MEMBER_DETAILS_SELECT = `
 
 export type MemberDetailsUpdate = {
   id: string;
+  name: string;
   identityCodeId?: string | null;
   profession: string | null;
   manorLevel: number | null;
@@ -724,11 +725,12 @@ export async function updateMemberDetails(
   const result = hasIdentityBinding
     ? await env.DB.prepare(
         `UPDATE members
-         SET profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
+         SET name = ?, profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
              weekly_contribution = ?, technology_points_used = ?,
              material_contribution = ?, weekly_activity_points = ?, identity_code_id = ?
          WHERE id = ?`
       ).bind(
+        input.name,
         input.profession,
         input.manorLevel,
         input.roommateName,
@@ -742,11 +744,12 @@ export async function updateMemberDetails(
       ).run()
     : await env.DB.prepare(
         `UPDATE members
-         SET profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
+         SET name = ?, profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
              weekly_contribution = ?, technology_points_used = ?,
              material_contribution = ?, weekly_activity_points = ?
          WHERE id = ?`
       ).bind(
+        input.name,
         input.profession,
         input.manorLevel,
         input.roommateName,
@@ -928,7 +931,8 @@ export async function replaceMemberSnapshot(
            last_active_text, inactive_days, activity_captured_at,
            last_seen_at, source_run_id
          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
            profession = excluded.profession,
            manor_level = excluded.manor_level,
            roommate_name = excluded.roommate_name,

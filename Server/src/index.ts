@@ -1632,15 +1632,13 @@ async function handleAdminApi(
       ? statusValue
       : undefined;
     const pageValue = Number(params.get("page") ?? 1);
-    const timezone = date
-      ? (await getConfigBundle(env)).campConfig.timezone
-      : undefined;
+    const timezone = (await getConfigBundle(env)).campConfig.timezone;
     const result = await listAdminDailyVoteItems(env, {
       date,
       kind,
       status,
       page: Number.isFinite(pageValue) ? pageValue : 1,
-      ...(timezone ? { timezone } : {})
+      timezone
     });
     return json({
       ...result,
@@ -2960,7 +2958,12 @@ async function buildPublicDailyVotePayload(
   locale: unknown
 ): Promise<PublicDailyVotePayload> {
   const bundle = await getConfigBundle(env);
-  const daily = await buildPublicDailyVote(env, locale);
+  const daily = await buildPublicDailyVote(
+    env,
+    locale,
+    new Date(),
+    bundle.campConfig.timezone
+  );
   let technologyHistory: TechnologyVoteHistory[] = [];
   if (await isWorkerPluginEnabled(env, "technology")) {
     await ensureTechnologyVoteHistory(env, bundle);
@@ -3638,10 +3641,12 @@ function sanitizeMembers(value: unknown) {
 }
 
 function sanitizeMemberDetailsUpdate(value: Record<string, unknown>) {
+  const name = boundedText(value.memberName, "memberName", 80);
   const identityCodeId = value.identityCodeId === undefined
     ? undefined
     : nullableText(value.identityCodeId, 120);
   return {
+    name,
     ...(identityCodeId === undefined ? {} : { identityCodeId }),
     profession: nullableText(value.profession, 80),
     manorLevel: nullableInteger(value.manorLevel, 0, 1000),

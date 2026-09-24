@@ -4,6 +4,7 @@ import {
   reconcileStaffAssignments,
   updateWeeklyActivitySnapshot,
   updateMemberDetails,
+  replaceMemberSnapshot,
   updateMemberProfiles
 } from "../src/db";
 
@@ -41,6 +42,40 @@ function createDatabaseRecorder() {
 }
 
 describe("authoritative member profile snapshot", () => {
+  it("restores the source name on a full member sync after an admin rename", async () => {
+    const recorder = createDatabaseRecorder();
+
+    await replaceMemberSnapshot(
+      { DB: recorder.db } as never,
+      {
+        runId: "full-member-run",
+        snapshotDate: "2026-09-23",
+        capturedAt: "2026-09-23T06:00:00.000Z",
+        members: [
+          {
+            name: "来源玩家名",
+            profession: "采集",
+            manorLevel: 30,
+            roommateName: null,
+            campTitle: null,
+            weeklyContribution: 1234,
+            technologyPointsUsed: 0,
+            materialContribution: 0,
+            lastActiveText: null,
+            inactiveDays: null
+          }
+        ]
+      }
+    );
+
+    const upsert = recorder.prepared.find((statement) =>
+      statement.sql.includes("INSERT INTO members")
+    );
+    expect(upsert?.sql).toContain("ON CONFLICT(id) DO UPDATE SET");
+    expect(upsert?.sql).toContain("name = excluded.name");
+    expect(upsert?.args[1]).toBe("来源玩家名");
+  });
+
   it("removes members absent from the next successful profile scan", async () => {
     const recorder = createDatabaseRecorder();
 
@@ -68,6 +103,8 @@ describe("authoritative member profile snapshot", () => {
       statement.sql.includes("INSERT INTO members")
     );
     expect(upsert?.sql).toContain("ON CONFLICT(id) DO UPDATE SET");
+    expect(upsert?.sql).toContain("name = excluded.name");
+    expect(upsert?.args[1]).toBe("仍在营地");
     expect(upsert?.sql).not.toContain("ON CONFLICT(name)");
     expect(upsert?.sql).not.toContain(
       "weekly_contribution = excluded.weekly_contribution"
@@ -123,11 +160,11 @@ describe("staff assignments", () => {
 });
 
 describe("manual member details", () => {
-  it("updates editable fields without changing the member identity or sync metadata", async () => {
+  it("updates the display name and editable fields without changing identity or sync metadata", async () => {
     const prepared: Array<{ sql: string; args: unknown[] }> = [];
     const updatedMember = {
       id: "member_123",
-      name: "玩家甲",
+      name: "玩家甲新名",
       profession: "采集",
       manor_level: 31,
       roommate_name: "玩家乙",
@@ -158,23 +195,26 @@ describe("manual member details", () => {
       { DB: db } as never,
       {
         id: "member_123",
+        name: "玩家甲新名",
+        identityCodeId: null,
         profession: "采集",
         manorLevel: 31,
         roommateName: "玩家乙",
         campTitle: "新称号",
-      weeklyContribution: 1234,
-      technologyPointsUsed: 5678,
-      materialContribution: 9012,
-      weeklyActivityPoints: 345
+        weeklyContribution: 1234,
+        technologyPointsUsed: 5678,
+        materialContribution: 9012,
+        weeklyActivityPoints: 345
       }
     );
 
     expect(result).toEqual(updatedMember);
     expect(prepared).toHaveLength(2);
-    expect(prepared[0]?.sql).toContain("SET profession = ?, manor_level = ?");
+    expect(prepared[0]?.sql).toContain("SET name = ?, profession = ?, manor_level = ?");
+    expect(prepared[0]?.sql).toContain("identity_code_id = ?");
     expect(prepared[0]?.sql).toContain("WHERE id = ?");
-    expect(prepared[0]?.sql).not.toMatch(/(?:^|[\s,])name\s*=/);
     expect(prepared[0]?.args).toEqual([
+      "玩家甲新名",
       "采集",
       31,
       "玩家乙",
@@ -183,6 +223,7 @@ describe("manual member details", () => {
       5678,
       9012,
       345,
+      null,
       "member_123"
     ]);
   });

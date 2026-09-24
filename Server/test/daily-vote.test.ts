@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  localCalendarMonthRange,
   localDailyDateRange,
   normalizeDailyVoteConfig,
   normalizeDailyVoteInput,
@@ -33,6 +34,19 @@ describe("daily vote admin local times", () => {
     expect(localDailyDateRange("2026-11-01", "America/New_York")).toEqual({
       startAt: "2026-11-01T04:00:00.000Z",
       endAt: "2026-11-02T05:00:00.000Z"
+    });
+  });
+
+  it("uses the configured timezone's calendar month boundaries", () => {
+    expect(localCalendarMonthRange(new Date("2026-05-31T16:00:00.000Z"), "Asia/Taipei")).toEqual({
+      key: "2026-06",
+      startAt: "2026-05-31T16:00:00.000Z",
+      endAt: "2026-06-30T16:00:00.000Z"
+    });
+    expect(localCalendarMonthRange(new Date("2026-03-15T12:00:00.000Z"), "America/New_York")).toEqual({
+      key: "2026-03",
+      startAt: "2026-03-01T05:00:00.000Z",
+      endAt: "2026-04-01T04:00:00.000Z"
     });
   });
 
@@ -108,9 +122,9 @@ describe("daily draw limits", () => {
     expect(normalizeDailyVoteInput({ ...drawInput("001"), drawLimitEnabled: false }).drawLimitEnabled).toBe(false);
   });
 
-  it("defaults the 28-day cap to four and validates configured values", () => {
+  it("defaults the monthly cap to four, accepts the legacy setting key, and validates values", () => {
     expect(normalizeDailyVoteConfig({})).toEqual({
-      drawMaxWins28Days: 4,
+      drawMaxWinsPerMonth: 4,
       voteEligibilityEnabled: true,
       voteEligibility: {
         weeklyContribution: 1500,
@@ -119,8 +133,8 @@ describe("daily draw limits", () => {
         weeklyActivityPoints: 25
       }
     });
-    expect(normalizeDailyVoteConfig({ drawMaxWins28Days: 8 })).toEqual({
-      drawMaxWins28Days: 8,
+    expect(normalizeDailyVoteConfig({ drawMaxWinsPerMonth: 8 })).toEqual({
+      drawMaxWinsPerMonth: 8,
       voteEligibilityEnabled: true,
       voteEligibility: {
         weeklyContribution: 1500,
@@ -129,8 +143,9 @@ describe("daily draw limits", () => {
         weeklyActivityPoints: 25
       }
     });
-    expect(() => normalizeDailyVoteConfig({ drawMaxWins28Days: 10_001 })).toThrow(
-      "drawMaxWins28Days must be an integer between 0 and 10000"
+    expect(normalizeDailyVoteConfig({ drawMaxWins28Days: 7 }).drawMaxWinsPerMonth).toBe(7);
+    expect(() => normalizeDailyVoteConfig({ drawMaxWinsPerMonth: 10_001 })).toThrow(
+      "drawMaxWinsPerMonth must be an integer between 0 and 10000"
     );
   });
 });

@@ -65,7 +65,7 @@
     dailyVoteItemsByMode: { active: [], history: [] },
     activeDailyVoteDetail: null,
     dailyVoteConfig: {
-      drawMaxWins28Days: 4,
+      drawMaxWinsPerMonth: 4,
       voteEligibilityEnabled: true,
       voteEligibility: {
         weeklyContribution: 1500,
@@ -539,6 +539,347 @@
         .filter((part) => part.type !== "literal")
         .map((part) => [part.type, part.value])
     );
+  }
+
+  const adminCalendar = {
+    root: null,
+    input: null,
+    month: null,
+    nodes: null
+  };
+
+  function adminCalendarLocale() {
+    return {
+      "zh-cn": "zh-CN",
+      "zh-tw": "zh-TW",
+      en: "en-US",
+      fr: "fr-FR",
+      ja: "ja-JP"
+    }[window.MrzhI18n.language()] || "zh-CN";
+  }
+
+  function adminCalendarTodayKey() {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: configuredTimezone(),
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      })
+        .formatToParts(new Date())
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value])
+    );
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
+  function adminCalendarDateKey(date) {
+    return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+  }
+
+  function validAdminCalendarDateKey(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+    if (!match) return false;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day, 12));
+    return date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day;
+  }
+
+  function adminCalendarFirstWeekday(locale) {
+    try {
+      const localeInfo = new Intl.Locale(locale);
+      const weekInfo = localeInfo.weekInfo || localeInfo.getWeekInfo?.();
+      if (weekInfo?.firstDay) return weekInfo.firstDay % 7;
+    } catch {
+      // Older browsers fall back to Monday-first calendars.
+    }
+    return 1;
+  }
+
+  function adminCalendarMonthKey(dateKey) {
+    const value = /^(\d{4}-\d{2}-\d{2})/.exec(dateKey || "")?.[1] || "";
+    return validAdminCalendarDateKey(value)
+      ? value.slice(0, 7)
+      : "";
+  }
+
+  function adminCalendarWithinBounds(input, dateKey) {
+    const min = input.min?.slice(0, 10) || "";
+    const max = input.max?.slice(0, 10) || "";
+    return (!min || dateKey >= min) && (!max || dateKey <= max);
+  }
+
+  function setAdminCalendarDate(dateKey) {
+    const input = adminCalendar.input;
+    if (!input || !validAdminCalendarDateKey(dateKey) ||
+        !adminCalendarWithinBounds(input, dateKey)) return;
+    if (input.dataset.adminCalendarKind === "datetime-local") {
+      const time = /T((?:[01]\d|2[0-3]):[0-5]\d)$/.exec(input.value)?.[1] || "00:00";
+      input.value = `${dateKey}T${time}`;
+    } else {
+      input.value = dateKey;
+    }
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    closeAdminCalendar(true);
+  }
+
+  function renderAdminCalendar() {
+    const input = adminCalendar.input;
+    const nodes = adminCalendar.nodes;
+    if (!input || !nodes) return;
+    const locale = adminCalendarLocale();
+    const todayKey = adminCalendarTodayKey();
+    nodes.root.setAttribute("aria-label", translateUi("日期选择器"));
+    nodes.previous.setAttribute("aria-label", translateUi("上个月"));
+    nodes.next.setAttribute("aria-label", translateUi("下个月"));
+    nodes.close.setAttribute("aria-label", translateUi("关闭日历"));
+    nodes.today.textContent = translateUi("今天");
+    const month = adminCalendar.month ||
+      adminCalendarMonthKey(input.value) || adminCalendarMonthKey(todayKey);
+    adminCalendar.month = month;
+    const [year, monthNumber] = month.split("-").map(Number);
+    const monthDate = new Date(Date.UTC(year, monthNumber - 1, 15, 12));
+    nodes.heading.textContent = new Intl.DateTimeFormat(locale, {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "long"
+    }).format(monthDate);
+    nodes.heading.id = "admin-calendar-month-title";
+    nodes.root.setAttribute("aria-labelledby", nodes.heading.id);
+
+    const firstWeekday = adminCalendarFirstWeekday(locale);
+    nodes.weekdays.replaceChildren();
+    for (let index = 0; index < 7; index += 1) {
+      const weekday = (firstWeekday + index) % 7;
+      const date = new Date(Date.UTC(2023, 0, 1 + weekday, 12));
+      const label = new Intl.DateTimeFormat(locale, {
+        timeZone: "UTC",
+        weekday: "short"
+      }).format(date);
+      const cell = create("span", "admin-calendar-weekday", label);
+      nodes.weekdays.append(cell);
+    }
+
+    nodes.days.replaceChildren();
+    const monthFirst = new Date(Date.UTC(year, monthNumber - 1, 1, 12));
+    const leadingDays = (monthFirst.getUTCDay() - firstWeekday + 7) % 7;
+    const firstVisibleDay = 1 - leadingDays;
+    const selectedKey = adminCalendarMonthKey(input.value)
+      ? input.value.slice(0, 10)
+      : "";
+    const fullDateFormatter = new Intl.DateTimeFormat(locale, {
+      timeZone: "UTC",
+      dateStyle: "full"
+    });
+    for (let index = 0; index < 42; index += 1) {
+      const date = new Date(Date.UTC(year, monthNumber - 1, firstVisibleDay + index, 12));
+      const dateKey = adminCalendarDateKey(date);
+      const day = create("button", "admin-calendar-day", String(date.getUTCDate()));
+      day.type = "button";
+      day.setAttribute("aria-label", fullDateFormatter.format(date));
+      day.setAttribute("aria-pressed", String(dateKey === selectedKey));
+      day.dataset.calendarDate = dateKey;
+      if (dateKey.slice(0, 7) !== month) day.classList.add("is-outside-month");
+      if (dateKey === todayKey) {
+        day.classList.add("is-today");
+        day.title = translateUi("今天");
+      }
+      if (dateKey === selectedKey) day.classList.add("is-selected");
+      day.disabled = !adminCalendarWithinBounds(input, dateKey);
+      nodes.days.append(day);
+    }
+    nodes.today.disabled = !adminCalendarWithinBounds(input, todayKey);
+  }
+
+  function positionAdminCalendar() {
+    const root = adminCalendar.root;
+    const input = adminCalendar.input;
+    if (!root || !input || !adminCalendar.nodes?.open) return;
+    if (!input.isConnected) {
+      closeAdminCalendar(false);
+      return;
+    }
+    const rect = input.getBoundingClientRect();
+    const width = root.offsetWidth || 296;
+    const height = root.offsetHeight || 360;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const below = rect.bottom + 8;
+    const top = below + height <= window.innerHeight - 8
+      ? below
+      : Math.max(8, rect.top - height - 8);
+    root.style.left = `${left}px`;
+    root.style.top = `${top}px`;
+  }
+
+  function openAdminCalendar(input) {
+    if (!input || input.disabled || !adminCalendar.root) return;
+    if (adminCalendar.nodes?.open && adminCalendar.input === input) {
+      renderAdminCalendar();
+      positionAdminCalendar();
+      return;
+    }
+    if (adminCalendar.nodes?.open) closeAdminCalendar(false);
+    adminCalendar.input = input;
+    adminCalendar.month = adminCalendarMonthKey(input.value) ||
+      adminCalendarMonthKey(adminCalendarTodayKey());
+    renderAdminCalendar();
+    const root = adminCalendar.root;
+    root.hidden = false;
+    input.setAttribute("aria-haspopup", "dialog");
+    input.setAttribute("aria-controls", root.id);
+    input.setAttribute("aria-expanded", "true");
+    if (typeof root.showPopover === "function") {
+      root.showPopover();
+    } else {
+      const ownerDialog = input.closest("dialog");
+      (ownerDialog || document.body).append(root);
+      root.dataset.open = "true";
+    }
+    adminCalendar.nodes.open = true;
+    positionAdminCalendar();
+  }
+
+  function closeAdminCalendar(restoreFocus = false) {
+    const root = adminCalendar.root;
+    const input = adminCalendar.input;
+    if (!root || !adminCalendar.nodes?.open) return;
+    adminCalendar.nodes.open = false;
+    if (typeof root.hidePopover === "function") {
+      root.hidePopover();
+    } else {
+      delete root.dataset.open;
+    }
+    root.hidden = true;
+    input?.setAttribute("aria-expanded", "false");
+    adminCalendar.input = null;
+    if (restoreFocus && input?.isConnected) input.focus();
+  }
+
+  function initializeAdminDatePickerInput(input) {
+    if (input.dataset.adminCalendarKind ||
+        (input.type !== "date" && input.type !== "datetime-local")) return;
+    const kind = input.type;
+    input.type = "text";
+    input.dataset.adminCalendarKind = kind;
+    input.autocomplete = "off";
+    input.placeholder = kind === "date" ? "YYYY-MM-DD" : "YYYY-MM-DDTHH:mm";
+    input.setAttribute("aria-haspopup", "dialog");
+    input.setAttribute("aria-controls", "admin-calendar-popover");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute(
+      "pattern",
+      kind === "date"
+        ? "\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])"
+        : "\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d"
+    );
+    input.classList.add("admin-calendar-input");
+    input.addEventListener("click", () => openAdminCalendar(input));
+    input.addEventListener("input", () => {
+      const dateKey = input.value.slice(0, 10);
+      if (adminCalendar.input === input) {
+        if (validAdminCalendarDateKey(dateKey)) adminCalendar.month = dateKey.slice(0, 7);
+        renderAdminCalendar();
+        positionAdminCalendar();
+      }
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && adminCalendar.input === input) {
+        event.preventDefault();
+        closeAdminCalendar(true);
+      } else if ((event.key === "ArrowDown" && event.altKey) || event.key === "F4") {
+        event.preventDefault();
+        openAdminCalendar(input);
+      }
+    });
+  }
+
+  function initializeAdminDatePickers() {
+    if (!adminCalendar.root) {
+      const root = document.createElement("div");
+      root.id = "admin-calendar-popover";
+      root.className = "admin-calendar-popover";
+      root.setAttribute("popover", "manual");
+      root.setAttribute("role", "dialog");
+      root.setAttribute("aria-label", translateUi("日期选择器"));
+      root.hidden = true;
+
+      const header = create("div", "admin-calendar-header");
+      const previous = create("button", "admin-calendar-nav", "‹");
+      previous.type = "button";
+      previous.dataset.calendarMonthStep = "-1";
+      const heading = create("strong", "admin-calendar-month");
+      heading.setAttribute("aria-live", "polite");
+      const next = create("button", "admin-calendar-nav", "›");
+      next.type = "button";
+      next.dataset.calendarMonthStep = "1";
+      const close = create("button", "admin-calendar-close", "×");
+      close.type = "button";
+      close.dataset.calendarClose = "true";
+      header.append(previous, heading, next, close);
+      const weekdays = create("div", "admin-calendar-weekdays");
+      const days = create("div", "admin-calendar-days");
+      days.setAttribute("role", "group");
+      const footer = create("div", "admin-calendar-footer");
+      const today = create("button", "admin-calendar-today", "今天");
+      today.type = "button";
+      today.dataset.calendarToday = "true";
+      footer.append(today);
+      root.append(header, weekdays, days, footer);
+      document.body.append(root);
+      adminCalendar.root = root;
+      adminCalendar.nodes = {
+        root,
+        heading,
+        weekdays,
+        days,
+        previous,
+        next,
+        close,
+        today,
+        open: false
+      };
+
+      root.addEventListener("click", (event) => {
+        const target = event.target instanceof Element
+          ? event.target.closest("button")
+          : null;
+        if (!target || !root.contains(target)) return;
+        if (target.dataset.calendarClose) {
+          closeAdminCalendar(true);
+        } else if (target.dataset.calendarToday) {
+          setAdminCalendarDate(adminCalendarTodayKey());
+        } else if (target.dataset.calendarMonthStep) {
+          const [year, month] = (adminCalendar.month || "").split("-").map(Number);
+          const date = new Date(Date.UTC(year, month - 1 + Number(target.dataset.calendarMonthStep), 1, 12));
+          adminCalendar.month = adminCalendarDateKey(date).slice(0, 7);
+          renderAdminCalendar();
+        } else if (target.dataset.calendarDate) {
+          setAdminCalendarDate(target.dataset.calendarDate);
+        }
+      });
+
+      document.addEventListener("pointerdown", (event) => {
+        if (!adminCalendar.nodes?.open) return;
+        if (root.contains(event.target) || event.target === adminCalendar.input) return;
+        closeAdminCalendar(false);
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || !adminCalendar.nodes?.open) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeAdminCalendar(true);
+      }, true);
+      window.addEventListener("resize", positionAdminCalendar);
+      window.addEventListener("scroll", positionAdminCalendar, true);
+    }
+    for (const input of document.querySelectorAll('input[type="date"], input[type="datetime-local"]')) {
+      initializeAdminDatePickerInput(input);
+    }
   }
 
   function setField(name, value) {
@@ -1516,9 +1857,9 @@
     if (!history) state.dailyVoteConfig = payload?.config || state.dailyVoteConfig;
     state[view.pageKey] = Number(payload?.page) || 1;
     state[view.totalKey] = Number(payload?.total) || 0;
-    const maxWinsInput = byId("daily-vote-max-wins-28-days");
+    const maxWinsInput = byId("daily-vote-max-wins-per-month");
     if (!history && maxWinsInput && document.activeElement !== maxWinsInput) {
-      maxWinsInput.value = String(state.dailyVoteConfig.drawMaxWins28Days ?? 4);
+      maxWinsInput.value = String(state.dailyVoteConfig.drawMaxWinsPerMonth ?? 4);
     }
     if (!history) {
       const eligibility = state.dailyVoteConfig.voteEligibility || {};
@@ -1704,7 +2045,7 @@
       const payload = await request("/api/admin/daily-vote/config", {
         method: "PUT",
         body: JSON.stringify({
-          drawMaxWins28Days: Number(byId("daily-vote-max-wins-28-days").value),
+          drawMaxWinsPerMonth: Number(byId("daily-vote-max-wins-per-month").value),
           voteEligibilityEnabled: byId("vote-eligibility-enabled").checked,
           voteEligibility: {
             weeklyContribution: Number(byId("vote-eligibility-min-contribution").value),
@@ -1715,7 +2056,7 @@
         })
       });
       state.dailyVoteConfig = payload.config || state.dailyVoteConfig;
-      byId("daily-vote-max-wins-28-days").value = String(state.dailyVoteConfig.drawMaxWins28Days);
+      byId("daily-vote-max-wins-per-month").value = String(state.dailyVoteConfig.drawMaxWinsPerMonth);
       setText("daily-vote-config-feedback", window.MrzhI18n.t("通用投票设置已保存"));
     } catch (error) {
       setText("daily-vote-config-feedback", localizeDailyVoteError(error));
@@ -2272,6 +2613,7 @@
       });
       dateField.append(input);
       fields.append(dateField);
+      initializeAdminDatePickerInput(input);
     } else {
       const range = create("div", "technology-rule-date-range");
       const startField = create("label", "field");
@@ -2302,6 +2644,8 @@
       });
       endField.append(endInput);
       range.append(startField, endField);
+      initializeAdminDatePickerInput(startInput);
+      initializeAdminDatePickerInput(endInput);
       const permanentLabel = create("label", "technology-permanent-toggle");
       const permanent = document.createElement("input");
       permanent.type = "checkbox";
@@ -2966,6 +3310,7 @@
     state.bootstrap = data;
     document.documentElement.dataset.timezone =
       data.configBundle?.campConfig?.timezone || "Asia/Shanghai";
+    if (adminCalendar.nodes?.open) renderAdminCalendar();
     if (!input("keyExpiresAt")?.value) setDefaultKeyExpiry();
     const identityExpiryInput = input("identityExpiresAt");
     if (identityExpiryInput && !identityExpiryInput.value) {
@@ -3243,9 +3588,7 @@
   function openMemberEdit() {
     const member = state.selectedMember;
     if (!member || !hasPermission("admin:members")) return;
-    byId("member-edit-name").textContent = formatUi("成员名称：{name}（不可编辑）", {
-      name: member.name
-    });
+    byId("member-edit-name").value = member.name || "";
     for (const [id, value] of [
       ["member-edit-camp-title", member.camp_title],
       ["member-edit-profession", member.profession],
@@ -3272,6 +3615,7 @@
     }
     setText("member-edit-feedback", "");
     const dialog = byId("member-edit-dialog");
+    dialog.querySelector(".member-edit-help")?.removeAttribute("open");
     if (!dialog.open) dialog.showModal();
     setModuleActionState();
   }
@@ -3295,6 +3639,7 @@
       return value === "" ? null : Number(value);
     };
     const payload = {
+      memberName: String(form.elements.memberName.value || "").trim(),
       identityCodeId: String(form.elements.identityCodeId?.value || "") || null,
       campTitle: optionalText("campTitle"),
       profession: optionalText("profession"),
@@ -4942,8 +5287,12 @@
     renderTechnologyEditor();
   });
   byId("technology-fixed-date")?.addEventListener("change", (event) => {
-    const value = String(event.target.value || "").trim();
+    let value = String(event.target.value || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+    if (event.target.min && value < event.target.min) {
+      value = event.target.min;
+      event.target.value = value;
+    }
     state.technologyDate = value;
     renderTechnologyEditor();
   });
@@ -5234,6 +5583,7 @@
   });
   document.addEventListener("mrzh:languagechange", () => {
     if (state.bootstrap) render(state.bootstrap, []);
+    if (adminCalendar.nodes?.open) renderAdminCalendar();
     if (state.activeEventRunId && byId("run-dialog").open) {
       // The event endpoint is locale-aware. Reload the current timeline from
       // the beginning so already-loaded rows change language immediately.
@@ -5253,6 +5603,7 @@
       connectLiveUpdates();
     }
   });
+  initializeAdminDatePickers();
   refresh(true);
   connectLiveUpdates();
 })();

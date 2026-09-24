@@ -1976,6 +1976,103 @@ textarea:focus {
   margin-top: 18px;
 }
 
+.member-name-field {
+  grid-column: 1 / -1;
+}
+
+.member-edit-field-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.member-edit-field-heading > label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.member-edit-help {
+  position: relative;
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.member-edit-help > summary {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: inherit;
+  background: color-mix(in srgb, var(--panel-strong) 68%, transparent);
+  cursor: pointer;
+  list-style: none;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.member-edit-help > summary::marker,
+.member-edit-help > summary::-webkit-details-marker {
+  display: none;
+}
+
+.member-edit-help > summary:hover,
+.member-edit-help[open] > summary,
+.member-edit-help > summary:focus-visible {
+  color: var(--accent);
+}
+
+.member-edit-help > summary:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.member-edit-help > summary:hover,
+.member-edit-help[open] > summary {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel-strong));
+}
+
+.member-edit-help svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.member-edit-help-card {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(360px, calc(100vw - 48px));
+  padding: 13px 15px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  color: var(--text);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.member-edit-help-card p {
+  margin: 0;
+}
+
+.member-edit-help-card p + p {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
 .member-edit-actions {
   justify-content: flex-end;
 }
@@ -5745,5 +5842,151 @@ dialog::backdrop {
 
   .app-modal-card {
     transform: none !important;
+  }
+}
+
+.admin-calendar-input {
+  font-variant-numeric: tabular-nums;
+}
+
+#admin-calendar-popover {
+  position: fixed;
+  inset: auto;
+  z-index: 1000;
+  width: min(296px, calc(100vw - 16px));
+  max-height: min(440px, calc(100dvh - 16px));
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg) 86%, var(--panel-strong));
+  box-shadow: var(--shadow), 0 16px 40px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+}
+
+#admin-calendar-popover::backdrop {
+  display: none;
+}
+
+.admin-calendar-header {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 36px 32px;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.admin-calendar-month {
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.admin-calendar-nav,
+.admin-calendar-close,
+.admin-calendar-day,
+.admin-calendar-today {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.admin-calendar-nav,
+.admin-calendar-close {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.admin-calendar-nav:hover,
+.admin-calendar-close:hover,
+.admin-calendar-day:hover:not(:disabled),
+.admin-calendar-today:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.admin-calendar-weekdays,
+.admin-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.admin-calendar-weekday {
+  display: grid;
+  min-height: 26px;
+  place-items: center;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.admin-calendar-day {
+  min-height: 34px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-calendar-day.is-outside-month {
+  color: var(--muted);
+  opacity: 0.52;
+}
+
+.admin-calendar-day.is-today {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.admin-calendar-day.is-selected {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+  font-weight: 700;
+  opacity: 1;
+}
+
+.admin-calendar-day:disabled,
+.admin-calendar-today:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.admin-calendar-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.admin-calendar-today {
+  min-height: 32px;
+  padding-inline: 14px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-calendar-nav:focus-visible,
+.admin-calendar-close:focus-visible,
+.admin-calendar-day:focus-visible,
+.admin-calendar-today:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (max-width: 640px) {
+  .admin-calendar-input {
+    font-size: 16px;
   }
 }

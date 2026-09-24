@@ -1,6 +1,7 @@
 import { decryptSecret } from "./crypto";
 import { normalizeLocale, type SupportedLocale } from "./locale";
-import { addDaysToDateKey, zonedDateTimeToIso } from "./time";
+import { addDaysToDateKey, zonedDateTimeToIso, zonedParts } from "./time";
+import { getConfigBundle } from "./db";
 import {
   DEFAULT_VOTE_ELIGIBILITY_THRESHOLDS,
   normalizeVoteEligibilityThresholds,
@@ -84,7 +85,7 @@ export interface AdminDailyVotePage {
 }
 
 export interface DailyVoteConfig {
-  drawMaxWins28Days: number;
+  drawMaxWinsPerMonth: number;
   voteEligibilityEnabled: boolean;
   voteEligibility: VoteEligibilityThresholds;
 }
@@ -99,14 +100,30 @@ export function localDailyDateRange(date: string, timezone: string): {
   };
 }
 
+export function localCalendarMonthRange(date: Date, timezone: string): {
+  key: string;
+  startAt: string;
+  endAt: string;
+} {
+  const { year, month } = zonedParts(date, timezone);
+  const monthStartDate = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-01`;
+  const nextMonthStartDate = new Date(Date.UTC(year, month, 1, 12))
+    .toISOString()
+    .slice(0, 10);
+  return {
+    key: `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`,
+    startAt: zonedDateTimeToIso(monthStartDate, "00:00", timezone),
+    endAt: zonedDateTimeToIso(nextMonthStartDate, "00:00", timezone)
+  };
+}
+
 const LOCALES: SupportedLocale[] = ["zh-cn", "zh-tw", "en", "fr", "ja"];
 const MAX_CONTENT_BYTES = 240_000;
 const DEFAULT_DAILY_VOTE_CONFIG: DailyVoteConfig = {
-  drawMaxWins28Days: 4,
+  drawMaxWinsPerMonth: 4,
   voteEligibilityEnabled: true,
   voteEligibility: DEFAULT_VOTE_ELIGIBILITY_THRESHOLDS
 };
-const DRAW_LIMIT_WINDOW_MS = 28 * 24 * 60 * 60 * 1000;
 const DRAW_FINALIZE_LOCK_MS = 10 * 60 * 1000;
 
 function object(value: unknown, field: string): Record<string, unknown> {
@@ -158,9 +175,11 @@ export function normalizeDailyVoteConfig(value: unknown): DailyVoteConfig {
     ? value as Record<string, unknown>
     : {};
   return {
-    drawMaxWins28Days: integer(
-      source.drawMaxWins28Days ?? DEFAULT_DAILY_VOTE_CONFIG.drawMaxWins28Days,
-      "drawMaxWins28Days",
+    drawMaxWinsPerMonth: integer(
+      source.drawMaxWinsPerMonth ??
+        source.drawMaxWins28Days ??
+        DEFAULT_DAILY_VOTE_CONFIG.drawMaxWinsPerMonth,
+      "drawMaxWinsPerMonth",
       0,
       10_000
     ),
@@ -621,7 +640,8 @@ async function finalizeDrawItem(
   env: Env,
   item: DailyVoteItem,
   now: Date,
-  maxWins28Days: number,
+  maxWinsPerMonth: number,
+  monthRange: ReturnType<typeof localCalendarMonthRange>,
   winnerCounts: Map<string, number>
 ): Promise<void> {
   const responses = await responseRows(env, item.id);
@@ -644,7 +664,8 @@ async function finalizeDrawItem(
     }
     const available = responses.filter((row) =>
       !usedIdentityIds.has(row.identity_code_id) &&
-      (!item.drawLimitEnabled || (winnerCounts.get(row.identity_code_id) ?? 0) < maxWins28Days)
+      (!item.drawLimitEnabled ||
+        (winnerCounts.get(row.identity_code_id) ?? 0) < maxWinsPerMonth)
     );
     const selected = selectRandomDrawWinners(
       available,
@@ -660,7 +681,7 @@ async function finalizeDrawItem(
       crypto.randomUUID(), item.id, row.id, row.identity_code_id,
       item.batchNumber, current.length + index + 1, selectedAt
     )));
-    const refreshedCounts = await drawWinnerCountsWithinWindow(env, now);
+    const refreshedCounts = await drawWinnerCountsWithinMonth(env, monthRange);
     winnerCounts.clear();
     for (const [identityCodeId, count] of refreshedCounts) {
       winnerCounts.set(identityCodeId, count);
@@ -668,19 +689,18 @@ async function finalizeDrawItem(
   }
 }
 
-async function drawWinnerCountsWithinWindow(
+async function drawWinnerCountsWithinMonth(
   env: Env,
-  now: Date
+  monthRange: ReturnType<typeof localCalendarMonthRange>
 ): Promise<Map<string, number>> {
-  const windowStart = new Date(now.getTime() - DRAW_LIMIT_WINDOW_MS).toISOString();
   const result = await env.DB.prepare(
     `SELECT identity_code_id, COUNT(*) AS count
      FROM daily_draw_winners
      JOIN daily_vote_items item ON item.id = daily_draw_winners.item_id
      WHERE item.draw_limit_enabled = 1
-       AND selected_at >= ? AND selected_at <= ?
+       AND item.end_at >= ? AND item.end_at < ?
      GROUP BY identity_code_id`
-  ).bind(windowStart, now.toISOString()).all<{
+  ).bind(monthRange.startAt, monthRange.endAt).all<{
     identity_code_id: string;
     count: number;
   }>();
@@ -719,13 +739,19 @@ async function releaseDrawFinalizeLock(env: Env, token: string, now: Date): Prom
 export async function finalizeEndedDraws(
   env: Env,
   now = new Date(),
-  config?: DailyVoteConfig
+  config?: DailyVoteConfig,
+  timezone?: string
 ): Promise<void> {
   const token = crypto.randomUUID();
   if (!(await acquireDrawFinalizeLock(env, token, now))) return;
   try {
-    const dailyVoteConfig = config ?? await getDailyVoteConfig(env);
-    const winnerCounts = await drawWinnerCountsWithinWindow(env, now);
+    const [dailyVoteConfig, adminTimezone] = await Promise.all([
+      config ? Promise.resolve(config) : getDailyVoteConfig(env),
+      timezone
+        ? Promise.resolve(timezone)
+        : getConfigBundle(env).then((bundle) => bundle.campConfig.timezone)
+    ]);
+    const winnerCountsByMonth = new Map<string, Map<string, number>>();
     const ended = await listItems(env, "WHERE kind = 'draw' AND end_at <= ?", [now.toISOString()]);
     ended.sort((left, right) =>
       left.endAt.localeCompare(right.endAt) ||
@@ -734,7 +760,20 @@ export async function finalizeEndedDraws(
       left.id.localeCompare(right.id)
     );
     for (const item of ended) {
-      await finalizeDrawItem(env, item, now, dailyVoteConfig.drawMaxWins28Days, winnerCounts);
+      const monthRange = localCalendarMonthRange(new Date(item.endAt), adminTimezone);
+      let winnerCounts = winnerCountsByMonth.get(monthRange.key);
+      if (!winnerCounts) {
+        winnerCounts = await drawWinnerCountsWithinMonth(env, monthRange);
+        winnerCountsByMonth.set(monthRange.key, winnerCounts);
+      }
+      await finalizeDrawItem(
+        env,
+        item,
+        now,
+        dailyVoteConfig.drawMaxWinsPerMonth,
+        monthRange,
+        winnerCounts
+      );
     }
   } finally {
     await releaseDrawFinalizeLock(env, token, now);
@@ -778,9 +817,10 @@ async function publicItem(
 export async function buildPublicDailyVote(
   env: Env,
   locale: unknown,
-  now = new Date()
+  now = new Date(),
+  timezone?: string
 ): Promise<{ items: PublicDailyVoteItem[]; history: { polls: PublicDailyVoteHistoryItem[]; draws: PublicDailyVoteHistoryItem[] } }> {
-  await finalizeEndedDraws(env, now);
+  await finalizeEndedDraws(env, now, undefined, timezone);
   const all = await listItems(env);
   const active = all.filter((item) => {
     const end = new Date(item.endAt).getTime();
@@ -831,7 +871,7 @@ export async function listAdminDailyVoteItems(
 ): Promise<AdminDailyVotePage> {
   const now = new Date();
   const config = await getDailyVoteConfig(env);
-  await finalizeEndedDraws(env, now, config);
+  await finalizeEndedDraws(env, now, config, options.timezone);
   const nowIso = now.toISOString();
   const clauses: string[] = [];
   const binds: unknown[] = [];
