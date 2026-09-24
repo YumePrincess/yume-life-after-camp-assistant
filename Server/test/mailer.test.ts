@@ -35,6 +35,22 @@ describe("identity email templates", () => {
     }
   });
 
+  it("keeps the shared email card top-aligned without viewport-height spacing", () => {
+    const message = identityMail({
+      locale: "en",
+      approved: true,
+      requestType: "new",
+      applicationNumber: "APP-123",
+      playerName: "Player",
+      code: "ID-456",
+      expiresAt: "2026-09-30"
+    });
+
+    expect(message.html).toContain('valign="top"');
+    expect(message.html).toContain("vertical-align:top");
+    expect(message.html).not.toContain("100vh");
+  });
+
   it("renders recovery mail with the same branded card layout", () => {
     const message = identityRecoveryMail({
       locale: "zh-cn",

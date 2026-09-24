@@ -212,9 +212,9 @@ function renderYumeEmail(input: {
     <title>${escapeHtml(input.title)}</title>
   </head>
   <body bgcolor="#0f172a" style="margin:0;padding:0;background-color:#0f172a;font-family:Arial,'Helvetica Neue',sans-serif;color:#f8fafc;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0f172a" style="width:100%;min-height:100vh;background-color:#0f172a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#0f172a" style="width:100%;background-color:#0f172a;">
       <tr>
-        <td align="center" bgcolor="#0f172a" style="background-color:#0f172a;padding:32px 16px;">
+        <td align="center" valign="top" bgcolor="#0f172a" style="vertical-align:top;background-color:#0f172a;padding:32px 16px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;background-color:#1e293b;border:1px solid #334155;border-radius:20px;overflow:hidden;">
             <tr>
               <td align="center" style="padding:32px 28px 24px;background-color:#172235;">
