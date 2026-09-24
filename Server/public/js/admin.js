@@ -729,6 +729,12 @@
       adminCalendarMonthKey(adminCalendarTodayKey());
     renderAdminCalendar();
     const root = adminCalendar.root;
+    // Modal dialogs make the rest of the document inert. Keep the calendar
+    // inside its owning dialog so its controls remain interactive while that
+    // dialog is open (including when the browser promotes it to the top layer).
+    const ownerDialog = input.closest("dialog");
+    if (ownerDialog) ownerDialog.append(root);
+    else if (root.parentElement !== document.body) document.body.append(root);
     root.hidden = false;
     input.setAttribute("aria-haspopup", "dialog");
     input.setAttribute("aria-controls", root.id);
@@ -845,6 +851,7 @@
       };
 
       root.addEventListener("click", (event) => {
+        event.stopPropagation();
         const target = event.target instanceof Element
           ? event.target.closest("button")
           : null;
@@ -862,10 +869,14 @@
           setAdminCalendarDate(target.dataset.calendarDate);
         }
       });
+      root.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
 
       document.addEventListener("pointerdown", (event) => {
         if (!adminCalendar.nodes?.open) return;
-        if (root.contains(event.target) || event.target === adminCalendar.input) return;
+        const path = event.composedPath();
+        if (path.includes(root) || path.includes(adminCalendar.input)) return;
         closeAdminCalendar(false);
       });
       document.addEventListener("keydown", (event) => {
