@@ -943,6 +943,7 @@ export async function submitReissue(
     applicationNumber: unknown;
     lookupEmail?: unknown;
     email?: unknown;
+    playerName?: unknown;
     locale: unknown;
   }
 ): Promise<{ applicationNumber: string; status: "pending" }> {
@@ -959,8 +960,11 @@ export async function submitReissue(
   ) {
     throw new Error("该申请已被拒绝，请重新申请身份识别码");
   }
-  const email = application.email;
-  const playerName = application.player_name;
+  const email =
+    cleanEmail(input.email, false) || cleanEmail(application.email);
+  const playerName =
+    cleanPlayerName(input.playerName, false) ||
+    cleanPlayerName(application.player_name);
   await assertNoOtherActiveIdentityCode(env, {
     email,
     playerName,

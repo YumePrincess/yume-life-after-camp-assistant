@@ -1529,6 +1529,7 @@ async function handlePublicApi(
           identityCode: body.identityCode,
           applicationNumber: body.applicationNumber,
           lookupEmail: body.lookupEmail,
+          playerName: body.playerName,
           email: body.email,
           locale: body.locale
         });
