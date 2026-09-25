@@ -2540,6 +2540,7 @@ td {
   max-height: min(78vh, 680px);
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 12px;
+  overflow: hidden;
 }
 
 .vote-participants-card.has-subtitle {
@@ -2566,11 +2567,13 @@ td {
   align-content: start;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  max-height: 48vh;
+  max-height: min(60vh, 248px);
+  min-height: 0;
   margin: 0;
   padding: 2px 4px;
   list-style: none;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .vote-participant-name {

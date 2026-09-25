@@ -662,7 +662,10 @@
   function syncDailyFeatureBackButton() {
     const button = byId("back-daily-vote");
     if (!button) return;
-    const visible = state.activeFeature === "vote" && Boolean(state.dailyPanel);
+    // The child panel is rendered from dailyPanel alone. Do not gate its back
+    // button on activeFeature: live refresh/navigation can briefly leave those
+    // state fields out of sync while the child content is already visible.
+    const visible = Boolean(state.dailyPanel);
     button.toggleAttribute("hidden", !visible);
     button.setAttribute("aria-hidden", String(!visible));
   }
