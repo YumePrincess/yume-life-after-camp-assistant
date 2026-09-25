@@ -164,7 +164,8 @@ export function formatUtcOffsetTimestamp(value: string | Date, timezone: string)
   if (!Number.isFinite(date.getTime())) return String(value);
   const parts = zonedParts(date, timezone);
   const normalizedTimezone = normalizeUtcTimezone(timezone, date);
-  return `${dateKey(parts)} ${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} (${normalizedTimezone})`;
+  const calendarDate = `${String(parts.year).padStart(4, "0")}/${String(parts.month).padStart(2, "0")}/${String(parts.day).padStart(2, "0")}`;
+  return `${calendarDate} ${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} (${normalizedTimezone})`;
 }
 
 /** Preserve the displayed wall-clock value when a fixed site offset changes. */

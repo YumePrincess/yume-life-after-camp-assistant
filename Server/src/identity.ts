@@ -28,7 +28,7 @@ import {
 } from "./identity-code-utils";
 import { getConfigBundle } from "./db";
 import {
-  dateAtUtcOffset,
+  formatUtcOffsetTimestamp,
   isWithinDailyClockWindow,
   nextTechnologyTargetDate
 } from "./time";
@@ -189,24 +189,11 @@ async function currentVoteInvalidations(
 async function localizedExpiry(
   env: Env,
   value: string | null | undefined,
-  locale: SupportedLocale
+  _locale: SupportedLocale
 ): Promise<string | null> {
   if (!value) return null;
   const bundle = await getConfigBundle(env);
-  return new Intl.DateTimeFormat(
-    {
-      "zh-cn": "zh-CN",
-      "zh-tw": "zh-TW",
-      en: "en",
-      fr: "fr",
-      ja: "ja"
-    }[locale],
-    {
-      timeZone: "UTC",
-      dateStyle: "long",
-      timeStyle: "short"
-    }
-    ).format(dateAtUtcOffset(new Date(value), bundle.campConfig.timezone));
+  return formatUtcOffsetTimestamp(new Date(value), bundle.campConfig.timezone);
 }
 
 function uuid(): string {

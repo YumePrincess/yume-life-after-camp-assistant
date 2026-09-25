@@ -439,28 +439,30 @@
 
   function formatDate(value, displayValue) {
     if (!value) return "—";
-    if (typeof displayValue === "string" && displayValue) return displayValue;
-    const locale = {
-      "zh-cn": "zh-CN",
-      "zh-tw": "zh-TW",
-      en: "en",
-      fr: "fr",
-      ja: "ja"
-    }[window.MrzhI18n.language()] || "zh-CN";
-    return window.MrzhTimezone.format(new Date(value), locale, {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    }, configuredTimezone());
+    if (typeof displayValue === "string" && displayValue) {
+      return normalizeTimestampDateSeparator(displayValue);
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    const timezone = configuredTimezone();
+    const parts = window.MrzhTimezone.parts(date, timezone);
+    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second} (${timezone})`;
+  }
+
+  function normalizeTimestampDateSeparator(value) {
+    return String(value || "").replace(/^(\d{4})-(\d{2})-(\d{2})(?=\s)/, "$1/$2/$3");
   }
 
   function withoutTimezoneSuffix(value) {
     const text = String(value || "");
-    const match = text.match(/\s+\((UTC(?:[+-]\d{2}:\d{2})?)\)\s*$/i);
+    const match = text.match(
+      /(?:[\s\u00a0]*[（(]\s*(UTC(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?)\s*[）)]|[\s\u00a0]+(UTC(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?))\s*$/i
+    );
     return match
-      ? { value: text.slice(0, match.index).trimEnd(), timezone: match[1] }
+      ? {
+          value: text.slice(0, match.index).trimEnd(),
+          timezone: (match[1] || match[2]).replace(/\s+/g, "")
+        }
       : { value: text, timezone: "" };
   }
 
@@ -1942,8 +1944,8 @@
         "daily-vote-admin-meta",
         window.MrzhI18n.format(
           item.kind === "draw"
-            ? "开放 {start} · 截止 {end} · 批次号 {batchNumber}"
-            : "开放 {start} · 截止 {end}",
+            ? "开放 {start} - {end} · 批次号 {batchNumber}"
+            : "开放 {start} - {end}",
           {
             start: startAt.value,
             end: `${endAt.value} (${endAt.timezone || startAt.timezone || configuredTimezone()})`,

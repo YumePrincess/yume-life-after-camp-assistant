@@ -226,8 +226,8 @@
       "已超时": "Timed out",
       "已跳过": "Skipped",
       "共 {count} 人投票 · 截止 {closesAt}": "{count} voters · closes {closesAt}",
-      "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
-        "Open {opensAt}–{closesAt} {timezone} · {count} voters",
+      "开放时间 {opensAt} - {closesAt} ({timezone}) · 共 {count} 人投票":
+        "Open {opensAt} - {closesAt} ({timezone}) · {count} voters",
       "当前可投票": "Voting is open",
       "当前未开放": "Voting is closed",
       "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。":
@@ -593,8 +593,8 @@
       "已超时": "Expirée",
       "已跳过": "Ignorée",
       "共 {count} 人投票 · 截止 {closesAt}": "{count} votants · clôture {closesAt}",
-      "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
-        "Ouvert de {opensAt} à {closesAt} {timezone} · {count} votants",
+      "开放时间 {opensAt} - {closesAt} ({timezone}) · 共 {count} 人投票":
+        "Ouvert {opensAt} - {closesAt} ({timezone}) · {count} votants",
       "当前可投票": "Le vote est ouvert",
       "当前未开放": "Le vote est fermé",
       "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。":
@@ -963,8 +963,8 @@
       "已超时": "タイムアウト",
       "已跳过": "スキップ",
       "共 {count} 人投票 · 截止 {closesAt}": "{count}人が投票 · 締切 {closesAt}",
-      "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
-        "受付時間 {opensAt}～{closesAt} {timezone} · {count}人が投票",
+      "开放时间 {opensAt} - {closesAt} ({timezone}) · 共 {count} 人投票":
+        "受付時間 {opensAt} - {closesAt} ({timezone}) · {count}人が投票",
       "当前可投票": "現在投票できます",
       "当前未开放": "現在は受付時間外です",
       "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。":
@@ -1326,8 +1326,8 @@
       "已超时": "已逾時",
       "已跳过": "已跳過",
       "共 {count} 人投票 · 截止 {closesAt}": "共 {count} 人投票 · 截止 {closesAt}",
-      "开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票":
-        "開放時間 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票",
+      "开放时间 {opensAt} - {closesAt} ({timezone}) · 共 {count} 人投票":
+        "開放時間 {opensAt} - {closesAt} ({timezone}) · 共 {count} 人投票",
       "当前可投票": "目前可投票",
       "当前未开放": "目前未開放",
       "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。":
@@ -1753,7 +1753,7 @@
       "抽签事项": "Draw",
       "抽签": "Draw",
       "提交抽签": "Enter draw",
-      "开放 {start} · 截止 {end}": "Open {start} · closes {end}",
+      "开放 {start} - {end}": "Open {start} - {end}",
       "投票时间 {start} - {end} ({timezone})": "Vote time {start} - {end} ({timezone})",
       "投票截止时间 {end} ({timezone})": "Voting closes {end} ({timezone})",
       "参与 {count} 人": "Participants: {count}",
@@ -1808,7 +1808,7 @@
       "抽签事项": "Tirage",
       "抽签": "Tirage",
       "提交抽签": "Participer au tirage",
-      "开放 {start} · 截止 {end}": "Ouvert {start} · clôture {end}",
+      "开放 {start} - {end}": "Ouvert {start} - {end}",
       "投票时间 {start} - {end} ({timezone})": "Période du vote {start} - {end} ({timezone})",
       "投票截止时间 {end} ({timezone})": "Clôture du vote : {end} ({timezone})",
       "参与 {count} 人": "Participants : {count}",
@@ -1862,7 +1862,7 @@
       "抽签事项": "抽選項目",
       "抽签": "抽選",
       "提交抽签": "抽選に応募",
-      "开放 {start} · 截止 {end}": "開始 {start} · 締切 {end}",
+      "开放 {start} - {end}": "開始 {start} - {end}",
       "投票时间 {start} - {end} ({timezone})": "投票時間 {start} - {end} ({timezone})",
       "投票截止时间 {end} ({timezone})": "投票締切 {end} ({timezone})",
       "参与 {count} 人": "参加者：{count}人",
@@ -1916,7 +1916,7 @@
       "抽签事项": "抽籤事項",
       "抽签": "抽籤",
       "提交抽签": "提交抽籤",
-      "开放 {start} · 截止 {end}": "開放 {start} · 截止 {end}",
+      "开放 {start} - {end}": "開放 {start} - {end}",
       "投票时间 {start} - {end} ({timezone})": "投票時間 {start} - {end} ({timezone})",
       "投票截止时间 {end} ({timezone})": "投票截止時間 {end} ({timezone})",
       "参与 {count} 人": "參與人數：{count}",
@@ -2047,7 +2047,7 @@
       "按抽签截止（结算）日所在月份统计，从当月1日计算至下月1日（后台时区）。": "Counts by the calendar month containing the draw's closing (settlement) date, using the admin timezone.",
       "保存抽签配置": "Save draw settings",
       "抽签配置已保存": "Draw settings saved",
-      "开放 {start} · 截止 {end} · 批次号 {batchNumber}": "Open {start} · closes {end} · batch {batchNumber}",
+      "开放 {start} - {end} · 批次号 {batchNumber}": "Open {start} - {end} · batch {batchNumber}",
       "提前显示数值": "Lead-time value",
       "提前显示单位": "Lead-time unit",
       "分钟": "Minutes",
@@ -2112,7 +2112,7 @@
       "按抽签截止（结算）日所在月份统计，从当月1日计算至下月1日（后台时区）。": "Comptage selon le mois calendaire de la date de clôture (tirage) dans le fuseau horaire de l’administration.",
       "保存抽签配置": "Enregistrer les paramètres du tirage",
       "抽签配置已保存": "Paramètres du tirage enregistrés",
-      "开放 {start} · 截止 {end} · 批次号 {batchNumber}": "Ouverture {start} · clôture {end} · lot {batchNumber}",
+      "开放 {start} - {end} · 批次号 {batchNumber}": "Ouverture {start} - {end} · lot {batchNumber}",
       "提前显示数值": "Valeur d’anticipation",
       "提前显示单位": "Unité d’anticipation",
       "分钟": "Minutes",
@@ -2170,7 +2170,7 @@
       "按抽签截止（结算）日所在月份统计，从当月1日计算至下月1日（后台时区）。": "抽選の締切（確定）日が属する月で集計します。管理画面のタイムゾーンを使用します。",
       "保存抽签配置": "抽選設定を保存",
       "抽签配置已保存": "抽選設定を保存しました",
-      "开放 {start} · 截止 {end} · 批次号 {batchNumber}": "開始 {start} · 締切 {end} · バッチ {batchNumber}",
+      "开放 {start} - {end} · 批次号 {batchNumber}": "開始 {start} - {end} · バッチ {batchNumber}",
       "提前显示数值": "事前表示値",
       "提前显示单位": "事前表示単位",
       "分钟": "分",
@@ -2228,7 +2228,7 @@
       "按抽签截止（结算）日所在月份统计，从当月1日计算至下月1日（后台时区）。": "依抽籤截止（結算）日所屬月份統計，使用管理後台時區。",
       "保存抽签配置": "儲存抽籤設定",
       "抽签配置已保存": "抽籤設定已儲存",
-      "开放 {start} · 截止 {end} · 批次号 {batchNumber}": "開放 {start} · 截止 {end} · 批次號 {batchNumber}",
+      "开放 {start} - {end} · 批次号 {batchNumber}": "開放 {start} - {end} · 批次號 {batchNumber}",
       "提前显示数值": "提前顯示數值",
       "提前显示单位": "提前顯示單位",
       "分钟": "分鐘",

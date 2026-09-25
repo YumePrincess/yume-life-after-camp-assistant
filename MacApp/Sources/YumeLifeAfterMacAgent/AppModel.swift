@@ -109,10 +109,10 @@ final class AppModel: ObservableObject {
         guard let date = Self.parseTimestamp(value) else { return value }
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = locale
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = Self.timeZone(for: timezone) ?? .current
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss zzz"
-        return formatter.string(from: date)
+        formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"
+        return "\(formatter.string(from: date)) (\(timezone))"
     }
 
     static func normalizeTimezone(_ value: String) -> String {

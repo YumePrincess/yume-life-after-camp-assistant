@@ -1178,11 +1178,11 @@
     );
     setText(
       "vote-deadline",
-      window.MrzhI18n.format("开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票", {
+      window.MrzhI18n.format("开放时间 {opensAt} - {closesAt} ({timezone}) · 共 {count} 人投票", {
         count: summary.ballotCount || 0,
         opensAt: opensAt.value,
         closesAt: closesAt.value,
-        timezone: opensAt.timezone || closesAt.timezone || summary.timezone || ""
+        timezone: opensAt.timezone || closesAt.timezone || summary.timezone || configuredTimezone()
       })
     );
     const voteLimit = configuredVoteLimit(summary);
@@ -1991,26 +1991,21 @@
 
   function formatDate(value, displayValue) {
     if (!value) return "—";
-    if (typeof displayValue === "string" && displayValue) return displayValue;
-    const locale = {
-      "zh-cn": "zh-CN",
-      "zh-tw": "zh-TW",
-      en: "en",
-      fr: "fr",
-      ja: "ja"
-    }[window.MrzhI18n.language()] || "zh-CN";
-    return window.MrzhTimezone.format(new Date(value), locale, {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23"
-    }, configuredTimezone());
+    if (typeof displayValue === "string" && displayValue) {
+      return normalizeTimestampDateSeparator(displayValue);
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    const timezone = configuredTimezone();
+    const parts = window.MrzhTimezone.parts(date, timezone);
+    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second} (${timezone})`;
   }
 
   function formatVoteDateTime(value, displayValue) {
     if (!value) return "—";
-    if (typeof displayValue === "string" && displayValue) return displayValue;
+    if (typeof displayValue === "string" && displayValue) {
+      return normalizeTimestampDateSeparator(displayValue);
+    }
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
     try {
@@ -2023,10 +2018,19 @@
 
   function splitTimezoneSuffix(value) {
     const text = String(value || "");
-    const match = text.match(/\s+\((UTC(?:[+-]\d{2}:\d{2})?)\)\s*$/i);
+    const match = text.match(
+      /(?:[\s\u00a0]*[（(]\s*(UTC(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?)\s*[）)]|[\s\u00a0]+(UTC(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?))\s*$/i
+    );
     return match
-      ? { value: text.slice(0, match.index).trimEnd(), timezone: match[1] }
+      ? {
+          value: text.slice(0, match.index).trimEnd(),
+          timezone: (match[1] || match[2]).replace(/\s+/g, "")
+        }
       : { value: text, timezone: "" };
+  }
+
+  function normalizeTimestampDateSeparator(value) {
+    return String(value || "").replace(/^(\d{4})-(\d{2})-(\d{2})(?=\s)/, "$1/$2/$3");
   }
 
   function formatIdentityExpiry(value, timezone, displayValue) {
