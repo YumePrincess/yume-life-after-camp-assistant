@@ -5199,7 +5199,15 @@
             : form.elements.identityExpiresAt.value
         })
       });
-      setText("manual-identity-feedback", `已生成：${result.code}`);
+      await showAppAlert(
+        `识别码：${result.code}\n初始密码：${result.initialPassword || "未返回"}\n请及时保存；关闭后不会再次显示。`,
+        {
+          eyebrow: "IDENTITY CODE",
+          title: "人工发行完成",
+          confirmLabel: "我已保存"
+        }
+      );
+      setText("manual-identity-feedback", "识别码已生成，请查看弹窗中的识别码和初始密码。");
       await loadIdentityCodes(1);
     } catch (error) {
       setText("manual-identity-feedback", error.message);

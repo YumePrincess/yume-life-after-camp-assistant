@@ -1313,10 +1313,31 @@ h2 {
 }
 
 .daily-history-result-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   font: inherit;
   cursor: pointer;
   background: rgba(255, 255, 255, 0.025);
   text-align: left;
+}
+
+.daily-vote-option-content,
+.daily-history-option-content {
+  display: grid;
+  min-width: 0;
+  width: 100%;
+  gap: 5px;
+}
+
+.daily-history-result-button > .daily-history-option-content {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.daily-history-result-button > .daily-history-result-count {
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .daily-vote-options {
@@ -1325,10 +1346,10 @@ h2 {
 }
 
 .daily-vote-option {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   width: 100%;
-  align-items: center;
-  justify-content: space-between;
+  align-items: start;
   gap: 14px;
   padding: 11px 13px;
   border: 1px solid var(--line);
@@ -1350,9 +1371,11 @@ h2 {
   white-space: nowrap;
 }
 
-.daily-rich-image {
+.highlight-image.daily-rich-image {
   margin: 0;
   max-width: min(100%, 520px);
+  height: auto;
+  aspect-ratio: 16 / 10;
 }
 
 .daily-rich-text {
@@ -1857,7 +1880,8 @@ textarea:focus {
   position: relative;
   display: grid;
   width: 100%;
-  height: clamp(140px, 26vw, 320px);
+  height: auto;
+  aspect-ratio: 16 / 10;
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--line);

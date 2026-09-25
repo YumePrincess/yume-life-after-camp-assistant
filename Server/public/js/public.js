@@ -1515,7 +1515,7 @@
         const button = create("button", `daily-vote-option${selected.has(option.id) ? " is-selected" : ""}${alreadyParticipated ? " is-participated" : ""}`);
         button.type = "button";
         button.disabled = item.isOpen === false;
-        const content = create("span", "daily-vote-option-content");
+        const content = create("div", "daily-vote-option-content");
         renderRichBlocks(content, option.blocks, window.MrzhI18n.t("未命名选项"));
         button.append(content, create("strong", "daily-vote-option-count", window.MrzhI18n.format("{count} 票", {
           count: option.votes || 0
@@ -1684,8 +1684,12 @@
           for (const option of item.options || []) {
             const optionText = create("button", "daily-history-result daily-history-result-button");
             optionText.type = "button";
-            renderRichBlocks(optionText, option.blocks);
-            optionText.append(create("strong", "daily-history-result-count", window.MrzhI18n.format("{count} 票", { count: option.votes || 0 })));
+            const optionContent = create("div", "daily-history-option-content");
+            renderRichBlocks(optionContent, option.blocks);
+            optionText.append(
+              optionContent,
+              create("strong", "daily-history-result-count", window.MrzhI18n.format("{count} 票", { count: option.votes || 0 }))
+            );
             optionText.addEventListener("click", () => void openVoteParticipants({
               kind: "daily-poll",
               title: window.MrzhI18n.t("投票人名单"),
