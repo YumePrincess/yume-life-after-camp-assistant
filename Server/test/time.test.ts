@@ -89,10 +89,10 @@ describe("UTC offset display fields", () => {
     };
     expect(withTimestampDisplayFields(source, "UTC+08:00")).toEqual({
       startAt: "2026-09-25T22:14:00.000Z",
-      startAtDisplay: "2026/09/26 06:14 (UTC+08:00)",
+      startAtDisplay: "2026/09/26 06:14 (UTC+8)",
       nested: [{
         created_at: "2026-09-25T22:15:00.000Z",
-        created_at_display: "2026/09/26 06:15 (UTC+08:00)"
+        created_at_display: "2026/09/26 06:15 (UTC+8)"
       }]
     });
   });
@@ -101,8 +101,15 @@ describe("UTC offset display fields", () => {
     const before = "2026-09-25T22:00:00.000Z";
     const after = rebaseTimestampToTimezone(before, "UTC+08:00", "UTC+10:00");
     expect(after).toBe("2026-09-25T20:00:00.000Z");
-    expect(formatUtcOffsetTimestamp(before, "UTC+08:00")).toBe("2026/09/26 06:00 (UTC+08:00)");
-    expect(formatUtcOffsetTimestamp(after, "UTC+10:00")).toBe("2026/09/26 06:00 (UTC+10:00)");
+    expect(formatUtcOffsetTimestamp(before, "UTC+08:00")).toBe("2026/09/26 06:00 (UTC+8)");
+    expect(formatUtcOffsetTimestamp(after, "UTC+10:00")).toBe("2026/09/26 06:00 (UTC+10)");
+  });
+
+  it("keeps minute offsets padded while compacting whole-hour labels", () => {
+    expect(formatUtcOffsetTimestamp("2026-09-25T22:15:00.000Z", "UTC+08:45"))
+      .toBe("2026/09/26 07:00 (UTC+08:45)");
+    expect(formatUtcOffsetTimestamp("2026-09-25T22:15:00.000Z", "UTC-05:00"))
+      .toBe("2026/09/25 17:15 (UTC-5)");
   });
 
   it("rebases future items by the source offset at their scheduled date", () => {

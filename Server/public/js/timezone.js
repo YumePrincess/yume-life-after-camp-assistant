@@ -61,5 +61,15 @@
     }).format(utcDate);
   }
 
-  window.MrzhTimezone = Object.freeze({ offsetMinutes, parts, format });
+  function label(timezone = "UTC+08:00", referenceDate = new Date()) {
+    const total = offsetMinutes(timezone, referenceDate);
+    const sign = total < 0 ? "-" : "+";
+    const absolute = Math.abs(total);
+    const hours = Math.floor(absolute / 60);
+    const minutes = absolute % 60;
+    if (minutes === 0) return `UTC${sign}${hours}`;
+    return `UTC${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+
+  window.MrzhTimezone = Object.freeze({ offsetMinutes, parts, format, label });
 })();

@@ -1182,7 +1182,7 @@
         count: summary.ballotCount || 0,
         opensAt: opensAt.value,
         closesAt: closesAt.value,
-        timezone: opensAt.timezone || closesAt.timezone || summary.timezone || configuredTimezone()
+        timezone: formatTimezoneLabel(opensAt.timezone || closesAt.timezone || summary.timezone || configuredTimezone())
       })
     );
     const voteLimit = configuredVoteLimit(summary);
@@ -1493,7 +1493,7 @@
         {
           start: startAt.value,
           end: endAt.value,
-          timezone: startAt.timezone || endAt.timezone || configuredTimezone()
+          timezone: formatTimezoneLabel(startAt.timezone || endAt.timezone || configuredTimezone())
         }
       ))
     );
@@ -1656,7 +1656,7 @@
           "投票截止时间 {end} ({timezone})",
           {
             end: endAt.value,
-            timezone: endAt.timezone || configuredTimezone()
+            timezone: formatTimezoneLabel(endAt.timezone || configuredTimezone())
           }
         )));
         const participantRow = create("div", "daily-history-participant-row");
@@ -1998,7 +1998,7 @@
     if (Number.isNaN(date.getTime())) return "—";
     const timezone = configuredTimezone();
     const parts = window.MrzhTimezone.parts(date, timezone);
-    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second} (${timezone})`;
+    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second} (${formatTimezoneLabel(timezone)})`;
   }
 
   function formatVoteDateTime(value, displayValue) {
@@ -2030,7 +2030,19 @@
   }
 
   function normalizeTimestampDateSeparator(value) {
-    return String(value || "").replace(/^(\d{4})-(\d{2})-(\d{2})(?=\s)/, "$1/$2/$3");
+    const text = String(value || "").replace(/^(\d{4})-(\d{2})-(\d{2})(?=\s)/, "$1/$2/$3");
+    const suffix = splitTimezoneSuffix(text);
+    return suffix.timezone
+      ? `${suffix.value} (${formatTimezoneLabel(suffix.timezone)})`
+      : text;
+  }
+
+  function formatTimezoneLabel(value) {
+    try {
+      return window.MrzhTimezone.label(value || configuredTimezone());
+    } catch (_) {
+      return value || configuredTimezone();
+    }
   }
 
   function formatIdentityExpiry(value, timezone, displayValue) {
@@ -2052,7 +2064,7 @@
       minute: "2-digit",
       hourCycle: "h23"
     }, source);
-    return `${formatted} (${source})`;
+    return `${formatted} (${formatTimezoneLabel(source)})`;
   }
 
   function configuredTimezone() {

@@ -446,11 +446,22 @@
     if (Number.isNaN(date.getTime())) return "—";
     const timezone = configuredTimezone();
     const parts = window.MrzhTimezone.parts(date, timezone);
-    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second} (${timezone})`;
+    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second} (${formatTimezoneLabel(timezone)})`;
   }
 
   function normalizeTimestampDateSeparator(value) {
-    return String(value || "").replace(/^(\d{4})-(\d{2})-(\d{2})(?=\s)/, "$1/$2/$3");
+    const text = String(value || "").replace(/^(\d{4})-(\d{2})-(\d{2})(?=\s)/, "$1/$2/$3");
+    const suffix = text.match(/(?:[\s\u00a0]*[（(]\s*(UTC(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?|GMT(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?)\s*[）)]|[\s\u00a0]+(UTC(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?|GMT(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?))\s*$/i);
+    if (!suffix) return text;
+    return `${text.slice(0, suffix.index).trimEnd()} (${formatTimezoneLabel(suffix[1] || suffix[2])})`;
+  }
+
+  function formatTimezoneLabel(value) {
+    try {
+      return window.MrzhTimezone.label(value || configuredTimezone());
+    } catch (_) {
+      return value || configuredTimezone();
+    }
   }
 
   function withoutTimezoneSuffix(value) {
@@ -487,7 +498,7 @@
       minute: "2-digit",
       hourCycle: "h23"
     }, timezone);
-    return `${formatted} (${timezone})`;
+    return `${formatted} (${formatTimezoneLabel(timezone)})`;
   }
 
   function formatVoteDate(value, displayValue) {
@@ -1948,7 +1959,7 @@
             : "开放 {start} - {end}",
           {
             start: startAt.value,
-            end: `${endAt.value} (${endAt.timezone || startAt.timezone || configuredTimezone()})`,
+            end: `${endAt.value} (${formatTimezoneLabel(endAt.timezone || startAt.timezone || configuredTimezone())})`,
             batchNumber: item.batchNumber || "0"
           }
         )

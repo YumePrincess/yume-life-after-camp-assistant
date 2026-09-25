@@ -77,6 +77,17 @@ export function normalizeUtcTimezone(timezone: string, date = new Date()): strin
   return `UTC${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
 }
 
+/** Compact whole-hour offsets for display without changing canonical config values. */
+export function formatUtcTimezoneLabel(timezone: string, date = new Date()): string {
+  const total = utcOffsetMinutes(timezone, date);
+  const sign = total < 0 ? "-" : "+";
+  const absolute = Math.abs(total);
+  const hours = Math.floor(absolute / 60);
+  const minutes = absolute % 60;
+  if (minutes === 0) return `UTC${sign}${hours}`;
+  return `UTC${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
 export function assertTimezone(timezone: string): void {
   utcOffsetMinutes(timezone);
 }
@@ -163,9 +174,9 @@ export function formatUtcOffsetTimestamp(value: string | Date, timezone: string)
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return String(value);
   const parts = zonedParts(date, timezone);
-  const normalizedTimezone = normalizeUtcTimezone(timezone, date);
+  const timezoneLabel = formatUtcTimezoneLabel(timezone, date);
   const calendarDate = `${String(parts.year).padStart(4, "0")}/${String(parts.month).padStart(2, "0")}/${String(parts.day).padStart(2, "0")}`;
-  return `${calendarDate} ${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} (${normalizedTimezone})`;
+  return `${calendarDate} ${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} (${timezoneLabel})`;
 }
 
 /** Preserve the displayed wall-clock value when a fixed site offset changes. */

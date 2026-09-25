@@ -112,7 +112,18 @@ final class AppModel: ObservableObject {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = Self.timeZone(for: timezone) ?? .current
         formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"
-        return "\(formatter.string(from: date)) (\(timezone))"
+        return "\(formatter.string(from: date)) (\(Self.displayTimezoneLabel(timezone)))"
+    }
+
+    private static func displayTimezoneLabel(_ value: String) -> String {
+        guard let seconds = timezoneOffsetSeconds(value) else { return value }
+        let minutes = seconds / 60
+        let sign = minutes < 0 ? "-" : "+"
+        let absolute = abs(minutes)
+        if absolute % 60 == 0 {
+            return "UTC\(sign)\(absolute / 60)"
+        }
+        return String(format: "UTC%@%02d:%02d", sign, absolute / 60, absolute % 60)
     }
 
     static func normalizeTimezone(_ value: String) -> String {
