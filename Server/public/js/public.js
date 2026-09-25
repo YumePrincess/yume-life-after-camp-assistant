@@ -962,6 +962,7 @@
   async function openVoteParticipants({
     kind,
     title = "投票人名单",
+    subtitle = "",
     pollDate = "",
     optionKey = "",
     itemId = "",
@@ -981,6 +982,10 @@
     const list = byId("vote-participants-list");
     list.replaceChildren();
     setText("vote-participants-title", title);
+    const subtitleElement = byId("vote-participants-subtitle");
+    subtitleElement.textContent = subtitle;
+    subtitleElement.hidden = !subtitle;
+    dialog.querySelector(".vote-participants-card")?.classList.toggle("has-subtitle", Boolean(subtitle));
     setText("vote-participants-status", "");
     if (!dialog.open) dialog.showModal();
     const progressToken = showOperationProgress("DAILY VOTING");
@@ -1350,7 +1355,8 @@
           slot.setAttribute("aria-label", window.MrzhI18n.format("查看 {name} 的投票人名单", { name: option.name }));
           const open = () => void openVoteParticipants({
             kind: "technology",
-            title: window.MrzhI18n.format("{name} · 投票人名单", { name: option.name }),
+            title: window.MrzhI18n.t("投票人名单"),
+            subtitle: option.name,
             pollDate: summary.pollDate,
             optionKey: option.key,
             requiresIdentity
@@ -1464,6 +1470,15 @@
     return window.MrzhI18n.t(kind === "draw" ? "抽签事项" : "投票事项");
   }
 
+  function dailyOptionLabel(option) {
+    const text = (option?.blocks || [])
+      .filter((block) => block?.type === "text")
+      .map((block) => String(block.text || "").trim())
+      .filter(Boolean)
+      .join(" ");
+    return text || window.MrzhI18n.t("图片选项");
+  }
+
   function dailySelections(itemId) {
     const values = state.dailySelections[itemId];
     return Array.isArray(values) ? values : [];
@@ -1525,6 +1540,7 @@
             void openVoteParticipants({
               kind: "daily-poll",
               title: window.MrzhI18n.t("投票人名单"),
+              subtitle: dailyOptionLabel(option),
               itemId: item.id,
               optionId: option.id,
               requiresIdentity: true
@@ -1600,10 +1616,10 @@
       card.append(create("strong", "daily-history-card-title", item.pollDate));
       const fixedTechnologies = Array.isArray(item.fixedTechnologies) ? item.fixedTechnologies : [];
       const hasRecords = Number(item.ballotCount || 0) > 0 || fixedTechnologies.length > 0;
+      const preview = create("div", "vote-selection-preview daily-history-selection-preview");
+      renderVoteSelection(item, preview, true, false);
+      card.append(preview);
       if (hasRecords) {
-        const preview = create("div", "vote-selection-preview daily-history-selection-preview");
-        renderVoteSelection(item, preview, true, false);
-        card.append(preview);
         const fixedKeys = new Set(fixedTechnologies.map((fixed) => fixed.key));
         const result = create("div", "daily-history-result-list");
         for (const tech of (item.options || []).filter((option) => Number(option.votes) > 0)) {
@@ -1615,7 +1631,8 @@
           resultButton.type = "button";
           resultButton.addEventListener("click", () => void openVoteParticipants({
             kind: "technology",
-            title: window.MrzhI18n.format("{name} · 投票人名单", { name: tech.name }),
+            title: window.MrzhI18n.t("投票人名单"),
+            subtitle: tech.name,
             pollDate: item.pollDate,
             optionKey: tech.key
           }));
@@ -1685,7 +1702,7 @@
             const optionText = create("button", "daily-history-result daily-history-result-button");
             optionText.type = "button";
             const optionContent = create("div", "daily-history-option-content");
-            renderRichBlocks(optionContent, option.blocks);
+            optionContent.append(create("p", "daily-rich-text", dailyOptionLabel(option)));
             optionText.append(
               optionContent,
               create("strong", "daily-history-result-count", window.MrzhI18n.format("{count} 票", { count: option.votes || 0 }))
@@ -1693,6 +1710,7 @@
             optionText.addEventListener("click", () => void openVoteParticipants({
               kind: "daily-poll",
               title: window.MrzhI18n.t("投票人名单"),
+              subtitle: dailyOptionLabel(option),
               itemId: item.id,
               optionId: option.id
             }));

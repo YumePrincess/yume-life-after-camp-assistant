@@ -2542,10 +2542,23 @@ td {
   gap: 12px;
 }
 
+.vote-participants-card.has-subtitle {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
 .vote-participants-card .eyebrow,
 .vote-participants-card h2,
+.vote-participants-card .vote-participants-subtitle,
 .vote-participants-card > p {
   margin: 0;
+}
+
+.vote-participants-card .vote-participants-subtitle {
+  color: var(--text);
+  font-size: calc(clamp(23px, 3vw, 31px) - 4px);
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
 }
 
 .vote-participants-list {
