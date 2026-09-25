@@ -2259,6 +2259,23 @@ td {
   min-width: 980px;
 }
 
+.identity-code-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.identity-codes-table {
+  width: max-content;
+  min-width: max(100%, 980px);
+  table-layout: auto;
+}
+
+.identity-codes-table th,
+.identity-codes-table td {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
 .run-history-table .run-actions-heading,
 .run-history-table .run-actions {
   position: sticky;
