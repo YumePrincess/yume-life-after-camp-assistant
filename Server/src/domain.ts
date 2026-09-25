@@ -172,6 +172,8 @@ export interface VoteSummary {
   pollDate: string;
   opensAt: string;
   closesAt: string;
+  opensAtDisplay?: string;
+  closesAtDisplay?: string;
   isOpen: boolean;
   timezone: string;
   voteLimit: number;

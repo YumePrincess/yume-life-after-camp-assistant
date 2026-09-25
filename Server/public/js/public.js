@@ -172,7 +172,11 @@
       setText("identity-account-email", session.email || window.MrzhI18n.t("未绑定邮箱"));
       setText(
         "identity-account-expiry",
-        session.expiresAt ? formatIdentityExpiry(session.expiresAt, configuredTimezone()) : window.MrzhI18n.t("永久有效")
+        session.expiresAt ? formatIdentityExpiry(
+          session.expiresAt,
+          configuredTimezone(),
+          session.expiresAtDisplay
+        ) : window.MrzhI18n.t("永久有效")
       );
       const codeInput = byId("identity-reset-code");
       if (codeInput && !codeInput.value) codeInput.value = session.identityCode;
@@ -235,7 +239,11 @@
         ? window.MrzhI18n.format("剩余 {count} 次", { count: formatEligibilityNumber(override.votesRemaining) })
         : override.expiresAt
           ? window.MrzhI18n.format("有效至 {date}", {
-              date: formatIdentityExpiry(override.expiresAt, configuredTimezone())
+              date: formatIdentityExpiry(
+                override.expiresAt,
+                configuredTimezone(),
+                override.expiresAtDisplay
+              )
             })
           : "";
       if (value) {
@@ -761,11 +769,10 @@
 
   function identityExpiryLabel(value) {
     const expiry = value
-      ? new Intl.DateTimeFormat(window.MrzhI18n.language(), {
-          timeZone: configuredTimezone(),
+      ? window.MrzhTimezone.format(new Date(value), window.MrzhI18n.language(), {
           dateStyle: "long",
           timeStyle: "short"
-        }).format(new Date(value))
+        }, configuredTimezone())
       : window.MrzhI18n.t("永久有效");
     return window.MrzhI18n.format("识别码有效期：{date}", { date: expiry });
   }
@@ -1031,6 +1038,7 @@
       contribution_sync: "更新贡献",
       inactivity_sync: "更新斩杀预警",
       member_profile_sync: "更新成员资料",
+      weekly_activity_sync: "更新周活跃点",
       member_sync: "成员同步",
       patrol: "营地巡逻"
     }[value];
@@ -1166,9 +1174,11 @@
       "vote-deadline",
       window.MrzhI18n.format("开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票", {
         count: summary.ballotCount || 0,
-        opensAt: summary.opensAt || "--",
-        closesAt: summary.closesAt || "--",
-        timezone: summary.timezone || ""
+        opensAt: summary.opensAtDisplay || summary.opensAt || "--",
+        closesAt: summary.closesAtDisplay || summary.closesAt || "--",
+        timezone: summary.opensAtDisplay && summary.closesAtDisplay
+          ? ""
+          : summary.timezone || ""
       })
     );
     const voteLimit = configuredVoteLimit(summary);
@@ -1442,8 +1452,8 @@
     if (!root.childElementCount && emptyText) root.append(create("p", "empty-state", emptyText));
   }
 
-  function dailyDate(value) {
-    return value ? formatDate(value) : "—";
+  function dailyDate(value, displayValue) {
+    return value ? formatDate(value, displayValue) : "—";
   }
 
   function dailyKindName(kind) {
@@ -1471,8 +1481,8 @@
       create("span", "daily-vote-meta-item", window.MrzhI18n.format(
         "投票时间 {start} - {end} ({timezone})",
         {
-          start: formatVoteDateTime(item.startAt),
-          end: formatVoteDateTime(item.endAt),
+        start: formatVoteDateTime(item.startAt, item.startAtDisplay),
+        end: formatVoteDateTime(item.endAt, item.endAtDisplay),
           timezone: configuredTimezone()
         }
       ))
@@ -1632,7 +1642,7 @@
         card.append(title, create("small", "muted", window.MrzhI18n.format(
           "投票截止时间 {end} ({timezone})",
           {
-            end: formatVoteDateTime(item.endAt),
+          end: formatVoteDateTime(item.endAt, item.endAtDisplay),
             timezone: configuredTimezone()
           }
         )));
@@ -1843,7 +1853,9 @@
     setText(
       "staff-updated",
       updated
-        ? window.MrzhI18n.format("更新于 {date}", { date: formatDate(updated) })
+        ? window.MrzhI18n.format("更新于 {date}", {
+            date: formatDate(updated, items.find((item) => item.updated_at === updated)?.updated_at_display)
+          })
         : ""
     );
   }
@@ -1949,7 +1961,10 @@
     for (const item of items) {
       const row = create("div", "run-item");
       row.append(
-        create("time", "muted", formatDate(item.finishedAt || item.createdAt)),
+        create("time", "muted", formatDate(
+          item.finishedAt || item.createdAt,
+          item.finishedAt ? item.finishedAtDisplay : item.createdAtDisplay
+        )),
         create("strong", "", taskName(item.taskKey)),
         create(
           "span",
@@ -1961,8 +1976,9 @@
     }
   }
 
-  function formatDate(value) {
+  function formatDate(value, displayValue) {
     if (!value) return "—";
+    if (typeof displayValue === "string" && displayValue) return displayValue;
     const locale = {
       "zh-cn": "zh-CN",
       "zh-tw": "zh-TW",
@@ -1970,44 +1986,31 @@
       fr: "fr",
       ja: "ja"
     }[window.MrzhI18n.language()] || "zh-CN";
-    return new Intl.DateTimeFormat(locale, {
-      timeZone: configuredTimezone(),
+    return window.MrzhTimezone.format(new Date(value), locale, {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
-      hour12: false
-    }).format(new Date(value));
+      hourCycle: "h23"
+    }, configuredTimezone());
   }
 
-  function formatVoteDateTime(value) {
+  function formatVoteDateTime(value, displayValue) {
     if (!value) return "—";
+    if (typeof displayValue === "string" && displayValue) return displayValue;
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
     try {
-      const parts = Object.fromEntries(
-        new Intl.DateTimeFormat("en-GB", {
-          timeZone: configuredTimezone(),
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          hourCycle: "h23"
-        })
-          .formatToParts(date)
-          .filter((part) => part.type !== "literal")
-          .map((part) => [part.type, part.value])
-      );
-      const hour = parts.hour === "24" ? "00" : parts.hour;
-      return `${parts.year}/${parts.month}/${parts.day} ${hour}:${parts.minute}`;
+      const parts = window.MrzhTimezone.parts(date, configuredTimezone());
+      return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
     } catch (_) {
       return formatDate(value);
     }
   }
 
-  function formatIdentityExpiry(value, timezone) {
+  function formatIdentityExpiry(value, timezone, displayValue) {
     if (!value) return window.MrzhI18n.t("永久有效");
+    if (typeof displayValue === "string" && displayValue) return displayValue;
     const source = timezone || configuredTimezone();
     const locale = {
       "zh-cn": "zh-CN",
@@ -2016,20 +2019,19 @@
       fr: "fr",
       ja: "ja"
     }[window.MrzhI18n.language()] || "zh-CN";
-    const formatted = new Intl.DateTimeFormat(locale, {
-      timeZone: source,
+    const formatted = window.MrzhTimezone.format(new Date(value), locale, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
-      hour12: false
-    }).format(new Date(value));
+      hourCycle: "h23"
+    }, source);
     return `${formatted} (${source})`;
   }
 
   function configuredTimezone() {
-    return state.data?.campConfig?.timezone || "Asia/Shanghai";
+    return state.data?.campConfig?.timezone || "UTC+08:00";
   }
 
   function render(data) {
@@ -2037,7 +2039,7 @@
     if (identitySession()) void refreshVoteParticipation();
     applyPluginVisibility();
     document.documentElement.dataset.timezone =
-      data.campConfig?.timezone || "Asia/Shanghai";
+      data.campConfig?.timezone || "UTC+08:00";
     const siteName = data.siteName || window.MrzhI18n.t("明日之后“愿”营地助手");
     document.title = window.MrzhI18n.t(siteName);
     setText("site-name", window.MrzhI18n.t(siteName));
@@ -2050,7 +2052,7 @@
       data.campConfig?.serverName || window.MrzhI18n.t("中国大陆服务器")
     );
     setText("announcement", data.publicOverview?.announcement || "");
-    setText("timezone-label", data.campConfig?.timezone || "Asia/Shanghai");
+    setText("timezone-label", data.campConfig?.timezone || "UTC+08:00");
     const listedMemberCount = data.members?.length || 0;
     const reportedMemberCount = Number(data.memberSummary?.expectedCount);
     const totalMemberCount = Number.isInteger(reportedMemberCount) && reportedMemberCount >= 0
@@ -2094,7 +2096,7 @@
       "sync-state",
       memberSync
         ? window.MrzhI18n.format("已同步 {date}", {
-            date: formatDate(memberSync.finishedAt)
+        date: formatDate(memberSync.finishedAt, memberSync.finishedAtDisplay)
           })
         : window.MrzhI18n.t("等待首次同步")
     );

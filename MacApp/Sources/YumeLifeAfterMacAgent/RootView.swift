@@ -1136,10 +1136,10 @@ struct SettingsView: View {
                             Text(model.text(theme.titleKey)).tag(theme)
                         }
                     }
-                    Picker(model.text("Timezone"), selection: $model.timezone) {
-                        ForEach(model.timezoneOptions, id: \.self) { zone in
-                            Text(zone).tag(zone)
-                        }
+                    HStack {
+                        Text(model.text("Timezone"))
+                        Spacer()
+                        Text(model.timezone).monospacedDigit()
                     }
                     Text(model.text("Task times are displayed in this timezone. New installations default to the Workers timezone."))
                         .font(.caption)
@@ -1476,10 +1476,10 @@ struct SetupAssistantView: View {
             TextField("Workers URL", text: $model.serverURL).textFieldStyle(.roundedBorder)
             TextField("Agent device name", text: $model.agentName).textFieldStyle(.roundedBorder)
             TextField("MuMu container name", text: $model.mumuInstanceName).textFieldStyle(.roundedBorder)
-            Picker(model.text("Timezone"), selection: $model.timezone) {
-                ForEach(model.timezoneOptions, id: \.self) { zone in
-                    Text(zone).tag(zone)
-                }
+            HStack {
+                Text(model.text("Timezone"))
+                Spacer()
+                Text(model.timezone).monospacedDigit()
             }
             Text(model.text("The default follows the timezone configured in Workers."))
                 .font(.caption)

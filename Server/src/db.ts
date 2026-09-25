@@ -16,7 +16,11 @@ import {
   validatePublicOverview,
   validateTechnologyConfig
 } from "./validate";
-import { zonedDateKey, zonedDateTimeToIso } from "./time";
+import {
+  rebaseTimestampToTimezone,
+  zonedDateKey,
+  zonedDateTimeToIso
+} from "./time";
 import { identityPlayerNameKey } from "./identity-code-utils";
 import { decryptSecret } from "./crypto";
 import { notifyAgentCommandAvailable } from "./agent-notifications";
@@ -165,13 +169,17 @@ export async function getConfigBundle(env: Env): Promise<ConfigBundle> {
   };
 }
 
-export async function saveConfigBundle(env: Env, bundle: ConfigBundle): Promise<void> {
+export async function saveConfigBundle(
+  env: Env,
+  bundle: ConfigBundle,
+  previousTimezone?: string
+): Promise<void> {
   const now = isoNow();
   const automationConfig = {
     ...bundle.automationConfig,
     timezone: bundle.campConfig.timezone
   };
-  await env.DB.batch([
+  const statements = [
     env.DB.prepare(
       "INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
     ).bind("camp_config", JSON.stringify(bundle.campConfig), now),
@@ -186,8 +194,34 @@ export async function saveConfigBundle(env: Env, bundle: ConfigBundle): Promise<
     ).bind("technology_config", JSON.stringify(bundle.technologyConfig), now),
     env.DB.prepare(
       "INSERT INTO settings(key, value, updated_at) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at"
-    ).bind("automation_config", JSON.stringify(automationConfig), now),
-  ]);
+    ).bind("automation_config", JSON.stringify(automationConfig), now)
+  ];
+
+  if (previousTimezone && previousTimezone !== bundle.campConfig.timezone) {
+    const items = await env.DB.prepare(
+      "SELECT id, start_at, end_at FROM daily_vote_items WHERE end_at > ?"
+    ).bind(now).all<{ id: string; start_at: string; end_at: string }>();
+    for (const item of items.results) {
+      const startAt = rebaseTimestampToTimezone(
+        item.start_at,
+        previousTimezone,
+        bundle.campConfig.timezone
+      );
+      const endAt = rebaseTimestampToTimezone(
+        item.end_at,
+        previousTimezone,
+        bundle.campConfig.timezone
+      );
+      if (startAt === item.start_at && endAt === item.end_at) continue;
+      statements.push(env.DB.prepare(
+        `UPDATE daily_vote_items
+         SET start_at = ?, end_at = ?, updated_at = ?
+         WHERE id = ? AND end_at > ?`
+      ).bind(startAt, endAt, now, item.id, now));
+    }
+  }
+
+  await env.DB.batch(statements);
 }
 
 export async function activateAgentIdentity(

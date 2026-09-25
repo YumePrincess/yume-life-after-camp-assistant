@@ -93,6 +93,7 @@ import {
 } from "./tasks";
 import {
   nextTechnologyTargetDate,
+  withTimestampDisplayFields,
   zonedDateTimeToIso,
   zonedDateKey,
   zonedParts
@@ -179,6 +180,7 @@ import {
   deleteDailyVoteHistory,
   getDailyVoteConfig,
   getDailyVoteItem,
+  finalizeEndedDraws,
   listAdminDailyVoteItems,
   normalizeDailyVoteInput,
   saveDailyVoteConfig,
@@ -278,7 +280,12 @@ const handler = {
     ctx: ExecutionContext
   ): Promise<Response> {
     try {
-      const response = await routeRequest(request, env);
+      const rawResponse = await routeRequest(request, env);
+      const response = await addTimestampDisplayFieldsToApiResponse(
+        request,
+        env,
+        rawResponse
+      );
       const scopes = liveUpdateScopes(request, response);
       if (scopes.length) {
         // The response must not wait for a best-effort UI invalidation. Keeping
@@ -309,17 +316,33 @@ const handler = {
     _ctx: ExecutionContext
   ): Promise<void> {
     const now = new Date(controller.scheduledTime);
+    let settledDrawWinners = 0;
+    try {
+      settledDrawWinners = await finalizeEndedDraws(env, now);
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "draw_settlement_failed",
+        message: error instanceof Error ? error.message : String(error)
+      }));
+    }
     const result = await runScheduler(env, now);
     const bundle = await getConfigBundle(env);
     const localParts = zonedParts(now, bundle.campConfig.timezone);
     const resetParts = bundle.campConfig.gameResetTime.split(":").map(Number);
     const atDailyReset = localParts.hour === resetParts[0] &&
       localParts.minute === resetParts[1];
-    if (result.enqueued.length || result.timedOut.length || atDailyReset) {
+    if (
+      result.enqueued.length || result.timedOut.length || atDailyReset ||
+      settledDrawWinners > 0
+    ) {
       await publishLiveUpdate(env, ["public", "admin"], "scheduler");
     }
     await syncLiveVoteTransitions(env, now);
-    console.log(JSON.stringify({ event: "scheduler_tick", ...result }));
+    console.log(JSON.stringify({
+      event: "scheduler_tick",
+      settledDrawWinners,
+      ...result
+    }));
   }
 } satisfies ExportedHandler<Env>;
 
@@ -475,6 +498,56 @@ async function publishLiveUpdate(
       message: error instanceof Error ? error.message : String(error)
     }));
   }
+}
+
+async function addTimestampDisplayFieldsToApiResponse(
+  request: Request,
+  env: Env,
+  response: Response
+): Promise<Response> {
+  const pathname = new URL(request.url).pathname;
+  if (
+    !pathname.startsWith("/api/") ||
+    pathname === "/api/public/bootstrap" ||
+    pathname === "/api/public/daily-vote" ||
+    pathname === "/api/admin/bootstrap" ||
+    response.status < 200 || response.status >= 300 ||
+    !response.headers.get("Content-Type")?.includes("application/json")
+  ) return response;
+
+  try {
+    const payload: unknown = await response.clone().json();
+    if (!containsApiTimestamp(payload)) return response;
+    const timezone = (await getConfigBundle(env)).campConfig.timezone;
+    const headers = new Headers(response.headers);
+    headers.delete("Content-Length");
+    headers.delete("Content-Encoding");
+    headers.delete("ETag");
+    return new Response(
+      JSON.stringify(withTimestampDisplayFields(payload, timezone)),
+      { status: response.status, statusText: response.statusText, headers }
+    );
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "api_timestamp_display_fields_failed",
+      message: error instanceof Error ? error.message : String(error)
+    }));
+    return response;
+  }
+}
+
+function containsApiTimestamp(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsApiTimestamp);
+  if (!value || typeof value !== "object") return false;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (
+      /(?:At|Time|Date|_at|_time|_date)$/.test(key) &&
+      typeof child === "string" &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}.*(?:Z|[+-]\d{2}:?\d{2})$/i.test(child)
+    ) return true;
+    if (containsApiTimestamp(child)) return true;
+  }
+  return false;
 }
 
 async function syncLiveVoteTransitions(env: Env, now: Date): Promise<void> {
@@ -2378,7 +2451,7 @@ async function handleAdminApi(
           }
         : {})
     });
-    await saveConfigBundle(env, next);
+    await saveConfigBundle(env, next, current.campConfig.timezone);
     return json(await buildAdminBootstrap(env, session));
   }
   if (path === "/api/admin/run" && method === "POST") {
@@ -2904,9 +2977,10 @@ async function buildPublicBootstrap(
     getMemberScanSummary(env),
     buildPublicDailyVotePayload(env, locale)
   ]);
-  return {
+  return withTimestampDisplayFields({
     plugins,
     siteName: bundle.campConfig.publicSiteName,
+    serverDate: zonedDateKey(new Date(), bundle.campConfig.timezone),
     publicOverview:
       bundle.publicOverview.localized[normalizeLocale(locale)] ?? bundle.publicOverview,
     campConfig: {
@@ -2947,7 +3021,7 @@ async function buildPublicBootstrap(
         }
       : null),
     recentRuns: recentRuns.filter(isCurrentFeatureRun).map(publicRun)
-  };
+  }, bundle.campConfig.timezone);
 }
 
 async function buildPublicDailyVotePayload(
@@ -2958,8 +3032,7 @@ async function buildPublicDailyVotePayload(
   const daily = await buildPublicDailyVote(
     env,
     locale,
-    new Date(),
-    bundle.campConfig.timezone
+    new Date()
   );
   let technologyHistory: TechnologyVoteHistory[] = [];
   if (await isWorkerPluginEnabled(env, "technology")) {
@@ -2973,7 +3046,10 @@ async function buildPublicDailyVotePayload(
       .filter((entry): entry is TechnologyVoteHistory => Boolean(entry))
       .map((entry) => localizeTechnologyVoteHistory(entry, locale));
   }
-  return { ...daily, technologyHistory };
+  return withTimestampDisplayFields(
+    { ...daily, technologyHistory },
+    bundle.campConfig.timezone
+  );
 }
 
 type PublicActionIdentity = {
@@ -3107,8 +3183,9 @@ async function buildAdminBootstrap(
         detail_json: null
       }))
     : heartbeats;
-  return {
+  return withTimestampDisplayFields({
     plugins,
+    serverDate: zonedDateKey(new Date(), bundle.campConfig.timezone),
     permissionCatalog: await enabledPermissionCatalog(env),
     session: {
       email: demo ? "test@demo.com" : session.email,
@@ -3172,7 +3249,7 @@ async function buildAdminBootstrap(
       bundle.automationConfig.tasks.tech_switch.time,
       bundle.campConfig.gameResetTime
     )
-  };
+  }, bundle.campConfig.timezone);
 }
 
 function localizeVoteSummary<T extends {

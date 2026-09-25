@@ -55,7 +55,6 @@ final class AppModel: ObservableObject {
     // recreates the root view and runs bootstrap again.
     private var agentStoppedByUser = false
     private let logPageSize = 250
-    private var timezoneConfigured: Bool
     private var cachedLogLinesSource = ""
     private var cachedLogLines: [String] = []
     private var logRevision = 0
@@ -89,8 +88,7 @@ final class AppModel: ObservableObject {
         debugMode = defaults.bool(forKey: "debugMode")
         let selectedLanguage = defaults.string(forKey: "language") ?? Self.preferredLanguage()
         language = selectedLanguage
-        timezone = defaults.string(forKey: "timezone") ?? "Asia/Shanghai"
-        timezoneConfigured = defaults.string(forKey: "timezone") != nil
+        timezone = Self.normalizeTimezone(defaults.string(forKey: "timezone") ?? "UTC+08:00")
         defaults.set([selectedLanguage], forKey: "AppleLanguages")
         defaults.set(Self.appleLocale(for: selectedLanguage), forKey: "AppleLocale")
         theme = AppTheme(rawValue: defaults.string(forKey: "theme") ?? "system") ?? .system
@@ -107,25 +105,54 @@ final class AppModel: ObservableObject {
     deinit { pollingTask?.cancel() }
 
     var locale: Locale { Locale(identifier: language) }
-    var timezoneOptions: [String] {
-        let common = [
-            "Asia/Shanghai", "Asia/Tokyo", "Asia/Seoul", "Asia/Singapore",
-            "Asia/Kolkata", "Europe/London", "Europe/Paris", "Europe/Berlin",
-            "America/Los_Angeles", "America/Denver", "America/Chicago",
-            "America/New_York", "Australia/Sydney", "Pacific/Auckland", "UTC"
-        ]
-        return Array(NSOrderedSet(array: common + TimeZone.knownTimeZoneIdentifiers)).compactMap { $0 as? String }
-            .filter { TimeZone(identifier: $0) != nil }
-    }
-
     func displayTimestamp(_ value: String) -> String {
         guard let date = Self.parseTimestamp(value) else { return value }
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = locale
-        formatter.timeZone = TimeZone(identifier: timezone) ?? .current
+        formatter.timeZone = Self.timeZone(for: timezone) ?? .current
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss zzz"
         return formatter.string(from: date)
+    }
+
+    static func normalizeTimezone(_ value: String) -> String {
+        guard let seconds = timezoneOffsetSeconds(value) else { return "UTC+08:00" }
+        let minutes = seconds / 60
+        let sign = minutes < 0 ? "-" : "+"
+        let absolute = abs(minutes)
+        return String(
+            format: "UTC%@%02d:%02d",
+            sign,
+            absolute / 60,
+            absolute % 60
+        )
+    }
+
+    private static func timeZone(for value: String) -> TimeZone? {
+        if let seconds = timezoneOffsetSeconds(value) {
+            return TimeZone(secondsFromGMT: seconds)
+        }
+        return TimeZone(identifier: value)
+    }
+
+    private static func timezoneOffsetSeconds(_ value: String) -> Int? {
+        let pattern = #"^(?:UTC|GMT)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?$"#
+        if let match = value.range(of: pattern, options: [.regularExpression]) {
+            let components = String(value[match])
+            let captures = components.range(
+                of: #"([+-])(\d{1,2})(?::?(\d{2}))?$"#,
+                options: .regularExpression
+            )
+            guard let captures else { return nil }
+            let tail = String(components[captures])
+            let values = tail.dropFirst().split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+            guard let hours = values.first else { return nil }
+            let minutes = values.count > 1 ? values[1] : 0
+            guard hours <= 14, minutes < 60, (hours < 14 || minutes == 0) else { return nil }
+            let sign = tail.first == "-" ? -1 : 1
+            return sign * (hours * 3600 + minutes * 60)
+        }
+        return TimeZone(identifier: value)?.secondsFromGMT(for: Date())
     }
     func text(_ key: String) -> String { L10n.string(key, language: language) }
 
@@ -751,10 +778,8 @@ final class AppModel: ObservableObject {
             agentName: agentName,
             agentToken: agentToken
         )
-        if !timezoneConfigured,
-           let workerTimezone,
-           TimeZone(identifier: workerTimezone) != nil {
-            timezone = workerTimezone
+        if let workerTimezone {
+            timezone = Self.normalizeTimezone(workerTimezone)
         }
         try await runtime.saveConnection(
             baseURL: serverURL,
@@ -778,7 +803,6 @@ final class AppModel: ObservableObject {
         defaults.set(allowUnsignedPlugins, forKey: "allowUnsignedPlugins")
         defaults.set(language, forKey: "language")
         defaults.set(timezone, forKey: "timezone")
-        timezoneConfigured = true
         defaults.set(theme.rawValue, forKey: "theme")
         defaults.set(logDisplayMode.rawValue, forKey: "logDisplayMode")
         defaults.set(debugMode, forKey: "debugMode")

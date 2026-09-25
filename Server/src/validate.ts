@@ -15,9 +15,9 @@ import type {
 } from "./domain";
 import {
   assertClock,
-  assertTimezone,
   assertWindowEndClock,
   clockToMinutes,
+  normalizeUtcTimezone,
   windowEndClockToMinutes
 } from "./time";
 
@@ -328,8 +328,9 @@ export function preserveAutomationScheduleTimes(
 
 export function validateCampConfig(value: unknown): CampConfig {
   const source = object(value, "campConfig");
-  const timezone = text(source.timezone, "campConfig.timezone", { max: 80 });
-  assertTimezone(timezone);
+  const timezone = normalizeUtcTimezone(
+    text(source.timezone, "campConfig.timezone", { max: 80 })
+  );
   const gameResetTime = text(source.gameResetTime, "campConfig.gameResetTime", { max: 5 });
   assertClock(gameResetTime, "campConfig.gameResetTime");
   const specialDailyRefreshTime =
@@ -701,8 +702,9 @@ export function validateTechnologyConfig(value: unknown): TechnologyConfig {
 
 export function validateAutomationConfig(value: unknown): AutomationConfig {
   const source = object(value, "automationConfig");
-  const timezone = text(source.timezone, "automationConfig.timezone", { max: 80 });
-  assertTimezone(timezone);
+  const timezone = normalizeUtcTimezone(
+    text(source.timezone, "automationConfig.timezone", { max: 80 })
+  );
   const tasks = object(source.tasks, "automationConfig.tasks");
   const tech = taskSchedule(
     tasks.tech_switch ?? { enabled: true, time: "02:00" },

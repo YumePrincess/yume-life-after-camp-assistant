@@ -2062,6 +2062,7 @@
       "记录已载入": "Records loaded",
       "暂无日常投票事项记录。": "No daily voting records.",
       "删除选中记录": "Delete selected record",
+      "确认删除选中的日常事项吗？删除后无法恢复。": "Delete the selected daily item? This cannot be undone.",
       "投票记录": "Poll responses",
       "抽签报名记录": "Draw entries",
       "抽签参与人员": "Draw participants",
@@ -2077,7 +2078,6 @@
       "暂无该选项的投票记录": "No responses for this option",
       "暂无中签人员。": "No winners.",
       "图片选项": "Image option",
-      "确认删除选中的日常事项吗？删除后无法恢复。": "Delete the selected daily item? This cannot be undone.",
       "确认清空全部已结束日常事项吗？清空后无法恢复。": "Clear all ended daily items? This cannot be undone.",
       "确认清空 {date} 的已结束日常事项吗？": "Clear ended daily items for {date}?",
       "batchNumber must contain 1 to 8 digits": "Batch number must contain 1 to 8 digits",
@@ -2124,6 +2124,7 @@
       "记录已载入": "Enregistrements chargés",
       "暂无日常投票事项记录。": "Aucun sujet de vote du jour.",
       "删除选中记录": "Supprimer le sujet sélectionné",
+      "确认删除选中的日常事项吗？删除后无法恢复。": "Supprimer le sujet quotidien sélectionné ? Cette action est irréversible.",
       "投票记录": "Réponses",
       "抽签报名记录": "Participations au tirage",
       "抽签参与人员": "Participants au tirage",
@@ -2181,6 +2182,7 @@
       "记录已载入": "記録を読み込みました",
       "暂无日常投票事项记录。": "日常投票の記録はありません。",
       "删除选中记录": "選択項目を削除",
+      "确认删除选中的日常事项吗？删除后无法恢复。": "選択した日常項目を削除しますか？この操作は元に戻せません。",
       "投票记录": "投票記録",
       "抽签报名记录": "抽選応募記録",
       "抽签参与人员": "抽選応募者",
@@ -2238,6 +2240,7 @@
       "记录已载入": "記錄已載入",
       "暂无日常投票事项记录。": "暫無日常投票事項記錄。",
       "删除选中记录": "刪除選中記錄",
+      "确认删除选中的日常事项吗？删除后无法恢复。": "確定要刪除所選日常事項嗎？刪除後無法復原。",
       "投票记录": "投票記錄",
       "抽签报名记录": "抽籤報名記錄",
       "抽签参与人员": "抽籤參與人員",
@@ -4416,11 +4419,8 @@
 
   function updateSiteFooter(language) {
     const timezone =
-      document.documentElement.dataset.timezone || "Asia/Shanghai";
-    const year = new Intl.DateTimeFormat("en", {
-      timeZone: timezone,
-      year: "numeric"
-    }).format(new Date());
+      document.documentElement.dataset.timezone || "UTC+08:00";
+    const year = window.MrzhTimezone.parts(new Date(), timezone).year;
     const localized = {
       "zh-cn": {
         prefix: `版权所有 © ${year} `,

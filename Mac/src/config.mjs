@@ -2,6 +2,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeTimezone } from "./clock.mjs";
 
 export const MAC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CREDENTIALS_MARKERS = new Set(["CREDENTIALS_FILE", "KEYCHAIN"]);
@@ -76,9 +77,9 @@ export async function loadConfig(options = {}) {
   };
   config.plugins.allowUnsignedLocal ??= false;
   config.server.agentName ||= config.server.agentId;
-  // Workers uses Asia/Shanghai by default. Keep older local configs readable
-  // while allowing the App to persist the exact timezone returned by Workers.
-  config.server.timezone ||= "Asia/Shanghai";
+  // Normalize persisted IANA timezone names to the fixed offset representation
+  // now returned by Workers; task clocks stay unchanged across this migration.
+  config.server.timezone = normalizeTimezone(config.server.timezone || "UTC+08:00");
   validate(config, { validateCredentials });
   return config;
 }

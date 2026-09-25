@@ -643,14 +643,15 @@ async function finalizeDrawItem(
   maxWinsPerMonth: number,
   monthRange: ReturnType<typeof localCalendarMonthRange>,
   winnerCounts: Map<string, number>
-): Promise<void> {
+): Promise<number> {
   const responses = await responseRows(env, item.id);
   const target = Math.min(Math.max(Math.trunc(item.drawCount ?? 0), 0), responses.length);
-  if (!target) return;
+  if (!target) return 0;
+  let insertedTotal = 0;
 
   while (true) {
     const current = await winnerIdentityRows(env, item.id);
-    if (current.length >= target) return;
+    if (current.length >= target) return insertedTotal;
     const usedIdentityIds = new Set(current.map((winner) => winner.identityCodeId));
     if (item.batchNumber !== "0") {
       const batchWinners = await env.DB.prepare(
@@ -671,9 +672,9 @@ async function finalizeDrawItem(
       available,
       target - current.length
     );
-    if (!selected.length) return;
+    if (!selected.length) return insertedTotal;
     const selectedAt = now.toISOString();
-    await env.DB.batch(selected.map((row, index) => env.DB.prepare(
+    const inserted = await env.DB.batch(selected.map((row, index) => env.DB.prepare(
       `INSERT OR IGNORE INTO daily_draw_winners(
          id, item_id, response_id, identity_code_id, batch_number, rank, selected_at
        ) VALUES(?, ?, ?, ?, ?, ?, ?)`
@@ -681,6 +682,12 @@ async function finalizeDrawItem(
       crypto.randomUUID(), item.id, row.id, row.identity_code_id,
       item.batchNumber, current.length + index + 1, selectedAt
     )));
+    const insertedThisPass = inserted.reduce(
+      (count, result) => count + (result.meta.changes ?? 0),
+      0
+    );
+    insertedTotal += insertedThisPass;
+    if (!insertedThisPass) return insertedTotal;
     const refreshedCounts = await drawWinnerCountsWithinMonth(env, monthRange);
     winnerCounts.clear();
     for (const [identityCodeId, count] of refreshedCounts) {
@@ -741,9 +748,9 @@ export async function finalizeEndedDraws(
   now = new Date(),
   config?: DailyVoteConfig,
   timezone?: string
-): Promise<void> {
+): Promise<number> {
   const token = crypto.randomUUID();
-  if (!(await acquireDrawFinalizeLock(env, token, now))) return;
+  if (!(await acquireDrawFinalizeLock(env, token, now))) return 0;
   try {
     const [dailyVoteConfig, adminTimezone] = await Promise.all([
       config ? Promise.resolve(config) : getDailyVoteConfig(env),
@@ -752,6 +759,7 @@ export async function finalizeEndedDraws(
         : getConfigBundle(env).then((bundle) => bundle.campConfig.timezone)
     ]);
     const winnerCountsByMonth = new Map<string, Map<string, number>>();
+    let insertedWinnerCount = 0;
     const ended = await listItems(env, "WHERE kind = 'draw' AND end_at <= ?", [now.toISOString()]);
     ended.sort((left, right) =>
       left.endAt.localeCompare(right.endAt) ||
@@ -766,7 +774,7 @@ export async function finalizeEndedDraws(
         winnerCounts = await drawWinnerCountsWithinMonth(env, monthRange);
         winnerCountsByMonth.set(monthRange.key, winnerCounts);
       }
-      await finalizeDrawItem(
+      insertedWinnerCount += await finalizeDrawItem(
         env,
         item,
         now,
@@ -775,6 +783,7 @@ export async function finalizeEndedDraws(
         winnerCounts
       );
     }
+    return insertedWinnerCount;
   } finally {
     await releaseDrawFinalizeLock(env, token, now);
   }
@@ -817,10 +826,8 @@ async function publicItem(
 export async function buildPublicDailyVote(
   env: Env,
   locale: unknown,
-  now = new Date(),
-  timezone?: string
+  now = new Date()
 ): Promise<{ items: PublicDailyVoteItem[]; history: { polls: PublicDailyVoteHistoryItem[]; draws: PublicDailyVoteHistoryItem[] } }> {
-  await finalizeEndedDraws(env, now, undefined, timezone);
   const all = await listItems(env);
   const active = all.filter((item) => {
     const end = new Date(item.endAt).getTime();
@@ -871,7 +878,6 @@ export async function listAdminDailyVoteItems(
 ): Promise<AdminDailyVotePage> {
   const now = new Date();
   const config = await getDailyVoteConfig(env);
-  await finalizeEndedDraws(env, now, config, options.timezone);
   const nowIso = now.toISOString();
   const clauses: string[] = [];
   const binds: unknown[] = [];

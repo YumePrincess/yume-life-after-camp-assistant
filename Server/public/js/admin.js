@@ -437,8 +437,9 @@
     return translateUi(label);
   }
 
-  function formatDate(value) {
+  function formatDate(value, displayValue) {
     if (!value) return "—";
+    if (typeof displayValue === "string" && displayValue) return displayValue;
     const locale = {
       "zh-cn": "zh-CN",
       "zh-tw": "zh-TW",
@@ -446,18 +447,18 @@
       fr: "fr",
       ja: "ja"
     }[window.MrzhI18n.language()] || "zh-CN";
-    return new Intl.DateTimeFormat(locale, {
-      timeZone: configuredTimezone(),
+    return window.MrzhTimezone.format(new Date(value), locale, {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit"
-    }).format(new Date(value));
+    }, configuredTimezone());
   }
 
-  function formatIdentityExpiry(value) {
+  function formatIdentityExpiry(value, displayValue) {
     if (!value) return window.MrzhI18n.t("永久有效");
+    if (typeof displayValue === "string" && displayValue) return displayValue;
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
     const locale = {
@@ -468,20 +469,20 @@
       ja: "ja"
     }[window.MrzhI18n.language()] || "zh-CN";
     const timezone = configuredTimezone();
-    const formatted = new Intl.DateTimeFormat(locale, {
-      timeZone: timezone,
+    const formatted = window.MrzhTimezone.format(date, locale, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
-      hour12: false
-    }).format(date);
+      hourCycle: "h23"
+    }, timezone);
     return `${formatted} (${timezone})`;
   }
 
-  function formatVoteDate(value) {
+  function formatVoteDate(value, displayValue) {
     if (!value) return "—";
+    if (typeof displayValue === "string" && displayValue) return displayValue;
     const locale = {
       "zh-cn": "zh-CN",
       "zh-tw": "zh-TW",
@@ -489,19 +490,19 @@
       fr: "fr",
       ja: "ja"
     }[window.MrzhI18n.language()] || "zh-CN";
-    return new Intl.DateTimeFormat(locale, {
-      timeZone: configuredTimezone(),
+    return window.MrzhTimezone.format(new Date(value), locale, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit"
-    }).format(new Date(value));
+    }, configuredTimezone());
   }
 
-  function formatDateOnly(value) {
+  function formatDateOnly(value, displayValue) {
     if (!value) return "—";
+    if (typeof displayValue === "string" && displayValue) return displayValue.split(" ")[0];
     const locale = {
       "zh-cn": "zh-CN",
       "zh-tw": "zh-TW",
@@ -509,36 +510,22 @@
       fr: "fr",
       ja: "ja"
     }[window.MrzhI18n.language()] || "zh-CN";
-    return new Intl.DateTimeFormat(locale, {
-      timeZone: configuredTimezone(),
+    return window.MrzhTimezone.format(new Date(value), locale, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit"
-    }).format(new Date(value));
+    }, configuredTimezone());
   }
 
   function configuredTimezone() {
     return (
       state.bootstrap?.configBundle?.campConfig?.timezone ||
-      "Asia/Shanghai"
+      "UTC+08:00"
     );
   }
 
   function zonedInputParts(value) {
-    return Object.fromEntries(
-      new Intl.DateTimeFormat("en-CA", {
-        timeZone: configuredTimezone(),
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23"
-      })
-        .formatToParts(value)
-        .filter((part) => part.type !== "literal")
-        .map((part) => [part.type, part.value])
-    );
+    return window.MrzhTimezone.parts(value, configuredTimezone());
   }
 
   const adminCalendar = {
@@ -559,18 +546,20 @@
   }
 
   function adminCalendarTodayKey() {
-    const parts = Object.fromEntries(
-      new Intl.DateTimeFormat("en-CA", {
-        timeZone: configuredTimezone(),
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit"
-      })
-        .formatToParts(new Date())
-        .filter((part) => part.type !== "literal")
-        .map((part) => [part.type, part.value])
-    );
+    const parts = window.MrzhTimezone.parts(new Date(), configuredTimezone());
     return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
+  function initializeUtcTimezoneOptions() {
+    const field = input("timezone");
+    if (!field || field.tagName !== "SELECT") return;
+    field.replaceChildren();
+    for (let total = -12 * 60; total <= 14 * 60; total += 15) {
+      const sign = total < 0 ? "-" : "+";
+      const absolute = Math.abs(total);
+      const label = `UTC${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
+      field.add(new Option(label, label));
+    }
   }
 
   function adminCalendarDateKey(date) {
@@ -1119,7 +1108,7 @@
                 state: translateUi(online ? "在线" : "离线")
               })
             : window.MrzhI18n.format("空闲 / {date}", {
-                date: formatDate(item.updated_at)
+                date: formatDate(item.updated_at, item.updated_at_display)
               })
         ),
         actions
@@ -1664,7 +1653,7 @@
     );
     byId("technology-history-finalized").textContent = window.MrzhI18n.format(
       "按每日刷新归档于 {date}",
-      { date: formatDate(history.finalizedAt) }
+      { date: formatDate(history.finalizedAt, history.finalizedAtDisplay) }
     );
     const fixedKeys = new Set(
       (history.fixedTechnologies || []).map((item) => item.key)
@@ -1907,6 +1896,27 @@
         remove.type = "button";
         remove.addEventListener("click", () => deleteDailyVoteItemAdmin(item.id));
         actions.append(edit, remove);
+      } else {
+        if (hasPermission("admin:daily-vote")) {
+          const remove = create(
+            "button",
+            "button button-danger button-small",
+            window.MrzhI18n.t("删除记录")
+          );
+          remove.type = "button";
+          remove.addEventListener("click", () => deleteDailyVoteItemAdmin(item.id, {
+            mode: "history",
+            date: byId("daily-vote-history-date")?.value || "",
+            page: Math.max(
+              1,
+              Math.min(
+                state.dailyVoteHistoryPage,
+                Math.ceil((state.dailyVoteHistoryTotal - 1) / 10)
+              )
+            )
+          }));
+          actions.append(remove);
+        }
       }
       const titleGroup = create("div", "daily-vote-admin-title-group");
       titleGroup.append(title, create("span", "daily-vote-kind", item.kind === "draw" ? "抽签事项" : "投票事项"));
@@ -1921,8 +1931,8 @@
             ? "开放 {start} · 截止 {end} · 批次号 {batchNumber}"
             : "开放 {start} · 截止 {end}",
           {
-            start: formatDate(item.startAt),
-            end: formatDate(item.endAt),
+            start: formatDate(item.startAt, item.startAtDisplay),
+            end: formatDate(item.endAt, item.endAtDisplay),
             batchNumber: item.batchNumber || "0"
           }
         )
@@ -1956,7 +1966,8 @@
                 .map((response) => ({
                   identityCode: response.identityCode,
                   playerName: response.playerName,
-                  votedAt: response.submittedAt
+                  votedAt: response.submittedAt,
+                  votedAtDisplay: response.submittedAtDisplay
                 })),
               { mode, type: "poll-option", itemId: item.id, optionId: option.id }
             )
@@ -1978,7 +1989,8 @@
             (item.responses || []).map((response) => ({
               identityCode: response.identityCode,
               playerName: response.playerName,
-              votedAt: response.submittedAt
+              votedAt: response.submittedAt,
+              votedAtDisplay: response.submittedAtDisplay
             })),
             { mode, type: "draw-participants", itemId: item.id }
           )
@@ -2174,13 +2186,23 @@
     }
   }
 
-  async function deleteDailyVoteItemAdmin(id) {
-    if (!(await showAppConfirm(window.MrzhI18n.t("确认删除选中的日常事项吗？删除后无法恢复。"), { title: "删除选中记录", danger: true }))) return;
+  async function deleteDailyVoteItemAdmin(id, refresh = {}) {
+    if (!(await showAppConfirm(
+      window.MrzhI18n.t("确认删除选中的日常事项吗？删除后无法恢复。"),
+      { title: window.MrzhI18n.t("删除选中记录"), danger: true }
+    ))) return;
     try {
       await request(`/api/admin/daily-vote/${encodeURIComponent(id)}`, { method: "DELETE" });
-      await loadDailyVoteAdmin("", 1, "active");
+      await loadDailyVoteAdmin(
+        refresh.date || "",
+        refresh.page || 1,
+        refresh.mode || "active"
+      );
     } catch (error) {
-      setText("daily-vote-status", error.message);
+      setText(
+        refresh.mode === "history" ? "daily-vote-history-status" : "daily-vote-status",
+        error.message
+      );
     }
   }
 
@@ -2259,7 +2281,10 @@
         const time = create(
           "time",
           "muted",
-          formatVoteDate(entry.votedAt || entry.submittedAt || entry.selectedAt)
+          formatVoteDate(
+            entry.votedAt || entry.submittedAt || entry.selectedAt,
+            entry.votedAtDisplay || entry.submittedAtDisplay || entry.selectedAtDisplay
+          )
         );
         item.append(identity, player, time);
         root.append(item);
@@ -3000,7 +3025,10 @@
     for (const run of runs || []) {
       const row = document.createElement("tr");
       row.append(
-        create("td", "run-time", formatDate(run.finished_at || run.created_at)),
+        create("td", "run-time", formatDate(
+          run.finished_at || run.created_at,
+          run.finished_at ? run.finished_at_display : run.created_at_display
+        )),
         create("td", "", taskName(run.task_key)),
         create("td", `status-${run.state}`, stateName(run.state)),
         create("td", "numeric", `${Math.round((run.progress || 0) * 100)}%`),
@@ -3312,7 +3340,7 @@
     mountVoteAdminCards();
     state.bootstrap = data;
     document.documentElement.dataset.timezone =
-      data.configBundle?.campConfig?.timezone || "Asia/Shanghai";
+      data.configBundle?.campConfig?.timezone || "UTC+08:00";
     if (adminCalendar.nodes?.open) renderAdminCalendar();
     if (!input("keyExpiresAt")?.value) setDefaultKeyExpiry();
     const identityExpiryInput = input("identityExpiresAt");
@@ -3478,11 +3506,11 @@
           item.permanent === 1
             ? window.MrzhI18n.t("永久有效")
             : window.MrzhI18n.format("有效期 {date}", {
-                date: formatDate(item.expires_at)
+                date: formatDate(item.expires_at, item.expires_at_display)
               }),
           item.last_used_at
             ? window.MrzhI18n.format("最近使用 {date}", {
-                date: formatDate(item.last_used_at)
+                date: formatDate(item.last_used_at, item.last_used_at_display)
               })
             : "",
           item.revoked_at ? window.MrzhI18n.t("已撤销") : ""
@@ -3575,7 +3603,7 @@
       ["使用科技点", member.technology_points_used],
       ["贡献物资", member.material_contribution],
       ["周活跃点", member.weekly_activity_points],
-      ["资料采集时间", formatDate(member.last_seen_at)]
+      ["资料采集时间", formatDate(member.last_seen_at, member.last_seen_at_display)]
     ]) {
       detail.append(create("dt", "", label), create("dd", "", String(value ?? "—")));
     }
@@ -3601,7 +3629,7 @@
       ["member-edit-technology-points-used", member.technology_points_used ?? 0],
       ["member-edit-material-contribution", member.material_contribution ?? 0],
       ["member-edit-weekly-activity-points", member.weekly_activity_points ?? 0],
-      ["member-edit-capture-time", formatDate(member.last_seen_at)]
+      ["member-edit-capture-time", formatDate(member.last_seen_at, member.last_seen_at_display)]
     ]) {
       byId(id).value = value ?? "";
     }
@@ -3951,7 +3979,7 @@
         const row = create("article", "event-item");
         row.append(
           create("span", `status-${event.level}`, event.level),
-          create("time", "muted", formatDate(event.created_at)),
+          create("time", "muted", formatDate(event.created_at, event.created_at_display)),
           create("span", "", `${event.step ? `[${event.step}] ` : ""}${event.message}`)
         );
         root.append(row);
@@ -4431,7 +4459,7 @@
           : item.status === "approved"
             ? "已通过"
             : "已拒绝",
-        formatDate(item.submitted_at)
+        formatDate(item.submitted_at, item.submitted_at_display)
       ]) {
         row.append(create("td", "", value));
       }
@@ -4507,7 +4535,7 @@
       ? item.approved_votes !== null && item.approved_votes !== undefined
         ? `${window.MrzhI18n.t("允许破格投票次数")}: ${item.approved_votes}`
         : item.approved_expires_at
-          ? `${window.MrzhI18n.t("破格投票有效期至")}: ${formatIdentityExpiry(item.approved_expires_at)}`
+          ? `${window.MrzhI18n.t("破格投票有效期至")}: ${formatIdentityExpiry(item.approved_expires_at, item.approved_expires_at_display)}`
           : "—"
       : "—";
     const detailRows = isProfileChange
@@ -4526,7 +4554,7 @@
               ? item.requested_email || "—"
               : item.requested_player_name || "—"
           ],
-          ["提交时间", formatDate(item.submitted_at)]
+          ["提交时间", formatDate(item.submitted_at, item.submitted_at_display)]
         ]
       : isEligibilityApplication
         ? [
@@ -4538,9 +4566,9 @@
           [window.MrzhI18n.t("科技点"), String(item.eligibility_technology_points ?? 0)],
           [window.MrzhI18n.t("物资"), String(item.eligibility_material_contribution ?? 0)],
           [window.MrzhI18n.t("周活跃点"), String(item.eligibility_weekly_activity_points ?? 0)],
-          [window.MrzhI18n.t("提交时间"), formatDate(item.submitted_at)],
+          [window.MrzhI18n.t("提交时间"), formatDate(item.submitted_at, item.submitted_at_display)],
           ...(item.reviewed_at
-            ? [[window.MrzhI18n.t("审批时间"), formatDate(item.reviewed_at)]]
+            ? [[window.MrzhI18n.t("审批时间"), formatDate(item.reviewed_at, item.reviewed_at_display)]]
             : []),
           ...(item.status === "approved"
             ? [[window.MrzhI18n.t("批准设置"), eligibilityApprovalSetting]]
@@ -4616,7 +4644,7 @@
           ? window.MrzhI18n.format("剩余 {count} 次", { count: item.eligibility_override_votes })
           : item.eligibility_override_expires_at
             ? window.MrzhI18n.format("有效至 {date}", {
-                date: formatIdentityExpiry(item.eligibility_override_expires_at)
+                date: formatIdentityExpiry(item.eligibility_override_expires_at, item.eligibility_override_expires_at_display)
               })
             : window.MrzhI18n.t("无")
       ],
@@ -4874,8 +4902,8 @@
         item.player_name || "—",
         item.email || "—",
         item.status === "disabled" ? "取消" : expired ? "已过期" : "有效",
-        item.expires_at ? formatDateOnly(item.expires_at) : "永久有效",
-        item.last_emailed_at ? formatDate(item.last_emailed_at) : "—"
+        item.expires_at ? formatDateOnly(item.expires_at, item.expires_at_display) : "永久有效",
+        item.last_emailed_at ? formatDate(item.last_emailed_at, item.last_emailed_at_display) : "—"
       ]) {
         row.append(create("td", "", value));
       }
@@ -5596,6 +5624,7 @@
       connectLiveUpdates();
     }
   });
+  initializeUtcTimezoneOptions();
   initializeAdminDatePickers();
   refresh(true);
   connectLiveUpdates();

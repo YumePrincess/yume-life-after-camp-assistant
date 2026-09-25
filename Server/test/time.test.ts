@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   isWithinDailyClockWindow,
+  formatUtcOffsetTimestamp,
   isWithinScheduledTaskPollingWindow,
   nextTechnologyTargetDate,
   nextScheduledTaskPollingWindowStart,
+  normalizeUtcTimezone,
+  rebaseTimestampToTimezone,
   scheduledTaskClocks,
   technologyEffectiveDateAtDailyReset,
+  withTimestampDisplayFields,
   targetDateForTechnologyRun,
   zonedDateTimeToIso,
   zonedParts
@@ -74,6 +78,38 @@ describe("daily voting window", () => {
         "03:00"
       )
     ).toBe("2026-07-30");
+  });
+});
+
+describe("UTC offset display fields", () => {
+  it("adds display siblings and preserves ISO values used by business logic", () => {
+    const source = {
+      startAt: "2026-09-25T22:14:00.000Z",
+      nested: [{ created_at: "2026-09-25T22:15:00.000Z" }]
+    };
+    expect(withTimestampDisplayFields(source, "UTC+08:00")).toEqual({
+      startAt: "2026-09-25T22:14:00.000Z",
+      startAtDisplay: "2026-09-26 06:14 (UTC+08:00)",
+      nested: [{
+        created_at: "2026-09-25T22:15:00.000Z",
+        created_at_display: "2026-09-26 06:15 (UTC+08:00)"
+      }]
+    });
+  });
+
+  it("keeps a configured wall-clock unchanged after an offset change", () => {
+    const before = "2026-09-25T22:00:00.000Z";
+    const after = rebaseTimestampToTimezone(before, "UTC+08:00", "UTC+10:00");
+    expect(after).toBe("2026-09-25T20:00:00.000Z");
+    expect(formatUtcOffsetTimestamp(before, "UTC+08:00")).toContain("06:00");
+    expect(formatUtcOffsetTimestamp(after, "UTC+10:00")).toContain("06:00");
+  });
+
+  it("rebases future items by the source offset at their scheduled date", () => {
+    const winterEvent = "2026-12-01T15:00:00.000Z";
+    expect(
+      rebaseTimestampToTimezone(winterEvent, "America/New_York", "UTC-04:00")
+    ).toBe("2026-12-01T14:00:00.000Z");
   });
 });
 
@@ -179,5 +215,22 @@ describe("timezone-aware task weekdays", () => {
     const instant = new Date("2026-09-06T16:30:00.000Z");
     expect(zonedParts(instant, "Asia/Shanghai").weekday).toBe(1);
     expect(zonedParts(instant, "America/New_York").weekday).toBe(7);
+  });
+});
+
+describe("fixed UTC-offset site timezone", () => {
+  it("keeps the configured wall-clock time when changing the UTC offset", () => {
+    const utc8 = zonedDateTimeToIso("2026-09-25", "06:00", "UTC+08:00");
+    const utc10 = zonedDateTimeToIso("2026-09-25", "06:00", "UTC+10:00");
+
+    expect(utc8).toBe("2026-09-24T22:00:00.000Z");
+    expect(utc10).toBe("2026-09-24T20:00:00.000Z");
+    expect(zonedParts(new Date(utc8), "UTC+08:00").hour).toBe(6);
+    expect(zonedParts(new Date(utc10), "UTC+10:00").hour).toBe(6);
+  });
+
+  it("normalizes saved legacy IANA settings into UTC offsets", () => {
+    expect(normalizeUtcTimezone("Asia/Shanghai")).toBe("UTC+08:00");
+    expect(normalizeUtcTimezone("UTC+8")).toBe("UTC+08:00");
   });
 });

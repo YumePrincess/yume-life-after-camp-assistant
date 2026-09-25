@@ -28,6 +28,7 @@ import {
 } from "./identity-code-utils";
 import { getConfigBundle } from "./db";
 import {
+  dateAtUtcOffset,
   isWithinDailyClockWindow,
   nextTechnologyTargetDate
 } from "./time";
@@ -201,11 +202,11 @@ async function localizedExpiry(
       ja: "ja"
     }[locale],
     {
-      timeZone: bundle.campConfig.timezone,
+      timeZone: "UTC",
       dateStyle: "long",
       timeStyle: "short"
     }
-  ).format(new Date(value));
+    ).format(dateAtUtcOffset(new Date(value), bundle.campConfig.timezone));
 }
 
 function uuid(): string {

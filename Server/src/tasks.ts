@@ -18,6 +18,9 @@ import {
   technologyCatalogWithPrerequisites
 } from "./tech";
 import {
+  addDaysToDateKey,
+  clockToMinutes,
+  formatUtcOffsetTimestamp,
   isWithinDueWindow,
   isWithinDailyClockWindow,
   nextTechnologyTargetDate,
@@ -116,10 +119,28 @@ export async function buildVoteSummary(
     technologyConfig: bundle.technologyConfig,
     voteOptions: options
   });
+  const opensAt = bundle.campConfig.voteWindowStart;
+  const closesAt = bundle.campConfig.voteWindowEnd;
+  const opensAtDisplay = formatUtcOffsetTimestamp(
+    zonedDateTimeToIso(pollDate, opensAt, timezone),
+    timezone
+  );
+  const closesAtDate = closesAt === "24:00"
+    ? addDaysToDateKey(pollDate, 1)
+    : clockToMinutes(closesAt) <= clockToMinutes(opensAt)
+      ? addDaysToDateKey(pollDate, 1)
+      : pollDate;
+  const closesAtClock = closesAt === "24:00" ? "00:00" : closesAt;
+  const closesAtDisplay = formatUtcOffsetTimestamp(
+    zonedDateTimeToIso(closesAtDate, closesAtClock, timezone),
+    timezone
+  );
   return {
     pollDate,
-    opensAt: bundle.campConfig.voteWindowStart,
-    closesAt: bundle.campConfig.voteWindowEnd,
+    opensAt,
+    closesAt,
+    opensAtDisplay,
+    closesAtDisplay,
     isOpen,
     timezone,
     voteLimit: bundle.technologyConfig.voteLimit,

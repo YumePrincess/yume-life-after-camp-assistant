@@ -1,5 +1,6 @@
 const CLOCK_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const WINDOW_END_CLOCK_PATTERN = /^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/;
+const UTC_OFFSET_PATTERN = /^(?:UTC|GMT)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?$/i;
 
 export interface ZonedParts {
   year: number;
@@ -11,12 +12,73 @@ export interface ZonedParts {
   weekday: number;
 }
 
-export function assertTimezone(timezone: string): void {
+function parseUtcOffset(timezone: string): number | null {
+  const value = String(timezone || "").trim();
+  if (/^(?:UTC|GMT|Z|Etc\/(?:UTC|GMT))$/i.test(value)) return 0;
+  const match = UTC_OFFSET_PATTERN.exec(value);
+  if (!match) return null;
+  const hours = Number(match[2]);
+  const minutes = Number(match[3] || 0);
+  if (minutes > 59) throw new Error(`Invalid UTC offset: ${timezone}`);
+  const total = (hours * 60 + minutes) * (match[1] === "-" ? -1 : 1);
+  if (Math.abs(total) > 14 * 60) throw new Error(`Invalid UTC offset: ${timezone}`);
+  return total;
+}
+
+function offsetFromLegacyTimezone(timezone: string, date: Date): number {
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    const label = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "longOffset"
+    }).formatToParts(date).find((part) => part.type === "timeZoneName")?.value;
+    const match = /^(?:GMT|UTC)(?:([+-])(\d{1,2})(?::?(\d{2}))?)?$/i.exec(label || "");
+    if (match) {
+      if (!match[1]) return 0;
+      const total = (Number(match[2]) * 60 + Number(match[3] || 0)) *
+        (match[1] === "-" ? -1 : 1);
+      if (Math.abs(total) <= 14 * 60) return total;
+    }
+
+    // Older Intl implementations may omit longOffset. Derive a one-time
+    // compatibility offset for legacy IANA values; persisted settings are
+    // normalized to a fixed UTC offset before scheduling.
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23"
+      }).formatToParts(date)
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value])
+    );
+    const localAsUtc = Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour), Number(parts.minute), Number(parts.second)
+    );
+    return Math.round((localAsUtc - date.getTime()) / 60_000);
   } catch {
     throw new Error(`Invalid timezone: ${timezone}`);
   }
+}
+
+export function utcOffsetMinutes(timezone: string, date = new Date()): number {
+  return parseUtcOffset(timezone) ?? offsetFromLegacyTimezone(timezone, date);
+}
+
+export function normalizeUtcTimezone(timezone: string, date = new Date()): string {
+  const total = utcOffsetMinutes(timezone, date);
+  const sign = total < 0 ? "-" : "+";
+  const absolute = Math.abs(total);
+  return `UTC${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
+}
+
+export function assertTimezone(timezone: string): void {
+  utcOffsetMinutes(timezone);
 }
 
 export function assertClock(value: string, field = "time"): void {
@@ -43,44 +105,79 @@ export function windowEndClockToMinutes(value: string): number {
 }
 
 export function zonedParts(date: Date, timezone: string): ZonedParts {
-  assertTimezone(timezone);
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-    weekday: "short"
-  });
-  const values: Record<string, string> = {};
-  for (const part of formatter.formatToParts(date)) {
-    if (part.type !== "literal") {
-      values[part.type] = part.value;
-    }
-  }
-
-  const weekdayMap: Record<string, number> = {
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-    Sun: 7
-  };
+  const shifted = new Date(date.getTime() + utcOffsetMinutes(timezone, date) * 60_000);
+  const nativeWeekday = shifted.getUTCDay();
 
   return {
-    year: Number(values.year),
-    month: Number(values.month),
-    day: Number(values.day),
-    hour: Number(values.hour),
-    minute: Number(values.minute),
-    second: Number(values.second),
-    weekday: weekdayMap[values.weekday ?? "Mon"] ?? 1
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+    second: shifted.getUTCSeconds(),
+    weekday: nativeWeekday === 0 ? 7 : nativeWeekday
   };
+}
+
+export function dateAtUtcOffset(date: Date, timezone: string): Date {
+  return new Date(date.getTime() + utcOffsetMinutes(timezone, date) * 60_000);
+}
+
+/**
+ * Recursively add display-only siblings for ISO timestamps returned by the API.
+ * Original values remain untouched for comparisons, scheduling and form inputs.
+ */
+export function withTimestampDisplayFields<T>(value: T, timezone: string): T {
+  const visit = (current: unknown): unknown => {
+    if (Array.isArray(current)) return current.map(visit);
+    if (!current || typeof current !== "object") return current;
+
+    const source = current as Record<string, unknown>;
+    const result: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(source)) {
+      result[key] = visit(child);
+    }
+    for (const [key, child] of Object.entries(source)) {
+      if (typeof child !== "string" || !isZonedTimestamp(child)) continue;
+      const displayKey = timestampDisplayKey(key);
+      if (!displayKey || Object.prototype.hasOwnProperty.call(source, displayKey)) continue;
+      result[displayKey] = formatUtcOffsetTimestamp(child, timezone);
+    }
+    return result;
+  };
+
+  return visit(value) as T;
+}
+
+function isZonedTimestamp(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+}
+
+function timestampDisplayKey(key: string): string | null {
+  if (/(?:_at|_time|_date)$/.test(key)) return `${key}_display`;
+  if (/(?:At|Time|Date)$/.test(key)) return `${key}Display`;
+  return null;
+}
+
+export function formatUtcOffsetTimestamp(value: string | Date, timezone: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return String(value);
+  const parts = zonedParts(date, timezone);
+  const normalizedTimezone = normalizeUtcTimezone(timezone, date);
+  return `${dateKey(parts)} ${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} (${normalizedTimezone})`;
+}
+
+/** Preserve the displayed wall-clock value when a fixed site offset changes. */
+export function rebaseTimestampToTimezone(
+  value: string,
+  previousTimezone: string,
+  nextTimezone: string
+): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error("Invalid timestamp");
+  const offsetDelta = utcOffsetMinutes(previousTimezone, date) -
+    utcOffsetMinutes(nextTimezone, date);
+  return new Date(date.getTime() + offsetDelta * 60_000).toISOString();
 }
 
 export function dateKey(parts: Pick<ZonedParts, "year" | "month" | "day">): string {
@@ -96,7 +193,6 @@ export function zonedDateTimeToIso(
   localClock: string,
   timezone: string
 ): string {
-  assertTimezone(timezone);
   assertClock(localClock, "localClock");
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);
   if (!match) throw new Error("localDate must use YYYY-MM-DD");
@@ -116,19 +212,8 @@ export function zonedDateTimeToIso(
     throw new Error("localDate is not a valid calendar date");
   }
 
-  let candidate = new Date(targetEpoch);
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const actual = zonedParts(candidate, timezone);
-    const actualEpoch = Date.UTC(
-      actual.year,
-      actual.month - 1,
-      actual.day,
-      actual.hour,
-      actual.minute,
-      actual.second
-    );
-    candidate = new Date(candidate.getTime() + targetEpoch - actualEpoch);
-  }
+  const offset = utcOffsetMinutes(timezone, new Date(targetEpoch));
+  const candidate = new Date(targetEpoch - offset * 60_000);
   const verified = zonedParts(candidate, timezone);
   if (
     verified.year !== year ||
@@ -283,10 +368,9 @@ export function isWithinScheduledTaskPollingWindow(
 }
 
 /**
- * Find the next start of a task polling window. Returning a real Date (rather
- * than a minute count) keeps DST transitions correct for non-Asia/Shanghai
- * deployments. The search includes the previous local day because a window
- * around 00:00 begins on the preceding calendar date.
+ * Find the next start of a task polling window. The configured UTC offset is
+ * fixed, so conversion is independent of DST. The search includes the previous
+ * local day because a window around 00:00 begins on the preceding date.
  */
 export function nextScheduledTaskPollingWindowStart(
   now: Date,

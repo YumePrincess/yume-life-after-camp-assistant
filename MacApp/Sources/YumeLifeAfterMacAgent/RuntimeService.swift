@@ -5,6 +5,21 @@ actor RuntimeService {
     static let shared = RuntimeService()
     private let fileManager = FileManager.default
 
+    private static func isSupportedTimezone(_ value: String) -> Bool {
+        if TimeZone(identifier: value) != nil { return true }
+        let pattern = #"^UTC[+-](\d{2}):(\d{2})$"#
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: value,
+                range: NSRange(value.startIndex..., in: value)
+              ),
+              let hoursRange = Range(match.range(at: 1), in: value),
+              let minutesRange = Range(match.range(at: 2), in: value),
+              let hours = Int(value[hoursRange]),
+              let minutes = Int(value[minutesRange]) else { return false }
+        return hours <= 14 && minutes < 60 && (hours < 14 || minutes == 0)
+    }
+
     var applicationSupport: URL {
         fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appending(path: "Yume Life After Mac Agent", directoryHint: .isDirectory)
@@ -205,14 +220,11 @@ actor RuntimeService {
                 changed = true
             }
             if let storedTimezone = server["timezone"] as? String,
-               TimeZone(identifier: storedTimezone) != nil {
-                // Keep a valid user-selected timezone. Setup registration can
-                // replace the initial default with the Workers timezone.
+               Self.isSupportedTimezone(storedTimezone) {
+                // Accept both legacy IANA values and the fixed UTC offsets
+                // used by the current Workers API.
             } else {
-                // Legacy runtimes did not persist a local display timezone.
-                // Asia/Shanghai is the Workers default and is replaced during
-                // first registration when the deployment uses another zone.
-                server["timezone"] = "Asia/Shanghai"
+                server["timezone"] = "UTC+08:00"
                 changed = true
             }
             if server["agentToken"] as? String == "KEYCHAIN" {
