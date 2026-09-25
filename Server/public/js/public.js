@@ -1170,15 +1170,19 @@
 
   function renderVote(summary) {
     setText("poll-date", summary.pollDate || "--");
+    const opensAt = splitTimezoneSuffix(
+      summary.opensAtDisplay || summary.opensAt || "--"
+    );
+    const closesAt = splitTimezoneSuffix(
+      summary.closesAtDisplay || summary.closesAt || "--"
+    );
     setText(
       "vote-deadline",
       window.MrzhI18n.format("开放时间 {opensAt}–{closesAt} {timezone} · 共 {count} 人投票", {
         count: summary.ballotCount || 0,
-        opensAt: summary.opensAtDisplay || summary.opensAt || "--",
-        closesAt: summary.closesAtDisplay || summary.closesAt || "--",
-        timezone: summary.opensAtDisplay && summary.closesAtDisplay
-          ? ""
-          : summary.timezone || ""
+        opensAt: opensAt.value,
+        closesAt: closesAt.value,
+        timezone: opensAt.timezone || closesAt.timezone || summary.timezone || ""
       })
     );
     const voteLimit = configuredVoteLimit(summary);
@@ -1477,13 +1481,19 @@
     renderRichBlocks(description, item.descriptionBlocks);
     if (description.childElementCount) card.append(description);
     const meta = create("div", "daily-vote-meta");
+    const startAt = splitTimezoneSuffix(
+      formatVoteDateTime(item.startAt, item.startAtDisplay)
+    );
+    const endAt = splitTimezoneSuffix(
+      formatVoteDateTime(item.endAt, item.endAtDisplay)
+    );
     meta.append(
       create("span", "daily-vote-meta-item", window.MrzhI18n.format(
         "投票时间 {start} - {end} ({timezone})",
         {
-        start: formatVoteDateTime(item.startAt, item.startAtDisplay),
-        end: formatVoteDateTime(item.endAt, item.endAtDisplay),
-          timezone: configuredTimezone()
+          start: startAt.value,
+          end: endAt.value,
+          timezone: startAt.timezone || endAt.timezone || configuredTimezone()
         }
       ))
     );
@@ -1638,12 +1648,15 @@
       for (const item of items) {
         const card = create("article", "daily-history-card");
         const title = create("div", "daily-history-card-title");
+        const endAt = splitTimezoneSuffix(
+          formatVoteDateTime(item.endAt, item.endAtDisplay)
+        );
         renderRichBlocks(title, item.titleBlocks, window.MrzhI18n.t("未命名事项"));
         card.append(title, create("small", "muted", window.MrzhI18n.format(
           "投票截止时间 {end} ({timezone})",
           {
-          end: formatVoteDateTime(item.endAt, item.endAtDisplay),
-            timezone: configuredTimezone()
+            end: endAt.value,
+            timezone: endAt.timezone || configuredTimezone()
           }
         )));
         const participantRow = create("div", "daily-history-participant-row");
@@ -2006,6 +2019,14 @@
     } catch (_) {
       return formatDate(value);
     }
+  }
+
+  function splitTimezoneSuffix(value) {
+    const text = String(value || "");
+    const match = text.match(/\s+\((UTC(?:[+-]\d{2}:\d{2})?)\)\s*$/i);
+    return match
+      ? { value: text.slice(0, match.index).trimEnd(), timezone: match[1] }
+      : { value: text, timezone: "" };
   }
 
   function formatIdentityExpiry(value, timezone, displayValue) {

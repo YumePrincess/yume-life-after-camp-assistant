@@ -456,6 +456,14 @@
     }, configuredTimezone());
   }
 
+  function withoutTimezoneSuffix(value) {
+    const text = String(value || "");
+    const match = text.match(/\s+\((UTC(?:[+-]\d{2}:\d{2})?)\)\s*$/i);
+    return match
+      ? { value: text.slice(0, match.index).trimEnd(), timezone: match[1] }
+      : { value: text, timezone: "" };
+  }
+
   function formatIdentityExpiry(value, displayValue) {
     if (!value) return window.MrzhI18n.t("永久有效");
     if (typeof displayValue === "string" && displayValue) return displayValue;
@@ -1923,6 +1931,12 @@
       heading.append(titleGroup);
       if (actions.childElementCount) heading.append(actions);
       card.append(heading);
+      const startAt = withoutTimezoneSuffix(
+        formatDate(item.startAt, item.startAtDisplay)
+      );
+      const endAt = withoutTimezoneSuffix(
+        formatDate(item.endAt, item.endAtDisplay)
+      );
       card.append(create(
         "p",
         "daily-vote-admin-meta",
@@ -1931,8 +1945,8 @@
             ? "开放 {start} · 截止 {end} · 批次号 {batchNumber}"
             : "开放 {start} · 截止 {end}",
           {
-            start: formatDate(item.startAt, item.startAtDisplay),
-            end: formatDate(item.endAt, item.endAtDisplay),
+            start: startAt.value,
+            end: `${endAt.value} (${endAt.timezone || startAt.timezone || configuredTimezone()})`,
             batchNumber: item.batchNumber || "0"
           }
         )
