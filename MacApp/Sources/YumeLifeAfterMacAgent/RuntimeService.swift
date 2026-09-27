@@ -527,34 +527,7 @@ actor RuntimeService {
     private func migratePatrolSettings(_ object: inout [String: Any]) -> Bool {
         var changed = false
         var patrol = object["patrolTeamUi"] as? [String: Any] ?? [:]
-        let teamPanelDisplayRecoveryDefaults: [String: Any] = [
-            "enabled": true,
-            "probePoints": [
-                ["x": 300, "y": 105], ["x": 620, "y": 105],
-                ["x": 1000, "y": 105], ["x": 1420, "y": 105],
-                ["x": 300, "y": 1030], ["x": 620, "y": 1030],
-                ["x": 1000, "y": 1030], ["x": 1420, "y": 1030]
-            ],
-            "probeRadius": 18,
-            "minimumSamples": 6,
-            "minimumGrayscaleRatio": 0.75,
-            "maximumSaturation": 0.12,
-            "maximumChannelSpread": 0.12,
-            "minimumLuminanceRange": 0.35,
-            "minimumHighContrastSamples": 2,
-            "minimumLuminanceDeviation": 0.12,
-            "minimumDarkLuminance": 0.15,
-            "minimumBrightLuminance": 0.75,
-            "maxRecoveriesPerWait": 2
-        ]
-        if var displayRecovery = patrol["teamPanelDisplayRecovery"] as? [String: Any] {
-            for (key, value) in teamPanelDisplayRecoveryDefaults where displayRecovery[key] == nil {
-                displayRecovery[key] = value
-                changed = true
-            }
-            patrol["teamPanelDisplayRecovery"] = displayRecovery
-        } else {
-            patrol["teamPanelDisplayRecovery"] = teamPanelDisplayRecoveryDefaults
+        if patrol.removeValue(forKey: "teamPanelDisplayRecovery") != nil {
             changed = true
         }
         let teamPanelVerificationTexts = [
@@ -862,6 +835,14 @@ actor RuntimeService {
         }
 
         var share = patrol["share"] as? [String: Any] ?? [:]
+        for key in [
+            "recruitPoint", "recruitTextRegion", "recruitRecoveryRegion",
+            "recruitAiAttempts", "recruitOverlayControlPoints"
+        ] {
+            if share.removeValue(forKey: key) != nil {
+                changed = true
+            }
+        }
         if let recruitMenuWait = share["recruitMenuWaitMs"] as? NSNumber,
            recruitMenuWait.intValue == 3_000 {
             // Beta 137 shortens the stable-menu wait from the old fixed 3 s
@@ -895,24 +876,6 @@ actor RuntimeService {
         }
         if share["recruitOverlayDismissPoint"] == nil {
             share["recruitOverlayDismissPoint"] = ["x": 1800, "y": 900]
-            changed = true
-        }
-        if share["recruitRecoveryRegion"] == nil {
-            share["recruitRecoveryRegion"] = [
-                "left": 0, "top": 900, "right": 850, "bottom": 1200
-            ]
-            changed = true
-        }
-        if share["recruitAiAttempts"] == nil {
-            share["recruitAiAttempts"] = 2
-            changed = true
-        }
-        if share["recruitOverlayControlPoints"] == nil {
-            share["recruitOverlayControlPoints"] = [
-                "close_x": ["x": 1800, "y": 900],
-                "back": ["x": 75, "y": 1120],
-                "collapse": ["x": 1740, "y": 1110]
-            ]
             changed = true
         }
         if share["sceneChannelTexts"] == nil {

@@ -10,8 +10,7 @@ import {
   sharePatrolTeam,
   shareActivePatrolUntilDeadline,
   startHardPatrolWithRetry,
-  dailyDeadlineAt,
-  patrolTeamPanelDisplayCorrupted
+  dailyDeadlineAt
 } from "../src/workflows/patrol.mjs";
 
 test("patrol daily deadline is resolved in the configured timezone", () => {
@@ -2222,9 +2221,9 @@ test("active patrol share retry reports and waits for the configured interval", 
   assert.equal(retry.detail.retryDelayMs, 10 * 60_000);
 });
 
-test("patrol share rereads a missed recruit button and clicks its OCR position", async () => {
+test("patrol share clicks the fixed recruit point when OCR misses the label", async () => {
   const taps = [];
-  let recovered = false;
+  let recruitRegionOcrCalls = 0;
   const context = {
     config: patrolConfig(),
     ui: {
@@ -2239,15 +2238,6 @@ test("patrol share rereads a missed recruit button and clicks its OCR position",
           return {
             path: "team.png",
             observations: [observation("保卫古籍", 160, 20)]
-          };
-        }
-        if (label.includes("camp-recruit-verify-1")) {
-          return { path: "team.png", observations: [] };
-        }
-        if (label.includes("scene-recruit-verify-1")) {
-          return {
-            path: "team.png",
-            observations: [observation("招募", 300, 1100)]
           };
         }
         if (label.startsWith("patrol-share-camp-channel-menu")) {
@@ -2273,11 +2263,8 @@ test("patrol share rereads a missed recruit button and clicks its OCR position",
           observations: [observation("成功分享至场景频道", 780, 210)]
         };
       },
-      async ocrRegion(_path, _region, label) {
-        if (label.includes("camp-recruit-recovery")) {
-          recovered = true;
-          return [observation("招募", 270, 1100)];
-        }
+      async ocrRegion() {
+        recruitRegionOcrCalls += 1;
         return [];
       },
       find(observations, query, mode) {
@@ -2292,9 +2279,9 @@ test("patrol share rereads a missed recruit button and clicks its OCR position",
 
   await sharePatrolTeam(context);
 
-  assert.equal(recovered, true);
+  assert.equal(recruitRegionOcrCalls, 0);
   assert.deepEqual(taps, [
-    { x: 340, y: 1120 },
+    { x: 343, y: 1128 },
     { x: 420, y: 890 },
     { x: 343, y: 1128 },
     { x: 420, y: 890 }
@@ -2743,65 +2730,6 @@ test("patrol team becomes full when all three member cards are occupied", async 
   assert.ok(reports.includes("patrol_team_full_verified"));
 });
 
-test("patrol team panel recovery detects grayscale high-contrast rendering", async () => {
-  const result = await patrolTeamPanelDisplayCorrupted(
-    {
-      config: {
-        patrolTeamUi: {
-          teamPanelDisplayRecovery: {
-            minimumSamples: 6,
-            minimumHighContrastSamples: 2
-          }
-        }
-      },
-      vision: {
-        async probe() {
-          return [
-            { meanRed: 0.04, meanGreen: 0.04, meanBlue: 0.04, meanSaturation: 0, luminanceDeviation: 0.2 },
-            { meanRed: 0.06, meanGreen: 0.06, meanBlue: 0.06, meanSaturation: 0, luminanceDeviation: 0.2 },
-            { meanRed: 0.08, meanGreen: 0.08, meanBlue: 0.08, meanSaturation: 0, luminanceDeviation: 0.2 },
-            { meanRed: 0.1, meanGreen: 0.1, meanBlue: 0.1, meanSaturation: 0, luminanceDeviation: 0.2 },
-            { meanRed: 0.82, meanGreen: 0.82, meanBlue: 0.82, meanSaturation: 0, luminanceDeviation: 0.2 },
-            { meanRed: 0.86, meanGreen: 0.86, meanBlue: 0.86, meanSaturation: 0, luminanceDeviation: 0.2 },
-            { meanRed: 0.9, meanGreen: 0.9, meanBlue: 0.9, meanSaturation: 0, luminanceDeviation: 0.2 },
-            { meanRed: 0.94, meanGreen: 0.94, meanBlue: 0.94, meanSaturation: 0, luminanceDeviation: 0.2 }
-          ];
-        }
-      },
-      async report() {}
-    },
-    { frame: { path: "grayscale-team-panel.png" } }
-  );
-
-  assert.equal(result.detected, true);
-  assert.equal(result.state, "corrupted");
-  assert.equal(result.grayscaleSamples, 8);
-});
-
-test("patrol team panel recovery leaves a normally colored panel untouched", async () => {
-  const result = await patrolTeamPanelDisplayCorrupted(
-    {
-      config: { patrolTeamUi: { teamPanelDisplayRecovery: {} } },
-      vision: {
-        async probe() {
-          return Array.from({ length: 8 }, (_, index) => ({
-            meanRed: 0.3 + index * 0.02,
-            meanGreen: 0.45,
-            meanBlue: 0.7,
-            meanSaturation: 0.35,
-            luminanceDeviation: 0.2
-          }));
-        }
-      },
-      async report() {}
-    },
-    { frame: { path: "normal-team-panel.png" } }
-  );
-
-  assert.equal(result.detected, false);
-  assert.equal(result.state, "normal");
-});
-
 test("an out-of-camp member is removed from the leftmost member slot by OCR", async () => {
   const taps = [];
   const sleeps = [];
@@ -3039,20 +2967,12 @@ function patrolUiConfig() {
       teamPageTexts: [
         "营地巡逻任务",
         "保卫古籍",
-        "招募",
         "离开队伍"
       ],
       teamPageRegion: {
         left: 0,
         top: 0,
         right: 830,
-        bottom: 1180
-      },
-      recruitPoint: { x: 343, y: 1128 },
-      recruitTextRegion: {
-        left: 220,
-        top: 1040,
-        right: 480,
         bottom: 1180
       },
       recruitAttempts: 10,

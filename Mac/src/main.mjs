@@ -115,6 +115,10 @@ if (!once) {
     },
     onDisconnect: () => {
       console.warn(JSON.stringify({ event: "agent_control_disconnected" }));
+      // Commands remain durable in D1. Sweep immediately when notifications
+      // stop so a disconnect does not hold an already-queued task until the
+      // next reconnect.
+      wakeAgentLoop();
     },
     onError: (error) => {
       console.error(JSON.stringify({ event: "agent_control_error", message: error.message }));
@@ -123,7 +127,35 @@ if (!once) {
 }
 const presenceTimer = once
   ? null
-  : setInterval(() => sendAgentPresence(), HEARTBEAT_INTERVAL_MS);
+  : setInterval(() => {
+      // WebSocket pushes are the low-latency path. Periodically sweep the
+      // durable command queue as a fallback, and require a presence ack so a
+      // silently half-open socket is replaced instead of remaining stuck at
+      // readyState=OPEN forever.
+      wakeAgentLoop();
+      const stream = controlStream;
+      if (!stream) return;
+      void stream.sendPresenceAndWait({
+        agentId: config.server.agentId,
+        displayName: config.server.agentName || config.server.agentId,
+        ...heartbeatPayload()
+      }, 10_000).then((ack) => {
+        if (ack || controlStream !== stream) return;
+        console.warn(JSON.stringify({
+          event: "agent_control_presence_timeout",
+          message: "No presence acknowledgement; reconnecting control stream"
+        }));
+        stream.forceReconnect("presence-ack-timeout");
+      }).catch((error) => {
+        console.warn(JSON.stringify({
+          event: "agent_control_presence_failed",
+          message: error.message
+        }));
+        if (controlStream === stream) {
+          stream.forceReconnect("presence-request-failed");
+        }
+      });
+    }, HEARTBEAT_INTERVAL_MS);
 
 while (!stopping) {
   if (!once) await waitForAgentWake();

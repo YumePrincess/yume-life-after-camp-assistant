@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.patrol",
   "version": "27.1.0",
-  "build": 27128,
+  "build": 27129,
   "kind": "task",
   "architectures": [
     "arm64"

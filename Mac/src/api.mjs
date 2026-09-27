@@ -124,6 +124,28 @@ class AgentControlStream {
     });
   }
 
+  forceReconnect(reason = "control stream health check failed") {
+    if (this.closed) return false;
+
+    // A half-open TCP/WebSocket can keep readyState at OPEN without delivering
+    // command notifications or presence acknowledgements. Detach it before
+    // closing so the reconnect timer can always create a fresh socket even if
+    // the old transport never dispatches its close event.
+    const socket = this.socket;
+    this.socket = null;
+    this.connected = false;
+    this.resolvePresenceWaiters();
+    try {
+      socket?.close(4000, String(reason).slice(0, 120));
+    } catch {
+      // The connection is already unusable; the scheduled fresh connection
+      // below is the recovery path.
+    }
+    this.notify("onDisconnect");
+    this.scheduleReconnect();
+    return true;
+  }
+
   send(payload) {
     if (!this.connected || !this.socket) return false;
     try {

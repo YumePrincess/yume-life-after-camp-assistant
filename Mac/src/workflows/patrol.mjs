@@ -6,6 +6,8 @@ import {
 } from "../list-pagination.mjs";
 import { updateWorkflowProgress } from "./progress.mjs";
 
+const PATROL_RECRUIT_BUTTON_POINT = Object.freeze({ x: 343, y: 1128 });
+
 export async function runPatrol(context, command, bundle, signal) {
   try {
     return await runPatrolWorkflow(context, command, bundle, signal);
@@ -159,53 +161,6 @@ async function runPatrolWorkflow(context, command, bundle, signal) {
         "patrol-team-size-after-open",
         signal
       );
-    }
-    const displayRecovery = await patrolTeamPanelDisplayCorrupted(
-      context,
-      screen,
-      signal
-    );
-    if (displayRecovery.detected) {
-      const controls = context.config?.patrolTeamUi?.teamPanelDisplayRecovery || {};
-      const maxRecoveries = Math.max(
-        1,
-        Math.min(3, Number(controls.maxRecoveriesPerWait) || 2)
-      );
-      context.patrolTeamPanelDisplayRecoveryCount =
-        (context.patrolTeamPanelDisplayRecoveryCount || 0) + 1;
-      if (context.patrolTeamPanelDisplayRecoveryCount > maxRecoveries) {
-        throw new Error(
-          `PATROL_TEAM_PANEL_DISPLAY_RECOVERY_LIMIT: 队伍面板异常画面已连续恢复 ${maxRecoveries} 次仍未恢复正常色彩`
-        );
-      }
-      await report(
-        "warning",
-        "patrol_team_panel_display_recovery",
-        `检测到队伍面板黑白/高对比度异常画面，正在关闭队伍面板并通过 HUD 队伍卡片重新打开（第 ${context.patrolTeamPanelDisplayRecoveryCount}/${maxRecoveries} 次）`,
-        { displayRecovery, attempt: context.patrolTeamPanelDisplayRecoveryCount, maxAttempts: maxRecoveries }
-      );
-      await ui.executeFlow("closePatrolTeamPanelBeforeAccept", {}, signal);
-      await ui.executeFlow("openTeamPanel", {}, signal);
-      screen = await capturePatrolScreen(
-        vision,
-        "patrol-team-size-after-display-recovery",
-        signal
-      );
-      const recoveredDisplay = await patrolTeamPanelDisplayCorrupted(
-        context,
-        screen,
-        signal
-      );
-      if (recoveredDisplay.detected) {
-        await report(
-          "warning",
-          "patrol_team_panel_display_recovery_pending",
-          "队伍面板重开后仍检测到黑白/高对比度画面，本轮继续按恢复次数保护重试",
-          { displayRecovery: recoveredDisplay }
-        );
-      }
-    } else if (displayRecovery.state === "normal") {
-      context.patrolTeamPanelDisplayRecoveryCount = 0;
     }
     const full = await patrolTeamIsFull(
       context,
@@ -2606,7 +2561,6 @@ export async function sharePatrolTeam(context, signal) {
     controls.teamPageTexts || [
       "营地巡逻任务",
       "保卫古籍",
-      "招募",
       "离开队伍"
     ]
   ).some((text) =>
@@ -2711,13 +2665,6 @@ async function sharePatrolChannel(context, signal, common, target) {
     recruitMenuWaitMs,
     shareAttempts
   } = common;
-  const recruitTextRegion = controls.recruitTextRegion || {
-    left: 220,
-    top: 1_040,
-    right: 480,
-    bottom: 1_180
-  };
-  const recruitPoint = controls.recruitPoint || { x: 343, y: 1128 };
   const recruitOverlayTexts = controls.recruitOverlayTexts || [
     "邀请",
     "推荐组队",
@@ -2759,51 +2706,15 @@ async function sharePatrolChannel(context, signal, common, target) {
         ? "patrol_share_recruit"
         : "patrol_share_recruit_focus_retry",
       attempt === 1
-        ? `已确认队伍页面，点击“招募”准备分享${target.text}`
-        : `第 ${attempt - 1} 次点击后仍未识别到“${target.text}”；执行第 ${attempt}/${shareAttempts} 次重新 OCR 并点击“招募”`
+        ? `已确认队伍页面，按固定位置 (${PATROL_RECRUIT_BUTTON_POINT.x},${PATROL_RECRUIT_BUTTON_POINT.y}) 点击“招募”准备分享${target.text}`
+        : `第 ${attempt - 1} 次未确认“${target.text}”分享菜单；第 ${attempt}/${shareAttempts} 次按固定位置 (${PATROL_RECRUIT_BUTTON_POINT.x},${PATROL_RECRUIT_BUTTON_POINT.y}) 重新点击“招募”`
     );
-    const screen = await capturePatrolScreen(
-      vision,
-      `patrol-share-${target.key}-recruit-verify-${attempt}`,
-      signal
-    );
-    const recruit = await findRecruitControlForShare(
-      context,
-      screen,
-      {
-        attempt,
-        target,
-        recruitTextRegion,
-        recruitOverlayTexts,
-        recruitOverlayRegion,
-        recruitOverlayDismissPoint
-      },
-      signal
-    );
-    if (recruit.dismissed) {
-      await sleep(settleMs, signal);
-      continue;
-    }
-    if (!recruit.match) {
-      await report(
-        "warning",
-        "patrol_share_recruit_unverified",
-        `第 ${attempt}/${shareAttempts} 次点击前仍未确认“招募”；已完成高精度复读和遮挡诊断，不点击“更换队伍”或任何盲点`
-      );
-      await sleep(settleMs, signal);
-      continue;
-    }
-    const recruitMatch = recruit.match;
-    const recruitClickPoint = recruit.recovered
-      ? observationCenter(recruitMatch)
-      : recruitPoint;
+    const recruitClickPoint = PATROL_RECRUIT_BUTTON_POINT;
     await report(
       "info",
-      "patrol_share_recruit_verified",
-      recruit.recovered
-        ? `高精度 OCR 已补读“招募”按钮位置，点击文字中心 (${Math.round(recruitClickPoint.x)},${Math.round(recruitClickPoint.y)})`
-        : `OCR 已在底部招募行确认“招募”，点击固定招募按钮中心 (${Math.round(recruitClickPoint.x)},${Math.round(recruitClickPoint.y)})`,
-      { point: recruitClickPoint, recovered: recruit.recovered }
+      "patrol_share_recruit_fixed_point",
+      `队伍面板已确认；不依赖“招募”文字 OCR，直接点击固定招募按钮中心 (${recruitClickPoint.x},${recruitClickPoint.y})`,
+      { point: recruitClickPoint, fixed: true }
     );
     await tapPatrolHudMouse(ui, adb, recruitClickPoint, signal, sleep);
     // The full-team toast is deterministic but short-lived. Sample once
@@ -3170,156 +3081,6 @@ async function handlePatrolRecruitInterruption(
   return "task-menu";
 }
 
-async function findRecruitControlForShare(
-  context,
-  screen,
-  {
-    attempt,
-    target,
-    recruitTextRegion,
-    recruitOverlayTexts,
-    recruitOverlayRegion,
-    recruitOverlayDismissPoint
-  },
-  signal
-) {
-  const { config, ui, vision, report } = context;
-  const controls = config?.patrolTeamUi?.share || {};
-  const fastMatch = findTextInRegion(
-    vision,
-    screen.observations,
-    "招募",
-    recruitTextRegion
-  );
-  if (fastMatch) return { match: fastMatch, recovered: false, dismissed: false };
-
-  const recoveryRegion = controls.recruitRecoveryRegion || {
-    left: 0,
-    top: 900,
-    right: 850,
-    bottom: 1200
-  };
-  const accurateMatch = await findAnyPatrolTextWithAccurateRegion(
-    vision,
-    screen,
-    screen.observations,
-    ["招募"],
-    recoveryRegion,
-    `patrol-share-${target.key}-recruit-recovery-${attempt}`,
-    signal
-  );
-  if (accurateMatch) {
-    await report(
-      "info",
-      "patrol_share_recruit_accurate_recovered",
-      `普通 OCR 漏读“招募”后，高精度 OCR 已在扩大区域补读按钮位置；第 ${attempt} 次使用补读位置点击`,
-      { match: accurateMatch, recoveryRegion }
-    );
-    return { match: accurateMatch, recovered: true, dismissed: false };
-  }
-
-  const visibleOverlay = findAnyTextInRegion(
-    vision,
-    screen.observations,
-    recruitOverlayTexts,
-    recruitOverlayRegion
-  );
-  if (visibleOverlay) {
-    await report(
-      "warning",
-      "patrol_share_recruit_overlay_cleared",
-      `招募按钮未读到且检测到邀请弹窗（“${visibleOverlay.text}”）；点击已校准的弹窗外空白点解除遮挡后重试`,
-      { dismissPoint: recruitOverlayDismissPoint, overlayRegion: recruitOverlayRegion }
-    );
-    await tapPatrolMouse(ui, recruitOverlayDismissPoint, signal);
-    return { match: null, recovered: false, dismissed: true };
-  }
-
-  const aiRecoveryAttempts = Math.max(
-    1,
-    Math.min(3, Number(controls.recruitAiAttempts) || 2)
-  );
-  if (!vision?.advisor?.enabled || attempt > aiRecoveryAttempts) {
-    return { match: null, recovered: false, dismissed: false };
-  }
-
-  const minimum = Math.max(
-    0.95,
-    Number(vision.advisor?.config?.minimumActionConfidence) || 0.95
-  );
-  const overlayAdvice =
-    typeof vision.adviseOverlayControlCurrent === "function"
-      ? await vision
-          .adviseOverlayControlCurrent(
-            `patrol-share-${target.key}-recruit-overlay-${attempt}`,
-            { ocrTexts: screen.observations.map((item) => item.text) },
-            signal
-          )
-          .catch(() => null)
-      : null;
-  const controlPoints = controls.recruitOverlayControlPoints || {};
-  const overlayPoint = overlayAdvice
-    ? controlPoints[overlayAdvice.control]
-    : null;
-  if (
-    overlayAdvice &&
-    overlayAdvice.control !== "none" &&
-    Number(overlayAdvice.confidence) >= minimum &&
-    overlayPoint
-  ) {
-    await report(
-      "warning",
-      "patrol_share_recruit_ai_overlay_cleared",
-      `AI 以 ${(Number(overlayAdvice.confidence) * 100).toFixed(0)}% 置信判断有${overlayAdvice.control}遮挡；使用已校准清除点解除干扰后重试招募`,
-      { ...overlayAdvice, point: overlayPoint }
-    );
-    await tapPatrolMouse(ui, overlayPoint, signal);
-    return { match: null, recovered: false, dismissed: true };
-  }
-
-  const pageAdvice =
-    typeof vision.adviseCurrent === "function"
-      ? await vision
-          .adviseCurrent(
-            `patrol-share-${target.key}-recruit-button-${attempt}`,
-            {
-              expectedState: "target_text_visible",
-              taskHint:
-                "确认队伍面板底部左侧是否存在可点击的“招募”按钮；若按钮被邀请卡片、聊天面板或其他弹窗遮挡，返回对应界面状态。此结果只用于决定是否清除已知遮挡，不提供坐标。",
-              ocrTexts: screen.observations.map((item) => item.text)
-            },
-            signal
-          )
-          .catch(() => null)
-      : null;
-  await report(
-    pageAdvice?.state === "target_text_visible" &&
-      Number(pageAdvice.confidence) >= minimum
-      ? "info"
-      : "warning",
-    "patrol_share_recruit_ai_diagnostic",
-    pageAdvice
-      ? `AI 招募按钮诊断：${pageAdvice.state}，置信度 ${(Number(pageAdvice.confidence) * 100).toFixed(0)}%；仍需 OCR 确认按钮位置，不直接盲点`
-      : "招募按钮 AI 诊断不可用；继续按高精度 OCR 重试，不执行盲点",
-    pageAdvice || undefined
-  );
-  if (
-    pageAdvice?.state === "panel" &&
-    Number(pageAdvice.confidence) >= minimum &&
-    recruitOverlayDismissPoint
-  ) {
-    await report(
-      "warning",
-      "patrol_share_recruit_ai_panel_cleared",
-      "AI 高置信判断当前有功能弹窗遮挡；点击已校准的弹窗外空白点解除干扰后重试招募",
-      { point: recruitOverlayDismissPoint, advice: pageAdvice }
-    );
-    await tapPatrolMouse(ui, recruitOverlayDismissPoint, signal);
-    return { match: null, recovered: false, dismissed: true };
-  }
-  return { match: null, recovered: false, dismissed: false };
-}
-
 async function capturePatrolScreen(vision, label, signal) {
   const frame = await vision.capture(label, signal);
   let observations = frame.observations;
@@ -3332,140 +3093,6 @@ async function capturePatrolScreen(vision, label, signal) {
     }
   }
   return { frame, observations };
-}
-
-export async function patrolTeamPanelDisplayCorrupted(
-  context,
-  screen,
-  signal
-) {
-  const controls = context.config?.patrolTeamUi?.teamPanelDisplayRecovery;
-  if (controls?.enabled === false) {
-    return { enabled: false, detected: false, state: "disabled" };
-  }
-  if (!screen?.frame?.path || typeof context.vision?.probe !== "function") {
-    return { enabled: true, detected: false, state: "unavailable" };
-  }
-  const config = controls || {};
-  const points = Array.isArray(config.probePoints) && config.probePoints.length >= 4
-    ? config.probePoints
-    : [
-        { x: 300, y: 105 },
-        { x: 620, y: 105 },
-        { x: 1000, y: 105 },
-        { x: 1420, y: 105 },
-        { x: 300, y: 1030 },
-        { x: 620, y: 1030 },
-        { x: 1000, y: 1030 },
-        { x: 1420, y: 1030 }
-      ];
-  let probes;
-  try {
-    probes = await context.vision.probe(
-      screen.frame.path,
-      points,
-      Math.max(4, Number(config.probeRadius) || 18),
-      signal
-    );
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    await context.report(
-      "warning",
-      "patrol_team_panel_display_probe_failed",
-      "队伍面板异常色彩探测失败；本轮不盲目重开队伍面板",
-      { reason: error?.message || String(error) }
-    );
-    return { enabled: true, detected: false, state: "unavailable" };
-  }
-  const samples = (Array.isArray(probes) ? probes : []).map((probe) => {
-    const red = Number(probe?.meanRed);
-    const green = Number(probe?.meanGreen);
-    const blue = Number(probe?.meanBlue);
-    const saturation = Number(probe?.meanSaturation);
-    const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722;
-    return {
-      red,
-      green,
-      blue,
-      saturation,
-      luminance,
-      luminanceDeviation: Number(probe?.luminanceDeviation),
-      valid: [red, green, blue, saturation, luminance].every(Number.isFinite)
-    };
-  }).filter((sample) => sample.valid);
-  const minimumSamples = Math.max(
-    4,
-    Math.min(points.length, Number(config.minimumSamples) || 6)
-  );
-  if (samples.length < minimumSamples) {
-    return {
-      enabled: true,
-      detected: false,
-      state: "insufficient",
-      sampleCount: samples.length,
-      minimumSamples
-    };
-  }
-  const maximumSaturation = Number.isFinite(Number(config.maximumSaturation))
-    ? Number(config.maximumSaturation)
-    : 0.12;
-  const maximumChannelSpread = Number.isFinite(Number(config.maximumChannelSpread))
-    ? Number(config.maximumChannelSpread)
-    : 0.12;
-  const grayscaleSamples = samples.filter(
-    (sample) =>
-      sample.saturation <= maximumSaturation &&
-      Math.max(sample.red, sample.green, sample.blue) -
-        Math.min(sample.red, sample.green, sample.blue) <= maximumChannelSpread
-  );
-  const luminances = samples.map((sample) => sample.luminance);
-  const luminanceRange = Math.max(...luminances) - Math.min(...luminances);
-  const minimumLuminanceRange = Math.max(
-    0.1,
-    Number(config.minimumLuminanceRange) || 0.35
-  );
-  const minimumHighContrastSamples = Math.max(
-    0,
-    Number(config.minimumHighContrastSamples) || 2
-  );
-  const minimumDarkLuminance = Math.max(
-    0,
-    Math.min(0.5, Number(config.minimumDarkLuminance) || 0.15)
-  );
-  const minimumBrightLuminance = Math.min(
-    1,
-    Math.max(0.5, Number(config.minimumBrightLuminance) || 0.75)
-  );
-  const highContrastSamples = samples.filter(
-    (sample) =>
-      (Number.isFinite(sample.luminanceDeviation) &&
-        sample.luminanceDeviation >=
-          (Number(config.minimumLuminanceDeviation) || 0.12)) ||
-      sample.luminance <= minimumDarkLuminance ||
-      sample.luminance >= minimumBrightLuminance
-  );
-  const grayscaleRatio = grayscaleSamples.length / samples.length;
-  const minimumGrayscaleRatio = Math.min(
-    1,
-    Math.max(0.5, Number(config.minimumGrayscaleRatio) || 0.75)
-  );
-  const detected =
-    grayscaleSamples.length >= minimumSamples &&
-    grayscaleRatio >= minimumGrayscaleRatio &&
-    luminanceRange >= minimumLuminanceRange &&
-    highContrastSamples.length >= minimumHighContrastSamples;
-  return {
-    enabled: true,
-    detected,
-    state: detected ? "corrupted" : "normal",
-    sampleCount: samples.length,
-    grayscaleSamples: grayscaleSamples.length,
-    grayscaleRatio,
-    luminanceRange,
-    highContrastSamples: highContrastSamples.length,
-    minimumSamples,
-    minimumGrayscaleRatio
-  };
 }
 
 function patrolTeamCreated(vision, observations, controls) {
