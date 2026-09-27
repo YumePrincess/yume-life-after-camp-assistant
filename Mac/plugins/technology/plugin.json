@@ -2,13 +2,30 @@
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.technology",
   "version": "27.1.0",
-  "build": 27127,
+  "build": 27128,
   "kind": "task",
-  "architectures": ["arm64"],
+  "architectures": [
+    "arm64"
+  ],
   "minimumAgentVersion": "27.1.0",
   "entry": "plugin.mjs",
   "export": "run",
-  "task": { "key": "tech_switch", "positionIndependent": true },
-  "name": { "zh-Hans": "更新科技", "zh-Hant": "更新科技", "en": "Update technology", "ja": "技術を更新", "fr": "Mettre à jour les technologies" },
-  "summary": { "zh-Hans": "按固定科技与投票结果配置次日科技", "zh-Hant": "按固定科技與投票結果配置次日科技", "en": "Configure next-day technology from fixed choices and votes", "ja": "固定設定と投票結果から翌日の技術を構成", "fr": "Configurer les technologies du lendemain selon les choix fixes et les votes" }
+  "task": {
+    "key": "tech_switch",
+    "positionIndependent": true
+  },
+  "name": {
+    "zh-Hans": "更新科技",
+    "zh-Hant": "更新科技",
+    "en": "Update technology",
+    "ja": "技術を更新",
+    "fr": "Mettre à jour les technologies"
+  },
+  "summary": {
+    "zh-Hans": "按固定科技与投票结果配置次日科技",
+    "zh-Hant": "按固定科技與投票結果配置次日科技",
+    "en": "Configure next-day technology from fixed choices and votes",
+    "ja": "固定設定と投票結果から翌日の技術を構成",
+    "fr": "Configurer les technologies du lendemain selon les choix fixes et les votes"
+  }
 }

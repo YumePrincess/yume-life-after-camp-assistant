@@ -7,6 +7,10 @@ import {
 } from "../src/workflows/member-sync.mjs";
 import { normalizeActivity } from "../src/table-parser.mjs";
 import { delay } from "../src/process.mjs";
+import {
+  memberAlignmentSwipe,
+  scaledTableSwipeDurationMs
+} from "../src/list-pagination.mjs";
 
 const config = await loadConfig();
 const adb = new AdbClient(config);
@@ -63,10 +67,11 @@ try {
     })
   );
 
-  await adb.mouseSwipe(
+  await memberAlignmentSwipe(
+    adb,
     definition.pagination.from,
     definition.pagination.to,
-    definition.pagination.durationMs,
+    scaledTableSwipeDurationMs(definition.pagination.durationMs),
     controller.signal
   );
   await delay(1_000, controller.signal);
@@ -93,10 +98,11 @@ try {
     })
   );
 
-  await adb.mouseSwipe(
+  await memberAlignmentSwipe(
+    adb,
     definition.pagination.to,
     definition.pagination.from,
-    definition.pagination.durationMs,
+    scaledTableSwipeDurationMs(definition.pagination.durationMs),
     controller.signal
   );
   await delay(1_000, controller.signal);

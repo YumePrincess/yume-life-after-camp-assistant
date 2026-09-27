@@ -49,7 +49,7 @@ try {
   if (!mapText) {
     throw new Error("CITYHALL_CLOSE_DIAGNOSTIC_MAP_UNVERIFIED");
   }
-  await adb.key("KEYCODE_M", controller.signal);
+  await adb.key(41, controller.signal);
   await ui.waitAnyText(
     ["配方", "生存手册", "营地管理"],
     { timeoutSeconds: 12 },

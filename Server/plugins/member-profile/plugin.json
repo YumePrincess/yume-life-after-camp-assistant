@@ -2,19 +2,40 @@
   "schemaVersion": 1,
   "id": "member-profile",
   "version": "27.1.0",
-  "build": 27127,
+  "build": 27128,
   "displayName": "更新成员资料",
   "description": "成员职业、庄园、同居、公职与当前名单同步。",
   "builtin": true,
   "defaultEnabled": true,
   "tasks": [
-    { "key": "member_profile_sync", "name": "更新成员资料", "description": "更新职业、庄园、同居与公职，并刷新当前名单", "runPermission": "plugin:member-profile:run" }
+    {
+      "key": "member_profile_sync",
+      "name": "更新成员资料",
+      "description": "更新职业、庄园、同居与公职，并刷新当前名单",
+      "runPermission": "plugin:member-profile:run"
+    }
   ],
   "permissions": [
-    { "key": "admin:members", "label": "成员管理", "aliases": [] },
-    { "key": "plugin:member-profile:run", "label": "执行更新成员资料", "aliases": ["task:run", "admin:overview", "admin:members"] }
+    {
+      "key": "admin:members",
+      "label": "成员管理",
+      "aliases": []
+    },
+    {
+      "key": "plugin:member-profile:run",
+      "label": "执行更新成员资料",
+      "aliases": [
+        "task:run",
+        "admin:overview",
+        "admin:members"
+      ]
+    }
   ],
   "adminModules": [
-    { "view": "members", "label": "成员管理", "permission": "admin:members" }
+    {
+      "view": "members",
+      "label": "成员管理",
+      "permission": "admin:members"
+    }
   ]
 }

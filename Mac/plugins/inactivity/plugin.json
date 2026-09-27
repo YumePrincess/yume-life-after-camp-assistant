@@ -2,13 +2,30 @@
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.inactivity",
   "version": "27.1.0",
-  "build": 27127,
+  "build": 27128,
   "kind": "task",
-  "architectures": ["arm64"],
+  "architectures": [
+    "arm64"
+  ],
   "minimumAgentVersion": "27.1.0",
   "entry": "plugin.mjs",
   "export": "run",
-  "task": { "key": "inactivity_sync", "positionIndependent": false },
-  "name": { "zh-Hans": "更新斩杀预警", "zh-Hant": "更新斬殺預警", "en": "Update inactivity alerts", "ja": "離脱警告を更新", "fr": "Mettre à jour les alertes d'inactivité" },
-  "summary": { "zh-Hans": "读取活跃页面并更新离线预警名单", "zh-Hant": "讀取活躍頁面並更新離線預警名單", "en": "Read activity data and update the offline warning list", "ja": "アクティビティを読み取りオフライン警告一覧を更新", "fr": "Lire l'activité et actualiser la liste d'alerte hors ligne" }
+  "task": {
+    "key": "inactivity_sync",
+    "positionIndependent": false
+  },
+  "name": {
+    "zh-Hans": "更新斩杀预警",
+    "zh-Hant": "更新斬殺預警",
+    "en": "Update inactivity alerts",
+    "ja": "離脱警告を更新",
+    "fr": "Mettre à jour les alertes d'inactivité"
+  },
+  "summary": {
+    "zh-Hans": "读取活跃页面并更新离线预警名单",
+    "zh-Hant": "讀取活躍頁面並更新離線預警名單",
+    "en": "Read activity data and update the offline warning list",
+    "ja": "アクティビティを読み取りオフライン警告一覧を更新",
+    "fr": "Lire l'activité et actualiser la liste d'alerte hors ligne"
+  }
 }

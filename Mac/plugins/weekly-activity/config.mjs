@@ -38,17 +38,15 @@ export const config = {
         maxPages: 40,
         stopAfterStagnantPages: 2,
         rowHeightPx: 89,
-        // After a 356px page turn the first visible row can sit a few pixels
+        // After a 357px page turn the first visible row can sit a few pixels
         // under the table header. Extend only that row's OCR window upward;
         // never extend the last row into the fixed current-player row.
         firstRowTopPaddingPx: 20,
         // Keep the original card dimensions and coordinates. Only the avatar
         // column is covered before OCR so rank/name/points stay row-aligned.
         fixedBottomTop: 840,
-        // Keep the requested three-page cadence. ADB touch coordinates are
-        // integral pixels, so the workflow applies 356/357/358 repeatedly.
+        // Keep every page turn at the same calibrated 357px distance.
         swipeOffsetPx: 357,
-        swipeOffsetSequencePx: [356, 357, 358]
       }
     }
   },

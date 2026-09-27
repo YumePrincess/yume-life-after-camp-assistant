@@ -1,5 +1,9 @@
 import { delay } from "../process.mjs";
 import { reached, zonedClock } from "../clock.mjs";
+import {
+  memberAlignmentSwipe,
+  scaledTableSwipeDurationMs
+} from "../list-pagination.mjs";
 import { updateWorkflowProgress } from "./progress.mjs";
 
 export async function runPatrol(context, command, bundle, signal) {
@@ -2384,7 +2388,10 @@ function patrolCreatorOpen(vision, observations, controls) {
 async function scrollToCampAffairsCategory(context, signal) {
   const { adb, vision, report, sleep, controls } = context;
   const fallback = controls.campAffairsFallback;
-  if (!fallback || typeof adb?.mouseSwipe !== "function") return null;
+  if (
+    !fallback ||
+    (typeof adb?.shell !== "function" && typeof adb?.mouseSwipe !== "function")
+  ) return null;
 
   const texts = fallback.texts || ["营地事务", "营地事物"];
   const maxSwipes = Math.max(1, Math.min(3, Number(fallback.maxSwipes) || 1));
@@ -2396,12 +2403,20 @@ async function scrollToCampAffairsCategory(context, signal) {
       "patrol_camp_affairs_scroll_fallback",
       `固定先滑动左侧目标列表；第 ${attempt}/${maxSwipes} 次使用 ADB 鼠标上滑查找“营地事务/营地事物”`
     );
-    await adb.mouseSwipe(
+    const usedTouchFallback = await memberAlignmentSwipe(
+      adb,
       fallback.from,
       fallback.to,
-      Math.max(150, Number(fallback.durationMs) || 500),
+      scaledTableSwipeDurationMs(fallback.durationMs, 500),
       signal
     );
+    if (usedTouchFallback) {
+      await report(
+        "warning",
+        "patrol_camp_affairs_swipe_touch_fallback",
+        "巡逻目标左侧列表的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动"
+      );
+    }
     await sleep(settleMs, signal);
     const screen = await capturePatrolScreen(
       vision,

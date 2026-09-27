@@ -76,6 +76,96 @@ test("1920x1200 technology hitboxes keep the live-device calibration", async () 
   assert.equal(technologyPluginConfig.technology.selectorItemTapX, 178);
 });
 
+test("technology chooser keeps the fast reset and uses a 645px shared page swipe", async () => {
+  const resetSwipes = [];
+  const pageMotions = [];
+  let selectorFrames = 0;
+  const context = {
+    config: {
+      ...technologyConfig(),
+      technology: {
+        ...technologyConfig().technology,
+        selectorSwipe: {
+          ...technologyConfig().technology.selectorSwipe,
+          maxPages: 1,
+          resetToTop: {
+            from: { x: 430, y: 380 },
+            to: { x: 430, y: 850 },
+            durationMs: 220,
+            repeats: 1
+          }
+        }
+      }
+    },
+    ui: {
+      async tap() {},
+      async afterAction() {}
+    },
+    adb: {
+      async mouseSwipe(from, to, durationMs) {
+        resetSwipes.push({ from, to, durationMs });
+      },
+      async shell(args) {
+        pageMotions.push(args);
+      }
+    },
+    vision: {
+      async capture(label) {
+        if (label.startsWith("technology-selector-open-check")) {
+          return { path: `${label}.png`, observations: [] };
+        }
+        if (label.startsWith("technology-configure-check")) {
+          return {
+            path: `${label}.png`,
+            observations: [
+              observation("目标科技", 620, 430),
+              observation("配置", 700, 600)
+            ]
+          };
+        }
+        if (label.startsWith("technology-selector")) {
+          selectorFrames += 1;
+          return {
+            path: `${label}.png`,
+            observations: [
+              observation(
+                selectorFrames === 1 ? "其他科技" : "目标科技",
+                240,
+                650
+              )
+            ]
+          };
+        }
+        return {
+          path: `${label}.png`,
+          observations: [
+            observation("目标科技", 620, 430),
+            observation("卸下", 700, 600)
+          ]
+        };
+      },
+      find(observations, query, mode) {
+        return findObservation(observations, query, mode);
+      }
+    },
+    async sleep() {},
+    async report() {}
+  };
+
+  await selectTechnology(context, "core", 0, "目标科技");
+
+  assert.deepEqual(resetSwipes, [
+    {
+      from: { x: 430, y: 380 },
+      to: { x: 430, y: 850 },
+      durationMs: 220
+    }
+  ]);
+  assert.deepEqual(pageMotions[0], ["input", "mouse", "motionevent", "DOWN", 430, 900]);
+  assert.deepEqual(pageMotions.at(-1), ["input", "mouse", "motionevent", "UP", 430, 255]);
+  assert.equal(pageMotions.filter((event) => event[3] === "MOVE").length, 65);
+});
+
 test("technology slots unload core 1-6 then general 1-6 without re-clicking", async () => {
   const actions = [];
   const coreSlots = Array.from({ length: 6 }, (_, index) => ({
@@ -517,6 +607,7 @@ test("technology selection uses cropped OCR and a unique one-character OCR corre
 
 test("technology selection stops after the list content remains unchanged at the bottom", async () => {
   let swipes = 0;
+  let selectorFrames = 0;
   const reports = [];
   const context = {
     config: {
@@ -542,7 +633,20 @@ test("technology selection stops after the list content remains unchanged at the
       async capture(label) {
         return {
           path: `${label}.png`,
-          observations: [observation("列表最后一项", 240, 650)]
+          observations: label.startsWith("technology-selector-")
+            ? (() => {
+                selectorFrames += 1;
+                return [
+                  observation("科技分类一", 240, 350),
+                  observation(
+                    selectorFrames % 2 === 0 ? "科技分类乙" : "科技分类二",
+                    240,
+                    500
+                  ),
+                  observation("永葆青春", 240, 650)
+                ];
+              })()
+            : []
         };
       },
       find(observations, query, mode) {
@@ -799,8 +903,8 @@ function technologyConfig() {
         bottom: 1040
       },
       selectorSwipe: {
-        from: { x: 430, y: 820 },
-        to: { x: 430, y: 580 },
+        from: { x: 430, y: 900 },
+        to: { x: 430, y: 255 },
         durationMs: 450,
         maxPages: 0,
         resetToTop: { repeats: 0 }

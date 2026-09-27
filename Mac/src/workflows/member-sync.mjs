@@ -11,33 +11,29 @@ import {
   isMemberAvatarArtifact,
   isMemberIdentityBadge,
   isMemberProfessionArtifact,
+  isMemberSymbolOnlyName,
   isPlausibleMemberName
 } from "../member-name.mjs";
 import { delay } from "../process.mjs";
+import {
+  memberAlignmentSwipe,
+  scaledTableSwipeDurationMs,
+  TABLE_MOTION_MIN_INTERVAL_MS,
+  TABLE_PAGE_SPEED_FACTOR
+} from "../list-pagination.mjs";
 import {
   progressForRange,
   progressRangeSlice,
   updateWorkflowProgress
 } from "./progress.mjs";
 
-// Table paging is deliberately accelerated in one place so member, contribution
-// and inactivity scans keep the same calibrated row endpoints while changing
-// only the time spent moving and settling between pages. The previous runtime
-// used 0.60; 0.42 is an additional 30% reduction from that baseline.
-export const TABLE_PAGE_SPEED_FACTOR = 0.42;
-export const TABLE_MOTION_MIN_INTERVAL_MS = 48;
+export {
+  memberAlignmentSwipe,
+  scaledTableSwipeDurationMs,
+  TABLE_MOTION_MIN_INTERVAL_MS,
+  TABLE_PAGE_SPEED_FACTOR
+};
 export const ALIGNED_TABLE_PAGE_STEP_REDUCTION_PX = 1;
-
-function scaledTableSwipeDurationMs(value, fallback = 1_000) {
-  const configured = Number(value);
-  return Math.max(
-    100,
-    Math.round(
-      (Number.isFinite(configured) && configured > 0 ? configured : fallback) *
-        TABLE_PAGE_SPEED_FACTOR
-    )
-  );
-}
 
 function scaledTableSettleMs(value, fallback, minimum = 0) {
   const configured = Number(value);
@@ -820,6 +816,7 @@ export async function capturePagedTable(
   let tailFullPageReason = null;
   let tailCorrectionAttempts = 0;
   const memberPageRetries = new Map();
+  const penultimateNormalReadNames = new Map();
   let stoppedOnIncompletePage = false;
   let incompletePage = null;
   let incompletePageNames = [];
@@ -915,8 +912,10 @@ export async function capturePagedTable(
       await report(
         "info",
         "member_details_tail_fixed_geometry",
-        currentTailReason === "penultimate-incomplete"
-          ? `第 ${page + 1} 页普通区域连续只确认不足 ${memberRowsPerPage} 行，切换到末页规则：忽略顶部半行并扫描其下方 ${memberRowsPerPage} 个成员槽位`
+        ["penultimate-incomplete", "penultimate-leading-partial"].includes(
+          currentTailReason
+        )
+          ? `第 ${page + 1} 页普通区域连续扫描失败两次，切换到末页规则：忽略顶部半行并扫描其下方 ${memberRowsPerPage} 个成员槽位`
           : `第 ${page + 1} 页为预测末页，扫描区域已下移到顶部半行下方，锁定其下方 ${memberRowsPerPage} 个成员槽位读取；末页仅保留按当前累计名单计算的剩余成员`,
         {
           page: page + 1,
@@ -937,7 +936,9 @@ export async function capturePagedTable(
               : memberRowsPerPage - (expectedTailOverlapCount || 0)
           ),
           finalPage: scheduledLastPage,
-          penultimateRecovery: currentTailReason === "penultimate-incomplete",
+          penultimateRecovery: String(currentTailReason || "").startsWith(
+            "penultimate-"
+          ),
           positionLocked: true
         }
       );
@@ -945,12 +946,15 @@ export async function capturePagedTable(
       await report(
         "info",
         "member_details_penultimate_fixed_geometry",
-        `第 ${page + 1} 页为预测末页前一页，锁定当前位置读取顶部 ${memberRowsPerPage} 个完整成员槽位，忽略底部半行和固定底部行，不执行行校准滑动`,
+        `第 ${page + 1} 页为预测末页前一页，按普通页区域读取顶部 ${memberRowsPerPage} 个完整成员槽位并锁定当前位置；只有识别到半行/缺行异常时才切换末页区域重读`,
         {
           page: page + 1,
           expectedCount,
           expectedPageCount,
           fixedTopRows: memberRowsPerPage,
+          scanRegion: pageDefinition.region,
+          scanRegionSource: "normal-member-page",
+          skippedLeadingPartialRow: false,
           ignoredBottomPartialRows: 1,
           fixedBottomRows: 1,
           finalPage: false,
@@ -963,6 +967,8 @@ export async function capturePagedTable(
     const pageStartedAt = Date.now();
     let frame;
     let rows = [];
+    let penultimateTailGeometryRequested = false;
+    let penultimateCorroboratedNewRows = 0;
     let tailOverlapKeys = new Set();
     let observedTailOverlapKeys = new Set();
     let tailOverlapRowIndexes = new Set();
@@ -1055,9 +1061,18 @@ export async function capturePagedTable(
         // must run before the visible-row slice; otherwise an avatar token
         // can consume one of the five slots and hide the real member below it.
         attemptRows = filterMemberDetailRows(attemptRows);
-          if (!fullPageRead) {
-            const visibleRows = Number(definition.pagination.rowsPerPage) || 5;
-            attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
+        if (
+          penultimateFixedGeometry &&
+          !fullPageRead &&
+          (attemptRows.length >
+            (Number(definition.pagination.rowsPerPage) || 5) ||
+            isMemberSymbolOnlyName(attemptRows[0]?.name))
+        ) {
+          penultimateTailGeometryRequested = true;
+        }
+        if (!fullPageRead) {
+          const visibleRows = Number(definition.pagination.rowsPerPage) || 5;
+          attemptRows = attemptRows.slice(0, Math.max(1, visibleRows));
         }
       }
       const contributionNeedsRecovery =
@@ -1176,6 +1191,14 @@ export async function capturePagedTable(
               const visibleRows = fullPageRead
                 ? Number(pageDefinition.pagination.fullPageRows) || 7
                 : Number(definition.pagination.rowsPerPage) || 5;
+              if (
+                penultimateFixedGeometry &&
+                !fullPageRead &&
+                (recoveredMemberRows.length > visibleRows ||
+                  isMemberSymbolOnlyName(recoveredMemberRows[0]?.name))
+              ) {
+                penultimateTailGeometryRequested = true;
+              }
               const nativeMemberRows = filterMemberDetailRows(
                 nativeRowsBeforeAdvisor
               );
@@ -1206,6 +1229,14 @@ export async function capturePagedTable(
         attemptRows = attemptRows.slice(0, rowsPerPage);
       }
       if (
+        memberDetailsMode &&
+        penultimateFixedGeometry &&
+        !fullPageRead &&
+        isMemberSymbolOnlyName(attemptRows[0]?.name)
+      ) {
+        penultimateTailGeometryRequested = true;
+      }
+      if (
         !frame ||
         attemptRows.length > rows.length ||
         (memberDetailsMode &&
@@ -1231,6 +1262,69 @@ export async function capturePagedTable(
         }
       );
       await ui.afterAction(signal);
+    }
+    if (penultimateFixedGeometry && !fullPageRead) {
+      const rememberedNames = penultimateNormalReadNames.get(page) || [];
+      const rememberedKeys = new Set(
+        rememberedNames.map((name) => memberProfileNameKey(name))
+      );
+      for (const row of rows) {
+        const name = String(row?.name || "").trim();
+        const key = memberProfileNameKey(name);
+        if (
+          !key ||
+          rememberedKeys.has(key) ||
+          isMemberSymbolOnlyName(name) ||
+          !isPlausibleMemberName(name)
+        ) {
+          continue;
+        }
+        rememberedKeys.add(key);
+        rememberedNames.push(name);
+      }
+      penultimateNormalReadNames.set(page, rememberedNames);
+    }
+    if (penultimateTailGeometryRequested && !fullPageRead) {
+      const normalFailureCount = (memberPageRetries.get(page) || 0) + 1;
+      if (normalFailureCount < 2) {
+        memberPageRetries.set(page, normalFailureCount);
+        await report(
+          "warning",
+          "member_details_penultimate_normal_retry",
+          `第 ${page + 1} 页普通区域第 ${normalFailureCount}/2 次扫描发现顶部半行候选，保持当前位置再按普通页规则扫描一次`,
+          {
+            page: page + 1,
+            expectedCount,
+            expectedPageCount,
+            normalFailureCount,
+            requiredNormalFailures: 2,
+            positionLocked: true,
+            normalScanRegion: definition.region,
+            recognizedNames: rows.map((row) => row.name).filter(Boolean)
+          }
+        );
+        continue;
+      }
+      tailFullPagePending = true;
+      tailFullPageReason = "penultimate-leading-partial";
+      memberPageRetries.delete(page);
+      await report(
+        "warning",
+        "member_details_penultimate_tail_retry",
+        `第 ${page + 1} 页普通区域连续扫描失败 ${normalFailureCount} 次，保持当前位置切换末页扫描区域重读，排除顶部半行`,
+        {
+          page: page + 1,
+          expectedCount,
+          expectedPageCount,
+          normalFailures: normalFailureCount,
+          positionLocked: true,
+          normalScanRegion: definition.region,
+          tailScanRegion: memberFullPageDefinition(definition).region,
+          detectedLeadingSymbolName: isMemberSymbolOnlyName(rows[0]?.name),
+          recognizedNames: rows.map((row) => row.name).filter(Boolean)
+        }
+      );
+      continue;
     }
     rows = rows.filter(
       (row) =>
@@ -1416,6 +1510,35 @@ export async function capturePagedTable(
         // genuinely new leading member untouched while preventing a model
         // substitution from becoming a new roster entry.
         rawRows = restoreMemberTailLeadingOverlap(previousRows, rawRows);
+      }
+      if (fullPageRead && penultimateFixedGeometry) {
+        rawRows = orderMemberTailRowsByObservedNames(
+          rawRows,
+          penultimateNormalReadNames.get(page)
+        );
+        const rememberedKeys = new Set(
+          (penultimateNormalReadNames.get(page) || []).map((name) =>
+            memberProfileNameKey(name)
+          )
+        );
+        for (const row of rawRows) {
+          const key = memberProfileNameKey(row?.name);
+          if (
+            !key ||
+            byName.has(key) ||
+            !rememberedKeys.has(key) ||
+            isMemberSymbolOnlyName(row.name) ||
+            !isPlausibleMemberName(row.name)
+          ) {
+            continue;
+          }
+          byName.set(key, {
+            ...row,
+            __memberPage: page + 1,
+            __memberTail: false
+          });
+          penultimateCorroboratedNewRows += 1;
+        }
       }
       if (fullPageRead && page > 0) {
         // The expanded tail crop can return the unique rows before the
@@ -1701,23 +1824,50 @@ export async function capturePagedTable(
       hasNormalMemberCollision(rows, byName);
     if (unresolvedNormalMemberCollision) {
       const retryCount = (memberPageRetries.get(page) || 0) + 1;
-      const pageRetryLimit = maxMemberPageRetries;
+      const retryAllowed = penultimateFixedGeometry
+        ? retryCount < 2
+        : retryCount <= maxMemberPageRetries;
+      const maxRetries = penultimateFixedGeometry
+        ? 1
+        : maxMemberPageRetries;
       const recognizedNames = rows
         .map((row) => String(row?.name || "").trim())
         .filter(Boolean);
-      if (retryCount <= pageRetryLimit) {
+      if (retryAllowed) {
         memberPageRetries.set(page, retryCount);
         await report(
           "warning",
           "member_details_duplicate_retry",
-          `第 ${page + 1} 页检测到普通页重复/跨页重复候选，保留全部行并在当前位置重读，不推进到下一页（第 ${retryCount}/${pageRetryLimit} 次）；当前已读到：${recognizedNames.join("、") || "无"}`,
+          penultimateFixedGeometry
+            ? `第 ${page + 1} 页普通区域第 ${retryCount}/2 次扫描失败（重复候选），保持当前位置再按普通页规则扫描一次`
+            : `第 ${page + 1} 页检测到普通页重复/跨页重复候选，保留全部行并在当前位置重读，不推进到下一页（第 ${retryCount}/${maxRetries} 次）；当前已读到：${recognizedNames.join("、") || "无"}`,
           {
             page: page + 1,
             recognizedRows: rows.length,
             expectedRows: memberRowsPerPage,
-            maxRetries: pageRetryLimit,
+            maxRetries,
+            normalFailureCount: penultimateFixedGeometry ? retryCount : null,
             recognizedNames,
             duplicateRemovalAllowed: false
+          }
+        );
+        continue;
+      }
+      if (penultimateFixedGeometry && hasFullPageDefinition) {
+        tailFullPagePending = true;
+        tailFullPageReason = "penultimate-incomplete";
+        memberPageRetries.delete(page);
+        await report(
+          "warning",
+          "member_details_penultimate_tail_fallback",
+          `第 ${page + 1} 页普通区域连续扫描失败 ${retryCount} 次，改用末页偏移区域重读后再继续翻页`,
+          {
+            page: page + 1,
+            recognizedRows: rows.length,
+            expectedRows: memberRowsPerPage,
+            retries: retryCount,
+            positionLocked: true,
+            scanRegion: memberFullPageDefinition(definition).region
           }
         );
         continue;
@@ -1737,7 +1887,7 @@ export async function capturePagedTable(
           page: page + 1,
           recognizedRows: rows.length,
           recognizedNames,
-          maxRetries: pageRetryLimit,
+          maxRetries,
           duplicateRemovalAllowed: false
         }
       );
@@ -1745,8 +1895,13 @@ export async function capturePagedTable(
     }
     if (memberDetailsMode && !fullPageRead && rows.length < memberRowsPerPage) {
       const retryCount = (memberPageRetries.get(page) || 0) + 1;
-      const pageRetryLimit = penultimateFixedGeometry ? 3 : maxMemberPageRetries;
-      if (retryCount <= pageRetryLimit) {
+      const retryAllowed = penultimateFixedGeometry
+        ? retryCount < 2
+        : retryCount <= maxMemberPageRetries;
+      const maxRetries = penultimateFixedGeometry
+        ? 1
+        : maxMemberPageRetries;
+      if (retryAllowed) {
         memberPageRetries.set(page, retryCount);
         const recognizedNames = rows
           .map((row) => String(row?.name || "").trim())
@@ -1754,12 +1909,15 @@ export async function capturePagedTable(
         await report(
           "warning",
           "member_details_page_incomplete_retry",
-          `第 ${page + 1} 页只确认 ${rows.length}/${memberRowsPerPage} 行，保持当前位置重读，不推进到下一页（第 ${retryCount}/${pageRetryLimit} 次）；当前已读到：${recognizedNames.join("、") || "无"}`,
+          penultimateFixedGeometry
+            ? `第 ${page + 1} 页普通区域第 ${retryCount}/2 次扫描失败，只确认 ${rows.length}/${memberRowsPerPage} 行；保持当前位置再按普通页规则扫描一次`
+            : `第 ${page + 1} 页只确认 ${rows.length}/${memberRowsPerPage} 行，保持当前位置重读，不推进到下一页（第 ${retryCount}/${maxRetries} 次）；当前已读到：${recognizedNames.join("、") || "无"}`,
           {
             page: page + 1,
             recognizedRows: rows.length,
             expectedRows: memberRowsPerPage,
-            maxRetries: pageRetryLimit,
+            maxRetries,
+            normalFailureCount: penultimateFixedGeometry ? retryCount : null,
             penultimateRecovery: penultimateFixedGeometry,
             recognizedNames
           }
@@ -1767,22 +1925,22 @@ export async function capturePagedTable(
         continue;
       }
       if (penultimateFixedGeometry && hasFullPageDefinition) {
-        // When the normal top-five crop still sees only four rows, this page
-        // is the game's hidden final position.  Re-read it in the same place
-        // with the tail geometry before advancing to the calculated final
-        // page.  This is deliberately limited to remainder-one rosters.
+        // When the ordinary page scan still sees fewer rows after two failed
+        // reads, the game may already be at its hidden final position. Re-read
+        // the same viewport with tail geometry before advancing. This remains
+        // limited to the penultimate page of remainder-one rosters.
         tailFullPagePending = true;
         tailFullPageReason = "penultimate-incomplete";
         memberPageRetries.delete(page);
         await report(
           "warning",
           "member_details_penultimate_tail_fallback",
-          `第 ${page + 1} 页连续 ${pageRetryLimit} 次普通区域仍只确认 ${rows.length}/${memberRowsPerPage} 行，改用末页偏移区域重读后再继续翻页`,
+          `第 ${page + 1} 页普通区域连续扫描失败 ${retryCount} 次（当前 ${rows.length}/${memberRowsPerPage} 行），改用末页偏移区域重读后再继续翻页`,
           {
             page: page + 1,
             recognizedRows: rows.length,
             expectedRows: memberRowsPerPage,
-            retries: pageRetryLimit,
+            retries: retryCount,
             positionLocked: true,
             scanRegion: memberFullPageDefinition(definition).region
           }
@@ -1851,7 +2009,7 @@ export async function capturePagedTable(
       }
     }
     const fingerprint = rows.map((row) => row.name).join("|");
-    let added = 0;
+    let added = penultimateCorroboratedNewRows;
     let rejectedAfterExpectedCount = 0;
     if (contributionTableMode) {
       // Contribution pages are retained as raw page output.  Overlap and
@@ -2216,37 +2374,29 @@ export async function capturePagedTable(
             y: Math.round(Number(swipeFrom.y) - alignedPageHeightPx)
           }
         : swipeTo;
-    if (memberDetailsMode || alignedPagedTableMode) {
-      // MuMu accelerates a single long mouse swipe near the endpoint. That
-      // can jump past one or more rows. Send the same calibrated drag as
-      // small MOVE segments and release immediately at the calibrated
-      // endpoint so the next page starts on a row boundary. The calibrated
-      // duration is shortened by 58% (an additional 30% over the previous
-      // 0.60 factor) without changing either endpoint or the segmented path.
-      const usedTouchFallback = await memberAlignmentSwipe(
-        adb,
-        swipeFrom,
-        effectiveAlignedSwipeTo,
-        scaledTableSwipeDurationMs(definition.pagination.durationMs),
-        signal
-      );
-      if (usedTouchFallback) {
-        await report(
-          "warning",
-          memberDetailsMode
-            ? "member_details_swipe_touch_fallback"
-            : "table_swipe_touch_fallback",
-          memberDetailsMode
-            ? "成员详情滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动"
-            : `${contributionTableMode ? "贡献" : "斩杀预警"}列表滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动`
-        );
-      }
-    } else {
-      await adb.mouseSwipe(
-        swipeFrom,
-        swipeTo,
-        definition.pagination.durationMs,
-        signal
+    // Use one calibrated page gesture for every table so task diagnostics and
+    // production flows scroll with the same 10px moves and release point.
+    const usedTouchFallback = await memberAlignmentSwipe(
+      adb,
+      swipeFrom,
+      effectiveAlignedSwipeTo,
+      scaledTableSwipeDurationMs(definition.pagination.durationMs),
+      signal
+    );
+    if (usedTouchFallback) {
+      const listName = memberDetailsMode
+        ? "成员资料"
+        : contributionTableMode
+          ? "贡献"
+          : activityTableMode
+            ? "斩杀预警"
+            : "任务表格";
+      await report(
+        "warning",
+        memberDetailsMode
+          ? "member_details_swipe_touch_fallback"
+          : "table_swipe_touch_fallback",
+        `${listName}列表滚动的 MuMu 鼠标注入被系统拒绝，已切换 Android 触摸滑动`
       );
     }
     const fixedPageSettle =
@@ -2788,50 +2938,6 @@ async function alignMemberDetailsPage(
     );
   }
   return frame;
-}
-
-export async function memberAlignmentSwipe(adb, from, to, durationMs, signal) {
-  if (typeof adb.shell !== "function") {
-    await adb.mouseSwipe(from, to, durationMs, signal);
-    return false;
-  }
-  const distance = Math.abs(Number(to.y) - Number(from.y));
-  const steps = Math.max(2, Math.ceil(distance / 10));
-    const intervalMs = Math.max(
-      TABLE_MOTION_MIN_INTERVAL_MS,
-      Math.round(durationMs / steps)
-    );
-  const shellMotion = async (action, y) => {
-    await adb.shell(
-      ["input", "mouse", "motionevent", action, Math.round(from.x), Math.round(y)],
-      { signal, timeoutMs: 5_000 }
-    );
-  };
-  try {
-    await shellMotion("DOWN", from.y);
-    for (let step = 1; step <= steps; step += 1) {
-      await (delay)(intervalMs, signal);
-      const progress = step / steps;
-      await shellMotion("MOVE", from.y + (to.y - from.y) * progress);
-    }
-    await (delay)(intervalMs, signal);
-    await shellMotion("UP", to.y);
-    return false;
-  } catch (error) {
-    // Some MuMu/Android images allow input swipe but reject shell-level
-    // mouse motionevent injection with INJECT_EVENTS.  A failed segmented
-    // mouse gesture must not turn a readable member page into a task crash.
-    if (
-      typeof adb.touchSwipe !== "function" ||
-      !/INJECT_EVENTS|Injecting to another application|SecurityException/i.test(
-        String(error?.message || error)
-      )
-    ) {
-      throw error;
-    }
-    await adb.touchSwipe(from, to, durationMs, signal);
-    return true;
-  }
 }
 
 async function readMemberColorBands(
@@ -3434,6 +3540,33 @@ function restoreMemberTailLeadingOverlap(previousRows, currentRows) {
     }
   }
   return current;
+}
+
+function orderMemberTailRowsByObservedNames(rows, observedNames = []) {
+  const names = Array.isArray(observedNames) ? observedNames : [];
+  if (!Array.isArray(rows) || rows.length < 2 || names.length === 0) {
+    return rows;
+  }
+  const observedOrder = new Map(
+    names.map((name, index) => [memberProfileNameKey(name), index])
+  );
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const leftOrder = observedOrder.get(
+        memberProfileNameKey(left.row?.name)
+      );
+      const rightOrder = observedOrder.get(
+        memberProfileNameKey(right.row?.name)
+      );
+      if (leftOrder === undefined && rightOrder === undefined) {
+        return left.index - right.index;
+      }
+      if (leftOrder === undefined) return 1;
+      if (rightOrder === undefined) return -1;
+      return leftOrder - rightOrder || left.index - right.index;
+    })
+    .map(({ row }) => row);
 }
 
 function mergeMemberRecoveryCandidates(

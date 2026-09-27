@@ -2,16 +2,28 @@
   "schemaVersion": 1,
   "id": "patrol",
   "version": "27.1.0",
-  "build": 27127,
+  "build": 27128,
   "displayName": "营地巡逻",
   "description": "组建巡逻队、困难路线与定时古籍分享。",
   "builtin": true,
   "defaultEnabled": true,
   "tasks": [
-    { "key": "patrol", "name": "营地巡逻", "description": "组队、困难路线与定时古籍分享", "runPermission": "plugin:patrol:run" }
+    {
+      "key": "patrol",
+      "name": "营地巡逻",
+      "description": "组队、困难路线与定时古籍分享",
+      "runPermission": "plugin:patrol:run"
+    }
   ],
   "permissions": [
-    { "key": "plugin:patrol:run", "label": "执行营地巡逻", "aliases": ["task:run", "admin:overview"] }
+    {
+      "key": "plugin:patrol:run",
+      "label": "执行营地巡逻",
+      "aliases": [
+        "task:run",
+        "admin:overview"
+      ]
+    }
   ],
   "adminModules": []
 }

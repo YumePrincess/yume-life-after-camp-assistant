@@ -2,13 +2,18 @@
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.weekly-activity",
   "version": "27.1.0",
-  "build": 27127,
+  "build": 27128,
   "kind": "task",
-  "architectures": ["arm64"],
+  "architectures": [
+    "arm64"
+  ],
   "minimumAgentVersion": "27.1.0",
   "entry": "plugin.mjs",
   "export": "run",
-  "task": { "key": "weekly_activity_sync", "positionIndependent": true },
+  "task": {
+    "key": "weekly_activity_sync",
+    "positionIndependent": true
+  },
   "name": {
     "zh-Hans": "更新周活跃点",
     "zh-Hant": "更新週活躍點",

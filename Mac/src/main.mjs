@@ -331,13 +331,13 @@ async function executeCommand(command, signal) {
       timestamp: new Date().toISOString(),
       ...record
     };
-    // Every task-facing log entry gets one contemporaneous screen, even when
-    // the workflow did not attach a screenshot to its server detail payload.
-    // This is a raw capture: it does not add another OCR pass or alter the
-    // decisions of the actual workflow.
+    // Lifecycle events get a supplemental screenshot. Table pages and masks
+    // are already preserved by Vision; taking another ADB screenshot for
+    // every progress event contends with production swipes and makes paging
+    // stutter compared with the diagnostic workflow.
     if (
       taskDebug?.enabled === true &&
-      ["task_event", "task_started", "task_finished", "task_failure_detailed", "task_snapshots_removed"].includes(event.event)
+      ["task_started", "task_finished", "task_failure_detailed", "task_snapshots_removed"].includes(event.event)
     ) {
       try {
         const frame = await vision.captureSource(

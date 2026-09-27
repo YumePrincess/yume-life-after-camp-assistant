@@ -3,6 +3,7 @@ import { normalizeProfiles, parseTable } from "../table-parser.mjs";
 import { memberAlignmentSwipe } from "./member-sync.mjs";
 import { updateWorkflowProgress } from "./progress.mjs";
 
+const WEEKLY_ACTIVITY_PAGE_STEP_PX = 357;
 const ZERO = 0;
 
 export async function runWeeklyActivitySync(context, command, _bundle, signal) {
@@ -270,29 +271,7 @@ async function captureWeeklyActivityPages(context, definition, signal, options) 
     }
     const from = pagination.from || { x: 405, y: 780 };
     const rowStep = measureWeeklyActivityRowStep(frame, definition);
-    const configuredSwipeOffset = Number(pagination.swipeOffsetPx);
-    const fallbackSwipeOffset = rowStep
-      ? Math.round(rowStep * (Number(pagination.rowsPerPage) || 4))
-      : (Number(pagination.rowHeightPx) || 95) *
-        (Number(pagination.rowsPerPage) || 4);
-    const swipeOffsetTargetPx = Number.isFinite(configuredSwipeOffset)
-      ? configuredSwipeOffset
-      : fallbackSwipeOffset;
-    const configuredSwipeSequence = Array.isArray(pagination.swipeOffsetSequencePx)
-      ? pagination.swipeOffsetSequencePx
-          .map((value) => Math.round(Number(value)))
-          .filter((value) => value > 0)
-      : [];
-    // Use the configured 356/357/358 cadence when present. Keep the
-    // cumulative fallback for older plugin configs that only provide a
-    // fractional target.
-    const swipeOffsetPx = configuredSwipeSequence.length
-      ? configuredSwipeSequence[page % configuredSwipeSequence.length]
-      : Math.max(
-          1,
-          Math.round((page + 1) * swipeOffsetTargetPx) -
-            Math.round(page * swipeOffsetTargetPx)
-        );
+    const swipeOffsetPx = WEEKLY_ACTIVITY_PAGE_STEP_PX;
     const to = {
       ...(pagination.to || { x: 405, y: 400 }),
       y: Math.round(Number(from.y) - swipeOffsetPx)
@@ -307,11 +286,11 @@ async function captureWeeklyActivityPages(context, definition, signal, options) 
     await context.report(
       usedTouchFallback ? "warning" : "info",
       "weekly_activity_page_swipe",
-      `按更新成员资料任务的分段滑动方式上移 ${swipeOffsetPx}px（${configuredSwipeSequence.length ? "356/357/358 三页循环" : `目标每页 ${swipeOffsetTargetPx}px`}），连续读取 ${Number(pagination.rowsPerPage) || 4} 行`,
+      `按固定距离上移 ${swipeOffsetPx}px，连续读取 ${Number(pagination.rowsPerPage) || 4} 行`,
       {
         page: scannedPages,
         rowStepPx: rowStep,
-        swipeOffsetTargetPx,
+        swipeOffsetTargetPx: WEEKLY_ACTIVITY_PAGE_STEP_PX,
         swipeOffsetPx,
         from,
         to,

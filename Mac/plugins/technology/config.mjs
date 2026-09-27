@@ -17,15 +17,17 @@ export const config = {
       ]
     },
     selectorSwipe: {
-      from: { x: 430, y: 820 },
-      to: { x: 430, y: 580 },
+      // The selector viewport is about 700px tall; a 645px drag advances one
+      // calibrated page while keeping both endpoints inside its scroll area.
+      from: { x: 430, y: 900 },
+      to: { x: 430, y: 255 },
       durationMs: 450,
       maxPages: 60,
       resetToTop: {
         from: { x: 430, y: 380 },
         to: { x: 430, y: 850 },
         durationMs: 220,
-        repeats: 12
+        repeats: 20
       }
     },
     selectorRegion: { left: 60, top: 110, right: 560, bottom: 1050 },

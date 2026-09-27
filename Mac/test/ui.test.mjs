@@ -1046,7 +1046,7 @@ test("bottom-left channels plus an NPC menu never collapse or open camp chat", a
   );
 });
 
-test("1920x1200 map flow closes every overlay and opens map with M after input focus", async () => {
+test("1920x1200 map flow closes every overlay and opens map with keyevent 41", async () => {
   const fixture = createUi({
     fastFrames: [
       [
@@ -1076,8 +1076,8 @@ test("1920x1200 map flow closes every overlay and opens map with M after input f
     { x: 1850, y: 70 },
     { x: 1710, y: 1050 }
   ]);
-  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
-  assert.deepEqual(fixture.focusPoints.at(-1), { x: 1782, y: 128 });
+  assert.deepEqual(fixture.keys, ["41"]);
+  assert.deepEqual(fixture.focusPoints, []);
 });
 
 test("M is the primary map action and still requires map OCR", async () => {
@@ -1100,8 +1100,8 @@ test("M is the primary map action and still requires map OCR", async () => {
     mapOpenPollMs: 1
   });
   assert.deepEqual(fixture.taps, []);
-  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
-  assert.deepEqual(fixture.focusPoints, [{ x: 1780, y: 120 }]);
+  assert.deepEqual(fixture.keys, ["41"]);
+  assert.deepEqual(fixture.focusPoints, []);
 });
 
 test("map opening never falls back to a calibrated mouse click after M", async () => {
@@ -1125,7 +1125,7 @@ test("map opening never falls back to a calibrated mouse click after M", async (
     mapOpenPollMs: 1
   });
 
-  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+  assert.deepEqual(fixture.keys, ["41"]);
   assert.deepEqual(fixture.taps, []);
   assert.ok(
     !fixture.messages.some((message) =>
@@ -1159,7 +1159,7 @@ test("a model map prediction never unlocks destination clicks without two map ke
     mapOpenPollMs: 1
   });
   assert.deepEqual(fixture.taps, []);
-  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+  assert.deepEqual(fixture.keys, ["41"]);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("模型地图候选仅供记录")
@@ -1189,12 +1189,9 @@ test("map opening retries M after the OCR verification window", async () => {
     }),
     /MAP_DID_NOT_OPEN/
   );
-  assert.deepEqual(fixture.keys, ["KEYCODE_M", "KEYCODE_M"]);
+  assert.deepEqual(fixture.keys, ["41", "41"]);
   assert.deepEqual(fixture.taps, []);
-  assert.deepEqual(fixture.focusPoints, [
-    { x: 1780, y: 120 },
-    { x: 1780, y: 120 }
-  ]);
+  assert.deepEqual(fixture.focusPoints, []);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("至少 2 个地图关键词")
@@ -1221,7 +1218,7 @@ test("two map keywords confirm map opening on the estate tab", async () => {
     mapPreparationMaxClosures: 2,
     mapOpenPollMs: 1
   });
-  assert.deepEqual(fixture.keys, ["KEYCODE_M"]);
+  assert.deepEqual(fixture.keys, ["41"]);
   assert.ok(
     fixture.messages.some((message) =>
       message.includes("查看庄园、中心花园、我的庄园、坐标")

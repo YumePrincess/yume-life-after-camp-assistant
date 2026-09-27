@@ -184,7 +184,9 @@ test("member table masks avatar, status, scene and sticky-row regions before OCR
     adb: { screenWidth: 1920, screenHeight: 1200 },
     vision: { mode: "fast", memberTableTimeoutSeconds: 2 },
     localVisionModel: { enabled: false }
-  }, {});
+  }, {
+    async screenshot() {}
+  });
   const masks = [];
   vision.captureSource = async () => ({ path: "/private/tmp/member-table.png" });
   vision.maskImage = async (path, region, label) => {
@@ -240,13 +242,17 @@ test("member table masks avatar, status, scene and sticky-row regions before OCR
 });
 
 test("member masks are scoped to member-details captures", async () => {
+  const screenshotPaths = [];
   const vision = new Vision({
     adb: { screenWidth: 1920, screenHeight: 1200 },
     vision: { mode: "fast", memberTableTimeoutSeconds: 2 },
     localVisionModel: { enabled: false }
-  }, {});
+  }, {
+    async screenshot(path) {
+      screenshotPaths.push(path);
+    }
+  });
   let maskCount = 0;
-  vision.captureSource = async () => ({ path: "/private/tmp/staff.png" });
   vision.maskImage = async () => {
     maskCount += 1;
     return "/private/tmp/staff-masked.png";
@@ -269,7 +275,8 @@ test("member masks are scoped to member-details captures", async () => {
   });
 
   assert.equal(maskCount, 0);
-  assert.equal(frame.path, "/private/tmp/staff.png");
+  assert.equal(frame.path, screenshotPaths[0]);
+  assert.match(frame.path, /camp-staff\.png$/u);
 });
 
 test("member table OCR restores missing row slots from calibrated geometry", async () => {

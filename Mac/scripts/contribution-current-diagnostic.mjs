@@ -9,6 +9,10 @@ import {
   capturePagedTable
 } from "../src/workflows/member-sync.mjs";
 import { normalizeContribution } from "../src/table-parser.mjs";
+import {
+  memberAlignmentSwipe,
+  scaledTableSwipeDurationMs
+} from "../src/list-pagination.mjs";
 
 const config = await loadConfig();
 const adb = new AdbClient(config);
@@ -56,10 +60,7 @@ async function resetContributionTableToTop(definition, signal) {
     expectedPages + 2,
     Math.min(24, Number(pagination.maxPages) || 11) + 1
   );
-  const durationMs = Math.max(
-    300,
-    Math.round((Number(pagination.durationMs) || 1_000) * 0.6)
-  );
+  const durationMs = scaledTableSwipeDurationMs(pagination.durationMs);
   const settleMs = 450;
   await report(
     "info",
@@ -68,7 +69,7 @@ async function resetContributionTableToTop(definition, signal) {
   );
   for (let index = 0; index < swipeCount; index += 1) {
     if (signal?.aborted) throw signal.reason || new Error("Interrupted");
-    await adb.mouseSwipe(to, from, durationMs, signal);
+    await memberAlignmentSwipe(adb, to, from, durationMs, signal);
     await delay(settleMs, signal);
   }
   await report(

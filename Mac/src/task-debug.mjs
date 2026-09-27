@@ -1,4 +1,11 @@
-import { appendFile, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  copyFile,
+  mkdir,
+  rename,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
@@ -28,13 +35,20 @@ function imageExtension(path) {
  * run-scoped folder only when Debug mode is enabled.
  */
 export class TaskDebugArtifacts {
-  constructor({ runId, taskKey, taskName, executionMode, startedAt }) {
+  constructor({
+    runId,
+    taskKey,
+    taskName,
+    executionMode,
+    startedAt,
+    rootDirectory = TASK_DEBUG_ROOT
+  }) {
     this.runId = String(runId || "");
     this.taskKey = String(taskKey || "unknown");
     this.taskName = String(taskName || this.taskKey);
     this.executionMode = String(executionMode || "unknown");
     this.startedAt = startedAt || new Date().toISOString();
-    this.taskDirectory = resolve(TASK_DEBUG_ROOT, safeComponent(this.runId));
+    this.taskDirectory = resolve(rootDirectory, safeComponent(this.runId));
     this.imageSequence = 0;
     this.queue = Promise.resolve();
     this.started = false;
@@ -77,12 +91,30 @@ export class TaskDebugArtifacts {
         this.taskDirectory,
         `${String(sequence).padStart(4, "0")}-${safeComponent(label, "step")}${imageExtension(sourcePath)}`
       );
+      const temporaryTarget = resolve(
+        this.taskDirectory,
+        `.${String(sequence).padStart(4, "0")}-${safeComponent(label, "step")}.partial`
+      );
       try {
-        await copyFile(sourcePath, target);
+        // The App indexes files while a task is still running. Publish each
+        // image atomically so the gallery never caches a half-copied masked
+        // screenshot as a broken thumbnail under its permanent ID.
+        await copyFile(sourcePath, temporaryTarget);
+        await rename(temporaryTarget, target);
         return target;
-      } catch {
-        // A transient crop can be removed by its caller before the queued copy
-        // runs. The event remains useful even when that optional image is gone.
+      } catch (error) {
+        await rm(temporaryTarget, { force: true }).catch(() => undefined);
+        await appendFile(
+          resolve(this.taskDirectory, "image-errors.jsonl"),
+          `${JSON.stringify({
+            sequence,
+            label: safeComponent(label, "step"),
+            source: String(sourcePath).split("/").at(-1),
+            message: String(error?.message || error),
+            timestamp: new Date().toISOString()
+          })}\n`,
+          { encoding: "utf8", mode: 0o600 }
+        ).catch(() => undefined);
         return null;
       }
     });

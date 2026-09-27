@@ -1791,17 +1791,19 @@ test("Ctrl+Tab does not accept the task guide and closes it before retrying", as
   assert.deepEqual(flows, ["closeTaskGuideOverlay"]);
 });
 
-test("patrol category fallback reuses the contribution-list ADB mouse swipe", async () => {
+test("patrol category fallback uses the shared member-list paging gesture", async () => {
   const taps = [];
-  const swipes = [];
+  const motionEvents = [];
   const context = {
     config: patrolConfig(),
     ui: { async tap(point) { taps.push(point); } },
     adb: {
       async keyCombination() {},
       async mouseTap() {},
-      async mouseSwipe(from, to, durationMs) {
-        swipes.push({ from, to, durationMs });
+      async shell(args) {
+        if (args[0] === "input" && args[1] === "mouse" && args[2] === "motionevent") {
+          motionEvents.push(args.slice(3));
+        }
       },
       async key() {}
     },
@@ -1872,18 +1874,17 @@ test("patrol category fallback reuses the contribution-list ADB mouse swipe", as
 
   await createPatrolTeam(context);
 
-  assert.deepEqual(swipes, [
-    {
-      from: { x: 480, y: 820 },
-      to: { x: 480, y: 510 },
-      durationMs: 500
-    },
-    {
-      from: { x: 480, y: 820 },
-      to: { x: 480, y: 510 },
-      durationMs: 500
-    }
-  ]);
+  assert.equal(motionEvents.filter(([action]) => action === "DOWN").length, 2);
+  assert.equal(motionEvents.filter(([action]) => action === "UP").length, 2);
+  assert.deepEqual(
+    motionEvents.filter(([action]) => action === "DOWN" || action === "UP"),
+    [
+      ["DOWN", 480, 820],
+      ["UP", 480, 510],
+      ["DOWN", 480, 820],
+      ["UP", 480, 510]
+    ]
+  );
   assert.deepEqual(taps, [
     { x: 220, y: 180 },
     { x: 470, y: 820 },

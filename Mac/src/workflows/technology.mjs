@@ -1,4 +1,8 @@
 import { delay } from "../process.mjs";
+import {
+  memberAlignmentSwipe,
+  scaledTableSwipeDurationMs
+} from "../list-pagination.mjs";
 
 // This is the fixed title/control at the top of the 1920x1200 technology
 // configuration screen. Clicking it collapses the slot detail drawer without
@@ -351,6 +355,7 @@ export async function selectTechnology(
     reset < (swipe.resetToTop?.repeats ?? 0);
     reset += 1
   ) {
+    // Returning to the first category keeps its original fast legacy gesture.
     await adb.mouseSwipe(
       swipe.resetToTop.from,
       swipe.resetToTop.to,
@@ -557,7 +562,12 @@ export async function selectTechnology(
       selectorObservations,
       config.technology.selectorRegion
     );
-    if (signature && signature === previousSelectorSignature) {
+    if (
+      technologySelectorSignaturesEquivalent(
+        signature,
+        previousSelectorSignature
+      )
+    ) {
       unchangedPages += 1;
     } else {
       unchangedPages = 0;
@@ -572,7 +582,13 @@ export async function selectTechnology(
       break;
     }
     if (page < swipe.maxPages) {
-      await adb.mouseSwipe(swipe.from, swipe.to, swipe.durationMs, signal);
+      await memberAlignmentSwipe(
+        adb,
+        swipe.from,
+        swipe.to,
+        scaledTableSwipeDurationMs(swipe.durationMs, 500),
+        signal
+      );
       await (context.sleep || delay)(selectorSettleMs, signal);
     }
   }
@@ -881,6 +897,45 @@ function technologySelectorSignature(observations, region) {
     .filter(Boolean)
     .sort()
     .join("|");
+}
+
+function technologySelectorSignaturesEquivalent(left, right) {
+  if (left && left === right) return true;
+  if (!left || !right) return false;
+
+  const leftItems = left.split("|").filter(Boolean);
+  const rightItems = right.split("|").filter(Boolean);
+  if (!leftItems.length || !rightItems.length) return false;
+
+  const unmatched = new Set(rightItems.map((_, index) => index));
+  let matches = 0;
+  for (const leftItem of leftItems) {
+    let bestIndex = -1;
+    let bestDistance = Infinity;
+    for (const index of unmatched) {
+      const rightItem = rightItems[index];
+      const distance = technologyTextDistance(leftItem, rightItem);
+      const maxLength = Math.max(leftItem.length, rightItem.length);
+      const allowedDistance =
+        leftItem === rightItem || maxLength < 4 ? 0 : 1;
+      if (distance <= allowedDistance && distance < bestDistance) {
+        bestIndex = index;
+        bestDistance = distance;
+      }
+    }
+    if (bestIndex >= 0) {
+      unmatched.delete(bestIndex);
+      matches += 1;
+    }
+  }
+
+  // A 645px page move overlaps only part of the selector viewport. Requiring
+  // at least 80% of the visible names to match avoids mistaking that overlap
+  // for the bottom while allowing a single OCR character to flicker.
+  return (
+    matches >= 2 &&
+    matches / Math.max(leftItems.length, rightItems.length) >= 0.8
+  );
 }
 
 function normalizeTechnologyText(value) {

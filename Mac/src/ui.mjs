@@ -1,5 +1,9 @@
 import { delay } from "./process.mjs";
 import { center } from "./vision.mjs";
+import {
+  memberAlignmentSwipe,
+  scaledTableSwipeDurationMs
+} from "./list-pagination.mjs";
 
 export class TaskRestartRequestedError extends Error {
   constructor(reason = "角色复活后重新执行原任务") {
@@ -1971,10 +1975,11 @@ export class GameUi {
       Math.min(20, Number(destination.scrollSteps) || 0)
     );
     for (let index = 0; index < scrollSteps; index += 1) {
-      await this.adb.mouseSwipe(
+      await memberAlignmentSwipe(
+        this.adb,
         action.mapListSwipe?.from || { x: 350, y: 950 },
         action.mapListSwipe?.to || { x: 350, y: 350 },
-        action.mapListSwipe?.durationMs || 500,
+        scaledTableSwipeDurationMs(action.mapListSwipe?.durationMs, 500),
         signal
       );
       await delay(action.mapListSwipe?.betweenMs || 500, signal);
@@ -2275,13 +2280,10 @@ export class GameUi {
   async ensureMapOpen(action, signal) {
     const prepared = await this.closePagesBeforeMap(action, signal);
     if (prepared === "map") return;
-    const mapButton = Object.hasOwn(action, "mapButton")
-      ? action.mapButton
-      : { x: 1782, y: 128 };
-    // Map opening is deliberately keyboard-only.  The old calibrated mouse
-    // fallback could land on the camera/minimap area when the emulator window
-    // moved, so never open the map by clicking a coordinate.
-    const mapKey = action.mapKey || "KEYCODE_M";
+    // Map opening uses Android's M keyevent directly. Never click a map-icon
+    // coordinate: layout drift can put that click on the weather/sun control.
+    // Overlay close/back clicks are separate and remain in closePagesBeforeMap.
+    const mapKey = "41";
     const timeoutMs = Math.max(
       1,
       Number(action.mapOpenTimeoutSeconds) || 10
@@ -2296,13 +2298,10 @@ export class GameUi {
         retry ? "warning" : "info",
         retry ? "map_open_key_retry" : "map_open_key",
         retry
-          ? `等待 ${timeoutMs / 1000} 秒仍未识别至少 2 个地图关键词，重新发送 M 键打开地图（${mapKeyAttempts}/${mapKeyRetryAttempts}）`
-          : "正在通过 ADB 复位游戏输入后发送 M 键打开地图；不会先点击右上角以免误开相机",
-        { key: mapKey, focusPoint: mapButton || null, attempt: mapKeyAttempts }
+          ? `等待 ${timeoutMs / 1000} 秒仍未识别至少 2 个地图关键词，重新发送 input keyevent 41（M 键）打开地图（${mapKeyAttempts}/${mapKeyRetryAttempts}）`
+          : "正在发送 input keyevent 41（M 键）打开地图；关闭遮挡页仍按识别结果点击对应关闭/返回位置",
+        { keyevent: Number(mapKey), attempt: mapKeyAttempts }
       );
-      if (mapButton && typeof this.adb.focusGameInput === "function") {
-        await this.adb.focusGameInput(mapButton.x, mapButton.y, signal);
-      }
       await this.sendGameKey(mapKey, signal);
     };
     await sendMapKey();
@@ -3831,7 +3830,13 @@ export class GameUi {
           await delay(action.ms, signal);
           break;
         case "swipe":
-          await this.adb.mouseSwipe(action.from, action.to, action.durationMs, signal);
+          await memberAlignmentSwipe(
+            this.adb,
+            action.from,
+            action.to,
+            scaledTableSwipeDurationMs(action.durationMs, 500),
+            signal
+          );
           await this.afterAction(signal);
           break;
         case "typeUnicode":

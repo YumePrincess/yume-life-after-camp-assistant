@@ -18,6 +18,7 @@ import {
   selectActivityWarningRows,
   stripStaffColorCodes,
   tableRowAlignmentAdjustment,
+  TABLE_MOTION_MIN_INTERVAL_MS,
   TABLE_PAGE_SPEED_FACTOR
 } from "../src/workflows/member-sync.mjs";
 import { stripMemberTableIdentityBadge } from "../src/member-name.mjs";
@@ -352,6 +353,7 @@ test("local vision rereads every member-details page without dropping native row
 
 test("contribution and activity pages use 11-row calibrated segmented swipes", async () => {
   assert.equal(TABLE_PAGE_SPEED_FACTOR, 0.42);
+  assert.equal(TABLE_MOTION_MIN_INTERVAL_MS, 34);
   for (const label of ["member-contribution", "member-activity"]) {
     const swipes = [];
     const shellCalls = [];
@@ -1648,16 +1650,16 @@ test("remainder-one rosters fall back from an incomplete penultimate page to tai
   );
 
   assert.equal(rows.length, 11);
-  assert.equal(captures.filter((label) => label.startsWith("member-details-2")).length, 5);
+  assert.equal(captures.filter((label) => label.startsWith("member-details-2")).length, 3);
   assert.equal(
     reports.filter(({ step }) => step === "member_details_page_incomplete_retry").length,
-    3
+    1
   );
   assert.ok(
     reports.some(
       ({ step, detail }) =>
         step === "member_details_penultimate_tail_fallback" &&
-        detail.retries === 3 &&
+        detail.retries === 2 &&
         detail.positionLocked === true
     )
   );

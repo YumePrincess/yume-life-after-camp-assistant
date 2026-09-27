@@ -389,8 +389,7 @@
     "teleportNoticeBoard": [
       {
         "op": "teleportWithFallback",
-        "mapButton": { "x": 1782, "y": 128 },
-        "mapKey": "KEYCODE_M",
+        "mapKey": "41",
         "mapKeyRetryAttempts": 3,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapVerificationTexts": ["标志查看", "查看庄园", "可快捷前往地标", "中心花园", "我的庄园", "坐标"],
@@ -689,8 +688,7 @@
     "teleportCityHall": [
       {
         "op": "teleportWithFallback",
-        "mapButton": { "x": 1782, "y": 128 },
-        "mapKey": "KEYCODE_M",
+        "mapKey": "41",
         "mapKeyRetryAttempts": 3,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapVerificationTexts": ["标志查看", "查看庄园", "可快捷前往地标", "中心花园", "我的庄园", "坐标"],
@@ -746,8 +744,7 @@
     "teleportCentralExit": [
       {
         "op": "teleportWithFallback",
-        "mapButton": { "x": 1782, "y": 128 },
-        "mapKey": "KEYCODE_M",
+        "mapKey": "41",
         "mapKeyRetryAttempts": 3,
         "mapReadyTexts": ["标志查看", "查看庄园", "可快捷前往地标"],
         "mapVerificationTexts": ["标志查看", "查看庄园", "可快捷前往地标", "中心花园", "我的庄园", "坐标"],
