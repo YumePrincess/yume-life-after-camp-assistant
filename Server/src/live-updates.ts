@@ -113,9 +113,9 @@ export class LiveUpdates extends DurableObject {
     code: number,
     reason: string
   ): Promise<void> {
-    // Close is idempotent with the current compatibility date, and keeping
-    // this explicit also supports local runtimes that do not auto-reply yet.
-    ws.close(code, reason);
+    // 1005/1006/1015 are reporting-only values and cannot be sent in a Close
+    // frame. The configured Workers runtime auto-replies to peer Close frames.
+    if (![1005, 1006, 1015].includes(code)) ws.close(code, reason);
   }
 
   override async alarm(): Promise<void> {

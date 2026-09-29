@@ -2315,7 +2315,7 @@ export async function claimNextCommand(
                AND EXISTS (
                  SELECT 1 FROM task_runs AS target_run
                  WHERE target_run.id = command_queue.run_id
-                   AND target_run.state IN ('queued', 'claimed', 'running')
+                   AND target_run.state IN ('queued', 'claimed')
                    AND target_run.cancel_requested = 0
                )
              )
@@ -2330,6 +2330,7 @@ export async function claimNextCommand(
                WHERE active_command.agent_id = ?
                  AND active_command.type = 'run_task'
                  AND active_command.state = 'claimed'
+                 AND active_command.id <> command_queue.id
                  AND active_run.state IN ('queued', 'claimed', 'running', 'cancelling')
              )
            )
@@ -2349,6 +2350,95 @@ export async function claimNextCommand(
       input.agentId
     )
     .first<CommandRow>();
+}
+
+export async function hasAvailableCommand(
+  env: Env,
+  input: { agentId: string; busy: boolean }
+): Promise<boolean> {
+  const now = isoNow();
+  const allowedClause = input.busy ? "AND type = 'interrupt_task'" : "";
+  const row = await env.DB.prepare(
+    `SELECT 1 AS available
+     FROM command_queue
+     WHERE agent_id = ?
+       AND available_at <= ?
+       AND (
+         state = 'queued'
+         OR (state = 'claimed' AND lease_expires_at < ?)
+       )
+       ${allowedClause}
+       AND (
+         type = 'interrupt_task'
+         OR (
+           type = 'run_task'
+           AND run_id IS NOT NULL
+           AND EXISTS (
+             SELECT 1 FROM task_runs AS target_run
+             WHERE target_run.id = command_queue.run_id
+               AND target_run.state IN ('queued', 'claimed')
+               AND target_run.cancel_requested = 0
+           )
+         )
+       )
+       AND (
+         ? = 1
+         OR NOT EXISTS (
+           SELECT 1
+           FROM command_queue AS active_command
+           JOIN task_runs AS active_run
+             ON active_run.id = active_command.run_id
+           WHERE active_command.agent_id = ?
+             AND active_command.type = 'run_task'
+             AND active_command.state = 'claimed'
+             AND active_command.id <> command_queue.id
+             AND active_run.state IN ('queued', 'claimed', 'running', 'cancelling')
+         )
+       )
+     LIMIT 1`
+  )
+    .bind(input.agentId, now, now, input.busy ? 1 : 0, input.agentId)
+    .first<{ available: number }>();
+  return Boolean(row);
+}
+
+export async function renewCommandLease(
+  env: Env,
+  input: { commandId: string; leaseToken: string; leaseMs?: number }
+): Promise<boolean> {
+  const expiresAt = new Date(Date.now() + Math.max(60_000, input.leaseMs ?? 5 * 60_000))
+    .toISOString();
+  const row = await env.DB.prepare(
+    `UPDATE command_queue
+     SET lease_expires_at = ?
+     WHERE id = ? AND state = 'claimed' AND lease_token = ?
+     RETURNING id`
+  )
+    .bind(expiresAt, input.commandId, input.leaseToken)
+    .first<{ id: string }>();
+  return Boolean(row);
+}
+
+export async function releaseCommandClaim(
+  env: Env,
+  input: { commandId: string; leaseToken: string; message?: string }
+): Promise<boolean> {
+  const result = await env.DB.prepare(
+    `UPDATE command_queue SET
+       state = 'queued',
+       lease_token = NULL,
+       lease_expires_at = NULL,
+       claimed_at = NULL,
+       message = ?
+     WHERE id = ? AND state = 'claimed' AND lease_token = ?`
+  )
+    .bind(
+      input.message ?? "WebSocket delivery was not acknowledged; returned to queue",
+      input.commandId,
+      input.leaseToken
+    )
+    .run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 export async function completeCommand(

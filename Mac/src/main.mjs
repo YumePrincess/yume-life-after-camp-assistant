@@ -44,10 +44,15 @@ const runtimeLocale = {
 let controlStream = null;
 let commandWakePending = false;
 let resolveCommandWake = null;
-let commandRetryTimer = null;
-let commandRetryAttempt = 0;
+let queueFallbackTimer = null;
+let queueFallbackAttempt = 0;
+let queueClaimTimeoutMinutes = 45;
+const receivingCommands = new Map();
 const shutdownController = new AbortController();
-const HEARTBEAT_INTERVAL_MS = 30_000;
+// The server renews active leases after two minutes, so keep presence comfortably
+// inside the five-minute lease while avoiding a high-rate idle DO message stream.
+const HEARTBEAT_INTERVAL_MS = 90_000;
+const QUEUE_FALLBACK_HARD_MAX_MS = 10 * 60_000;
 
 const pluginRegistry = await loadTaskPlugins({
   builtinDirectory: resolve(MAC_ROOT, "plugins"),
@@ -103,38 +108,80 @@ if (!once) {
   controlStream = api.startControlStream({
     onOpen: () => {
       console.log(JSON.stringify({ event: "agent_control_connected" }));
-      sendAgentPresence();
-      // The queue is authoritative, so sweep it after every connection or reconnect.
-      wakeAgentLoop();
+      clearQueueFallback();
+      queueFallbackAttempt = 0;
+      const stream = controlStream;
+      void stream.sendPresenceAndWait({
+        agentId: config.server.agentId,
+        displayName: config.server.agentName || config.server.agentId,
+        ...heartbeatPayload()
+      }, 10_000).then((ack) => {
+        if (controlStream !== stream || !stream.connected) return;
+        if (ack) return;
+        console.warn(JSON.stringify({
+          event: "agent_control_initial_presence_timeout",
+          message: "Control socket opened but did not acknowledge initial presence"
+        }));
+        stream.forceReconnect("initial-presence-timeout");
+      }).catch((error) => {
+        console.warn(JSON.stringify({
+          event: "agent_control_initial_presence_failed",
+          message: error.message
+        }));
+        if (controlStream === stream) stream.forceReconnect("initial-presence-failed");
+      });
+      // The presence message asks the server to sweep D1 and push queued work;
+      // reconnects do not trigger a duplicate HTTP poll.
     },
     onCommandAvailable: () => wakeAgentLoop(),
+    onCommand: (command) => {
+      void consumeCommand(command, "websocket").catch((error) => {
+        console.error(JSON.stringify({
+          event: "websocket_command_dispatch_failed",
+          commandId: command?.id || null,
+          message: String(error?.message || error)
+        }));
+      });
+    },
     onPresenceAck: (ack) => {
+      updateQueueClaimTimeout(ack?.claimTimeoutMinutes);
       if (active && (ack.cancelRequested === true || ack.activeRunMissing === true)) {
         active.controller.abort(new Error("Workers 请求中断当前任务"));
       }
     },
-    onDisconnect: () => {
-      console.warn(JSON.stringify({ event: "agent_control_disconnected" }));
-      // Commands remain durable in D1. Sweep immediately when notifications
-      // stop so a disconnect does not hold an already-queued task until the
-      // next reconnect.
-      wakeAgentLoop();
+    onDisconnect: (details = {}) => {
+      console.warn(JSON.stringify({ event: "agent_control_disconnected", ...details }));
+      scheduleQueueFallback(1_000);
+    },
+    onReconnectScheduled: ({ attempt, delayMs } = {}) => {
+      console.info(JSON.stringify({
+        event: "agent_control_reconnect_scheduled",
+        attempt: attempt ?? null,
+        delayMs: delayMs ?? null
+      }));
     },
     onError: (error) => {
       console.error(JSON.stringify({ event: "agent_control_error", message: error.message }));
+      scheduleQueueFallback(1_000);
     }
   });
 }
 const presenceTimer = once
   ? null
-  : setInterval(() => {
-      // WebSocket pushes are the low-latency path. Periodically sweep the
-      // durable command queue as a fallback, and require a presence ack so a
-      // silently half-open socket is replaced instead of remaining stuck at
-      // readyState=OPEN forever.
-      wakeAgentLoop();
+    : setInterval(() => {
+      // The server uses presence to renew the active command lease and to run
+      // a bounded D1 queue sweep. HTTP command polling is reserved for a
+      // disconnected control stream, avoiding an idle request every interval.
       const stream = controlStream;
       if (!stream) return;
+      if (!stream.connected) {
+        scheduleQueueFallback();
+        // AgentControlStream owns the exponential retry timer. Calling
+        // forceReconnect here would keep cancelling its backoff and could
+        // prevent the socket from reopening during a long outage.
+        stream.connect();
+        return;
+      }
       void stream.sendPresenceAndWait({
         agentId: config.server.agentId,
         displayName: config.server.agentName || config.server.agentId,
@@ -159,7 +206,7 @@ const presenceTimer = once
 
 while (!stopping) {
   if (!once) await waitForAgentWake();
-  if (stopping) break;
+    if (stopping) break;
   try {
     const pollResponse = await api.nextCommand(
       Boolean(active),
@@ -167,42 +214,10 @@ while (!stopping) {
       shutdownController.signal
     );
     const { command } = pollResponse;
-    commandRetryAttempt = 0;
-    if (command?.type === "interrupt_task") {
-      const target = command.payload?.runId;
-      if (active && active.command.runId === target) {
-        active.controller.abort(new Error("管理员请求中断"));
-        await api.completeCommand(command, "completed", "已向运行任务发送中断信号");
-      } else {
-        await api.completeCommand(command, "cancelled", "目标任务当前未在本 Agent 运行");
-      }
-      sendAgentPresence();
-    } else if (command?.type === "run_task" && !active) {
-      const payloadRunId = command.payload?.runId;
-      if (
-        typeof command.runId !== "string" ||
-        !command.runId ||
-        (payloadRunId !== undefined && payloadRunId !== command.runId)
-      ) {
-        console.error(
-          JSON.stringify({
-            event: "orphan_command_rejected",
-            commandId: command.id,
-            runId: command.runId || null,
-            payloadRunId: payloadRunId || null,
-            reason: "run_task command has no matching persisted run"
-          })
-        );
-        await api.completeCommand(
-          command,
-          "cancelled",
-          "命令未关联有效任务，已拒绝执行"
-        );
-      } else {
-        startCommand(command);
-      }
-      sendAgentPresence();
-    }
+    updateQueueClaimTimeout(pollResponse?.claimTimeoutMinutes);
+    if (controlStream?.connected || command) queueFallbackAttempt = 0;
+    else scheduleQueueFallback();
+    if (command) await consumeCommand(command, "http");
 
     if (once) {
       if (active) await active.promise.catch(() => undefined);
@@ -220,18 +235,15 @@ while (!stopping) {
       process.exitCode = 1;
       break;
     }
-    const retryMs = Math.min(30_000, 1_000 * 2 ** Math.min(commandRetryAttempt, 5));
-    commandRetryAttempt = Math.min(commandRetryAttempt + 1, 5);
-    commandRetryTimer = setTimeout(() => {
-      commandRetryTimer = null;
-      wakeAgentLoop();
-    }, retryMs);
+    if (!controlStream?.connected) {
+      scheduleQueueFallback();
+    }
   }
   if (once) break;
 }
 
 if (presenceTimer) clearInterval(presenceTimer);
-if (commandRetryTimer) clearTimeout(commandRetryTimer);
+clearQueueFallback();
 if (stopping && controlStream) {
   await controlStream.sendPresenceAndWait({
     ...heartbeatPayload("offline"),
@@ -250,6 +262,8 @@ function heartbeatPayload(status) {
   return {
     locale: runtimeLocale.value,
     activeRunId: active?.command.runId || null,
+    activeCommandId: active?.command.id || null,
+    leaseToken: active?.command.leaseToken || null,
     activeTaskKey: active?.command.payload?.taskKey || null,
     status: status || activityStatus,
     capabilities: {
@@ -267,6 +281,129 @@ function heartbeatPayload(status) {
         mumu.currentInstance()?.name ?? config.mumu.instanceName ?? null
     }
   };
+}
+
+async function consumeCommand(command, source) {
+  if (!command || typeof command.id !== "string") return;
+  if (active?.command.id === command.id) {
+    // A delivery retry can carry a newer lease token after the original ACK
+    // was lost. Keep the active execution fenced by the newest token.
+    const previousLeaseToken = active.command.leaseToken;
+    if (await acknowledgeReceivedCommand(command, source)) {
+      active.command.leaseToken = command.leaseToken || previousLeaseToken;
+    }
+    return;
+  }
+  const existingDelivery = receivingCommands.get(command.id);
+  if (existingDelivery) {
+    if (await acknowledgeReceivedCommand(command, source)) {
+      existingDelivery.leaseToken = command.leaseToken || existingDelivery.leaseToken;
+    }
+    return;
+  }
+  receivingCommands.set(command.id, command);
+  try {
+    if (command.type === "interrupt_task") {
+      if (!await acknowledgeReceivedCommand(command, source)) return;
+      const target = command.payload?.runId;
+      if (active && active.command.runId === target) {
+        active.controller.abort(new Error("管理员请求中断"));
+        await api.completeCommand(command, "completed", "已向运行任务发送中断信号");
+      } else {
+        await api.completeCommand(command, "cancelled", "目标任务当前未在本 Agent 运行");
+      }
+      sendAgentPresence();
+      return;
+    }
+    if (command.type === "run_task") {
+      if (active) {
+        controlStream?.deferCommand(command);
+        return;
+      }
+      const payloadRunId = command.payload?.runId;
+      if (
+        typeof command.runId !== "string" ||
+        !command.runId ||
+        (payloadRunId !== undefined && payloadRunId !== command.runId)
+      ) {
+        console.error(JSON.stringify({
+          event: "orphan_command_rejected",
+          source,
+          commandId: command.id,
+          runId: command.runId || null,
+          payloadRunId: payloadRunId || null,
+          reason: "run_task command has no matching persisted run"
+        }));
+        if (!await acknowledgeReceivedCommand(command, source)) return;
+        await api.completeCommand(command, "cancelled", "命令未关联有效任务，已拒绝执行");
+        sendAgentPresence();
+        return;
+      }
+      if (!await acknowledgeReceivedCommand(command, source)) return;
+      startCommand(command);
+      sendAgentPresence();
+      return;
+    }
+    if (!await acknowledgeReceivedCommand(command, source)) return;
+    await api.completeCommand(command, "cancelled", `不支持的命令类型：${command.type || "unknown"}`);
+    sendAgentPresence();
+  } finally {
+    receivingCommands.delete(command.id);
+  }
+}
+
+async function acknowledgeReceivedCommand(command, source) {
+  const receipt = await controlStream?.acknowledgeCommand(command);
+  if (receipt?.accepted === false) {
+    console.warn(JSON.stringify({
+      event: "agent_command_ack_rejected",
+      source,
+      commandId: command.id,
+      runId: command.runId || null
+    }));
+    return false;
+  }
+  if (receipt === null && source === "websocket") {
+    console.warn(JSON.stringify({
+      event: "agent_command_ack_timeout",
+      commandId: command.id,
+      runId: command.runId || null
+    }));
+  }
+  return true;
+}
+
+function scheduleQueueFallback(delayMs) {
+  if (once || stopping || controlStream?.connected || queueFallbackTimer) return;
+  const fallbackMs = Number.isFinite(delayMs)
+    ? Math.max(1_000, delayMs)
+    : Math.min(queueFallbackMaximumMs(), 15_000 * 2 ** Math.min(queueFallbackAttempt, 6));
+  queueFallbackAttempt = Math.min(queueFallbackAttempt + 1, 8);
+  queueFallbackTimer = setTimeout(() => {
+    queueFallbackTimer = null;
+    wakeAgentLoop();
+  }, fallbackMs);
+}
+
+function updateQueueClaimTimeout(value) {
+  const minutes = Number(value);
+  if (Number.isFinite(minutes) && minutes >= 1 && minutes <= 10_080) {
+    queueClaimTimeoutMinutes = minutes;
+  }
+}
+
+function queueFallbackMaximumMs() {
+  // Polling stays below half the configured claim timeout, but backs off to a
+  // ten-minute ceiling so a long WebSocket outage cannot create request storms.
+  return Math.min(
+    QUEUE_FALLBACK_HARD_MAX_MS,
+    Math.max(15_000, queueClaimTimeoutMinutes * 30_000)
+  );
+}
+
+function clearQueueFallback() {
+  if (queueFallbackTimer) clearTimeout(queueFallbackTimer);
+  queueFallbackTimer = null;
 }
 
 function sendAgentPresence() {
@@ -325,7 +462,10 @@ function startCommand(command) {
     .finally(() => {
       if (active === record) active = null;
       sendAgentPresence();
-      wakeAgentLoop();
+      if (!controlStream?.connected) {
+        clearQueueFallback();
+        wakeAgentLoop();
+      }
     });
 }
 

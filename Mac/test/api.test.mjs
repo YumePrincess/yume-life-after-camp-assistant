@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import test from "node:test";
 import { AgentApi } from "../src/api.mjs";
 
@@ -132,8 +135,10 @@ test("in-progress run updates use the acknowledged WebSocket stream without HTTP
     httpRequests += 1;
     throw new Error("HTTP log fallback must not be used");
   };
+  let api;
+  let outboxDirectory;
   try {
-    const api = new AgentApi({
+    api = new AgentApi({
       server: {
         baseUrl: "https://lifeafter.yume.zone",
         agentToken: "agent-secret",
@@ -141,6 +146,8 @@ test("in-progress run updates use the acknowledged WebSocket stream without HTTP
         agentName: "Test Mac"
       }
     });
+    outboxDirectory = await mkdtemp(resolve(tmpdir(), "yla-agent-runlog-test-"));
+    api.logOutboxDirectory = outboxDirectory;
     api.startRunStream("run-test");
     const result = await api.updateRun("run-test", {
       currentStep: "scan",
@@ -156,8 +163,11 @@ test("in-progress run updates use the acknowledged WebSocket stream without HTTP
     assert.equal(sent[0].runId, "run-test");
     assert.equal(sent[0].updates.length, 3);
     assert.equal(sent[0].updates[0].event.message, "扫描中");
-    api.closeRunStream("run-test");
   } finally {
+    api?.closeRunStream("run-test");
+    if (outboxDirectory) {
+      await rm(outboxDirectory, { recursive: true, force: true });
+    }
     globalThis.fetch = originalFetch;
     globalThis.WebSocket = originalWebSocket;
   }

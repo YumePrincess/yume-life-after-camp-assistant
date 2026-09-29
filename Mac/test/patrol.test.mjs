@@ -2453,7 +2453,13 @@ test("patrol share closes an accidental task menu and retries recruit", async ()
     vision: {
       async capture(label) {
         if (label === "patrol-share-team-page" || label.includes("-recruit-verify-")) {
-          return { path: "team.png", observations: [observation("招募", 300, 1100)] };
+          return {
+            path: "team.png",
+            observations: [
+              observation("保卫古籍", 160, 20),
+              observation("招募", 300, 1100)
+            ]
+          };
         }
         if (label.includes("-full-team-immediate-")) {
           return { path: "toast.png", observations: [] };
@@ -2564,7 +2570,10 @@ test("camp and scene sharing each get their own retry budget", async () => {
         if (label === "patrol-share-team-page" || label.includes("-recruit-verify-")) {
           return {
             path: "team.png",
-            observations: [observation("招募", 300, 1100)]
+            observations: [
+              observation("保卫古籍", 160, 20),
+              observation("招募", 300, 1100)
+            ]
           };
         }
         if (label.includes("-camp-channel-menu-")) {
@@ -2613,8 +2622,9 @@ test("camp and scene sharing each get their own retry budget", async () => {
   ]);
 });
 
-test("patrol share never clicks the channel point unless the selector is verified", async () => {
+test("patrol share skips unverified channel menus without clicking the channel point", async () => {
   const taps = [];
+  const reports = [];
   const context = {
     config: patrolConfig(),
     ui: {
@@ -2628,7 +2638,7 @@ test("patrol share never clicks the channel point unless the selector is verifie
           path: `${label}.png`,
           observations:
             label === "patrol-share-team-page"
-              ? [observation("营地巡逻任务", 160, 20)]
+              ? [observation("保卫古籍", 160, 20)]
               : []
         };
       },
@@ -2641,14 +2651,16 @@ test("patrol share never clicks the channel point unless the selector is verifie
       }
     },
     async sleep() {},
-    async report() {}
+    async report(_level, step) {
+      reports.push(step);
+    }
   };
 
-  await assert.rejects(
-    sharePatrolTeam(context),
-    /PATROL_SHARE_CHANNEL_MENU_UNVERIFIED/
-  );
-  assert.deepEqual(taps, []);
+  await sharePatrolTeam(context);
+  assert.ok(taps.length > 0);
+  assert.ok(taps.every((point) => point.x === 343 && point.y === 1128));
+  assert.ok(reports.includes("patrol_share_channel_menu_unverified"));
+  assert.ok(reports.includes("patrol_share_skipped_no_target"));
 });
 
 test("patrol team is not full when a member slot has no occupied evidence", async () => {

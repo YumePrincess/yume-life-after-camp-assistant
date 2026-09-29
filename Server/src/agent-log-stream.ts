@@ -4,9 +4,13 @@ import {
   getConfigBundle,
   getHeartbeat,
   getRun,
+  hasAvailableCommand,
+  releaseCommandClaim,
+  renewCommandLease,
   touchHeartbeat,
   updateRun
 } from "./db";
+import { claimAgentCommand } from "./agent-command-dispatch";
 import type { RunState, TaskKey } from "./domain";
 
 const TERMINAL_RUN_STATES = new Set<RunState>([
@@ -29,6 +33,11 @@ const RUN_STATES = new Set<RunState>([
 const EVENT_LEVELS = new Set(["debug", "info", "warning", "error"]);
 const MAX_BATCH_SIZE = 100;
 const MAX_FRAME_BYTES = 512_000;
+const CONTROL_QUEUE_SWEEP_INTERVAL_MS = 2 * 60_000;
+const COMMAND_ACK_TIMEOUT_MS = 20_000;
+const MAX_COMMAND_DELIVERY_BACKOFF_MS = 5 * 60_000;
+const ACTIVE_COMMAND_LEASE_MS = 5 * 60_000;
+const ACTIVE_COMMAND_RENEW_INTERVAL_MS = 2 * 60_000;
 const TASK_KEYS = new Set<TaskKey>([
   "tech_switch",
   "contribution_sync",
@@ -43,6 +52,22 @@ interface SocketAttachment {
   channel: "control" | "logs";
   agentId: string | null;
   presenceSignature: string | null;
+  status: "idle" | "running" | "offline";
+  activeRunId: string | null;
+  activeCommandId: string | null;
+  activeLeaseToken: string | null;
+  activeLeaseRenewedAt: number;
+  locale: string;
+  lastQueueSweepAt: number;
+  pendingDelivery: {
+    commandId: string;
+    runId: string | null;
+    type: string;
+    leaseToken: string;
+    attemptCount: number;
+    sentAt: number;
+    acknowledged: boolean;
+  } | null;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -112,16 +137,21 @@ export class AgentLogStream extends DurableObject {
       if (payload.type !== "command-available") {
         return new Response("Unsupported notification", { status: 400 });
       }
-      const agentId = textValue(payload.agentId, "agentId", 80);
+      let agentId: string;
+      try {
+        agentId = textValue(payload.agentId, "agentId", 80);
+      } catch {
+        return new Response("Invalid agent id", { status: 400 });
+      }
       let notified = 0;
       for (const socket of this.ctx.getWebSockets()) {
         const attachment = this.socketAttachment(socket);
         if (attachment.channel !== "control" || attachment.agentId !== agentId) continue;
         try {
-          socket.send(JSON.stringify({ type: "command-available" }));
-          notified += 1;
+          if (await this.dispatchNextCommand(socket)) notified += 1;
         } catch {
-          // A reconnect will perform a queue sweep if this socket is stale.
+          // The D1 queue remains authoritative; reconnect and a bounded queue
+          // sweep on the next presence message are the recovery paths.
         }
       }
       return Response.json({ ok: true, notified });
@@ -138,18 +168,39 @@ export class AgentLogStream extends DurableObject {
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
-    this.ctx.acceptWebSocket(server);
     const channel = url.searchParams.get("channel") === "control" ? "control" : "logs";
     const agentId = channel === "control"
       ? textValue(url.searchParams.get("agentId"), "agentId", 80)
       : null;
+    this.ctx.acceptWebSocket(server);
     const attachment: SocketAttachment = {
       connectedAt: Date.now(),
       channel,
       agentId,
-      presenceSignature: null
+      presenceSignature: null,
+      status: "idle",
+      activeRunId: null,
+      activeCommandId: null,
+      activeLeaseToken: null,
+      activeLeaseRenewedAt: 0,
+      locale: "zh-cn",
+      lastQueueSweepAt: 0,
+      pendingDelivery: null
     };
     server.serializeAttachment(attachment);
+    if (channel === "control" && agentId) {
+      for (const existing of this.ctx.getWebSockets()) {
+        if (existing === server) continue;
+        const other = this.socketAttachment(existing);
+        if (other.channel === "control" && other.agentId === agentId) {
+          try {
+            existing.close(4001, "replaced by a newer Agent connection");
+          } catch {
+            // The new socket remains the active control connection.
+          }
+        }
+      }
+    }
     server.send(JSON.stringify({ type: "ready", channel, at: new Date().toISOString() }));
     return new Response(null, {
       status: 101,
@@ -164,6 +215,14 @@ export class AgentLogStream extends DurableObject {
       const payload = parseMessage(message);
       if (payload.type === "presence") {
         await this.handlePresence(ws, payload);
+        return;
+      }
+      if (payload.type === "command-received") {
+        await this.handleCommandReceived(ws, payload);
+        return;
+      }
+      if (payload.type === "command-deferred") {
+        await this.handleCommandDeferred(ws, payload);
         return;
       }
       if (payload.type === "ping") {
@@ -197,6 +256,14 @@ export class AgentLogStream extends DurableObject {
 
   override async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
     const attachment = this.socketAttachment(ws);
+    const pending = attachment.pendingDelivery;
+    if (pending && !pending.acknowledged) {
+      await releaseCommandClaim(this.env, {
+        commandId: pending.commandId,
+        leaseToken: pending.leaseToken,
+        message: "Agent control socket closed before acknowledging delivery"
+      }).catch(() => false);
+    }
     if (
       attachment.channel === "control" &&
       attachment.agentId &&
@@ -208,7 +275,49 @@ export class AgentLogStream extends DurableObject {
     ) {
       await this.markAgentOffline(attachment.agentId);
     }
-    ws.close(code, reason);
+    await this.scheduleCommandAckAlarm();
+    // 1005/1006/1015 are reporting-only values and cannot be sent in a Close
+    // frame. The configured runtime already replies to peer Close frames.
+    if (![1005, 1006, 1015].includes(code)) ws.close(code, reason);
+  }
+
+  override async alarm(): Promise<void> {
+    const now = Date.now();
+    for (const socket of this.ctx.getWebSockets()) {
+      const attachment = this.socketAttachment(socket);
+      const pending = attachment.pendingDelivery;
+      if (attachment.channel !== "control" || !pending || pending.acknowledged) continue;
+      const backoffMs = Math.min(
+        MAX_COMMAND_DELIVERY_BACKOFF_MS,
+        COMMAND_ACK_TIMEOUT_MS * 2 ** Math.max(0, pending.attemptCount - 1)
+      );
+      if (now - pending.sentAt < backoffMs) continue;
+
+      const run = pending.runId ? await getRun(this.env, pending.runId) : null;
+      if (run && ["running", "cancelling"].includes(run.state)) {
+        attachment.pendingDelivery = null;
+        attachment.activeRunId = run.id;
+        attachment.activeCommandId = pending.commandId;
+        attachment.activeLeaseToken = pending.leaseToken;
+        attachment.activeLeaseRenewedAt = now;
+        socket.serializeAttachment(attachment);
+        await renewCommandLease(this.env, {
+          commandId: pending.commandId,
+          leaseToken: pending.leaseToken,
+          leaseMs: ACTIVE_COMMAND_LEASE_MS
+        });
+        continue;
+      }
+
+      await releaseCommandClaim(this.env, {
+        commandId: pending.commandId,
+        leaseToken: pending.leaseToken
+      });
+      attachment.pendingDelivery = null;
+      socket.serializeAttachment(attachment);
+      await this.dispatchNextCommand(socket);
+    }
+    await this.scheduleCommandAckAlarm();
   }
 
   private socketAttachment(ws: WebSocket): SocketAttachment {
@@ -220,7 +329,24 @@ export class AgentLogStream extends DurableObject {
       presenceSignature:
         typeof attachment?.presenceSignature === "string"
           ? attachment.presenceSignature
-          : null
+          : null,
+      status: attachment?.status === "running" || attachment?.status === "offline"
+        ? attachment.status
+        : "idle",
+      activeRunId: typeof attachment?.activeRunId === "string" ? attachment.activeRunId : null,
+      activeCommandId: typeof attachment?.activeCommandId === "string"
+        ? attachment.activeCommandId
+        : null,
+      activeLeaseToken: typeof attachment?.activeLeaseToken === "string"
+        ? attachment.activeLeaseToken
+        : null,
+      activeLeaseRenewedAt: Number(attachment?.activeLeaseRenewedAt) || 0,
+      locale: typeof attachment?.locale === "string" ? attachment.locale : "zh-cn",
+      lastQueueSweepAt: Number(attachment?.lastQueueSweepAt) || 0,
+      pendingDelivery: attachment?.pendingDelivery &&
+        typeof attachment.pendingDelivery === "object"
+        ? attachment.pendingDelivery
+        : null
     };
   }
 
@@ -239,6 +365,12 @@ export class AgentLogStream extends DurableObject {
       : "idle";
     const activeRunId = typeof payload.activeRunId === "string"
       ? payload.activeRunId.slice(0, 80)
+      : null;
+    const activeCommandId = typeof payload.activeCommandId === "string"
+      ? payload.activeCommandId.slice(0, 80)
+      : null;
+    const activeLeaseToken = typeof payload.leaseToken === "string"
+      ? payload.leaseToken.slice(0, 100)
       : null;
     const activeTaskValue = typeof payload.activeTaskKey === "string"
       ? payload.activeTaskKey
@@ -272,18 +404,183 @@ export class AgentLogStream extends DurableObject {
     const activeRunMissing = Boolean(activeRunId && !activeRun);
     const signature = JSON.stringify({ status, activeRunId, activeTaskKey });
     const statusChanged = attachment.presenceSignature !== signature;
-    if (statusChanged) {
-      ws.serializeAttachment({ ...attachment, presenceSignature: signature });
+    const now = Date.now();
+    let nextAttachment: SocketAttachment = {
+      ...attachment,
+      presenceSignature: signature,
+      status: status as SocketAttachment["status"],
+      activeRunId,
+      locale: typeof payload.locale === "string" ? payload.locale.slice(0, 16) : attachment.locale
+    };
+    if (activeCommandId && activeLeaseToken && activeRunId) {
+      nextAttachment.activeCommandId = activeCommandId;
+      nextAttachment.activeLeaseToken = activeLeaseToken;
+      if (now - attachment.activeLeaseRenewedAt >= ACTIVE_COMMAND_RENEW_INTERVAL_MS) {
+        const renewed = await renewCommandLease(this.env, {
+          commandId: activeCommandId,
+          leaseToken: activeLeaseToken,
+          leaseMs: ACTIVE_COMMAND_LEASE_MS
+        });
+        if (renewed) nextAttachment.activeLeaseRenewedAt = now;
+      }
+      if (nextAttachment.pendingDelivery?.commandId === activeCommandId) {
+        nextAttachment.pendingDelivery = null;
+      }
+    } else if (status !== "running") {
+      nextAttachment.activeCommandId = null;
+      nextAttachment.activeLeaseToken = null;
+      nextAttachment.activeLeaseRenewedAt = 0;
     }
+    const shouldSweep = status !== "offline" &&
+      !nextAttachment.pendingDelivery &&
+      (statusChanged || now - attachment.lastQueueSweepAt >= CONTROL_QUEUE_SWEEP_INTERVAL_MS);
+    if (shouldSweep) nextAttachment.lastQueueSweepAt = now;
+    ws.serializeAttachment(nextAttachment);
     ws.send(JSON.stringify({
       type: "presence-ack",
       ...(Number.isSafeInteger(payload.sequence) ? { sequence: payload.sequence } : {}),
       enabled: bundle.campConfig.agentId === agentId,
       activeAgentId: bundle.campConfig.agentId || null,
+      claimTimeoutMinutes: bundle.automationConfig.agent.claimTimeoutMinutes,
       cancelRequested: activeRunMissing || activeRun?.cancel_requested === 1,
       activeRunMissing
     }));
     if (statusChanged) this.ctx.waitUntil(this.publishAdminUpdate("agent-presence"));
+    if (shouldSweep) this.ctx.waitUntil(this.dispatchNextCommand(ws));
+  }
+
+  private async handleCommandReceived(
+    ws: WebSocket,
+    payload: Record<string, unknown>
+  ): Promise<void> {
+    const attachment = this.socketAttachment(ws);
+    if (attachment.channel !== "control" || !attachment.agentId) {
+      throw new Error("Command acknowledgement is only accepted on the Agent control channel");
+    }
+    const commandId = textValue(payload.commandId, "commandId", 80);
+    const leaseToken = textValue(payload.leaseToken, "leaseToken", 100);
+    const accepted = await renewCommandLease(this.env, {
+      commandId,
+      leaseToken,
+      leaseMs: ACTIVE_COMMAND_LEASE_MS
+    });
+    if (accepted && attachment.pendingDelivery?.commandId === commandId &&
+      attachment.pendingDelivery.leaseToken === leaseToken) {
+      attachment.pendingDelivery = null;
+      attachment.activeLeaseRenewedAt = Date.now();
+      ws.serializeAttachment(attachment);
+    }
+    ws.send(JSON.stringify({ type: "command-ack", commandId, leaseToken, accepted }));
+    await this.scheduleCommandAckAlarm();
+  }
+
+  private async handleCommandDeferred(
+    ws: WebSocket,
+    payload: Record<string, unknown>
+  ): Promise<void> {
+    const attachment = this.socketAttachment(ws);
+    if (attachment.channel !== "control" || !attachment.agentId) {
+      throw new Error("Command deferral is only accepted on the Agent control channel");
+    }
+    const commandId = textValue(payload.commandId, "commandId", 80);
+    const leaseToken = textValue(payload.leaseToken, "leaseToken", 100);
+    const pending = attachment.pendingDelivery;
+    if (pending?.commandId === commandId && pending.leaseToken === leaseToken) {
+      await releaseCommandClaim(this.env, {
+        commandId,
+        leaseToken,
+        message: "Agent deferred delivery while another task is active"
+      });
+      attachment.pendingDelivery = null;
+      ws.serializeAttachment(attachment);
+      ws.send(JSON.stringify({ type: "command-deferred-ack", commandId }));
+      await this.dispatchNextCommand(ws);
+      await this.scheduleCommandAckAlarm();
+    }
+  }
+
+  private async dispatchNextCommand(ws: WebSocket): Promise<boolean> {
+    try {
+      return await this.dispatchNextCommandUnsafe(ws);
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: "agent_command_dispatch_failed",
+        message: error instanceof Error ? error.message : String(error)
+      }));
+      return false;
+    }
+  }
+
+  private async dispatchNextCommandUnsafe(ws: WebSocket): Promise<boolean> {
+    const attachment = this.socketAttachment(ws);
+    if (attachment.channel !== "control" || !attachment.agentId ||
+      attachment.status === "offline" || attachment.pendingDelivery) return false;
+    const busy = attachment.status === "running" || Boolean(attachment.activeRunId);
+    if (!await hasAvailableCommand(this.env, { agentId: attachment.agentId, busy })) {
+      return false;
+    }
+    const claimed = await claimAgentCommand(this.env, {
+      agentId: attachment.agentId,
+      busy,
+      locale: attachment.locale
+    });
+    const command = claimed.command;
+    if (!command?.leaseToken) return false;
+    const pendingDelivery: NonNullable<SocketAttachment["pendingDelivery"]> = {
+      commandId: command.id,
+      runId: command.runId,
+      type: command.type,
+      leaseToken: command.leaseToken,
+      attemptCount: command.attemptCount,
+      sentAt: Date.now(),
+      acknowledged: false
+    };
+    try {
+      ws.send(JSON.stringify({ type: "command", command }));
+      ws.serializeAttachment({ ...attachment, pendingDelivery });
+      await this.scheduleCommandAckAlarm();
+      console.info(JSON.stringify({
+        event: "agent_command_delivered",
+        agentId: attachment.agentId,
+        commandId: command.id,
+        runId: command.runId,
+        attemptCount: command.attemptCount
+      }));
+      return true;
+    } catch (error) {
+      await releaseCommandClaim(this.env, {
+        commandId: command.id,
+        leaseToken: command.leaseToken,
+        message: "WebSocket send failed; returned to queue"
+      });
+      ws.serializeAttachment({ ...attachment, pendingDelivery: null });
+      await this.scheduleCommandAckAlarm();
+      console.warn(JSON.stringify({
+        event: "agent_command_delivery_failed",
+        agentId: attachment.agentId,
+        commandId: command.id,
+        message: error instanceof Error ? error.message : String(error)
+      }));
+      return false;
+    }
+  }
+
+  private async scheduleCommandAckAlarm(): Promise<void> {
+    const now = Date.now();
+    const deadlines = this.ctx.getWebSockets()
+      .map((socket) => this.socketAttachment(socket).pendingDelivery)
+      .filter((pending): pending is NonNullable<SocketAttachment["pendingDelivery"]> =>
+        Boolean(pending && !pending.acknowledged)
+      )
+      .map((pending) => pending.sentAt + Math.min(
+        MAX_COMMAND_DELIVERY_BACKOFF_MS,
+        COMMAND_ACK_TIMEOUT_MS * 2 ** Math.max(0, pending.attemptCount - 1)
+      ));
+    if (!deadlines.length) {
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
+    await this.ctx.storage.setAlarm(Math.max(now + 1_000, Math.min(...deadlines)));
   }
 
   private async markAgentOffline(agentId: string): Promise<void> {

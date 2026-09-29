@@ -21,16 +21,13 @@ import {
 import {
   activateAgentIdentity,
   appendRunEvent,
-  claimNextCommand,
   clearFinishedRunHistory,
   clearPublicRateLimits,
   completeCommand,
   createCommand,
   deleteAgentHeartbeat,
-  expireUnclaimedRuns,
   finalizeAgentCancellations,
   findActiveRunForAgent,
-  finalizeExpiredCancellations,
   getConfigBundle,
   getMemberScanSummary,
   getHeartbeat,
@@ -85,6 +82,7 @@ import {
   withSecurityHeaders
 } from "./response";
 import { runScheduler } from "./scheduler";
+import { claimAgentCommand } from "./agent-command-dispatch";
 import {
   archiveTechnologyVoteHistoryAtDailyReset,
   buildVoteSummary,
@@ -166,7 +164,6 @@ import {
   type RateLimitPolicy
 } from "./rate-limit";
 import {
-  builtPluginForTask,
   dispatchWorkerPluginRequest,
   enabledPermissionCatalog,
   enabledPluginForTask,
@@ -2628,84 +2625,12 @@ async function handleAgentApi(
   }
   if (path === "/api/agent/next-command" && method === "POST") {
     const body = await readJsonObject(request, 16_000);
-    const bundle = await getConfigBundle(env);
     const agentId = boundedText(body.agentId, "agentId", 80);
-    const enabled = Boolean(bundle.campConfig.agentId) &&
-      bundle.campConfig.agentId === agentId;
-    await reconcileStaleCommands(env);
-    await finalizeAgentCancellations(env, {
+    return json(await claimAgentCommand(env, {
       agentId,
-      activeRunId: null
-    });
-    await finalizeExpiredCancellations(env);
-    await expireUnclaimedRuns(
-      env,
-      bundle.automationConfig.agent.claimTimeoutMinutes
-    );
-    let command = enabled
-      ? await claimNextCommand(env, {
-          agentId,
-          busy: body.busy === true
-        })
-      : null;
-    let commandPayload: Record<string, unknown> | null = null;
-    if (command) {
-      const payload = safeParseJson(command.payload_json, {}) as Record<string, unknown>;
-      commandPayload = {
-        ...payload,
-        ...(command.run_id ? { runId: command.run_id } : {})
-      };
-    }
-    if (command?.type === "run_task") {
-      const payload = commandPayload ?? {};
-      const payloadDetail = payload.detail && typeof payload.detail === "object" && !Array.isArray(payload.detail)
-        ? payload.detail as Record<string, unknown>
-        : {};
-      commandPayload = {
-        ...payload,
-        locale: normalizeLocale(body.locale ?? payload.locale ?? payloadDetail.locale)
-      };
-      const pluginTasks = taskKeysFromCommandPayload(payload).filter((taskKey) =>
-        builtPluginForTask(taskKey)
-      );
-      const activeTasks = new Set(
-        (await effectiveWorkerPlugins(env))
-          .filter((plugin) => plugin.enabled)
-          .flatMap((plugin) => plugin.tasks.map((task) => task.key))
-      );
-      const disabledTasks = pluginTasks.filter((taskKey) => !activeTasks.has(taskKey));
-      if (disabledTasks.length && command.lease_token) {
-        await completeCommand(env, {
-          commandId: command.id,
-          leaseToken: command.lease_token,
-          state: "cancelled",
-          message: `Workers 插件已停用：${disabledTasks.join(", ")}`
-        });
-        if (command.run_id) {
-          await updateRun(env, {
-            runId: command.run_id,
-            state: "interrupted",
-            message: `对应 Workers 插件已停用：${disabledTasks.join(", ")}`,
-            currentStep: null
-          });
-        }
-        command = null;
-      }
-    }
-    return json({
-      enabled,
-      activeAgentId: bundle.campConfig.agentId || null,
-      command: command
-        ? {
-            id: command.id,
-            runId: command.run_id,
-            type: command.type,
-            payload: commandPayload ?? safeParseJson(command.payload_json, {}),
-            leaseToken: command.lease_token,
-            attemptCount: command.attempt_count
-          }
-        : null,
-    });
+      busy: body.busy === true,
+      locale: body.locale
+    }));
   }
   if (path === "/api/agent/bootstrap" && method === "POST") {
     const body = await readJsonObject(request, 16_000);
@@ -3538,31 +3463,6 @@ function boundedText(value: unknown, field: string, max: number): string {
   const result = value.trim();
   if (!result || result.length > max) throw new Error(`${field} is invalid`);
   return result;
-}
-
-function safeParseJson(value: string | null, fallback: unknown): unknown {
-  try {
-    return value ? JSON.parse(value) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function taskKeysFromCommandPayload(payload: Record<string, unknown>): string[] {
-  const direct = typeof payload.taskKey === "string" ? [payload.taskKey] : [];
-  const detail = payload.detail && typeof payload.detail === "object"
-    ? payload.detail as Record<string, unknown>
-    : null;
-  const routine = detail?.routine && typeof detail.routine === "object"
-    ? detail.routine as Record<string, unknown>
-    : null;
-  const groups = Array.isArray(routine?.groups) ? routine.groups : [];
-  return [...new Set([
-    ...direct,
-    ...groups.flatMap((group) =>
-      Array.isArray(group) ? group.filter((item): item is string => typeof item === "string") : []
-    )
-  ])];
 }
 
 function errorMessage(error: unknown): string {
