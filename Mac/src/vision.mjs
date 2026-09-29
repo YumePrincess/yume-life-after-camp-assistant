@@ -89,6 +89,43 @@ function memberDetailsReadDefinition(definition) {
   };
 }
 
+function memberRowCropVerticalBounds(row, region, colorBands, rowSpacing) {
+  const bands = Array.isArray(colorBands) ? colorBands : [];
+  const band = bands.find(
+    (candidate) =>
+      row.anchor >= candidate.start &&
+      row.anchor < candidate.end
+  );
+  if (band) {
+    // A partial stripe at the viewport edge is not a safe single-row prompt.
+    // Skipping that targeted crop lets the complete-page reader/retry handle
+    // it without promoting a neighboring name into the missing slot.
+    if (
+      (Number(band.length) || Number(band.end) - Number(band.start)) <
+        rowSpacing * 0.6 ||
+      (Number(band.length) || Number(band.end) - Number(band.start)) >
+        rowSpacing * 1.45
+    ) {
+      return null;
+    }
+    const bounds = {
+      top: Math.max(region.top, Math.floor(band.start)),
+      bottom: Math.min(region.bottom, Math.ceil(band.end))
+    };
+    return bounds.bottom > bounds.top ? bounds : null;
+  }
+
+  // The native color probe may be unavailable on older runtimes. In that
+  // case use a full-height row slot from the configured viewport top rather
+  // than a short crop offset from `row.upper` (a text-slot boundary).
+  const slotTop = region.top + Math.max(0, Number(row.index) || 0) * rowSpacing;
+  const bounds = {
+    top: Math.max(region.top, Math.floor(slotTop)),
+    bottom: Math.min(region.bottom, Math.ceil(slotTop + rowSpacing))
+  };
+  return bounds.bottom > bounds.top ? bounds : null;
+}
+
 function weeklyActivityContentRegion(definition) {
   return weeklyActivityReadRegion(definition);
 }
@@ -1074,6 +1111,7 @@ export class Vision {
         return y >= upper && y < lower;
       });
       return {
+        index,
         upper,
         lower,
         anchor,
@@ -1102,13 +1140,18 @@ export class Vision {
       const identityBounds = columnBounds.get("identity");
       const recoveryRows = await Promise.all(
         missingIdentityRows.map(async (row, recoveryIndex) => {
+          const verticalBounds = memberRowCropVerticalBounds(
+            row,
+            region,
+            options.memberRowColorBands,
+            rowSpacing
+          );
+          if (!verticalBounds) return null;
           const identityRegion = {
             left: identityBounds.left,
-            top: Math.max(region.top, row.upper - 12),
             right: identityBounds.right,
-            bottom: Math.min(region.bottom, row.lower + 12)
+            ...verticalBounds
           };
-          if (identityRegion.bottom <= identityRegion.top) return null;
           const recovered = await this.ocrRegion(
             imagePath,
             identityRegion,
@@ -1162,11 +1205,17 @@ export class Vision {
             );
             this.taskPaths.add(rowCropPath);
             try {
+              const verticalBounds = memberRowCropVerticalBounds(
+                row,
+                region,
+                options.memberRowColorBands,
+                rowSpacing
+              );
+              if (!verticalBounds) return;
               const rowRegion = {
                 left: identityBounds.left,
-                top: Math.max(region.top, row.upper - 14),
                 right: identityBounds.right,
-                bottom: Math.min(region.bottom, row.upper + 55)
+                ...verticalBounds
               };
               await this.#cropImage(
                 imagePath,
@@ -1293,14 +1342,20 @@ export class Vision {
       await Promise.all(
         rowsNeedingTargetedVision.map(async (row, recoveryIndex) => {
           const rowIndex = rowData.indexOf(row) + 1;
+          // Use the visible background stripe, not the OCR-derived row slot.
+          // The text anchor sits near the top of each card, so treating the
+          // anchor boundary as a stripe edge cuts the rest of the name.
+          const verticalBounds = memberRowCropVerticalBounds(
+            row,
+            region,
+            options.memberRowColorBands,
+            rowSpacing
+          );
+          if (!verticalBounds) return;
           const identityRegion = {
             left: Math.max(region.left, identityBounds.left - 6),
-            // Keep the crop around the current row's text baseline and out of
-            // the neighboring row. A full 95px row band can still contain
-            // two names on the tail crop when the target name is emoji-only.
-            top: Math.max(region.top, row.upper - 14),
             right: Math.min(region.right, identityBounds.right + 6),
-            bottom: Math.min(region.bottom, row.upper + 55)
+            ...verticalBounds
           };
           try {
             const candidate = await this.#withTemporaryCrop(
@@ -1341,11 +1396,17 @@ export class Vision {
       });
       await Promise.all(
         unresolvedRows.map(async (row, recoveryIndex) => {
+          const verticalBounds = memberRowCropVerticalBounds(
+            row,
+            region,
+            options.memberRowColorBands,
+            rowSpacing
+          );
+          if (!verticalBounds) return;
           const identityRegion = {
             left: Math.max(region.left, identityBounds.left - 6),
-            top: Math.max(region.top, row.upper - 14),
             right: Math.min(region.right, identityBounds.right + 6),
-            bottom: Math.min(region.bottom, row.upper + 55)
+            ...verticalBounds
           };
           try {
             let candidate = await this.#withTemporaryCrop(
@@ -1357,11 +1418,17 @@ export class Vision {
             );
             let name = cleanMemberName(candidate, row.profession);
             if (!name) {
+              const fullRowVerticalBounds = memberRowCropVerticalBounds(
+                row,
+                region,
+                options.memberRowColorBands,
+                rowSpacing
+              );
+              if (!fullRowVerticalBounds) return;
               const fullRowRegion = {
                 left: memberDetailsOcrRegion(definition).left,
-                top: Math.max(region.top, row.upper - 12),
                 right: region.right,
-                bottom: Math.min(region.bottom, row.upper + 55)
+                ...fullRowVerticalBounds
               };
               candidate = await this.#withTemporaryCrop(
                 imagePath,

@@ -974,6 +974,7 @@ export async function capturePagedTable(
     let tailOverlapRowIndexes = new Set();
     let alignedTailOverlapRowIndexes = new Set();
     let preparedFrame = null;
+    let memberRowColorBands = null;
     let stopAfterIncompletePage = false;
     if (
       memberDetailsMode &&
@@ -988,6 +989,9 @@ export async function capturePagedTable(
         page,
         signal
       );
+      if (Array.isArray(preparedFrame?.memberRowColorBands)) {
+        memberRowColorBands = preparedFrame.memberRowColorBands;
+      }
     } else if (alignedPagedTableMode && page > 0) {
       preparedFrame = await alignPagedTablePage(
         context,
@@ -1113,6 +1117,22 @@ export async function capturePagedTable(
           localVisionPageRead) &&
         typeof vision.extractTableRows === "function"
       ) {
+        if (
+          memberDetailsMode &&
+          !Array.isArray(memberRowColorBands) &&
+          attemptFrame.path
+        ) {
+          memberRowColorBands = await readMemberColorBands(
+            vision,
+            attemptFrame.path,
+            pageDefinition.region,
+            pageDefinition.pagination,
+            signal
+          );
+        }
+        if (memberDetailsMode) {
+          attemptFrame.memberRowColorBands = memberRowColorBands || [];
+        }
         if (shouldRequestMemberAdvisor) {
           const advisorConfigured =
             context.config?.localVisionModel?.enabled === true &&
@@ -1145,7 +1165,10 @@ export async function capturePagedTable(
               recognizedNames: attemptRows
                 .map((row) => String(row.name || "").trim())
                 .filter(Boolean),
-              fixedRowRead: true
+              fixedRowRead: true,
+              memberRowColorBands: memberDetailsMode
+                ? memberRowColorBands
+                : undefined
             }
           );
         }
@@ -1166,12 +1189,16 @@ export async function capturePagedTable(
               : contributionNeedsRecovery
                 ? { forceContributionRecovery: true }
                 : undefined;
+        const visionReadOptions = {
+          ...(rereadOptions || {}),
+          ...(memberDetailsMode ? { memberRowColorBands } : {})
+        };
         const recoveredRows = await vision.extractTableRows(
           attemptFrame.path,
           pageDefinition,
           attemptLabel,
           signal,
-          rereadOptions
+          visionReadOptions
         ).catch(async (error) => {
           await report(
             "warning",
@@ -2891,7 +2918,10 @@ async function alignMemberDetailsPage(
       page,
       pagination
     );
-    if (!adjustment) return frame;
+    if (!adjustment) {
+      frame.memberRowColorBands = bands;
+      return frame;
+    }
     await report(
       "info",
       "member_details_row_alignment",
@@ -2937,6 +2967,13 @@ async function alignMemberDetailsPage(
       signal
     );
   }
+  frame.memberRowColorBands = await readMemberColorBands(
+    vision,
+    frame.path,
+    definition.region,
+    pagination,
+    signal
+  );
   return frame;
 }
 
