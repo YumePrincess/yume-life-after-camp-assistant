@@ -308,6 +308,9 @@ async function consumeCommand(command, source) {
       const target = command.payload?.runId;
       if (active && active.command.runId === target) {
         active.controller.abort(new Error("管理员请求中断"));
+        // This only acknowledges delivery of the interrupt signal. The run
+        // stays `cancelling` until its workflow and game-session cleanup have
+        // completed and the run_task command reports its final state.
         await api.completeCommand(command, "completed", "已向运行任务发送中断信号");
       } else {
         await api.completeCommand(command, "cancelled", "目标任务当前未在本 Agent 运行");
@@ -531,12 +534,21 @@ async function executeCommand(command, signal) {
   };
   let terminalState = "succeeded";
   let terminalMessage = "任务完成";
+  let terminalDetail = {};
+  let terminalEventLevel = "info";
+  let terminalEventMessage = "任务已成功完成，游戏与模拟器已停止";
   const updateRunSafely = async (update, phase, detached = false) => {
     try {
       // Terminal reporting must outlive task cancellation. Reusing the task's
       // already-aborted signal here prevents the interrupted state from ever
       // reaching Workers and leaves the web UI stuck at `cancelling`.
-      await api.updateRun(command.runId, update, detached ? undefined : signal);
+      // Cleanup reports run after the task signal is aborted. They still need
+      // to reach the backend while the run remains in `cancelling`.
+      await api.updateRun(
+        command.runId,
+        update,
+        detached || signal?.aborted ? undefined : signal
+      );
       return true;
     } catch (error) {
       console.error(
@@ -684,7 +696,7 @@ async function executeCommand(command, signal) {
     // Task-facing progress and event updates use one authenticated WebSocket
     // stream. Control-plane requests (bootstrap, snapshots, final state, and
     // command completion) remain explicit HTTP operations.
-    api.startRunStream(command.runId, signal);
+    api.startRunStream(command.runId);
     taskMetadata.executionMode =
       taskMetadata.executionMode === "unknown"
         ? bootstrap.run.trigger_mode || "unknown"
@@ -737,6 +749,7 @@ async function executeCommand(command, signal) {
     );
     if (sessionResult?.cleanupCompleted === false) {
       terminalState = "partially_succeeded";
+      terminalEventLevel = "warning";
       const terminalSourceMessage =
         `核心数据已更新，但收尾未完全完成：${sessionResult.cleanupIssues.join("；")}`;
       const localizedMessages = localizedTaskEventMessages(
@@ -744,28 +757,8 @@ async function executeCommand(command, signal) {
         terminalSourceMessage
       );
       terminalMessage = localizedMessages[taskLocale];
-      await flushRunUpdates();
-      await updateRunSafely({
-        state: terminalState,
-        message: terminalMessage,
-        currentStep: null,
-        progress: 1,
-        detail: {
-          cleanupIssues: sessionResult.cleanupIssues,
-          locale: taskLocale,
-          localizedMessages
-        },
-        event: {
-          level: "warning",
-          step: "finished",
-          message: terminalMessage,
-          detail: {
-            cleanupIssues: sessionResult.cleanupIssues,
-            locale: taskLocale,
-            localizedMessages
-          }
-        }
-      }, "finished:partially_succeeded", true);
+      terminalEventMessage = terminalMessage;
+      terminalDetail = { cleanupIssues: sessionResult.cleanupIssues };
     } else {
       terminalState = "succeeded";
       const localizedMessages = localizedTaskEventMessages(
@@ -773,37 +766,16 @@ async function executeCommand(command, signal) {
         "任务已成功完成，游戏与模拟器已停止"
       );
       terminalMessage = localizedMessages[taskLocale];
-      await flushRunUpdates();
-      await updateRunSafely({
-        state: "succeeded",
-        message: terminalMessage,
-        currentStep: null,
-        progress: 1,
-        detail: {
-          locale: taskLocale,
-          localizedMessages
-        },
-        event: {
-          level: "info",
-          step: "finished",
-          message: localizeTaskEvent(
-            "finished",
-            "任务成功；已完成资源清理",
-            taskLocale
-          ),
-          detail: {
-            locale: taskLocale,
-            localizedMessages: localizedTaskEventMessages(
-              "finished",
-              "任务成功；已完成资源清理"
-            )
-          }
-        }
-      }, "finished:succeeded", true);
+      terminalEventMessage = localizeTaskEvent(
+        "finished",
+        "任务成功；已完成资源清理",
+        taskLocale
+      );
     }
   } catch (error) {
     const interrupted = signal.aborted;
     terminalState = interrupted ? "interrupted" : "failed";
+    terminalEventLevel = interrupted ? "warning" : "error";
     const failureReason = interrupted
       ? "任务已由管理员中断"
       : String(error?.message || error || "未知错误");
@@ -836,35 +808,17 @@ async function executeCommand(command, signal) {
     const terminalSourceMessage = failureReason;
     const terminalMessages = localizedTaskEventMessages("finished", terminalSourceMessage);
     terminalMessage = terminalMessages[taskLocale];
-    const terminalDetail = context.suppressScheduledRetry
-      ? {
-          suppressScheduledRetry: true,
-          retrySuppressionReason:
-            context.suppressScheduledRetryReason || "task_cleanup"
-        }
-      : undefined;
-    await updateRunSafely({
-      state: terminalState,
-      message: terminalMessage,
-      currentStep: null,
-      detail: {
-        ...(terminalDetail || {}),
-        ...failureDetail,
-        locale: taskLocale,
-        localizedMessages: terminalMessages
-      },
-      event: {
-        level: interrupted ? "warning" : "error",
-        step: "finished",
-        message: terminalMessage,
-        detail: {
-          ...(terminalDetail || {}),
-          ...failureDetail,
-          locale: taskLocale,
-          localizedMessages: terminalMessages
-        }
-      }
-    }, `finished:${terminalState}`, true);
+    terminalEventMessage = terminalMessage;
+    terminalDetail = {
+      ...(context.suppressScheduledRetry
+        ? {
+            suppressScheduledRetry: true,
+            retrySuppressionReason:
+              context.suppressScheduledRetryReason || "task_cleanup"
+          }
+        : {}),
+      ...failureDetail
+    };
   } finally {
     const removedScreenshots = await vision.cleanupTask().catch(() => 0);
     if (removedScreenshots) {
@@ -884,17 +838,51 @@ async function executeCommand(command, signal) {
       success: ["succeeded", "partially_succeeded"].includes(terminalState),
       finishedAt,
       message: terminalMessage
-    });
-    await taskDebug?.finish({
-      state: terminalState,
-      message: terminalMessage,
-      finishedAt
-    });
+    }).catch((error) => console.error(JSON.stringify({
+      event: "task_finished_log_failed",
+      runId: command.runId,
+      message: String(error?.message || error)
+    })));
+    if (taskDebug) {
+      await taskDebug.finish({
+        state: terminalState,
+        message: terminalMessage,
+        finishedAt
+      }).catch((error) => console.error(JSON.stringify({
+        event: "task_debug_finish_failed",
+        runId: command.runId,
+        message: String(error?.message || error)
+      })));
+    }
     // task_finished itself may capture the final screen while Debug mode is
     // enabled. Remove that transient source frame after the Debug artifact
     // has been written so normal snapshots never accumulate on disk.
     await vision.cleanupTask().catch(() => 0);
     if (activeTaskDebug === taskDebug) activeTaskDebug = null;
+    await flushRunUpdates();
+    const terminalMessages = localizedTaskEventMessages("finished", terminalMessage);
+    const finalDetail = {
+      ...terminalDetail,
+      locale: taskLocale,
+      localizedMessages: terminalMessages,
+      finishedAt,
+      success: ["succeeded", "partially_succeeded"].includes(terminalState)
+    };
+    await updateRunSafely({
+      state: terminalState,
+      message: terminalMessage,
+      currentStep: null,
+      ...(terminalState === "succeeded" || terminalState === "partially_succeeded"
+        ? { progress: 1 }
+        : {}),
+      detail: finalDetail,
+      event: {
+        level: terminalEventLevel,
+        step: "finished",
+        message: terminalEventMessage,
+        detail: finalDetail
+      }
+    }, `finished:${terminalState}`, true);
     api.closeRunStream(command.runId);
     await api.completeCommand(
       command,

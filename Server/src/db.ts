@@ -1958,7 +1958,7 @@ export async function updateRun(
   const terminal = isTerminalRunState(state);
   const cancellationMessage = forcedInterrupted
     ? "任务已由管理员中断"
-    : current.state === "cancelling" && cancellationRequested
+    : current.state === "cancelling" && cancellationRequested && requestedState !== "interrupted"
       ? current.message
       : undefined;
   return env.DB.prepare(
@@ -2477,7 +2477,9 @@ export async function completeCommand(
     command?.type === "interrupt_task" ||
     input.state === "cancelled" ||
     cancellationRequested
-      ? "任务已由管理员中断"
+      ? command?.type === "run_task" && input.state === "cancelled"
+        ? input.message
+        : "任务已由管理员中断"
       : input.message;
   const [commandResult] = await env.DB.batch([
     env.DB.prepare(
@@ -2499,7 +2501,7 @@ export async function completeCommand(
            AND lease_token = ?
            AND (
              type = 'run_task'
-             OR (type = 'interrupt_task' AND ? IN ('completed', 'cancelled'))
+             OR (type = 'interrupt_task' AND ? = 'cancelled')
            )
            AND state = ?
        )

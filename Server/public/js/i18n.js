@@ -3735,6 +3735,112 @@
     Object.assign(translations[language], additions);
   }
 
+  const tradingCityTranslations = {
+    en: {
+      "报名交易之城": "Apply for Trading City",
+      "前往市政厅与德克斯特交谈，提交指定星期的交易之城竞标申请。":
+        "Go to City Hall, speak with Dexter, and submit a Trading City bid for the selected weekday.",
+      "提交指定星期的交易之城竞标申请": "Submit a Trading City application for the selected weekday",
+      "与德克斯特交谈并提交指定星期的竞标申请": "Speak with Dexter and submit a bid for the selected weekday",
+      "执行报名交易之城": "Run Trading City application",
+      "启用自动任务": "Enable scheduled task",
+      "执行星期": "Execution weekday",
+      "执行时间（后台时区）": "Execution time (admin time zone)",
+      "报名目标日期": "Application weekday",
+      "自动任务每周执行一次；执行时间只能设在后台时区的周三 03:00 至周五 02:00。":
+        "The task runs once a week. Schedule it between Wednesday 03:00 and Friday 02:00 in the admin time zone.",
+      "每周{executionWeekday} {time} · 报名{targetWeekday}": "Every {executionWeekday} at {time} · apply for {targetWeekday}",
+      "请设置自动任务执行星期、时间和本次报名目标日期。":
+        "Set the automatic task's execution weekday and time, and the weekday to apply for.",
+      "请选择周三、周四或周五作为自动任务执行日。": "Choose Wednesday, Thursday, or Friday as the automatic execution day.",
+      "执行时间必须在后台时区周三 03:00 至周五 02:00 之间。":
+        "The execution time must fall between Wednesday 03:00 and Friday 02:00 in the admin time zone.",
+      "请选择周一至周日中的一个报名目标日期。": "Choose one application weekday from Monday through Sunday.",
+      "请选择周一至周日中的一个报名目标日期": "Choose one application weekday from Monday through Sunday",
+      "请选择本次要报名的一个星期。手动任务不受自动任务启动时间限制。":
+        "Choose one weekday for this application. Manual runs are not restricted to the automatic schedule window.",
+      "启动手动任务": "Start manual task"
+    },
+    fr: {
+      "报名交易之城": "Inscription à la Cité commerciale",
+      "前往市政厅与德克斯特交谈，提交指定星期的交易之城竞标申请。":
+        "Rendez-vous à la mairie, parlez à Dexter et déposez une candidature pour le jour choisi.",
+      "提交指定星期的交易之城竞标申请": "Déposer une candidature pour le jour choisi",
+      "与德克斯特交谈并提交指定星期的竞标申请": "Parler à Dexter et déposer une candidature pour le jour choisi",
+      "执行报名交易之城": "Lancer l’inscription à la Cité commerciale",
+      "启用自动任务": "Activer la tâche planifiée",
+      "执行星期": "Jour d’exécution",
+      "执行时间（后台时区）": "Heure d’exécution (fuseau du panneau)",
+      "报名目标日期": "Jour de candidature",
+      "自动任务每周执行一次；执行时间只能设在后台时区的周三 03:00 至周五 02:00。":
+        "La tâche s’exécute une fois par semaine, entre mercredi 03:00 et vendredi 02:00 dans le fuseau du panneau.",
+      "每周{executionWeekday} {time} · 报名{targetWeekday}": "Chaque {executionWeekday} à {time} · candidature pour {targetWeekday}",
+      "请设置自动任务执行星期、时间和本次报名目标日期。":
+        "Choisissez le jour et l’heure d’exécution automatique ainsi que le jour de candidature.",
+      "请选择周三、周四或周五作为自动任务执行日。": "Choisissez mercredi, jeudi ou vendredi pour l’exécution automatique.",
+      "执行时间必须在后台时区周三 03:00 至周五 02:00 之间。":
+        "L’heure doit se situer entre mercredi 03:00 et vendredi 02:00 dans le fuseau du panneau.",
+      "请选择周一至周日中的一个报名目标日期。": "Choisissez un jour de candidature entre lundi et dimanche.",
+      "请选择周一至周日中的一个报名目标日期": "Choisissez un jour de candidature entre lundi et dimanche",
+      "请选择本次要报名的一个星期。手动任务不受自动任务启动时间限制。":
+        "Choisissez un jour pour cette candidature. Les tâches manuelles ne sont pas limitées par la plage de planification.",
+      "启动手动任务": "Lancer la tâche manuelle"
+    },
+    ja: {
+      "报名交易之城": "交易の街に応募",
+      "前往市政厅与德克斯特交谈，提交指定星期的交易之城竞标申请。":
+        "市役所でデクスターと会話し、指定した曜日の交易の街への応募を提出します。",
+      "提交指定星期的交易之城竞标申请": "指定した曜日の交易の街への応募を提出",
+      "与德克斯特交谈并提交指定星期的竞标申请": "デクスターと会話し、指定した曜日の入札申請を提出",
+      "执行报名交易之城": "交易の街への応募を実行",
+      "启用自动任务": "自動タスクを有効化",
+      "执行星期": "実行する曜日",
+      "执行时间（后台时区）": "実行時刻（管理画面のタイムゾーン）",
+      "报名目标日期": "応募する曜日",
+      "自动任务每周执行一次；执行时间只能设在后台时区的周三 03:00 至周五 02:00。":
+        "自動タスクは週1回実行します。管理画面のタイムゾーンで水曜 03:00 から金曜 02:00 の間に設定してください。",
+      "每周{executionWeekday} {time} · 报名{targetWeekday}": "毎週{executionWeekday} {time} · 応募先 {targetWeekday}",
+      "请设置自动任务执行星期、时间和本次报名目标日期。":
+        "自動タスクの実行曜日と時刻、および応募する曜日を設定してください。",
+      "请选择周三、周四或周五作为自动任务执行日。": "自動タスクの実行日は水曜、木曜、金曜から選択してください。",
+      "执行时间必须在后台时区周三 03:00 至周五 02:00 之间。":
+        "実行時刻は管理画面のタイムゾーンで水曜 03:00 から金曜 02:00 の間にしてください。",
+      "请选择周一至周日中的一个报名目标日期。": "応募する曜日を月曜から日曜の中から1つ選択してください。",
+      "请选择周一至周日中的一个报名目标日期": "応募する曜日を月曜から日曜の中から1つ選択してください",
+      "请选择本次要报名的一个星期。手动任务不受自动任务启动时间限制。":
+        "今回応募する曜日を1つ選択してください。手動タスクは自動タスクの実行時間制限を受けません。",
+      "启动手动任务": "手動タスクを開始"
+    },
+    "zh-tw": {
+      "报名交易之城": "報名交易之城",
+      "前往市政厅与德克斯特交谈，提交指定星期的交易之城竞标申请。":
+        "前往市政廳與德克斯特交談，提交指定星期的交易之城競標申請。",
+      "提交指定星期的交易之城竞标申请": "提交指定星期的交易之城競標申請",
+      "与德克斯特交谈并提交指定星期的竞标申请": "與德克斯特交談並提交指定星期的競標申請",
+      "执行报名交易之城": "執行報名交易之城",
+      "启用自动任务": "啟用自動任務",
+      "执行星期": "執行星期",
+      "执行时间（后台时区）": "執行時間（後台時區）",
+      "报名目标日期": "報名目標日期",
+      "自动任务每周执行一次；执行时间只能设在后台时区的周三 03:00 至周五 02:00。":
+        "自動任務每週執行一次；執行時間只能設在後台時區的週三 03:00 至週五 02:00。",
+      "每周{executionWeekday} {time} · 报名{targetWeekday}": "每週{executionWeekday} {time} · 報名{targetWeekday}",
+      "请设置自动任务执行星期、时间和本次报名目标日期。":
+        "請設定自動任務執行星期、時間及本次報名目標日期。",
+      "请选择周三、周四或周五作为自动任务执行日。": "請選擇週三、週四或週五作為自動任務執行日。",
+      "执行时间必须在后台时区周三 03:00 至周五 02:00 之间。":
+        "執行時間必須在後台時區週三 03:00 至週五 02:00 之間。",
+      "请选择周一至周日中的一个报名目标日期。": "請選擇週一至週日中的一個報名目標日期。",
+      "请选择周一至周日中的一个报名目标日期": "請選擇週一至週日中的一個報名目標日期",
+      "请选择本次要报名的一个星期。手动任务不受自动任务启动时间限制。":
+        "請選擇本次要報名的一個星期。手動任務不受自動任務啟動時間限制。",
+      "启动手动任务": "啟動手動任務"
+    }
+  };
+  for (const [language, additions] of Object.entries(tradingCityTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+
   const adminUiTranslations = {
     en: {
       "日期选择器": "Date picker",

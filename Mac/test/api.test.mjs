@@ -89,7 +89,7 @@ test("persistent port 443 resets are described as HTTPS transport failures", asy
   }
 });
 
-test("in-progress run updates use the acknowledged WebSocket stream without HTTP fallback", async () => {
+test("the run log stream stays open after task cancellation so cleanup updates reach the backend", async () => {
   const originalFetch = globalThis.fetch;
   const originalWebSocket = globalThis.WebSocket;
   const sent = [];
@@ -148,7 +148,9 @@ test("in-progress run updates use the acknowledged WebSocket stream without HTTP
     });
     outboxDirectory = await mkdtemp(resolve(tmpdir(), "yla-agent-runlog-test-"));
     api.logOutboxDirectory = outboxDirectory;
-    api.startRunStream("run-test");
+    const cancellation = new AbortController();
+    api.startRunStream("run-test", cancellation.signal);
+    cancellation.abort(new Error("administrator requested cancellation"));
     const result = await api.updateRun("run-test", {
       currentStep: "scan",
       event: { level: "info", step: "scan", message: "扫描中" }

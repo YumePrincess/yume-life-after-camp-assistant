@@ -141,6 +141,55 @@ describe("completeCommand", () => {
     expect(statements[1]?.values[0]).toBe("interrupted");
   });
 
+  it("only acknowledges an active interrupt command and leaves its task cancelling", async () => {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const command = {
+      id: "interrupt-1",
+      run_id: "run-cancelling",
+      type: "interrupt_task"
+    };
+    const run = {
+      id: "run-cancelling",
+      state: "cancelling",
+      cancel_requested: 1,
+      message: "管理员请求中断任务"
+    };
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          const first = async () => {
+            if (sql.includes("FROM command_queue")) return command;
+            if (sql.includes("FROM task_runs")) return run;
+            return null;
+          };
+          return {
+            first,
+            bind(...values: unknown[]) {
+              statements.push({ sql, values });
+              return { first };
+            }
+          };
+        },
+        async batch() {
+          return [{ meta: { changes: 1 } }, { meta: { changes: 0 } }];
+        }
+      }
+    } as unknown as Env;
+
+    await expect(
+      completeCommand(env, {
+        commandId: command.id,
+        leaseToken: "interrupt-lease",
+        state: "completed",
+        message: "已向运行任务发送中断信号"
+      })
+    ).resolves.toBe(true);
+    const runUpdate = statements.find(({ sql }) => sql.includes("UPDATE task_runs"));
+    expect(runUpdate?.sql).toContain("type = 'run_task'");
+    expect(runUpdate?.sql).toContain("type = 'interrupt_task' AND ? = 'cancelled'");
+    expect(runUpdate?.values).toContain("completed");
+  });
+
   it("does not overwrite an existing terminal run state", async () => {
     const statements: Array<{ sql: string; values: unknown[] }> = [];
     const env = {
@@ -266,6 +315,40 @@ describe("reconcileTerminalRunCommands", () => {
 });
 
 describe("ghost-command and cancellation recovery", () => {
+  it("publishes the Agent's terminal cancellation message after cleanup", async () => {
+    let updateValues: unknown[] = [];
+    const cancellingRun = {
+      id: "run-cancelling",
+      state: "cancelling",
+      cancel_requested: 1,
+      message: "正在中断"
+    };
+    const env = {
+      DB: {
+        prepare(sql: string) {
+          return {
+            bind(...values: unknown[]) {
+              if (sql.startsWith("UPDATE task_runs")) updateValues = values;
+              return {
+                async first() {
+                  return cancellingRun;
+                }
+              };
+            }
+          };
+        }
+      }
+    } as unknown as Env;
+
+    await updateRun(env, {
+      runId: cancellingRun.id,
+      state: "interrupted",
+      message: "The task was interrupted by an administrator"
+    });
+    expect(updateValues[0]).toBe("interrupted");
+    expect(updateValues[1]).toBe("The task was interrupted by an administrator");
+  });
+
   it("cancels commands whose task row was manually removed or already finished", async () => {
     let statement: { sql: string; values: unknown[] } | undefined;
     const env = {

@@ -178,3 +178,30 @@ test("safe count templates translate without translating OCR fields", () => {
     "週間活躍ポイントの読み取り完了：12人を認識し9人を更新；ランキングにないメンバーは0として処理"
   );
 });
+
+test("Trading City task events and weekday names follow the Agent locale", () => {
+  assert.equal(
+    localizeTaskEvent(
+      "trading_city_route_restart",
+      "第 2/3 次寻路重启：已连续六次未找到德克斯特，先传送回市中心出入口，再重新前往市政厅",
+      "en"
+    ),
+    "Route restart 2/3: Dexter was not found after six attempts. Returning to the central exit, then retrying City Hall."
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "trading_city_weekday_selected",
+      "已点击报名目标日期周五，申请表坐标 (1196, 416)",
+      "fr"
+    ),
+    "vendredi sélectionné pour la candidature (coordonnées du formulaire : 1196, 416)"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "trading_city_application_submitted",
+      "已确认竞标申请表消失并重新识别世界 HUD；报名目标日期：周日",
+      "ja"
+    ),
+    "申請フォームが閉じ、ワールド HUD を再認識しました。応募曜日：日曜"
+  );
+});

@@ -283,10 +283,9 @@ class AgentControlStream {
 }
 
 class RunLogStream {
-  constructor(api, runId, signal) {
+  constructor(api, runId) {
     this.api = api;
     this.runId = runId;
-    this.signal = signal;
     this.spoolPath = resolve(api.logOutboxDirectory, `${safePathPart(runId)}.jsonl`);
     this.ackPath = `${this.spoolPath}.ack`;
     this.pending = [];
@@ -309,8 +308,6 @@ class RunLogStream {
         message: String(error?.message || error)
       }));
     });
-    this.onAbort = () => this.close(new Error("run log stream aborted"));
-    signal?.addEventListener("abort", this.onAbort, { once: true });
   }
 
   start() {
@@ -578,7 +575,6 @@ class RunLogStream {
     this.reconnectTimer = null;
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
-    this.signal?.removeEventListener("abort", this.onAbort);
     this.failPending(error || new Error("run log stream closed"));
     this.socket?.close();
     this.socket = null;
@@ -732,9 +728,12 @@ export class AgentApi {
     );
   }
 
-  startRunStream(runId, signal) {
+  // Keep the task log stream alive after the workflow signal is aborted. The
+  // game-session cleanup still reports events (return-to-center, closing the
+  // game, and releasing resources) before the task reaches a terminal state.
+  startRunStream(runId, _taskSignal) {
     this.closeRunStream(runId);
-    const stream = new RunLogStream(this, runId, signal).start();
+    const stream = new RunLogStream(this, runId).start();
     this.runStreams.set(runId, stream);
     return stream;
   }

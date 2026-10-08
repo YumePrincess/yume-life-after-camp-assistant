@@ -7,6 +7,30 @@ const FIXED_TRANSLATIONS = {
     fr: "La tâche a été interrompue par un administrateur",
     ja: "管理者によってタスクが中断されました"
   },
+  "TRADING_CITY_TARGET_WEEKDAY_MISSING: 未收到有效的报名目标星期": {
+    "zh-tw": "TRADING_CITY_TARGET_WEEKDAY_MISSING：未收到有效的報名目標星期",
+    en: "TRADING_CITY_TARGET_WEEKDAY_MISSING: No valid application weekday was received",
+    fr: "TRADING_CITY_TARGET_WEEKDAY_MISSING : aucun jour de candidature valide reçu",
+    ja: "TRADING_CITY_TARGET_WEEKDAY_MISSING：有効な応募曜日を受信できませんでした"
+  },
+  "TRADING_CITY_DEXTER_NOT_FOUND: 最多重启三轮后仍未识别到德克斯特交谈选项": {
+    "zh-tw": "TRADING_CITY_DEXTER_NOT_FOUND：最多重新啟動三輪後仍未識別到德克斯特交談選項",
+    en: "TRADING_CITY_DEXTER_NOT_FOUND: Dexter's talk option was not recognized after three route restarts",
+    fr: "TRADING_CITY_DEXTER_NOT_FOUND : l’option de dialogue de Dexter reste introuvable après trois reprises du trajet",
+    ja: "TRADING_CITY_DEXTER_NOT_FOUND：経路を3回再開してもデクスターの会話選択肢を認識できませんでした"
+  },
+  "TRADING_CITY_WEEKDAY_POSITION_MISSING": {
+    "zh-tw": "TRADING_CITY_WEEKDAY_POSITION_MISSING",
+    en: "TRADING_CITY_WEEKDAY_POSITION_MISSING: The checkbox position is missing",
+    fr: "TRADING_CITY_WEEKDAY_POSITION_MISSING : position de la case manquante",
+    ja: "TRADING_CITY_WEEKDAY_POSITION_MISSING：曜日チェック欄の位置がありません"
+  },
+  "TRADING_CITY_SUBMISSION_UNCONFIRMED: 申请表未消失或未重新识别到世界 HUD": {
+    "zh-tw": "TRADING_CITY_SUBMISSION_UNCONFIRMED：申請表未消失或未重新識別到世界 HUD",
+    en: "TRADING_CITY_SUBMISSION_UNCONFIRMED: The form did not disappear or the world HUD was not recognized again",
+    fr: "TRADING_CITY_SUBMISSION_UNCONFIRMED : le formulaire est toujours présent ou l’interface du monde n’a pas été reconnue",
+    ja: "TRADING_CITY_SUBMISSION_UNCONFIRMED：申請フォームが消えないか、ワールド HUD を再認識できませんでした"
+  },
   "正在按任务启动本地视觉辅助模型": {
     "zh-tw": "正在依任務啟動本機視覺輔助模型",
     en: "Starting the local vision assistant for this task",
@@ -226,6 +250,78 @@ const FIXED_TRANSLATIONS = {
 };
 
 const PATTERN_TRANSLATIONS = [
+  {
+    test: /^TRADING_CITY_SCREEN_SIZE_UNSUPPORTED: 表单点击位置按 1920×1200 校准，当前为 (\d+)×(\d+)$/,
+    values: {
+      "zh-tw": "TRADING_CITY_SCREEN_SIZE_UNSUPPORTED：表單點擊位置依 1920×1200 校準，目前為 $1×$2",
+      en: "TRADING_CITY_SCREEN_SIZE_UNSUPPORTED: Form tap coordinates require 1920×1200; current size is $1×$2",
+      fr: "TRADING_CITY_SCREEN_SIZE_UNSUPPORTED : les coordonnées du formulaire exigent 1920×1200 ; résolution actuelle : $1×$2",
+      ja: "TRADING_CITY_SCREEN_SIZE_UNSUPPORTED：フォーム座標は1920×1200用です。現在のサイズは$1×$2です"
+    }
+  },
+  {
+    test: /^TRADING_CITY_CONVERSATION_UNRECOGNIZED: 交易之城对话关键词仅识别到 (\d+)\/6 个$/,
+    values: {
+      "zh-tw": "TRADING_CITY_CONVERSATION_UNRECOGNIZED：交易之城對話關鍵字僅識別到 $1/6 個",
+      en: "TRADING_CITY_CONVERSATION_UNRECOGNIZED: Recognized only $1 of 6 Trading City dialogue keywords",
+      fr: "TRADING_CITY_CONVERSATION_UNRECOGNIZED : seulement $1 des 6 mots-clés du dialogue reconnus",
+      ja: "TRADING_CITY_CONVERSATION_UNRECOGNIZED：交易の街の会話キーワードを6個中$1個だけ認識しました"
+    }
+  },
+  {
+    test: /^TRADING_CITY_APPLICATION_UNRECOGNIZED: 竞标申请表关键词仅识别到 (\d+)\/10 个$/,
+    values: {
+      "zh-tw": "TRADING_CITY_APPLICATION_UNRECOGNIZED：競標申請表關鍵字僅識別到 $1/10 個",
+      en: "TRADING_CITY_APPLICATION_UNRECOGNIZED: Recognized only $1 of 10 application-form keywords",
+      fr: "TRADING_CITY_APPLICATION_UNRECOGNIZED : seulement $1 des 10 mots-clés du formulaire reconnus",
+      ja: "TRADING_CITY_APPLICATION_UNRECOGNIZED：申請フォームのキーワードを10個中$1個だけ認識しました"
+    }
+  },
+  {
+    test: /^第 (\d+)\/3 次寻路重启：已连续六次未找到德克斯特，先传送回市中心出入口，再重新前往市政厅$/,
+    values: {
+      "zh-tw": "第 $1/3 次路徑重啟：連續六次未找到德克斯特，先傳送回市中心出入口，再重新前往市政廳",
+      en: "Route restart $1/3: Dexter was not found after six attempts. Returning to the central exit, then retrying City Hall.",
+      fr: "Reprise du trajet $1/3 : Dexter reste introuvable après six essais. Retour à la sortie centrale avant de réessayer la mairie.",
+      ja: "経路再開 $1/3：6回試行してもデクスターが見つかりません。中央出口に戻ってから市役所へ向かい直します。"
+    }
+  },
+  {
+    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路后识别到“德克斯特”和“交谈\(F\)”，正在交谈$/,
+    values: {
+      "zh-tw": "第 $1 輪第 $2/6 次尋路後識別到「德克斯特」和「交談(F)」，正在交談",
+      en: "Recognized Dexter and Talk (F) on route $1, attempt $2/6; starting the conversation",
+      fr: "Dexter et l’option Parler (F) reconnus au trajet $1, essai $2/6 ; démarrage du dialogue",
+      ja: "$1周目の経路探索$2/6回目でデクスターと「会話(F)」を認識しました。会話を開始します。"
+    }
+  },
+  {
+    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路后通过高精度识别到“德克斯特”和“交谈\(F\)”，正在交谈$/,
+    values: {
+      "zh-tw": "第 $1 輪第 $2/6 次尋路後透過高精度識別到「德克斯特」和「交談(F)」，正在交談",
+      en: "Accurately recognized Dexter and Talk (F) on route $1, attempt $2/6; starting the conversation",
+      fr: "Dexter et l’option Parler (F) reconnus avec précision au trajet $1, essai $2/6 ; démarrage du dialogue",
+      ja: "$1周目の経路探索$2/6回目で高精度認識によりデクスターと「会話(F)」を確認しました。会話を開始します。"
+    }
+  },
+  {
+    test: /^已点击报名目标日期(周[一二三四五六日])，申请表坐标 \((\d+), (\d+)\)$/,
+    values: {
+      "zh-tw": "已點擊報名目標日期$1，申請表座標（$2, $3）",
+      en: "Selected $1 for the application (form coordinates: $2, $3)",
+      fr: "$1 sélectionné pour la candidature (coordonnées du formulaire : $2, $3)",
+      ja: "応募曜日に$1を選択しました（フォーム座標：$2, $3）"
+    }
+  },
+  {
+    test: /^已确认竞标申请表消失并重新识别世界 HUD；报名目标日期：(周[一二三四五六日])$/,
+    values: {
+      "zh-tw": "已確認競標申請表消失並重新識別世界 HUD；報名目標日期：$1",
+      en: "Confirmed the application form closed and the world HUD returned; application weekday: $1",
+      fr: "Formulaire fermé et interface du monde reconnue ; jour de candidature : $1",
+      ja: "申請フォームが閉じ、ワールド HUD を再認識しました。応募曜日：$1"
+    }
+  },
   {
     test: /^成员资料首次扫描识别 (\d+)\/(\d+) 名，先通过顶部“首页”返回列表起点，再进入“成员”页完整重扫一次，避免末页 OCR 漏行$/,
     values: {
@@ -552,6 +648,25 @@ const PATTERN_TRANSLATIONS = [
   }
 ];
 
+const WEEKDAY_TRANSLATIONS = {
+  "zh-tw": {
+    "周一": "週一", "周二": "週二", "周三": "週三", "周四": "週四",
+    "周五": "週五", "周六": "週六", "周日": "週日"
+  },
+  en: {
+    "周一": "Monday", "周二": "Tuesday", "周三": "Wednesday", "周四": "Thursday",
+    "周五": "Friday", "周六": "Saturday", "周日": "Sunday"
+  },
+  fr: {
+    "周一": "lundi", "周二": "mardi", "周三": "mercredi", "周四": "jeudi",
+    "周五": "vendredi", "周六": "samedi", "周日": "dimanche"
+  },
+  ja: {
+    "周一": "月曜", "周二": "火曜", "周三": "水曜", "周四": "木曜",
+    "周五": "金曜", "周六": "土曜", "周日": "日曜"
+  }
+};
+
 export function normalizeTaskLocale(value) {
   if (typeof value !== "string") return "zh-cn";
   const normalized = value.trim().toLowerCase().replace(/_/g, "-");
@@ -576,7 +691,10 @@ export function localizeTaskEvent(step, message, locale) {
   for (const pattern of PATTERN_TRANSLATIONS) {
     const match = pattern.test.exec(source);
     if (!match) continue;
-    return pattern.values[target].replace(/\$(\d+)/g, (_, index) => match[Number(index)] ?? "");
+    return pattern.values[target].replace(/\$(\d+)/g, (_, index) => {
+      const captured = match[Number(index)] ?? "";
+      return WEEKDAY_TRANSLATIONS[target]?.[captured] || captured;
+    });
   }
   // OCR, device diagnostics, and other text without a safe fixed template
   // stay byte-for-byte unchanged so recognized game text is never translated.

@@ -1328,6 +1328,7 @@
     inactivity_sync: { enabled: "inactivityEnabled", time: "inactivityTime", title: "更新斩杀预警" },
     member_profile_sync: { enabled: "profileEnabled", time: "profileTime", title: "更新成员资料" },
     weekly_activity_sync: { enabled: "weeklyActivityEnabled", time: "weeklyActivityTime", title: "更新周活跃点" },
+    trading_city_apply: { enabled: "tradingCityEnabled", time: "tradingCityTime", title: "报名交易之城" },
     patrol: { enabled: "patrolEnabled", time: "patrolTime", title: "营地巡逻" }
   };
 
@@ -1408,6 +1409,7 @@
 
   function renderScheduleSummaries() {
     for (const [taskKey, field] of Object.entries(SCHEDULE_FIELDS)) {
+      if (taskKey === "trading_city_apply") continue;
       const times = scheduleTimes(taskKey).filter(Boolean);
       const summary = document.querySelector(`[data-schedule-summary="${taskKey}"]`);
       if (summary) {
@@ -1420,6 +1422,7 @@
       }
       if (times[0]) setField(field.time, times[0]);
     }
+    renderTradingCityScheduleSummary();
   }
 
   function updateTradingCityTimeBounds() {
@@ -1436,8 +1439,11 @@
     const enabled = Boolean(getField("tradingCityEnabled"));
     const executionWeekday = scheduleWeekdayLabel(Number(getField("tradingCityExecutionWeekday")) || 3);
     const targetWeekday = scheduleWeekdayLabel(Number(getField("tradingCityTargetWeekday")) || 1);
-    const time = String(getField("tradingCityTime") || "未设置");
-    summary.textContent = `${enabled ? "已启用" : "已停用"} · 每周${executionWeekday} ${time} · 报名${targetWeekday}`;
+    const time = String(getField("tradingCityTime") || window.MrzhI18n.t("未设置"));
+    summary.textContent = `${window.MrzhI18n.t(enabled ? "已启用" : "已停用")} · ${window.MrzhI18n.format(
+      "每周{executionWeekday} {time} · 报名{targetWeekday}",
+      { executionWeekday, time, targetWeekday }
+    )}`;
   }
 
   function renderScheduleTimeInputs() {
@@ -1484,13 +1490,36 @@
     state.scheduleDialogTaskKey = taskKey;
     state.scheduleDrafts[taskKey] = scheduleTimes(taskKey).slice();
     state.scheduleWeekdayDrafts[taskKey] = scheduleWeekdays(taskKey).slice();
+    const isTradingCity = taskKey === "trading_city_apply";
+    const standardFields = byId("schedule-dialog-standard-fields");
+    standardFields.hidden = isTradingCity;
+    for (const control of standardFields.querySelectorAll("input, select, textarea")) {
+      control.disabled = isTradingCity;
+    }
+    byId("schedule-dialog-trading-city-fields").hidden = !isTradingCity;
+    byId("schedule-add-time").hidden = isTradingCity;
     byId("schedule-dialog-title").textContent = `${window.MrzhI18n.t(field.title)}：${window.MrzhI18n.t("配置执行计划")}`;
-    byId("schedule-dialog-note").textContent = taskKey === "patrol"
-      ? window.MrzhI18n.t("巡逻任务只支持一个启动时间。")
-      : taskKey === "tech_switch"
-        ? window.MrzhI18n.t("科技切换任务只支持一个执行时间。")
-        : window.MrzhI18n.t("默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。");
+    byId("schedule-dialog-note").textContent = isTradingCity
+      ? window.MrzhI18n.t("请设置自动任务执行星期、时间和本次报名目标日期。")
+      : taskKey === "patrol"
+        ? window.MrzhI18n.t("巡逻任务只支持一个启动时间。")
+        : taskKey === "tech_switch"
+          ? window.MrzhI18n.t("科技切换任务只支持一个执行时间。")
+          : window.MrzhI18n.t("默认保留当前时间。增加执行次数后，请分别设置每次执行时间。计划时间点后15分钟内提交的手动任务使用定时任务重试次数；其他手动任务使用手动任务失败重试次数。");
     byId("schedule-dialog-enabled").checked = Boolean(getField(field.enabled));
+    if (isTradingCity) {
+      byId("schedule-dialog-trading-city-execution-weekday").value =
+        String(getField("tradingCityExecutionWeekday") || 3);
+      byId("schedule-dialog-trading-city-time").value =
+        String(getField("tradingCityTime") || "03:00");
+      byId("schedule-dialog-trading-city-target-weekday").value =
+        String(getField("tradingCityTargetWeekday") || 1);
+      updateTradingCityTimeBounds();
+      byId("schedule-dialog-feedback").textContent = "";
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      return;
+    }
     const patrolFields = byId("schedule-patrol-fields");
     if (patrolFields) {
       patrolFields.hidden = taskKey !== "patrol";
@@ -1529,6 +1558,47 @@
     const taskKey = state.scheduleDialogTaskKey;
     const field = SCHEDULE_FIELDS[taskKey];
     if (!field) return;
+    if (taskKey === "trading_city_apply") {
+      const executionWeekday = Number(
+        byId("schedule-dialog-trading-city-execution-weekday").value
+      );
+      const time = byId("schedule-dialog-trading-city-time").value.trim();
+      const targetWeekday = Number(
+        byId("schedule-dialog-trading-city-target-weekday").value
+      );
+      const timeMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
+      const minutes = timeMatch ? Number(timeMatch[1]) * 60 + Number(timeMatch[2]) : -1;
+      if (![3, 4, 5].includes(executionWeekday)) {
+        byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t(
+          "请选择周三、周四或周五作为自动任务执行日。"
+        );
+        return;
+      }
+      if (!timeMatch || (executionWeekday === 3 && minutes < 180) ||
+        (executionWeekday === 5 && minutes > 120)) {
+        byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t(
+          "执行时间必须在后台时区周三 03:00 至周五 02:00 之间。"
+        );
+        return;
+      }
+      if (!Number.isInteger(targetWeekday) || targetWeekday < 1 || targetWeekday > 7) {
+        byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t(
+          "请选择周一至周日中的一个报名目标日期。"
+        );
+        return;
+      }
+      setField("tradingCityEnabled", byId("schedule-dialog-enabled").checked);
+      setField("tradingCityExecutionWeekday", executionWeekday);
+      setField("tradingCityTime", time);
+      setField("tradingCityTargetWeekday", targetWeekday);
+      updateTradingCityTimeBounds();
+      renderTradingCityScheduleSummary();
+      state.dirtySections.add("tasks");
+      document.querySelector('.config-form[data-config-section="tasks"] [data-save-feedback]')?.replaceChildren(document.createTextNode(translateUi("有未保存修改")));
+      updateSaveState();
+      closeScheduleDialog();
+      return;
+    }
     const times = [...byId("schedule-time-list").querySelectorAll("input[data-schedule-time]")]
       .map((control) => control.value.trim());
     const invalid = times.some((value) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(value));
@@ -3942,7 +4012,9 @@
     if (!button) return;
     const targetWeekday = Number(byId("trading-city-manual-weekday").value);
     if (!Number.isInteger(targetWeekday) || targetWeekday < 1 || targetWeekday > 7) {
-      byId("trading-city-manual-feedback").textContent = "请选择周一至周日中的一个报名目标日期";
+      byId("trading-city-manual-feedback").textContent = window.MrzhI18n.t(
+        "请选择周一至周日中的一个报名目标日期"
+      );
       return;
     }
     const queued = await runTask(
