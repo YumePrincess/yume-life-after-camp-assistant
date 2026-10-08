@@ -2549,7 +2549,8 @@ async function handleAdminApi(
     const limit = Number(url.searchParams.get("limit"));
     const result = await listRunEvents(env, runId, {
         ...(Number.isInteger(afterId) && afterId > 0 ? { afterId } : {}),
-        ...(Number.isInteger(limit) && limit > 0 ? { limit } : {})
+        ...(Number.isInteger(limit) && limit > 0 ? { limit } : {}),
+        ...(url.searchParams.get("latest") === "1" ? { latest: true } : {})
       });
     const localized = {
       ...result,
@@ -2717,16 +2718,19 @@ async function handleAgentApi(
       detail: body.detail
     });
     if (!run) return problem("Run not found", 404, "run_not_found");
-    if (!TERMINAL_RUN_STATES.has(previousRun.state) && body.event && typeof body.event === "object") {
+    if (body.event && typeof body.event === "object") {
       const event = body.event as Record<string, unknown>;
       await appendRunEvent(env, {
         runId,
         level: isEventLevel(event.level) ? event.level : "info",
         step: typeof event.step === "string" ? event.step.slice(0, 120) : null,
         message: boundedText(event.message, "event.message", 2000),
-        detail: event.detail ?? {}
+        detail: event.detail ?? {},
+        streamEventId:
+          typeof body.streamEventId === "string" ? body.streamEventId.slice(0, 100) : null
       });
     }
+    await publishLiveUpdate(env, ["admin"], "agent-run-update-http");
     return json({ run });
   }
   if (path === "/api/agent/snapshot" && method === "POST") {

@@ -85,6 +85,7 @@
     activeView: "overview",
     accessAllowed: false,
     activeEventRunId: null,
+    eventRefreshTimer: null,
     eventRefreshInFlight: false,
     eventRefreshQueued: false,
     eventSignature: "",
@@ -4098,6 +4099,15 @@
     const root = byId("run-events");
     root.replaceChildren(create("p", "empty-state", "正在加载…"));
     byId("run-dialog").showModal();
+    state.eventRefreshTimer = window.setInterval(() => {
+      if (
+        state.activeEventRunId === runId &&
+        byId("run-dialog").open &&
+        !document.hidden
+      ) {
+        void refreshRunEvents(runId);
+      }
+    }, 4_000);
     await refreshRunEvents(runId);
   }
 
@@ -4120,8 +4130,8 @@
         limit: "400",
         locale: requestedLocale
       });
-      if (initialLoad) params.set("latest", "1");
-      else if (state.eventLastId != null) {
+      if (state.eventLastId == null) params.set("latest", "1");
+      else {
         params.set("afterId", String(state.eventLastId));
       }
       const payload = await request(
@@ -4193,6 +4203,8 @@
   }
 
   function stopEventRefresh() {
+    if (state.eventRefreshTimer) window.clearInterval(state.eventRefreshTimer);
+    state.eventRefreshTimer = null;
     state.activeEventRunId = null;
     state.eventRefreshQueued = false;
     state.eventSignature = "";

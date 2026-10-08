@@ -93,10 +93,6 @@ function isRunState(value: unknown): value is RunState {
   return typeof value === "string" && RUN_STATES.has(value as RunState);
 }
 
-function isTerminalRunState(value: string): boolean {
-  return TERMINAL_RUN_STATES.has(value as RunState);
-}
-
 function isEventLevel(value: unknown): value is "debug" | "info" | "warning" | "error" {
   return typeof value === "string" && EVENT_LEVELS.has(value);
 }
@@ -651,12 +647,10 @@ export class AgentLogStream extends DurableObject {
     if (!run) throw new Error("Run not found");
 
     const rawEvent = body.event;
-    if (
-      !isTerminalRunState(previousRun.state) &&
-      rawEvent &&
-      typeof rawEvent === "object" &&
-      !Array.isArray(rawEvent)
-    ) {
+    // A delayed replay can arrive just after the run entered a terminal state.
+    // Keep its event: streamEventId makes a replay idempotent, and dropping it
+    // here can leave the admin timeline permanently behind the Agent journal.
+    if (rawEvent && typeof rawEvent === "object" && !Array.isArray(rawEvent)) {
       const event = rawEvent as Record<string, unknown>;
       await appendRunEvent(this.env, {
         runId,

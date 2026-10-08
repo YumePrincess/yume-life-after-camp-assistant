@@ -1897,7 +1897,7 @@ export async function expireUnclaimedRuns(
 export async function listRunEvents(
   env: Env,
   runId: string,
-  options: { afterId?: number; limit?: number } = {}
+  options: { afterId?: number; limit?: number; latest?: boolean } = {}
 ): Promise<{ events: Record<string, unknown>[]; nextAfterId: number | null }> {
   const limit = Math.max(1, Math.min(1000, Number(options.limit) || 1000));
   const afterId = Number.isInteger(options.afterId) && options.afterId! > 0
@@ -1905,7 +1905,9 @@ export async function listRunEvents(
     : null;
   const result = afterId == null
     ? await env.DB.prepare(
-        "SELECT id, level, step, message, detail_json, created_at FROM task_events WHERE run_id = ? ORDER BY id ASC LIMIT ?"
+        options.latest
+          ? "SELECT id, level, step, message, detail_json, created_at FROM task_events WHERE run_id = ? ORDER BY id DESC LIMIT ?"
+          : "SELECT id, level, step, message, detail_json, created_at FROM task_events WHERE run_id = ? ORDER BY id ASC LIMIT ?"
       )
         .bind(runId, limit)
         .all<Record<string, unknown>>()
@@ -1914,7 +1916,9 @@ export async function listRunEvents(
       )
         .bind(runId, afterId, limit)
         .all<Record<string, unknown>>();
-  const events = result.results;
+  const events = options.latest && afterId == null
+    ? [...result.results].reverse()
+    : result.results;
   const lastId = events.length ? Number(events[events.length - 1]?.id) : null;
   return {
     events,

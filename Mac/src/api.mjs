@@ -12,6 +12,8 @@ const TERMINAL_RUN_STATES = new Set([
   "timed_out",
   "skipped"
 ]);
+const RUN_LOG_ACK_TIMEOUT_MS = 20_000;
+const RUN_LOG_HTTP_RETRY_MAX_MS = 30_000;
 
 function websocketTokenProtocol(token) {
   return `mrzh-agent-token.${Buffer.from(String(token), "utf8").toString("base64url")}`;
@@ -295,7 +297,13 @@ class RunLogStream {
     this.connected = false;
     this.closed = false;
     this.reconnectTimer = null;
+    this.connectionTimer = null;
     this.flushTimer = null;
+    this.ackTimer = null;
+    this.httpFallbackTimer = null;
+    this.httpFallback = false;
+    this.httpFallbackAttempt = 0;
+    this.httpFallbackPromise = null;
     this.flushWaiters = [];
     this.persistQueue = Promise.resolve();
     this.acknowledgedSequence = 0;
@@ -347,6 +355,12 @@ class RunLogStream {
       return { ok: true };
     });
     this.persistQueue = operation.then(() => undefined);
+    void operation.then(
+      () => {
+        if (this.httpFallback) void this.flushHttpFallback();
+      },
+      () => undefined
+    );
     this.connect();
     return operation;
   }
@@ -356,7 +370,7 @@ class RunLogStream {
     if (this.closed) {
       return Promise.reject(new Error("run log stream is closed"));
     }
-    if (!this.pending.length && !this.inflight.length) {
+    if (!this.pending.length && !this.inflight.length && !this.httpFallbackPromise) {
       return Promise.resolve({ ok: true });
     }
     return new Promise((resolve, reject) => {
@@ -375,8 +389,12 @@ class RunLogStream {
         }, timeoutMs)
       };
       this.flushWaiters.push(waiter);
-      this.connect();
-      this.scheduleFlush();
+      if (this.httpFallback) {
+        void this.flushHttpFallback();
+      } else {
+        this.connect();
+        this.scheduleFlush();
+      }
     });
   }
 
@@ -384,21 +402,35 @@ class RunLogStream {
     const WebSocketCtor = globalThis.WebSocket;
     if (
       this.closed ||
+      this.httpFallback ||
       this.connected ||
       this.socket?.readyState === WebSocketCtor?.CONNECTING ||
       this.reconnectTimer
     ) return;
     if (typeof WebSocketCtor !== "function") {
-      this.failPending(new Error("当前 Node.js 运行时不支持 WebSocket 日志流"));
+      this.switchToHttpFallback("当前 Node.js 运行时不支持 WebSocket 日志流");
       return;
     }
-    const socket = new WebSocketCtor(
-      `${this.api.websocketBaseUrl}/api/agent/run-stream`,
-      ["mrzh-agent-stream", websocketTokenProtocol(this.api.token)]
-    );
+    let socket;
+    try {
+      socket = new WebSocketCtor(
+        `${this.api.websocketBaseUrl}/api/agent/run-stream`,
+        ["mrzh-agent-stream", websocketTokenProtocol(this.api.token)]
+      );
+    } catch (error) {
+      this.switchToHttpFallback(String(error?.message || error));
+      return;
+    }
     this.socket = socket;
+    this.connectionTimer = setTimeout(() => {
+      if (this.socket === socket && !this.connected) {
+        this.switchToHttpFallback("run log stream handshake timed out");
+      }
+    }, 15_000);
     socket.addEventListener("open", () => {
       if (this.socket !== socket || this.closed) return;
+      if (this.connectionTimer) clearTimeout(this.connectionTimer);
+      this.connectionTimer = null;
       this.connected = true;
       this.reconnectAttempt = 0;
       void this.ready
@@ -414,6 +446,8 @@ class RunLogStream {
         return;
       }
       if (payload?.type === "ack" && Number.isSafeInteger(payload.sequence)) {
+        if (this.ackTimer) clearTimeout(this.ackTimer);
+        this.ackTimer = null;
         this.inflight = this.inflight.filter(
           (entry) => entry.sequence > payload.sequence
         );
@@ -424,23 +458,17 @@ class RunLogStream {
           .then(() => this.scheduleFlush())
           .catch((error) => this.failPending(error));
       } else if (payload?.type === "error") {
-        const message = new Error(`run log stream: ${payload.message || "server rejected update"}`);
-        // A validation/database error is not recoverable by replaying the same
-        // frame. Stop this stream so the task can finish through the control
-        // plane without silently looping on a bad payload. Preserve the
-        // rejected journal as a local dead letter instead of replaying it on
-        // every later process start.
-        this.close(message);
-        this.pending = [];
-        this.inflight = [];
-        void this.persistQueue
-          .catch(() => undefined)
-          .then(() => this.archiveRejectedOutbox(payload.message || "server rejected update"))
-          .catch(() => undefined);
+        this.switchToHttpFallback(
+          `run log stream rejected an update: ${payload.message || "server rejected update"}`
+        );
       }
     });
     socket.addEventListener("close", () => {
       if (this.socket !== socket) return;
+      if (this.connectionTimer) clearTimeout(this.connectionTimer);
+      this.connectionTimer = null;
+      if (this.ackTimer) clearTimeout(this.ackTimer);
+      this.ackTimer = null;
       this.connected = false;
       this.socket = null;
       if (this.closed) return;
@@ -448,7 +476,9 @@ class RunLogStream {
       this.scheduleReconnect();
     });
     socket.addEventListener("error", () => {
-      if (this.socket === socket) socket.close();
+      if (this.socket === socket) {
+        this.switchToHttpFallback("run log websocket transport error");
+      }
     });
   }
 
@@ -466,9 +496,13 @@ class RunLogStream {
           streamEventId: entry.streamEventId
         }))
       }));
+      this.ackTimer = setTimeout(() => {
+        this.switchToHttpFallback(
+          `run log stream ACK timed out after ${RUN_LOG_ACK_TIMEOUT_MS}ms`
+        );
+      }, RUN_LOG_ACK_TIMEOUT_MS);
     } catch {
-      this.pending.unshift(...this.inflight.splice(0));
-      this.socket.close();
+      this.switchToHttpFallback("run log websocket send failed");
     }
   }
 
@@ -481,9 +515,145 @@ class RunLogStream {
   }
 
   resolveFlushWaitersIfIdle() {
-    if (this.pending.length || this.inflight.length || !this.flushWaiters.length) return;
+    if (
+      this.pending.length ||
+      this.inflight.length ||
+      this.httpFallbackPromise ||
+      !this.flushWaiters.length
+    ) return;
     const waiters = this.flushWaiters.splice(0);
     waiters.forEach(({ resolve }) => resolve({ ok: true }));
+  }
+
+  switchToHttpFallback(reason) {
+    if (this.httpFallback || this.closed) return;
+    this.httpFallback = true;
+    if (this.connectionTimer) clearTimeout(this.connectionTimer);
+    if (this.ackTimer) clearTimeout(this.ackTimer);
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.connectionTimer = null;
+    this.ackTimer = null;
+    this.reconnectTimer = null;
+    const socket = this.socket;
+    this.socket = null;
+    this.connected = false;
+    this.pending = [...this.inflight, ...this.pending].sort(
+      (left, right) => left.sequence - right.sequence
+    );
+    this.inflight = [];
+    try {
+      socket?.close(4002, "using HTTP fallback for run logs");
+    } catch {
+      // The HTTP fallback now owns pending and future updates for this run.
+    }
+    console.warn(JSON.stringify({
+      event: "run_log_stream_http_fallback",
+      runId: this.runId,
+      reason
+    }));
+    void this.persistQueue
+      .catch(() => undefined)
+      .then(() => this.flushHttpFallback());
+  }
+
+  flushHttpFallback() {
+    if (!this.httpFallback || this.httpFallbackPromise || this.httpFallbackTimer) {
+      return this.httpFallbackPromise || Promise.resolve();
+    }
+    this.httpFallbackPromise = (async () => {
+      await this.persistQueue;
+      while (this.pending.length) {
+        const entry = this.pending[0];
+        try {
+          await this.api.request(
+            "/api/agent/run-update",
+            {
+              runId: this.runId,
+              ...entry.update,
+              streamEventId: entry.streamEventId
+            },
+            undefined,
+            { maximumAttempts: 4 }
+          );
+        } catch (error) {
+          const status = Number(
+            error?.status || String(error?.message || "").match(/HTTP (\d{3})/)?.[1]
+          );
+          if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+            await this.archiveRejectedEntry(entry, error);
+            console.error(JSON.stringify({
+              event: "run_log_update_rejected",
+              runId: this.runId,
+              sequence: entry.sequence,
+              message: String(error?.message || error)
+            }));
+          } else {
+            this.scheduleHttpFallbackRetry(error);
+            return;
+          }
+        }
+        if (this.pending[0] === entry) this.pending.shift();
+        else this.pending = this.pending.filter((candidate) => candidate !== entry);
+        this.acknowledgedSequence = Math.max(
+          this.acknowledgedSequence,
+          entry.sequence
+        );
+        await this.persistAcknowledgement().catch((error) => {
+          console.error(JSON.stringify({
+            event: "run_log_outbox_checkpoint_failed",
+            runId: this.runId,
+            sequence: this.acknowledgedSequence,
+            message: String(error?.message || error)
+          }));
+        });
+      }
+    })()
+      .catch((error) => {
+        this.scheduleHttpFallbackRetry(error);
+      })
+      .finally(() => {
+        this.httpFallbackPromise = null;
+        this.resolveFlushWaitersIfIdle();
+        if (!this.pending.length && !this.inflight.length && this.closed) {
+          void this.cleanupOutboxIfIdle().catch(() => undefined);
+        } else if (this.pending.length && !this.httpFallbackTimer) {
+          void this.flushHttpFallback();
+        }
+      });
+    return this.httpFallbackPromise;
+  }
+
+  scheduleHttpFallbackRetry(error) {
+    if (this.httpFallbackTimer || (this.closed && !this.pending.length)) return;
+    const delayMs = Math.min(
+      RUN_LOG_HTTP_RETRY_MAX_MS,
+      1_000 * 2 ** Math.min(this.httpFallbackAttempt, 5)
+    );
+    this.httpFallbackAttempt += 1;
+    console.error(JSON.stringify({
+      event: "run_log_http_fallback_retry_scheduled",
+      runId: this.runId,
+      delayMs,
+      message: String(error?.message || error)
+    }));
+    this.httpFallbackTimer = setTimeout(() => {
+      this.httpFallbackTimer = null;
+      void this.flushHttpFallback();
+    }, delayMs);
+  }
+
+  async archiveRejectedEntry(entry, error) {
+    const rejectedPath = `${this.spoolPath}.rejected`;
+    await mkdir(this.api.logOutboxDirectory, { recursive: true, mode: 0o700 });
+    await appendFile(
+      rejectedPath,
+      `${JSON.stringify({
+        ...entry,
+        rejection: String(error?.message || error),
+        rejectedAt: new Date().toISOString()
+      })}\n`,
+      { encoding: "utf8", mode: 0o600 }
+    );
   }
 
   scheduleReconnect() {
@@ -570,12 +740,21 @@ class RunLogStream {
 
   close(error = null) {
     if (this.closed) return;
+    if ((this.pending.length || this.inflight.length) && !this.httpFallback) {
+      this.switchToHttpFallback(
+        error?.message || "run log stream closed with unacknowledged updates"
+      );
+    }
     this.closed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    if (this.connectionTimer) clearTimeout(this.connectionTimer);
+    this.connectionTimer = null;
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
-    this.failPending(error || new Error("run log stream closed"));
+    if (this.ackTimer) clearTimeout(this.ackTimer);
+    this.ackTimer = null;
+    if (error) this.failPending(error);
     this.socket?.close();
     this.socket = null;
     this.connected = false;
@@ -665,8 +844,9 @@ export class AgentApi {
     }
     if (!response.ok) {
       const code = payload.code ? ` [${payload.code}]` : "";
-      throw new Error(
-        `${path}: ${payload.error || `HTTP ${response.status}`}${code}`
+      throw Object.assign(
+        new Error(`${path}: ${payload.error || `HTTP ${response.status}`}${code}`),
+        { status: response.status }
       );
     }
     return payload;
