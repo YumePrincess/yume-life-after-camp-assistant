@@ -45,8 +45,10 @@ const FORM_KEYWORDS = [
 ];
 const WORLD_HUD_KEYWORDS = ["综合", "世界", "场景", "营地", "队伍", "背包"];
 const WEEKDAY_NAMES = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const MAX_DEXTER_ROUTE_RESTARTS = 3;
-const PATHFINDING_W_HOLD_MS = 700;
+const MAX_DEXTER_ROUTE_RESTARTS = 6;
+const DEXTER_PATHFINDING_ATTEMPTS = 2;
+const DATA_CENTER_APPROACH_W_HOLD_MS = 700;
+const PATHFINDING_W_HOLD_MS = 580;
 
 export async function runTradingCityApply(context, command, _bundle, signal) {
   const sleep = context.sleep || delay;
@@ -90,7 +92,7 @@ export async function prepareTradingCityApplication(
   await updateWorkflowProgress(context, 0.04, "trading_city_teleport");
   const dexterFound = await navigateToDexter(context, signal, sleep);
   if (!dexterFound) {
-    throw new Error("TRADING_CITY_DEXTER_NOT_FOUND: 最多重启三轮后仍未识别到德克斯特交谈选项");
+    throw new Error("TRADING_CITY_DEXTER_NOT_FOUND: 最多重启六轮后仍未识别到德克斯特交谈选项");
   }
   await context.adb.key("KEYCODE_F", signal);
   await sleep(8_000, signal);
@@ -166,13 +168,24 @@ async function navigateToDexter(context, signal, sleep) {
       await context.report(
         "warning",
         "trading_city_route_restart",
-        `第 ${restart}/${MAX_DEXTER_ROUTE_RESTARTS} 次寻路重启：已连续六次未找到德克斯特，先传送回市中心出入口，再重新前往市政厅`,
+        `第 ${restart}/${MAX_DEXTER_ROUTE_RESTARTS} 次寻路重启：本轮两次寻路均未找到德克斯特，先传送回市中心出入口，再重新前往市政厅`,
         { restart, maximumRestarts: MAX_DEXTER_ROUTE_RESTARTS }
       );
       await context.ui.executeFlow("teleportCentralExit", {}, signal);
     }
 
+    context.ui.lastConfirmedDestination = null;
     await context.ui.executeFlow("teleportCityHall", {}, signal);
+    if (context.ui.lastConfirmedDestination !== "市政厅") {
+      throw new Error(
+        "TRADING_CITY_CITY_HALL_UNCONFIRMED: 未通过地图与交互选项确认到达市政厅"
+      );
+    }
+    await context.report(
+      "info",
+      "trading_city_city_hall_confirmed",
+      "地图传送并识别到市政厅交互选项，确认到达后继续寻路"
+    );
     await updateWorkflowProgress(context, 0.15, "trading_city_sand_table");
     // This task must not open the sand-table panel. The City Hall teleport
     // confirms the first Data Center interaction label; walk once, wait, then
@@ -187,7 +200,7 @@ async function navigateToDexter(context, signal, sleep) {
       "trading_city_data_center_first_seen",
       "首次识别到营地数据中心，按住 W 700 毫秒寻路，不按 F 打开数据中心面板"
     );
-    await holdTradingCityPathKey(context.adb, signal);
+    await holdTradingCityPathKey(context.adb, signal, DATA_CENTER_APPROACH_W_HOLD_MS);
     await sleep(3_000, signal);
     await context.ui.waitAnyText(
       ["营地数据中心"],
@@ -206,20 +219,20 @@ async function navigateToDexter(context, signal, sleep) {
     await sleep(3_000, signal);
 
     await updateWorkflowProgress(context, 0.28, "trading_city_find_dexter");
-    for (let attempt = 1; attempt <= 6; attempt += 1) {
+    for (let attempt = 1; attempt <= DEXTER_PATHFINDING_ATTEMPTS; attempt += 1) {
       await context.report(
         "info",
         "trading_city_w_pathfinding",
-        `第 ${restart + 1} 轮第 ${attempt}/6 次寻路：按住 W ${PATHFINDING_W_HOLD_MS} 毫秒后识别德克斯特`
+        `第 ${restart + 1} 轮第 ${attempt}/${DEXTER_PATHFINDING_ATTEMPTS} 次寻路：按住 W ${PATHFINDING_W_HOLD_MS} 毫秒后识别德克斯特`
       );
-      await holdTradingCityPathKey(context.adb, signal);
+      await holdTradingCityPathKey(context.adb, signal, PATHFINDING_W_HOLD_MS);
       await sleep(3_000, signal);
       const frame = await context.vision.capture(`trading-city-dexter-${restart}-${attempt}`, signal);
       if (hasAll(context.vision, frame.observations, DEXTER_TEXTS)) {
         await context.report(
           "info",
           "trading_city_dexter_found",
-          `第 ${restart + 1} 轮第 ${attempt}/6 次寻路后识别到“德克斯特”和“交谈”，正在交谈`
+          `第 ${restart + 1} 轮第 ${attempt}/${DEXTER_PATHFINDING_ATTEMPTS} 次寻路后识别到“德克斯特”和“交谈”，正在交谈`
         );
         return true;
       }
@@ -230,7 +243,7 @@ async function navigateToDexter(context, signal, sleep) {
         await context.report(
           "info",
           "trading_city_dexter_found",
-          `第 ${restart + 1} 轮第 ${attempt}/6 次寻路后通过高精度识别到“德克斯特”和“交谈”，正在交谈`
+          `第 ${restart + 1} 轮第 ${attempt}/${DEXTER_PATHFINDING_ATTEMPTS} 次寻路后通过高精度识别到“德克斯特”和“交谈”，正在交谈`
         );
         return true;
       }
@@ -239,7 +252,7 @@ async function navigateToDexter(context, signal, sleep) {
   return false;
 }
 
-async function holdTradingCityPathKey(adb, signal) {
+async function holdTradingCityPathKey(adb, signal, durationMs) {
   // Match the verified patrol/kill-alert approach: send W once, then hold it
   // through Android's keyboard input device for several hundred milliseconds.
   // `input keyevent --longpress` does not produce movement in this game.
@@ -247,7 +260,7 @@ async function holdTradingCityPathKey(adb, signal) {
   if (typeof adb.holdKey !== "function") {
     throw new Error("TRADING_CITY_W_HOLD_UNAVAILABLE: 当前 ADB 不支持按住 W 寻路");
   }
-  await adb.holdKey("KEYCODE_W", PATHFINDING_W_HOLD_MS, signal);
+  await adb.holdKey("KEYCODE_W", durationMs, signal);
 }
 
 export function countTradingCityKeywordGroups(vision, observations, groups, region) {

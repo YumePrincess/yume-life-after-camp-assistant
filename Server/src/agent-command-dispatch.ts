@@ -2,8 +2,6 @@ import {
   claimNextCommand,
   completeCommand,
   expireUnclaimedRuns,
-  finalizeAgentCancellations,
-  finalizeExpiredCancellations,
   getConfigBundle,
   reconcileStaleCommands,
   updateRun
@@ -35,11 +33,9 @@ export async function claimAgentCommand(
   const enabled = Boolean(bundle.campConfig.agentId) &&
     bundle.campConfig.agentId === input.agentId;
   await reconcileStaleCommands(env);
-  await finalizeAgentCancellations(env, {
-    agentId: input.agentId,
-    activeRunId: null
-  });
-  await finalizeExpiredCancellations(env);
+  // A command poll can run while the Agent is still cleaning up an aborted
+  // task. Only an explicit idle presence or an expired command lease may
+  // finalize cancellation; the poll's `busy` flag is not a safe proof of idle.
   await expireUnclaimedRuns(env, bundle.automationConfig.agent.claimTimeoutMinutes);
 
   let row = enabled

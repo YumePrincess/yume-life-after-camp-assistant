@@ -37,17 +37,17 @@ test("all seven weekday taps hit the checkbox positions shown in the 1920×1200 
   assert.deepEqual(TRADING_CITY_APPLICATION_CONFIRM_POSITION, { x: 1728, y: 947 });
 });
 
-test("a failed six-step Dexter route returns to the central exit before restarting at city hall", async () => {
+test("a failed two-attempt Dexter route returns to the central exit before up to six restarts", async () => {
   const context = createContext({ findDexterOnAttempt: () => false });
 
   await assert.rejects(
     runTradingCityApply(context, commandFor(1), {}, undefined),
-    /TRADING_CITY_DEXTER_NOT_FOUND: 最多重启三轮/
+    /TRADING_CITY_DEXTER_NOT_FOUND: 最多重启六轮/
   );
 
-  assert.equal(context.flows.filter((name) => name === "teleportCityHall").length, 4);
+  assert.equal(context.flows.filter((name) => name === "teleportCityHall").length, 7);
   assert.equal(context.flows.filter((name) => name === "navigateToSandTable").length, 0);
-  assert.equal(context.flows.filter((name) => name === "teleportCentralExit").length, 3);
+  assert.equal(context.flows.filter((name) => name === "teleportCentralExit").length, 6);
   assert.deepEqual(context.flows.slice(0, 5), [
     "teleportCityHall",
     "teleportCentralExit",
@@ -55,12 +55,21 @@ test("a failed six-step Dexter route returns to the central exit before restarti
     "teleportCentralExit",
     "teleportCityHall"
   ]);
-  assert.equal(context.keys.filter((code) => code === "KEYCODE_W").length, 28);
-  assert.equal(context.holds.length, 28);
+  assert.equal(context.dexterAttempts, 14);
+  assert.equal(context.keys.filter((code) => code === "KEYCODE_W").length, 21);
+  assert.equal(context.holds.length, 21);
   assert.deepEqual(
     context.holds,
-    Array.from({ length: 28 }, () => ({ code: "KEYCODE_W", durationMs: 700 }))
+    Array.from({ length: 7 }, () => [
+      { code: "KEYCODE_W", durationMs: 700 },
+      { code: "KEYCODE_W", durationMs: 580 },
+      { code: "KEYCODE_W", durationMs: 580 }
+    ]).flat()
   );
+  const restarts = context.reports.filter(({ step }) => step === "trading_city_route_restart");
+  assert.equal(restarts.length, 6);
+  assert.equal(restarts[0].message, "第 1/6 次寻路重启：本轮两次寻路均未找到德克斯特，先传送回市中心出入口，再重新前往市政厅");
+  assert.equal(restarts[0].details.maximumRestarts, 6);
   assert.equal(
     context.keyCalls.some(({ code, options }) => code === "KEYCODE_W" && options?.longPress),
     false
@@ -75,6 +84,11 @@ test("the workflow waits three seconds after each W press, recognizes Dexter and
     await runTradingCityApply(context, commandFor(targetWeekday), {}, undefined);
 
     assert.equal(context.flows[0], "teleportCityHall");
+    assert.deepEqual(context.flowDestinations, Array(context.flows.length).fill("市政厅"));
+    assert.equal(
+      context.reports.filter(({ step }) => step === "trading_city_city_hall_confirmed").length,
+      1
+    );
     assert.deepEqual(context.shellCalls, [["input", "swipe", "500", "500", "1000", "500", "800"]]);
     assert.ok(context.keys.includes("KEYCODE_F"));
     const dataCenterWaits = context.events.filter(([type]) => type === "waitAnyText");
@@ -91,7 +105,14 @@ test("the workflow waits three seconds after each W press, recognizes Dexter and
     assert.equal(context.keyCalls.some(({ code }) => code === "KEYCODE_ESCAPE"), false);
     assert.deepEqual(
       context.holds,
-      Array.from({ length: 2 }, () => ({ code: "KEYCODE_W", durationMs: 700 }))
+      [
+        { code: "KEYCODE_W", durationMs: 700 },
+        { code: "KEYCODE_W", durationMs: 580 }
+      ]
+    );
+    assert.equal(
+      context.reports.find(({ step }) => step === "trading_city_w_pathfinding").message,
+      "第 1 轮第 1/2 次寻路：按住 W 580 毫秒后识别德克斯特"
     );
     const dexterCaptures = context.events
       .map((event, index) => ({ event, index }))
@@ -110,6 +131,22 @@ test("the workflow waits three seconds after each W press, recognizes Dexter and
       ["tap", TRADING_CITY_APPLICATION_CONFIRM_POSITION]
     ]);
   }
+});
+
+test("the workflow does not begin data-center pathfinding until City Hall arrival is confirmed", async () => {
+  const context = createContext({
+    findDexterOnAttempt: () => true,
+    confirmCityHall: false
+  });
+
+  await assert.rejects(
+    prepareTradingCityApplication(context, undefined, context.sleep),
+    /TRADING_CITY_CITY_HALL_UNCONFIRMED/
+  );
+
+  assert.deepEqual(context.flows, ["teleportCityHall"]);
+  assert.equal(context.holds.length, 0);
+  assert.equal(context.events.some(([type]) => type === "waitAnyText"), false);
 });
 
 test("the diagnostic can select Monday and stop without submitting the form", async () => {
@@ -133,22 +170,33 @@ function commandFor(targetWeekday) {
   };
 }
 
-function createContext({ findDexterOnAttempt }) {
+function createContext({ findDexterOnAttempt, confirmCityHall = true }) {
   const context = {
     config: { adb: { screenWidth: 1920, screenHeight: 1200 } },
     flows: [],
+    flowDestinations: [],
     keys: [],
     keyCalls: [],
     holds: [],
     events: [],
     shellCalls: [],
     taps: [],
+    reports: [],
     submitted: false,
     dexterAttempts: 0,
     async sleep(ms) { context.events.push(["sleep", ms]); },
-    async report(_level, step) { context.events.push(["report", step]); },
+    async report(level, step, message, details) {
+      context.events.push(["report", step]);
+      context.reports.push({ level, step, message, details });
+    },
     ui: {
-      async executeFlow(name) { context.flows.push(name); },
+      async executeFlow(name) {
+        context.flows.push(name);
+        context.ui.lastConfirmedDestination = name === "teleportCityHall"
+          ? confirmCityHall ? "市政厅" : null
+          : "中心出入口";
+        context.flowDestinations.push(context.ui.lastConfirmedDestination);
+      },
       async waitAnyText(texts) {
         context.events.push(["waitAnyText", texts]);
         if (context.events.filter(([type]) => type === "waitAnyText").length === 2) {

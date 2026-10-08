@@ -199,18 +199,18 @@ test("Trading City task events and weekday names follow the Agent locale", () =>
   assert.equal(
     localizeTaskEvent(
       "trading_city_w_pathfinding",
-      "第 2 轮第 3/6 次寻路：按住 W 700 毫秒后识别德克斯特",
+      "第 2 轮第 2/2 次寻路：按住 W 580 毫秒后识别德克斯特",
       "fr"
     ),
-    "Trajet 2, essai 3/6 : maintenir W pendant 700 ms, puis chercher Dexter"
+    "Trajet 2, essai 2/2 : maintenir W pendant 580 ms, puis chercher Dexter"
   );
   assert.equal(
     localizeTaskEvent(
       "trading_city_dexter_found",
-      "第 1 轮第 1/6 次寻路后识别到“德克斯特”和“交谈”，正在交谈",
+      "第 1 轮第 1/2 次寻路后识别到“德克斯特”和“交谈”，正在交谈",
       "en"
     ),
-    "Recognized Dexter and Talk (F) on route 1, attempt 1/6; starting the conversation"
+    "Recognized Dexter and Talk (F) on route 1, attempt 1/2; starting the conversation"
   );
   assert.equal(
     localizeTaskEvent(
@@ -223,10 +223,10 @@ test("Trading City task events and weekday names follow the Agent locale", () =>
   assert.equal(
     localizeTaskEvent(
       "trading_city_route_restart",
-      "第 2/3 次寻路重启：已连续六次未找到德克斯特，先传送回市中心出入口，再重新前往市政厅",
+      "第 2/6 次寻路重启：本轮两次寻路均未找到德克斯特，先传送回市中心出入口，再重新前往市政厅",
       "en"
     ),
-    "Route restart 2/3: Dexter was not found after six attempts. Returning to the central exit, then retrying City Hall."
+    "Route restart 2/6: Dexter was not found on either of the two attempts this round. Returning to the central exit, then retrying City Hall."
   );
   assert.equal(
     localizeTaskEvent(

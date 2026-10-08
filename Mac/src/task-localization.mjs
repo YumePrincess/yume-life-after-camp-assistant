@@ -13,6 +13,18 @@ const FIXED_TRANSLATIONS = {
     fr: "Deuxième détection du centre de données : tourner la caméra, puis continuer le trajet",
     ja: "キャンプデータセンターを再認識しました。視点を切り替えてから移動を続けます"
   },
+  "地图传送并识别到市政厅交互选项，确认到达后继续寻路": {
+    "zh-tw": "地圖傳送並識別到市政廳互動選項，確認抵達後繼續尋路",
+    en: "Map travel and the City Hall interaction were confirmed; continuing pathfinding",
+    fr: "La téléportation et l’interaction de la mairie sont confirmées ; poursuite du trajet",
+    ja: "マップ移動後に市役所の操作項目を確認しました。経路探索を続けます"
+  },
+  "TRADING_CITY_CITY_HALL_UNCONFIRMED: 未通过地图与交互选项确认到达市政厅": {
+    "zh-tw": "TRADING_CITY_CITY_HALL_UNCONFIRMED：未透過地圖與互動選項確認抵達市政廳",
+    en: "TRADING_CITY_CITY_HALL_UNCONFIRMED: Arrival was not confirmed by the map flow and interaction option",
+    fr: "TRADING_CITY_CITY_HALL_UNCONFIRMED : l’arrivée n’a pas été confirmée par la carte et l’option d’interaction",
+    ja: "TRADING_CITY_CITY_HALL_UNCONFIRMED：マップと操作項目で市役所への到着を確認できませんでした"
+  },
   "任务已由管理员中断": {
     "zh-tw": "任務已由管理員中斷",
     en: "The task was interrupted by an administrator",
@@ -25,11 +37,11 @@ const FIXED_TRANSLATIONS = {
     fr: "TRADING_CITY_TARGET_WEEKDAY_MISSING : aucun jour de candidature valide reçu",
     ja: "TRADING_CITY_TARGET_WEEKDAY_MISSING：有効な応募曜日を受信できませんでした"
   },
-  "TRADING_CITY_DEXTER_NOT_FOUND: 最多重启三轮后仍未识别到德克斯特交谈选项": {
-    "zh-tw": "TRADING_CITY_DEXTER_NOT_FOUND：最多重新啟動三輪後仍未識別到德克斯特交談選項",
-    en: "TRADING_CITY_DEXTER_NOT_FOUND: Dexter's talk option was not recognized after three route restarts",
-    fr: "TRADING_CITY_DEXTER_NOT_FOUND : l’option de dialogue de Dexter reste introuvable après trois reprises du trajet",
-    ja: "TRADING_CITY_DEXTER_NOT_FOUND：経路を3回再開してもデクスターの会話選択肢を認識できませんでした"
+  "TRADING_CITY_DEXTER_NOT_FOUND: 最多重启六轮后仍未识别到德克斯特交谈选项": {
+    "zh-tw": "TRADING_CITY_DEXTER_NOT_FOUND：最多重新啟動六輪後仍未識別到德克斯特交談選項",
+    en: "TRADING_CITY_DEXTER_NOT_FOUND: Dexter's talk option was not recognized after six route restarts",
+    fr: "TRADING_CITY_DEXTER_NOT_FOUND : l’option de dialogue de Dexter reste introuvable après six reprises du trajet",
+    ja: "TRADING_CITY_DEXTER_NOT_FOUND：経路を6回再開してもデクスターの会話選択肢を認識できませんでした"
   },
   "TRADING_CITY_WEEKDAY_POSITION_MISSING": {
     "zh-tw": "TRADING_CITY_WEEKDAY_POSITION_MISSING",
@@ -290,39 +302,39 @@ const PATTERN_TRANSLATIONS = [
     }
   },
   {
-    test: /^第 (\d+)\/3 次寻路重启：已连续六次未找到德克斯特，先传送回市中心出入口，再重新前往市政厅$/,
+    test: /^第 (\d+)\/6 次寻路重启：本轮两次寻路均未找到德克斯特，先传送回市中心出入口，再重新前往市政厅$/,
     values: {
-      "zh-tw": "第 $1/3 次路徑重啟：連續六次未找到德克斯特，先傳送回市中心出入口，再重新前往市政廳",
-      en: "Route restart $1/3: Dexter was not found after six attempts. Returning to the central exit, then retrying City Hall.",
-      fr: "Reprise du trajet $1/3 : Dexter reste introuvable après six essais. Retour à la sortie centrale avant de réessayer la mairie.",
-      ja: "経路再開 $1/3：6回試行してもデクスターが見つかりません。中央出口に戻ってから市役所へ向かい直します。"
+      "zh-tw": "第 $1/6 次路徑重啟：本輪兩次尋路均未找到德克斯特，先傳送回市中心出入口，再重新前往市政廳",
+      en: "Route restart $1/6: Dexter was not found on either of the two attempts this round. Returning to the central exit, then retrying City Hall.",
+      fr: "Reprise du trajet $1/6 : Dexter reste introuvable après les deux essais de ce tour. Retour à la sortie centrale avant de réessayer la mairie.",
+      ja: "経路再開 $1/6：このラウンドの2回の探索でデクスターが見つかりません。中央出口に戻ってから市役所へ向かい直します。"
     }
   },
   {
-    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路后识别到“德克斯特”和“交谈”，正在交谈$/,
+    test: /^第 (\d+) 轮第 (\d+)\/2 次寻路后识别到“德克斯特”和“交谈”，正在交谈$/,
     values: {
-      "zh-tw": "第 $1 輪第 $2/6 次尋路後識別到「德克斯特」和「交談(F)」，正在交談",
-      en: "Recognized Dexter and Talk (F) on route $1, attempt $2/6; starting the conversation",
-      fr: "Dexter et l’option Parler (F) reconnus au trajet $1, essai $2/6 ; démarrage du dialogue",
-      ja: "$1周目の経路探索$2/6回目でデクスターと「会話(F)」を認識しました。会話を開始します。"
+      "zh-tw": "第 $1 輪第 $2/2 次尋路後識別到「德克斯特」和「交談(F)」，正在交談",
+      en: "Recognized Dexter and Talk (F) on route $1, attempt $2/2; starting the conversation",
+      fr: "Dexter et l’option Parler (F) reconnus au trajet $1, essai $2/2 ; démarrage du dialogue",
+      ja: "$1周目の経路探索$2/2回目でデクスターと「会話(F)」を認識しました。会話を開始します。"
     }
   },
   {
-    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路后通过高精度识别到“德克斯特”和“交谈”，正在交谈$/,
+    test: /^第 (\d+) 轮第 (\d+)\/2 次寻路后通过高精度识别到“德克斯特”和“交谈”，正在交谈$/,
     values: {
-      "zh-tw": "第 $1 輪第 $2/6 次尋路後透過高精度識別到「德克斯特」和「交談(F)」，正在交談",
-      en: "Accurately recognized Dexter and Talk (F) on route $1, attempt $2/6; starting the conversation",
-      fr: "Dexter et l’option Parler (F) reconnus avec précision au trajet $1, essai $2/6 ; démarrage du dialogue",
-      ja: "$1周目の経路探索$2/6回目で高精度認識によりデクスターと「会話(F)」を確認しました。会話を開始します。"
+      "zh-tw": "第 $1 輪第 $2/2 次尋路後透過高精度識別到「德克斯特」和「交談(F)」，正在交談",
+      en: "Accurately recognized Dexter and Talk (F) on route $1, attempt $2/2; starting the conversation",
+      fr: "Dexter et l’option Parler (F) reconnus avec précision au trajet $1, essai $2/2 ; démarrage du dialogue",
+      ja: "$1周目の経路探索$2/2回目で高精度認識によりデクスターと「会話(F)」を確認しました。会話を開始します。"
     }
   },
   {
-    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路：按住 W (\d+) 毫秒后识别德克斯特$/,
+    test: /^第 (\d+) 轮第 (\d+)\/2 次寻路：按住 W (\d+) 毫秒后识别德克斯特$/,
     values: {
-      "zh-tw": "第 $1 輪第 $2/6 次尋路：按住 W $3 毫秒後識別德克斯特",
-      en: "Route $1, pathfind attempt $2/6: hold W for $3 ms, then look for Dexter",
-      fr: "Trajet $1, essai $2/6 : maintenir W pendant $3 ms, puis chercher Dexter",
-      ja: "$1周目の経路探索$2/6回目：Wを$3ミリ秒押し続けてからデクスターを探します"
+      "zh-tw": "第 $1 輪第 $2/2 次尋路：按住 W $3 毫秒後識別德克斯特",
+      en: "Route $1, pathfind attempt $2/2: hold W for $3 ms, then look for Dexter",
+      fr: "Trajet $1, essai $2/2 : maintenir W pendant $3 ms, puis chercher Dexter",
+      ja: "$1周目の経路探索$2/2回目：Wを$3ミリ秒押し続けてからデクスターを探します"
     }
   },
   {
