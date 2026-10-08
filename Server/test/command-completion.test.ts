@@ -107,16 +107,35 @@ describe("completeCommand", () => {
 
   it("atomically marks a cancelled run_task as interrupted", async () => {
     const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const command = {
+      id: "command-1",
+      run_id: "run-1",
+      type: "run_task",
+      trigger_mode: "manual",
+      payload_json: "{}"
+    };
+    const run = {
+      id: "run-1",
+      state: "cancelling",
+      cancel_requested: 1,
+      message: "管理员请求中断任务",
+      detail_json: "{}"
+    };
     const env = {
       DB: {
         prepare(sql: string) {
-          return {
+          const statement = {
+            async first() {
+              if (sql.includes("FROM command_queue")) return command;
+              if (sql.includes("FROM task_runs")) return run;
+              return null;
+            },
             bind(...values: unknown[]) {
-              const statement = { sql, values };
-              statements.push(statement);
+              if (sql.startsWith("UPDATE")) statements.push({ sql, values });
               return statement;
             }
           };
+          return statement;
         },
         async batch(batch: unknown[]) {
           expect(batch).toHaveLength(2);
