@@ -731,6 +731,38 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
     },
     "automationConfig.tasks.weekly_activity_sync"
   );
+  const tradingCity = taskSchedule(
+    tasks.trading_city_apply ?? {
+      enabled: false,
+      time: "03:00",
+      times: ["03:00"],
+      weekdays: [3],
+      targetWeekday: 1
+    },
+    "automationConfig.tasks.trading_city_apply",
+    false
+  );
+  if (tradingCity.weekdays.length !== 1 || ![3, 4, 5].includes(tradingCity.weekdays[0]!)) {
+    throw new Error(
+      "automationConfig.tasks.trading_city_apply.weekdays must select exactly Wednesday, Thursday, or Friday"
+    );
+  }
+  const tradingCityExecutionWeekday = tradingCity.weekdays[0]!;
+  const tradingCityTimeMinutes = clockToMinutes(tradingCity.time);
+  if (
+    (tradingCityExecutionWeekday === 3 && tradingCityTimeMinutes < 180) ||
+    (tradingCityExecutionWeekday === 5 && tradingCityTimeMinutes > 120)
+  ) {
+    throw new Error(
+      "automationConfig.tasks.trading_city_apply.time must be between Wednesday 03:00 and Friday 02:00 in the configured timezone"
+    );
+  }
+  const tradingCityTargetWeekday = integer(
+    tradingCity.source.targetWeekday ?? 1,
+    "automationConfig.tasks.trading_city_apply.targetWeekday",
+    1,
+    7
+  );
   const patrol = taskSchedule(tasks.patrol, "automationConfig.tasks.patrol", false);
 
   const patrolTeamReadyTime = text(
@@ -875,6 +907,14 @@ export function validateAutomationConfig(value: unknown): AutomationConfig {
         time: weeklyActivity.time,
         times: weeklyActivity.times,
         weekdays: weeklyActivity.weekdays
+      },
+      trading_city_apply: {
+        enabled: tradingCity.enabled,
+        time: tradingCity.time,
+        times: tradingCity.times,
+        weekdays: [tradingCityExecutionWeekday],
+        executionWeekday: tradingCityExecutionWeekday,
+        targetWeekday: tradingCityTargetWeekday
       },
       patrol: {
         enabled: patrol.enabled,

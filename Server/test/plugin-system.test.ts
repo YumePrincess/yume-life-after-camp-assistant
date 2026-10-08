@@ -32,17 +32,18 @@ function envWithStates(states: Record<string, boolean>): Env {
 describe("build-time Worker plugins", () => {
   it("registers the same versioned task plugins shipped by the Mac app", () => {
     const plugins = registeredWorkerPlugins();
-    expect(plugins).toHaveLength(6);
+    expect(plugins).toHaveLength(7);
     expect(plugins.map((plugin) => plugin.manifest.id).sort()).toEqual([
       "contribution",
       "inactivity",
       "member-profile",
       "patrol",
       "technology",
+      "trading-city",
       "weekly-activity"
     ]);
     expect(plugins.every((plugin) => plugin.manifest.version === "27.1.0")).toBe(true);
-    expect(plugins.every((plugin) => plugin.manifest.build === 27131)).toBe(true);
+    expect(plugins.every((plugin) => plugin.manifest.build === 27132)).toBe(true);
   });
 
   it("removes disabled plugin tasks and permissions from the effective registry", async () => {

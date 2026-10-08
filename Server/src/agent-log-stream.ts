@@ -44,6 +44,7 @@ const TASK_KEYS = new Set<TaskKey>([
   "inactivity_sync",
   "member_profile_sync",
   "weekly_activity_sync",
+  "trading_city_apply",
   "patrol"
 ]);
 

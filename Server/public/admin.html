@@ -302,6 +302,33 @@
                   <label class="field"><span>执行时间</span><input name="weeklyActivityTime" type="time" /></label>
                   <p class="schedule-summary" data-schedule-summary="weekly_activity_sync"></p><button class="button button-quiet schedule-open-button" type="button" data-schedule-open="weekly_activity_sync">配置执行计划</button>
                 </fieldset>
+                <fieldset class="schedule-card" data-plugin-task="trading_city_apply">
+                  <legend>报名交易之城</legend>
+                  <label class="field field-checkbox"><input name="tradingCityEnabled" type="checkbox" /><span>启用自动任务</span></label>
+                  <div class="form-grid form-grid-compact">
+                    <label class="field"><span>执行星期</span>
+                      <select name="tradingCityExecutionWeekday" required>
+                        <option value="3">周三</option>
+                        <option value="4">周四</option>
+                        <option value="5">周五</option>
+                      </select>
+                    </label>
+                    <label class="field"><span>执行时间（后台时区）</span><input name="tradingCityTime" type="time" min="03:00" required /></label>
+                    <label class="field"><span>报名目标日期</span>
+                      <select name="tradingCityTargetWeekday" required>
+                        <option value="1">周一</option>
+                        <option value="2">周二</option>
+                        <option value="3">周三</option>
+                        <option value="4">周四</option>
+                        <option value="5">周五</option>
+                        <option value="6">周六</option>
+                        <option value="7">周日</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="field-hint">自动任务每周执行一次；执行时间只能设在后台时区的周三 03:00 至周五 02:00。</p>
+                  <p class="schedule-summary" data-trading-city-schedule-summary></p>
+                </fieldset>
                 <fieldset class="schedule-card schedule-card-repeat" data-plugin-task="patrol">
                   <legend>营地巡逻</legend>
                   <label class="field field-checkbox"><input name="patrolEnabled" type="checkbox" /><span>启用</span></label>
@@ -1158,6 +1185,30 @@
           <button class="button button-primary" type="submit">保存此任务计划</button>
           <span id="schedule-dialog-feedback" class="feedback" role="status"></span>
           </div>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="trading-city-manual-dialog" class="compact-dialog">
+      <form id="trading-city-manual-form" class="dialog-card">
+        <div class="section-heading">
+          <div><p class="eyebrow">TRADING CITY</p><h2>报名交易之城</h2></div>
+          <button id="trading-city-manual-close" class="button button-quiet" type="button">关闭</button>
+        </div>
+        <p class="section-intro">请选择本次要报名的一个星期。手动任务不受自动任务启动时间限制。</p>
+        <label class="field"><span>报名目标日期</span>
+          <select id="trading-city-manual-weekday" required>
+            <option value="1">周一</option>
+            <option value="2">周二</option>
+            <option value="3">周三</option>
+            <option value="4">周四</option>
+            <option value="5">周五</option>
+            <option value="6">周六</option>
+            <option value="7">周日</option>
+          </select>
+        </label>
+        <div class="action-row">
+          <button class="button button-primary" type="submit">启动手动任务</button>
+          <span id="trading-city-manual-feedback" class="feedback" role="status"></span>
         </div>
       </form>
     </dialog>

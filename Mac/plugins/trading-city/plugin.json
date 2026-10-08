@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "zone.yume.lifeafter.trading-city",
+  "version": "27.1.0",
+  "build": 27132,
+  "kind": "task",
+  "architectures": [
+    "arm64"
+  ],
+  "minimumAgentVersion": "27.1.0",
+  "entry": "plugin.mjs",
+  "export": "run",
+  "task": {
+    "key": "trading_city_apply",
+    "positionIndependent": false
+  },
+  "name": {
+    "zh-Hans": "报名交易之城",
+    "zh-Hant": "報名交易之城",
+    "en": "Apply for Trading City",
+    "ja": "交易の街に応募",
+    "fr": "Postuler à la Cité commerciale"
+  },
+  "summary": {
+    "zh-Hans": "与德克斯特交谈并提交指定星期的交易之城竞标申请",
+    "zh-Hant": "與德克斯特交談並提交指定星期的交易之城競標申請",
+    "en": "Talk to Dexter and submit a Trading City application for the selected weekday",
+    "ja": "デクスターと会話し、指定した曜日の交易の街申請を提出",
+    "fr": "Parler à Dexter et envoyer une candidature pour le jour choisi"
+  }
+}

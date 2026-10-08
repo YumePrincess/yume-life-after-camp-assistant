@@ -2239,7 +2239,7 @@ td {
 }
 
 .run-log-col-time {
-  width: 150px;
+  width: 205px;
 }
 
 .run-log-col-task {
@@ -5414,7 +5414,7 @@ dialog::backdrop {
 }
 
 .event-item {
-  grid-template-columns: 80px 140px minmax(0, 1fr);
+  grid-template-columns: 80px 205px minmax(0, 1fr);
 }
 
 .sr-only {

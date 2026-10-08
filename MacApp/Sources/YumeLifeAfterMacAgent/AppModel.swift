@@ -172,6 +172,7 @@ final class AppModel: ObservableObject {
         switch group.taskKey {
         case "contribution_sync": key = "Task contribution_sync"
         case "inactivity_sync": key = "Task inactivity_sync"
+        case "trading_city_apply": key = "Task trading_city_apply"
         case "member_profile_sync": key = "Task member_profile_sync"
         case "weekly_activity_sync": key = "Task weekly_activity_sync"
         case "patrol": key = "Task patrol"

@@ -30,7 +30,7 @@ export async function loadTaskPlugins({
           allowUnsignedLocal
         });
         // Bundled plugins load last and always win an id collision. This keeps
-        // the six official workflows immutable while still allowing extra
+        // the seven official workflows immutable while still allowing extra
         // folder plugins from Application Support.
         if (!disabled.has(plugin.manifest.id)) {
           pluginById.set(plugin.manifest.id, plugin);

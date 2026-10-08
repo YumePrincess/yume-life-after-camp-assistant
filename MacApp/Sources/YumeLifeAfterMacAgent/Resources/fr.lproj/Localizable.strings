@@ -119,7 +119,7 @@
 "Tokens are stored in macOS Keychain and are never included in the App or migration archive." = "Les jetons sont stockés dans le trousseau macOS et ne sont jamais inclus dans l’App ni dans l’archive de migration.";
 "Ready to install" = "Prêt à installer";
 "The assistant will create config.json, register the launch agent and verify the bundled arm64 runtime." = "L’assistant créera config.json, enregistrera le démarrage automatique et vérifiera l’environnement arm64 inclus.";
-"6 bundled task plugins" = "6 extensions de tâches incluses";
+"7 bundled task plugins" = "7 extensions de tâches incluses";
 "Preparing installation…" = "Préparation de l’installation…";
 "Enter a valid Workers URL, Agent ID and MuMu container name." = "Saisissez une URL Workers, un ID d’Agent et un nom de conteneur MuMu valides.";
 "Enter both Agent tokens to continue." = "Saisissez les deux jetons Agent pour continuer.";
@@ -146,7 +146,7 @@
 "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "Saisissez le site HTTPS public, un nom d’appareil et le nom exact du conteneur MuMu. L’ID stable de l’appareil est généré automatiquement.";
 "Enter a valid Workers URL, device name and MuMu container name." = "Saisissez une URL Workers, un nom d’appareil et un nom de conteneur MuMu valides.";
 "Enabled plugins" = "Extensions activées";
-"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "Six extensions sont intégrées à l’App. Ajoutez les extensions supplémentaires depuis Application Support.";
+"Seven plugins are bundled with the App. Add extra folder plugins from Application Support." = "Sept extensions sont intégrées à l’App. Ajoutez les extensions supplémentaires depuis Application Support.";
 "Open plugin folder" = "Ouvrir le dossier des extensions";
 "Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced." = "Les extensions supplémentaires sont chargées depuis Application Support. Les extensions intégrées ne peuvent être ni supprimées ni remplacées.";
 "Bundled plugins cannot be removed. Disable the plugin instead." = "Les extensions intégrées ne peuvent pas être supprimées. Désactivez-les à la place.";
@@ -223,6 +223,7 @@
 "The default follows the timezone configured in Workers." = "Par défaut, le fuseau configuré dans Workers est utilisé.";
 "Task contribution_sync" = "Mettre à jour les contributions";
 "Task inactivity_sync" = "Mettre à jour les alertes d'inactivité";
+"Task trading_city_apply" = "Postuler à la Cité commerciale";
 "Task member_profile_sync" = "Mettre à jour les profils";
 "Task weekly_activity_sync" = "Mettre à jour les points d’activité hebdomadaires";
 "Task patrol" = "Patrouille du camp";

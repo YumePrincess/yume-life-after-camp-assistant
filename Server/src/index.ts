@@ -2464,12 +2464,22 @@ async function handleAdminApi(
       return problem("当前 Key 没有执行此插件任务的权限", 403, "permission_denied");
     }
     const bundle = await getConfigBundle(env);
+    const targetWeekday = taskKeyValue === "trading_city_apply"
+      ? Number(body.targetWeekday)
+      : undefined;
+    if (
+      taskKeyValue === "trading_city_apply" &&
+      (!Number.isInteger(targetWeekday) || targetWeekday! < 1 || targetWeekday! > 7)
+    ) {
+      return problem("请选择周一至周日中的一个报名目标日期", 400, "invalid_target_weekday");
+    }
     const activeRun = await findActiveRunForAgent(env, bundle.campConfig.agentId);
     const result = await enqueueTask(env, {
       bundle,
       taskKey: taskKeyValue,
       triggerMode: "manual",
       requestedBy: session,
+      targetWeekday,
       payloadDetail: {
         locale: normalizeLocale(body.locale)
       }

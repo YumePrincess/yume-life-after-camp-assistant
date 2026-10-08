@@ -2984,7 +2984,14 @@ async function readMemberColorBands(
   pagination,
   signal
 ) {
-  if (!imagePath) return [];
+  if (
+    !imagePath ||
+    !region ||
+    !Number.isFinite(Number(region.left)) ||
+    !Number.isFinite(Number(region.top)) ||
+    !Number.isFinite(Number(region.right)) ||
+    !Number.isFinite(Number(region.bottom))
+  ) return [];
   const step = Math.max(5, Number(pagination.rowColorSampleStepPx) || 10);
   // Use several columns and take the median. A single point can land on a
   // profession/scene glyph and make a complete background band look clipped.

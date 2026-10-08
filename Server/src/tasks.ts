@@ -230,6 +230,7 @@ export async function enqueueTask(
     now?: Date;
     requestedBy?: SessionRow | null;
     targetDate?: string;
+    targetWeekday?: number;
     routine?: AutomationRoutine;
     payloadDetail?: Record<string, unknown>;
   }
@@ -277,6 +278,14 @@ export async function enqueueTask(
       input.bundle.automationConfig.tasks.patrol.deadline,
       input.bundle.automationConfig.timezone
     );
+  }
+  if (input.taskKey === "trading_city_apply") {
+    const targetWeekday = input.targetWeekday ??
+      input.bundle.automationConfig.tasks.trading_city_apply.targetWeekday;
+    if (!Number.isInteger(targetWeekday) || targetWeekday < 1 || targetWeekday > 7) {
+      throw new Error("trading_city_apply.targetWeekday must be an ISO weekday from 1 to 7");
+    }
+    detail.tradingCity = { targetWeekday };
   }
   if (input.taskKey === "automation_routine") {
     if (!input.routine) throw new Error("Automation routine payload is required");

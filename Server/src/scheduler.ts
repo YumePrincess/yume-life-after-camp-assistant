@@ -86,6 +86,10 @@ export async function runScheduler(
                 bundle.campConfig.gameResetTime
               )
             }
+          : taskKey === "trading_city_apply"
+            ? {
+                targetWeekday: bundle.automationConfig.tasks.trading_city_apply.targetWeekday
+              }
           : {}
       );
     }
@@ -104,7 +108,7 @@ async function maybeEnqueueDaily(
   scheduledTime: string,
   slot: number,
   result: SchedulerResult,
-  options: { targetDate?: string } = {}
+  options: { targetDate?: string; targetWeekday?: number } = {}
 ): Promise<void> {
   const schedule = bundle.automationConfig.tasks[taskKey];
   if (!schedule.enabled) {
@@ -140,6 +144,7 @@ async function maybeEnqueueDaily(
     scheduleKey: slot === 0 ? `${taskKey}:${keyDate}` : `${taskKey}:${keyDate}:${slot}`,
     localDate,
     targetDate: options.targetDate,
+    targetWeekday: options.targetWeekday,
     now,
     payloadDetail: {
       scheduleSlot: slot,

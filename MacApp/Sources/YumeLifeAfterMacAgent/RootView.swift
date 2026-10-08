@@ -1022,7 +1022,7 @@ struct PluginsView: View {
                             .foregroundStyle(YumePalette.gold)
                         Text(model.text("Plugins"))
                             .font(.system(size: 34, weight: .bold, design: .rounded))
-                        Text(model.text("Five plugins are bundled with the App. Add extra folder plugins from Application Support."))
+                        Text(model.text("Seven plugins are bundled with the App. Add extra folder plugins from Application Support."))
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -1136,10 +1136,11 @@ struct SettingsView: View {
                             Text(model.text(theme.titleKey)).tag(theme)
                         }
                     }
-                    HStack {
+                    HStack(spacing: 12) {
                         Text(model.text("Timezone"))
-                        Spacer()
+                            .frame(minWidth: 48, alignment: .leading)
                         Text(model.timezone).monospacedDigit()
+                        Spacer(minLength: 0)
                     }
                     Text(model.text("Task times are displayed in this timezone. New installations default to the Workers timezone."))
                         .font(.caption)
@@ -1476,10 +1477,11 @@ struct SetupAssistantView: View {
             TextField("Workers URL", text: $model.serverURL).textFieldStyle(.roundedBorder)
             TextField("Agent device name", text: $model.agentName).textFieldStyle(.roundedBorder)
             TextField("MuMu container name", text: $model.mumuInstanceName).textFieldStyle(.roundedBorder)
-            HStack {
+            HStack(spacing: 12) {
                 Text(model.text("Timezone"))
-                Spacer()
+                    .frame(minWidth: 48, alignment: .leading)
                 Text(model.timezone).monospacedDigit()
+                Spacer(minLength: 0)
             }
             Text(model.text("The default follows the timezone configured in Workers."))
                 .font(.caption)
@@ -1536,7 +1538,7 @@ struct SetupAssistantView: View {
             Label(model.agentID, systemImage: "number")
                 .font(.caption.monospaced())
             Label(model.mumuInstanceName, systemImage: "square.stack.3d.up")
-            Label("6 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
+            Label("7 bundled task plugins", systemImage: "puzzlepiece.extension.fill")
             HStack(spacing: 10) {
                 Label(
                     model.modelInfo.isInstalled

@@ -119,7 +119,7 @@
 "Tokens are stored in macOS Keychain and are never included in the App or migration archive." = "權杖會儲存在 macOS 鑰匙圈中，絕不會寫入 App 或移轉封裝。";
 "Ready to install" = "準備安裝";
 "The assistant will create config.json, register the launch agent and verify the bundled arm64 runtime." = "精靈將建立 config.json、註冊自動啟動項目並驗證隨附的 arm64 執行環境。";
-"6 bundled task plugins" = "6 個內建任務外掛";
+"7 bundled task plugins" = "7 個內建任務外掛";
 "Preparing installation…" = "正在準備安裝…";
 "Enter a valid Workers URL, Agent ID and MuMu container name." = "請輸入有效的 Workers 網址、Agent ID 與 MuMu 容器名稱。";
 "Enter both Agent tokens to continue." = "請輸入兩個 Agent 權杖後繼續。";
@@ -146,7 +146,7 @@
 "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "請輸入公開 HTTPS 網站、裝置名稱與正確的 MuMu 容器名稱。穩定的裝置 ID 會自動產生。";
 "Enter a valid Workers URL, device name and MuMu container name." = "請輸入有效的 Workers 網址、裝置名稱和 MuMu 容器名稱。";
 "Enabled plugins" = "已啟用外掛";
-"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "App 內建 6 個外掛；額外外掛可從 Application Support 資料夾加入。";
+"Seven plugins are bundled with the App. Add extra folder plugins from Application Support." = "App 內建 7 個外掛；額外外掛可從 Application Support 資料夾加入。";
 "Open plugin folder" = "開啟外掛目錄";
 "Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced." = "額外外掛從 Application Support 外掛目錄載入；內建外掛不能刪除或取代。";
 "Bundled plugins cannot be removed. Disable the plugin instead." = "內建外掛不能刪除，請改為停用。";
@@ -223,6 +223,7 @@
 "The default follows the timezone configured in Workers." = "預設會跟隨 Workers 中設定的時區。";
 "Task contribution_sync" = "更新貢獻";
 "Task inactivity_sync" = "更新斬殺預警";
+"Task trading_city_apply" = "報名交易之城";
 "Task member_profile_sync" = "更新成員資料";
 "Task weekly_activity_sync" = "更新週活躍點";
 "Task patrol" = "營地巡邏";

@@ -119,7 +119,7 @@
 "Tokens are stored in macOS Keychain and are never included in the App or migration archive." = "トークンは macOS キーチェーンに保存され、App や移行アーカイブには含まれません。";
 "Ready to install" = "インストール準備完了";
 "The assistant will create config.json, register the launch agent and verify the bundled arm64 runtime." = "アシスタントが config.json を作成し、自動起動を登録して同梱 arm64 ランタイムを検証します。";
-"6 bundled task plugins" = "6 個の内蔵タスクプラグイン";
+"7 bundled task plugins" = "7 個の内蔵タスクプラグイン";
 "Preparing installation…" = "インストールを準備中…";
 "Enter a valid Workers URL, Agent ID and MuMu container name." = "有効な Workers URL、Agent ID、MuMu コンテナ名を入力してください。";
 "Enter both Agent tokens to continue." = "続けるには 2 つの Agent トークンを入力してください。";
@@ -146,7 +146,7 @@
 "Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically." = "公開 HTTPS サイト、デバイス名、正確な MuMu コンテナ名を入力してください。固定デバイス ID は自動生成されます。";
 "Enter a valid Workers URL, device name and MuMu container name." = "有効な Workers URL、デバイス名、MuMu コンテナ名を入力してください。";
 "Enabled plugins" = "有効なプラグイン";
-"Five plugins are bundled with the App. Add extra folder plugins from Application Support." = "6 個のプラグインが App に内蔵されています。追加プラグインは Application Support フォルダに配置します。";
+"Seven plugins are bundled with the App. Add extra folder plugins from Application Support." = "7 個のプラグインが App に内蔵されています。追加プラグインは Application Support フォルダに配置します。";
 "Open plugin folder" = "プラグインフォルダを開く";
 "Extra plugins are loaded from the Application Support plugin folder. Bundled plugins cannot be removed or replaced." = "追加プラグインは Application Support のプラグインフォルダから読み込まれます。内蔵プラグインは削除・置換できません。";
 "Bundled plugins cannot be removed. Disable the plugin instead." = "内蔵プラグインは削除できません。無効にしてください。";
@@ -223,6 +223,7 @@
 "The default follows the timezone configured in Workers." = "初期値は Workers に設定されたタイムゾーンに従います。";
 "Task contribution_sync" = "貢献を更新";
 "Task inactivity_sync" = "離脱警告を更新";
+"Task trading_city_apply" = "交易の街に応募";
 "Task member_profile_sync" = "メンバー情報を更新";
 "Task weekly_activity_sync" = "週間活躍ポイントを更新";
 "Task patrol" = "キャンプ巡回";

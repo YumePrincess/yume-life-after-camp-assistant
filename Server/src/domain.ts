@@ -5,6 +5,7 @@ export const TASK_KEYS = [
   "inactivity_sync",
   "member_profile_sync",
   "weekly_activity_sync",
+  "trading_city_apply",
   "patrol",
   "automation_routine"
 ] as const;
@@ -115,6 +116,13 @@ export interface TaskSchedule {
   weekdays?: number[];
 }
 
+export interface TradingCitySchedule extends TaskSchedule {
+  /** The single recurring execution weekday; ISO weekday numbering. */
+  executionWeekday: number;
+  /** The single weekday selected on the trading city application form. */
+  targetWeekday: number;
+}
+
 export interface AutomationConfig {
   timezone: string;
   schedulerGraceMinutes: number;
@@ -137,6 +145,7 @@ export interface AutomationConfig {
     inactivity_sync: TaskSchedule;
     member_profile_sync: TaskSchedule;
     weekly_activity_sync: TaskSchedule;
+    trading_city_apply: TradingCitySchedule;
     patrol: TaskSchedule & {
       teamReadyTime: string;
       shareIntervalMinutes: number;

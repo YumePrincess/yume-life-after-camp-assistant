@@ -11,6 +11,7 @@
       "更新职业、庄园、同居与公职，并以完整成员页刷新当前名单"
     ],
     ["weekly_activity_sync", "更新周活跃点", "读取营地周计划中的活跃排行并更新成员周活跃点"],
+    ["trading_city_apply", "报名交易之城", "与德克斯特交谈并提交指定星期的竞标申请"],
     ["patrol", "营地巡逻", "组队、困难路线与定时古籍分享"]
   ];
   const TECHNOLOGY_ROW_SLOT_COUNT = 6;
@@ -115,6 +116,7 @@
     scheduleWeekdayDrafts: {},
     scheduleReplacements: {},
     scheduleDialogTaskKey: null,
+    pendingTradingCityButton: null,
     maintenanceAction: null,
     loadedPluginClientModules: new Set()
   };
@@ -447,6 +449,12 @@
     const timezone = configuredTimezone();
     const parts = window.MrzhTimezone.parts(date, timezone);
     return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second} (${formatTimezoneLabel(timezone)})`;
+  }
+
+  function formatTaskLogTimestamp(value, displayValue) {
+    const formatted = formatDate(value);
+    if (formatted !== "—") return formatted;
+    return displayValue ? normalizeTimestampDateSeparator(displayValue) : formatted;
   }
 
   function normalizeTimestampDateSeparator(value) {
@@ -948,7 +956,9 @@
       const button = create("button", "button button-primary", "立即执行");
       button.type = "button";
       button.disabled = !hasPermission(runPermission);
-      button.addEventListener("click", () => runTask(key, button));
+      button.addEventListener("click", () => key === "trading_city_apply"
+        ? openTradingCityManualDialog(button)
+        : runTask(key, button));
       card.append(
         create("h3", "", translateUi(name)),
         create("p", "", translateUi(copy)),
@@ -1240,6 +1250,10 @@
       })) {
         setField(name, value);
       }
+      setField("tradingCityEnabled", tasks.trading_city_apply.enabled);
+      setField("tradingCityExecutionWeekday", tasks.trading_city_apply.executionWeekday);
+      setField("tradingCityTime", tasks.trading_city_apply.time);
+      setField("tradingCityTargetWeekday", tasks.trading_city_apply.targetWeekday);
       for (const [taskKey, schedule] of Object.entries(tasks)) {
         state.scheduleDrafts[taskKey] = (schedule.times || [schedule.time]).slice();
         state.scheduleWeekdayDrafts[taskKey] = Array.isArray(schedule.weekdays) && schedule.weekdays.length
@@ -1247,6 +1261,8 @@
           : [1, 2, 3, 4, 5, 6, 7];
       }
       renderScheduleSummaries();
+      updateTradingCityTimeBounds();
+      renderTradingCityScheduleSummary();
     }
     if (sections.includes("agent")) {
       for (const [name, value] of Object.entries({
@@ -1404,6 +1420,24 @@
       }
       if (times[0]) setField(field.time, times[0]);
     }
+  }
+
+  function updateTradingCityTimeBounds() {
+    const weekday = Number(getField("tradingCityExecutionWeekday"));
+    const field = document.querySelector('[name="tradingCityTime"]');
+    if (!field) return;
+    field.min = weekday === 3 ? "03:00" : "00:00";
+    field.max = weekday === 5 ? "02:00" : "23:59";
+  }
+
+  function renderTradingCityScheduleSummary() {
+    const summary = document.querySelector("[data-trading-city-schedule-summary]");
+    if (!summary) return;
+    const enabled = Boolean(getField("tradingCityEnabled"));
+    const executionWeekday = scheduleWeekdayLabel(Number(getField("tradingCityExecutionWeekday")) || 3);
+    const targetWeekday = scheduleWeekdayLabel(Number(getField("tradingCityTargetWeekday")) || 1);
+    const time = String(getField("tradingCityTime") || "未设置");
+    summary.textContent = `${enabled ? "已启用" : "已停用"} · 每周${executionWeekday} ${time} · 报名${targetWeekday}`;
   }
 
   function renderScheduleTimeInputs() {
@@ -3052,7 +3086,7 @@
     for (const run of runs || []) {
       const row = document.createElement("tr");
       row.append(
-        create("td", "run-time", formatDate(
+        create("td", "run-time", formatTaskLogTimestamp(
           run.finished_at || run.created_at,
           run.finished_at ? run.finished_at_display : run.created_at_display
         )),
@@ -3883,7 +3917,45 @@
     });
   }
 
-  async function runTask(taskKey, button, routineId) {
+  function openTradingCityManualDialog(button) {
+    const dialog = byId("trading-city-manual-dialog");
+    if (!dialog || state.pendingTradingCityButton) return;
+    state.pendingTradingCityButton = button;
+    button.disabled = true;
+    byId("trading-city-manual-weekday").value = String(
+      state.bootstrap?.configBundle?.automationConfig?.tasks?.trading_city_apply?.targetWeekday || 1
+    );
+    byId("trading-city-manual-feedback").textContent = "";
+    dialog.showModal();
+  }
+
+  function closeTradingCityManualDialog() {
+    byId("trading-city-manual-dialog")?.close();
+    if (state.pendingTradingCityButton) state.pendingTradingCityButton.disabled = false;
+    state.pendingTradingCityButton = null;
+    byId("trading-city-manual-feedback").textContent = "";
+  }
+
+  async function submitTradingCityManualTask(event) {
+    event.preventDefault();
+    const button = state.pendingTradingCityButton;
+    if (!button) return;
+    const targetWeekday = Number(byId("trading-city-manual-weekday").value);
+    if (!Number.isInteger(targetWeekday) || targetWeekday < 1 || targetWeekday > 7) {
+      byId("trading-city-manual-feedback").textContent = "请选择周一至周日中的一个报名目标日期";
+      return;
+    }
+    const queued = await runTask(
+      "trading_city_apply",
+      button,
+      null,
+      targetWeekday,
+      byId("trading-city-manual-feedback")
+    );
+    if (queued) closeTradingCityManualDialog();
+  }
+
+  async function runTask(taskKey, button, routineId, targetWeekday, feedback) {
     button.disabled = true;
     try {
       const result = await request("/api/admin/run", {
@@ -3891,6 +3963,7 @@
         body: JSON.stringify({
           taskKey,
           locale: window.MrzhI18n.language(),
+          ...(targetWeekday ? { targetWeekday } : {}),
           ...(routineId ? { routineId } : {})
         })
       });
@@ -3901,11 +3974,15 @@
         : window.MrzhI18n.format("{task}已入队", {
             task: taskName(taskKey)
           });
+      if (feedback) feedback.textContent = "";
       await refresh(false);
+      return true;
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      if (feedback) feedback.textContent = error.message;
+      else byId("save-state").textContent = error.message;
+      return false;
     } finally {
-      button.disabled = false;
+      if (state.pendingTradingCityButton !== button) button.disabled = false;
     }
   }
 
@@ -4006,7 +4083,7 @@
         const row = create("article", "event-item");
         row.append(
           create("span", `status-${event.level}`, event.level),
-          create("time", "muted", formatDate(event.created_at, event.created_at_display)),
+          create("time", "muted", formatTaskLogTimestamp(event.created_at, event.created_at_display)),
           create("span", "", `${event.step ? `[${event.step}] ` : ""}${event.message}`)
         );
         root.append(row);
@@ -4068,6 +4145,7 @@
       const inactivityTimes = timesFor("inactivity_sync", "inactivityTime");
       const profileTimes = timesFor("member_profile_sync", "profileTime");
       const patrolTime = String(getField("patrolTime") || "");
+      const tradingCityTime = String(getField("tradingCityTime") || "");
       next.automationConfig.scheduledRetryCount = Number(getField("scheduledRetryCount"));
       next.automationConfig.manualRetryCount = Number(getField("manualRetryCount"));
       next.automationConfig.tasks = {
@@ -4105,6 +4183,13 @@
           times: scheduleTimes("weekly_activity_sync"),
           weekdays: scheduleWeekdays("weekly_activity_sync"),
           replaceTimes: Boolean(state.scheduleReplacements.weekly_activity_sync)
+        },
+        trading_city_apply: {
+          enabled: getField("tradingCityEnabled"),
+          time: tradingCityTime,
+          times: [tradingCityTime],
+          weekdays: [Number(getField("tradingCityExecutionWeekday"))],
+          targetWeekday: Number(getField("tradingCityTargetWeekday"))
         },
         patrol: {
           enabled: getField("patrolEnabled"),
@@ -5311,12 +5396,30 @@
     });
     form.addEventListener("submit", saveConfig);
   }
+  for (const field of document.querySelectorAll(
+    '[name="tradingCityEnabled"], [name="tradingCityExecutionWeekday"], [name="tradingCityTime"], [name="tradingCityTargetWeekday"]'
+  )) {
+    field.addEventListener("input", () => {
+      updateTradingCityTimeBounds();
+      renderTradingCityScheduleSummary();
+    });
+    field.addEventListener("change", () => {
+      updateTradingCityTimeBounds();
+      renderTradingCityScheduleSummary();
+    });
+  }
   for (const button of document.querySelectorAll("[data-schedule-open]")) {
     button.addEventListener("click", () => openScheduleDialog(button.dataset.scheduleOpen));
   }
   byId("schedule-dialog-close")?.addEventListener("click", closeScheduleDialog);
   byId("schedule-add-time")?.addEventListener("click", addScheduleTime);
   byId("schedule-dialog-form")?.addEventListener("submit", saveScheduleDialog);
+  byId("trading-city-manual-close")?.addEventListener("click", closeTradingCityManualDialog);
+  byId("trading-city-manual-dialog")?.addEventListener("cancel", () => {
+    if (state.pendingTradingCityButton) state.pendingTradingCityButton.disabled = false;
+    state.pendingTradingCityButton = null;
+  });
+  byId("trading-city-manual-form")?.addEventListener("submit", submitTradingCityManualTask);
   for (const link of document.querySelectorAll("[data-nav-target]")) {
     link.addEventListener("click", () => {
       activateView(link.dataset.navTarget);

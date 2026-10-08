@@ -104,6 +104,39 @@ describe("five-task automation configuration", () => {
     ).toBe(3);
   });
 
+  it("restricts trading city schedules to Wednesday 03:00 through Friday 02:00 and one target weekday", () => {
+    const buildTradingSchedule = (executionWeekday: number, time: string, targetWeekday = 7) =>
+      validateAutomationConfig({
+        timezone: "UTC+08:00",
+        schedulerGraceMinutes: 5,
+        tasks: {
+          trading_city_apply: {
+            enabled: true,
+            time,
+            times: [time],
+            weekdays: [executionWeekday],
+            targetWeekday
+          },
+          patrol: {
+            enabled: false,
+            time: "19:20",
+            teamReadyTime: "19:30",
+            shareIntervalMinutes: 10,
+            chatPollSeconds: 5,
+            deadline: "21:25"
+          }
+        }
+      }).tasks.trading_city_apply;
+
+    expect(buildTradingSchedule(3, "03:00").targetWeekday).toBe(7);
+    expect(buildTradingSchedule(4, "12:30").executionWeekday).toBe(4);
+    expect(buildTradingSchedule(5, "02:00").weekdays).toEqual([5]);
+    expect(() => buildTradingSchedule(3, "02:59")).toThrow("Wednesday 03:00");
+    expect(() => buildTradingSchedule(5, "02:01")).toThrow("Wednesday 03:00");
+    expect(() => buildTradingSchedule(2, "12:00")).toThrow("exactly Wednesday");
+    expect(() => buildTradingSchedule(3, "12:00", 8)).toThrow("targetWeekday");
+  });
+
   it("keeps an overnight vote cutoff before the next game refresh", () => {
     const overnight = validateCampConfig({
       ...base,
@@ -453,6 +486,14 @@ describe("five-task automation configuration", () => {
         time: "22:00",
         times: ["22:00"],
         weekdays: [7]
+      },
+      trading_city_apply: {
+        enabled: false,
+        time: "03:00",
+        times: ["03:00"],
+        weekdays: [3],
+        executionWeekday: 3,
+        targetWeekday: 1
       },
       patrol: {
         enabled: true,
