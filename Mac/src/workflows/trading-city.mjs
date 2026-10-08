@@ -48,7 +48,7 @@ const WEEKDAY_NAMES = ["", "周一", "周二", "周三", "周四", "周五", "�
 const MAX_DEXTER_ROUTE_RESTARTS = 6;
 const DEXTER_PATHFINDING_ATTEMPTS = 2;
 const DATA_CENTER_APPROACH_W_HOLD_MS = 700;
-const PATHFINDING_W_HOLD_MS = 450;
+const PATHFINDING_W_HOLD_MS = 460;
 
 export async function runTradingCityApply(context, command, _bundle, signal) {
   const sleep = context.sleep || delay;
@@ -72,15 +72,44 @@ export async function runTradingCityApply(context, command, _bundle, signal) {
     sleep
   );
   await context.ui.tap(TRADING_CITY_APPLICATION_CONFIRM_POSITION, signal);
+  const submission = {
+    clicked: true,
+    targetWeekday,
+    weekdayPosition,
+    confirmPosition: TRADING_CITY_APPLICATION_CONFIRM_POSITION,
+    closedConfirmed: false,
+    confirmation: null
+  };
+  context.tradingCitySubmission = submission;
 
   await updateWorkflowProgress(context, 0.78, "trading_city_verify_submission");
-  await waitForApplicationSubmitted(context, signal, sleep);
-  await context.report(
-    "info",
-    "trading_city_application_submitted",
-    `已确认竞标申请表消失并重新识别世界 HUD；报名目标日期：${WEEKDAY_NAMES[targetWeekday]}`,
-    { targetWeekday, weekdayPosition, confirmPosition: TRADING_CITY_APPLICATION_CONFIRM_POSITION }
-  );
+  let closeResult = null;
+  try {
+    closeResult = await waitForApplicationSubmitted(context, signal, sleep);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    submission.confirmationError = String(error?.message || error);
+  }
+  if (closeResult) {
+    submission.closedConfirmed = true;
+    submission.confirmation = closeResult.confirmation;
+    const message = closeResult.confirmation === "world_hud"
+      ? `已确认竞标申请表消失并重新识别世界 HUD；报名目标日期：${WEEKDAY_NAMES[targetWeekday]}`
+      : `已确认竞标申请表消失并再次识别到德克斯特和交谈；报名目标日期：${WEEKDAY_NAMES[targetWeekday]}`;
+    await context.report(
+      "info",
+      "trading_city_application_submitted",
+      message,
+      { ...submission }
+    );
+  } else {
+    await context.report(
+      "warning",
+      "trading_city_submission_close_unconfirmed",
+      "已点击报名日期与提交按钮后，未识别到 HUD 或德克斯特交谈选项；将继续收尾并标记部分成功",
+      { ...submission }
+    );
+  }
   await updateWorkflowProgress(context, 0.97, "trading_city_complete");
 }
 
@@ -310,15 +339,36 @@ async function waitForApplicationSubmitted(context, signal, sleep) {
   const deadline = Date.now() + 30_000;
   do {
     const frame = await context.vision.capture("trading-city-submission", signal);
-    const formVisible = context.vision.find(frame.observations, "交易之城竞标申请表") ||
-      context.vision.find(frame.observations, "成为交易之城日期");
-    const hudCount = WORLD_HUD_KEYWORDS.filter((text) =>
-      context.vision.find(frame.observations, text)
-    ).length;
-    if (!formVisible && hudCount >= 2) return frame;
+    let confirmation = submissionCloseConfirmation(
+      context.vision,
+      frame.observations
+    );
+    if (confirmation) return { frame, confirmation };
+    const accurate = await context.vision
+      .captureAccurateTransient?.("trading-city-submission-accurate", signal)
+      .catch(() => null);
+    if (accurate) {
+      confirmation = submissionCloseConfirmation(
+        context.vision,
+        accurate.observations
+      );
+      if (confirmation) return { frame: accurate, confirmation };
+    }
     await sleep(700, signal);
   } while (Date.now() < deadline);
-  throw new Error("TRADING_CITY_SUBMISSION_UNCONFIRMED: 申请表未消失或未重新识别到世界 HUD");
+  return null;
+}
+
+function submissionCloseConfirmation(vision, observations) {
+  const formVisible = vision.find(observations, "交易之城竞标申请表") ||
+    vision.find(observations, "成为交易之城日期");
+  if (formVisible) return null;
+  const hudCount = WORLD_HUD_KEYWORDS.filter((text) =>
+    vision.find(observations, text)
+  ).length;
+  if (hudCount >= 2) return "world_hud";
+  if (hasAll(vision, observations, DEXTER_TEXTS)) return "dexter_talk";
+  return null;
 }
 
 function hasAll(vision, observations, texts) {

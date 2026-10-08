@@ -55,6 +55,18 @@ const FIXED_TRANSLATIONS = {
     fr: "TRADING_CITY_SUBMISSION_UNCONFIRMED : le formulaire est toujours présent ou l’interface du monde n’a pas été reconnue",
     ja: "TRADING_CITY_SUBMISSION_UNCONFIRMED：申請フォームが消えないか、ワールド HUD を再認識できませんでした"
   },
+  "已点击报名日期与提交按钮后，未识别到 HUD 或德克斯特交谈选项；将继续收尾并标记部分成功": {
+    "zh-tw": "已點擊報名日期與提交按鈕後，未識別到 HUD 或德克斯特交談選項；將繼續收尾並標記部分成功",
+    en: "The application date and submit button were clicked, but neither the HUD nor Dexter's Talk option was recognized; cleanup will continue and the run will be marked partially successful",
+    fr: "La date et le bouton de candidature ont été cliqués, mais ni l’interface ni l’option Parler de Dexter n’ont été reconnues ; le nettoyage continue et le résultat sera partiellement réussi",
+    ja: "応募日の選択と送信ボタンのクリック後、HUD とデクスターの会話項目を確認できません。終了処理を続け、部分成功として記録します"
+  },
+  "交易之城报名已点击提交，但确认或收尾未完全完成": {
+    "zh-tw": "交易之城報名已點擊提交，但確認或收尾未完全完成",
+    en: "Trading City application was submitted, but confirmation or cleanup was incomplete",
+    fr: "La candidature à la ville commerciale a été envoyée, mais la confirmation ou le nettoyage est incomplet",
+    ja: "交易の街への応募を送信しましたが、確認または終了処理が未完了です"
+  },
   "正在按任务启动本地视觉辅助模型": {
     "zh-tw": "正在依任務啟動本機視覺輔助模型",
     en: "Starting the local vision assistant for this task",
@@ -353,6 +365,15 @@ const PATTERN_TRANSLATIONS = [
       en: "Confirmed the application form closed and the world HUD returned; application weekday: $1",
       fr: "Formulaire fermé et interface du monde reconnue ; jour de candidature : $1",
       ja: "申請フォームが閉じ、ワールド HUD を再認識しました。応募曜日：$1"
+    }
+  },
+  {
+    test: /^已确认竞标申请表消失并再次识别到德克斯特和交谈；报名目标日期：(周[一二三四五六日])$/,
+    values: {
+      "zh-tw": "已確認競標申請表消失並再次識別到德克斯特和交談；報名目標日期：$1",
+      en: "Confirmed the application form closed and recognized Dexter's Talk option again; application weekday: $1",
+      fr: "Fermeture du formulaire confirmée et option Parler de Dexter reconnue à nouveau ; jour de candidature : $1",
+      ja: "申請フォームが閉じ、デクスターの会話項目を再認識しました。応募曜日：$1"
     }
   },
   {

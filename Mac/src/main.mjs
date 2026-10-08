@@ -751,7 +751,26 @@ async function executeCommand(command, signal) {
       signal,
       bootstrap.configBundle.automationConfig.gameWatchdog
     );
-    if (sessionResult?.cleanupCompleted === false) {
+    const tradingCitySubmission = context.tradingCitySubmission;
+    const tradingCityPartial = tradingCitySubmission?.clicked === true &&
+      (!tradingCitySubmission.closedConfirmed ||
+        sessionResult?.cleanupCompleted === false);
+    if (tradingCityPartial) {
+      terminalState = "partially_succeeded";
+      terminalEventLevel = "warning";
+      terminalMessage = localizedTaskEventMessages(
+        "finished",
+        "交易之城报名已点击提交，但确认或收尾未完全完成"
+      )[taskLocale];
+      terminalEventMessage = terminalMessage;
+      terminalDetail = {
+        tradingCitySubmission,
+        cleanupIssues: sessionResult?.cleanupIssues || [],
+        partialSuccessReason: !tradingCitySubmission.closedConfirmed
+          ? "submission_close_unconfirmed"
+          : "session_cleanup_incomplete"
+      };
+    } else if (sessionResult?.cleanupCompleted === false) {
       terminalState = "partially_succeeded";
       terminalEventLevel = "warning";
       const terminalSourceMessage =
@@ -778,8 +797,16 @@ async function executeCommand(command, signal) {
     }
   } catch (error) {
     const interrupted = signal.aborted;
-    terminalState = interrupted ? "interrupted" : "failed";
-    terminalEventLevel = interrupted ? "warning" : "error";
+    const tradingCityPostSubmitFailure = !interrupted &&
+      context.tradingCitySubmission?.clicked === true;
+    terminalState = interrupted
+      ? "interrupted"
+      : tradingCityPostSubmitFailure
+        ? "partially_succeeded"
+        : "failed";
+    terminalEventLevel = interrupted || tradingCityPostSubmitFailure
+      ? "warning"
+      : "error";
     const failureReason = interrupted
       ? "任务已由管理员中断"
       : String(error?.message || error || "未知错误");
@@ -800,7 +827,7 @@ async function executeCommand(command, signal) {
             context.suppressScheduledRetryReason || null
     };
     await flushRunUpdates();
-    if (!interrupted) {
+    if (!interrupted && !tradingCityPostSubmitFailure) {
       await writeTaskLog({
         event: "task_failure_detailed",
         level: "error",
@@ -809,9 +836,25 @@ async function executeCommand(command, signal) {
         message: failureReason
       });
     }
-    const terminalSourceMessage = failureReason;
-    const terminalMessages = localizedTaskEventMessages("finished", terminalSourceMessage);
-    terminalMessage = terminalMessages[taskLocale];
+    if (tradingCityPostSubmitFailure) {
+      await writeTaskLog({
+        event: "task_partial_success",
+        level: "warning",
+        step: "finished",
+        message: "交易之城报名已点击提交，但确认或收尾未完全完成",
+        detail: {
+          tradingCitySubmission: context.tradingCitySubmission,
+          postSubmitError: failureReason
+        }
+      });
+      terminalMessage = localizedTaskEventMessages(
+        "finished",
+        "交易之城报名已点击提交，但确认或收尾未完全完成"
+      )[taskLocale];
+    } else {
+      const terminalMessages = localizedTaskEventMessages("finished", failureReason);
+      terminalMessage = terminalMessages[taskLocale];
+    }
     terminalEventMessage = terminalMessage;
     terminalDetail = {
       ...(context.suppressScheduledRetry
@@ -819,6 +862,12 @@ async function executeCommand(command, signal) {
             suppressScheduledRetry: true,
             retrySuppressionReason:
               context.suppressScheduledRetryReason || "task_cleanup"
+          }
+        : {}),
+      ...(tradingCityPostSubmitFailure
+        ? {
+            tradingCitySubmission: context.tradingCitySubmission,
+            postSubmitError: failureReason
           }
         : {}),
       ...failureDetail
