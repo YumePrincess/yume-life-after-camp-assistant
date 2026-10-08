@@ -19,7 +19,8 @@ export const TRADING_CITY_APPLICATION_CONFIRM_POSITION = Object.freeze({
 });
 
 const FORM_REGION = { left: 1080, top: 55, right: 1910, bottom: 1140 };
-const DEXTER_TEXTS = ["德克斯特", "交谈(F)"];
+const DATA_CENTER_REGION = { left: 1150, top: 450, right: 1650, bottom: 900 };
+const DEXTER_TEXTS = ["德克斯特", "交谈"];
 const CONVERSATION_KEYWORDS = [
   ["在我这有交易之城的竞标书", "交易之城的竞标书"],
   ["交易之城是什么"],
@@ -32,6 +33,8 @@ const FORM_KEYWORDS = [
   ["交易之城竞标申请表"],
   ["成为交易之城日期"],
   ["需求物资确认"],
+  ["预估幸福值"],
+  ["上周最低值"],
   ["周一"],
   ["周二"],
   ["周三"],
@@ -43,6 +46,7 @@ const FORM_KEYWORDS = [
 const WORLD_HUD_KEYWORDS = ["综合", "世界", "场景", "营地", "队伍", "背包"];
 const WEEKDAY_NAMES = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const MAX_DEXTER_ROUTE_RESTARTS = 3;
+const PATHFINDING_W_HOLD_MS = 700;
 
 export async function runTradingCityApply(context, command, _bundle, signal) {
   const sleep = context.sleep || delay;
@@ -58,6 +62,31 @@ export async function runTradingCityApply(context, command, _bundle, signal) {
     );
   }
 
+  await prepareTradingCityApplication(context, signal, sleep);
+  const weekdayPosition = await selectTradingCityWeekday(
+    context,
+    targetWeekday,
+    signal,
+    sleep
+  );
+  await context.ui.tap(TRADING_CITY_APPLICATION_CONFIRM_POSITION, signal);
+
+  await updateWorkflowProgress(context, 0.78, "trading_city_verify_submission");
+  await waitForApplicationSubmitted(context, signal, sleep);
+  await context.report(
+    "info",
+    "trading_city_application_submitted",
+    `已确认竞标申请表消失并重新识别世界 HUD；报名目标日期：${WEEKDAY_NAMES[targetWeekday]}`,
+    { targetWeekday, weekdayPosition, confirmPosition: TRADING_CITY_APPLICATION_CONFIRM_POSITION }
+  );
+  await updateWorkflowProgress(context, 0.97, "trading_city_complete");
+}
+
+export async function prepareTradingCityApplication(
+  context,
+  signal,
+  sleep = context.sleep || delay
+) {
   await updateWorkflowProgress(context, 0.04, "trading_city_teleport");
   const dexterFound = await navigateToDexter(context, signal, sleep);
   if (!dexterFound) {
@@ -100,30 +129,28 @@ export async function runTradingCityApply(context, command, _bundle, signal) {
   );
   if (application.count < 4) {
     throw new Error(
-      `TRADING_CITY_APPLICATION_UNRECOGNIZED: 竞标申请表关键词仅识别到 ${application.count}/10 个`
+      `TRADING_CITY_APPLICATION_UNRECOGNIZED: 竞标申请表关键词仅识别到 ${application.count}/12 个`
     );
   }
+  return { conversationKeywords: conversation.count, applicationKeywords: application.count };
+}
 
-  const weekdayPosition = TRADING_CITY_WEEKDAY_POSITIONS[targetWeekday];
+export async function selectTradingCityWeekday(
+  context,
+  weekday,
+  signal,
+  sleep = context.sleep || delay
+) {
+  const weekdayPosition = TRADING_CITY_WEEKDAY_POSITIONS[weekday];
   if (!weekdayPosition) throw new Error("TRADING_CITY_WEEKDAY_POSITION_MISSING");
-  await clickTradingCityWeekday(context.ui, targetWeekday, signal);
+  await clickTradingCityWeekday(context.ui, weekday, signal);
   await sleep(2_000, signal);
   await context.report(
     "info",
     "trading_city_weekday_selected",
-    `已点击报名目标日期${WEEKDAY_NAMES[targetWeekday]}，申请表坐标 (${weekdayPosition.x}, ${weekdayPosition.y})`
+    `已点击报名目标日期${WEEKDAY_NAMES[weekday]}，申请表坐标 (${weekdayPosition.x}, ${weekdayPosition.y})`
   );
-  await context.ui.tap(TRADING_CITY_APPLICATION_CONFIRM_POSITION, signal);
-
-  await updateWorkflowProgress(context, 0.78, "trading_city_verify_submission");
-  await waitForApplicationSubmitted(context, signal, sleep);
-  await context.report(
-    "info",
-    "trading_city_application_submitted",
-    `已确认竞标申请表消失并重新识别世界 HUD；报名目标日期：${WEEKDAY_NAMES[targetWeekday]}`,
-    { targetWeekday, weekdayPosition, confirmPosition: TRADING_CITY_APPLICATION_CONFIRM_POSITION }
-  );
-  await updateWorkflowProgress(context, 0.97, "trading_city_complete");
+  return weekdayPosition;
 }
 
 export async function clickTradingCityWeekday(ui, weekday, signal) {
@@ -147,14 +174,31 @@ async function navigateToDexter(context, signal, sleep) {
 
     await context.ui.executeFlow("teleportCityHall", {}, signal);
     await updateWorkflowProgress(context, 0.15, "trading_city_sand_table");
-    await context.ui.executeFlow("navigateToSandTable", {}, signal);
-
-    // Match the inactivity workflow's city-hall route, then move farther from
-    // the camp data center before turning the camera toward Dexter's position.
-    // The route opens the camp-management panel, so dismiss it before movement.
-    await context.adb.key("KEYCODE_ESCAPE", signal);
-    await context.adb.key("KEYCODE_W", signal, { longPress: true });
+    // This task must not open the sand-table panel. The City Hall teleport
+    // confirms the first Data Center interaction label; walk once, wait, then
+    // require a second OCR confirmation before turning the camera.
+    await context.ui.waitAnyText(
+      ["营地数据中心"],
+      { region: DATA_CENTER_REGION, timeoutSeconds: 12 },
+      signal
+    );
+    await context.report(
+      "info",
+      "trading_city_data_center_first_seen",
+      "首次识别到营地数据中心，按住 W 700 毫秒寻路，不按 F 打开数据中心面板"
+    );
+    await holdTradingCityPathKey(context.adb, signal);
     await sleep(3_000, signal);
+    await context.ui.waitAnyText(
+      ["营地数据中心"],
+      { region: DATA_CENTER_REGION, timeoutSeconds: 12 },
+      signal
+    );
+    await context.report(
+      "info",
+      "trading_city_data_center_second_seen",
+      "再次识别到营地数据中心，切换视角后继续寻路"
+    );
     await context.adb.shell(
       ["input", "swipe", "500", "500", "1000", "500", "800"],
       { signal, timeoutMs: 8_000 }
@@ -163,14 +207,19 @@ async function navigateToDexter(context, signal, sleep) {
 
     await updateWorkflowProgress(context, 0.28, "trading_city_find_dexter");
     for (let attempt = 1; attempt <= 6; attempt += 1) {
-      await context.adb.key("KEYCODE_W", signal, { longPress: true, repeat: 3 });
-      await sleep(900, signal);
+      await context.report(
+        "info",
+        "trading_city_w_pathfinding",
+        `第 ${restart + 1} 轮第 ${attempt}/6 次寻路：按住 W ${PATHFINDING_W_HOLD_MS} 毫秒后识别德克斯特`
+      );
+      await holdTradingCityPathKey(context.adb, signal);
+      await sleep(3_000, signal);
       const frame = await context.vision.capture(`trading-city-dexter-${restart}-${attempt}`, signal);
       if (hasAll(context.vision, frame.observations, DEXTER_TEXTS)) {
         await context.report(
           "info",
           "trading_city_dexter_found",
-          `第 ${restart + 1} 轮第 ${attempt}/6 次寻路后识别到“德克斯特”和“交谈(F)”，正在交谈`
+          `第 ${restart + 1} 轮第 ${attempt}/6 次寻路后识别到“德克斯特”和“交谈”，正在交谈`
         );
         return true;
       }
@@ -181,13 +230,24 @@ async function navigateToDexter(context, signal, sleep) {
         await context.report(
           "info",
           "trading_city_dexter_found",
-          `第 ${restart + 1} 轮第 ${attempt}/6 次寻路后通过高精度识别到“德克斯特”和“交谈(F)”，正在交谈`
+          `第 ${restart + 1} 轮第 ${attempt}/6 次寻路后通过高精度识别到“德克斯特”和“交谈”，正在交谈`
         );
         return true;
       }
     }
   }
   return false;
+}
+
+async function holdTradingCityPathKey(adb, signal) {
+  // Match the verified patrol/kill-alert approach: send W once, then hold it
+  // through Android's keyboard input device for several hundred milliseconds.
+  // `input keyevent --longpress` does not produce movement in this game.
+  await adb.key("KEYCODE_W", signal);
+  if (typeof adb.holdKey !== "function") {
+    throw new Error("TRADING_CITY_W_HOLD_UNAVAILABLE: 当前 ADB 不支持按住 W 寻路");
+  }
+  await adb.holdKey("KEYCODE_W", PATHFINDING_W_HOLD_MS, signal);
 }
 
 export function countTradingCityKeywordGroups(vision, observations, groups, region) {

@@ -182,6 +182,46 @@ test("safe count templates translate without translating OCR fields", () => {
 test("Trading City task events and weekday names follow the Agent locale", () => {
   assert.equal(
     localizeTaskEvent(
+      "trading_city_data_center_first_seen",
+      "首次识别到营地数据中心，按住 W 700 毫秒寻路，不按 F 打开数据中心面板",
+      "en"
+    ),
+    "First Camp Data Center detection: hold W for 700 ms to pathfind without opening the panel"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "trading_city_data_center_second_seen",
+      "再次识别到营地数据中心，切换视角后继续寻路",
+      "ja"
+    ),
+    "キャンプデータセンターを再認識しました。視点を切り替えてから移動を続けます"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "trading_city_w_pathfinding",
+      "第 2 轮第 3/6 次寻路：按住 W 700 毫秒后识别德克斯特",
+      "fr"
+    ),
+    "Trajet 2, essai 3/6 : maintenir W pendant 700 ms, puis chercher Dexter"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "trading_city_dexter_found",
+      "第 1 轮第 1/6 次寻路后识别到“德克斯特”和“交谈”，正在交谈",
+      "en"
+    ),
+    "Recognized Dexter and Talk (F) on route 1, attempt 1/6; starting the conversation"
+  );
+  assert.equal(
+    localizeTaskEvent(
+      "trading_city_verify_application",
+      "TRADING_CITY_APPLICATION_UNRECOGNIZED: 竞标申请表关键词仅识别到 3/12 个",
+      "en"
+    ),
+    "TRADING_CITY_APPLICATION_UNRECOGNIZED: Recognized only 3 of 12 application-form keywords"
+  );
+  assert.equal(
+    localizeTaskEvent(
       "trading_city_route_restart",
       "第 2/3 次寻路重启：已连续六次未找到德克斯特，先传送回市中心出入口，再重新前往市政厅",
       "en"

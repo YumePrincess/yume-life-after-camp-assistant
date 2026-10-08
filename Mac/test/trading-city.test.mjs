@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   clickTradingCityWeekday,
+  prepareTradingCityApplication,
   runTradingCityApply,
+  selectTradingCityWeekday,
   TRADING_CITY_APPLICATION_CONFIRM_POSITION,
   TRADING_CITY_WEEKDAY_POSITIONS
 } from "../src/workflows/trading-city.mjs";
@@ -44,41 +46,83 @@ test("a failed six-step Dexter route returns to the central exit before restarti
   );
 
   assert.equal(context.flows.filter((name) => name === "teleportCityHall").length, 4);
-  assert.equal(context.flows.filter((name) => name === "navigateToSandTable").length, 4);
+  assert.equal(context.flows.filter((name) => name === "navigateToSandTable").length, 0);
   assert.equal(context.flows.filter((name) => name === "teleportCentralExit").length, 3);
   assert.deepEqual(context.flows.slice(0, 5), [
     "teleportCityHall",
-    "navigateToSandTable",
     "teleportCentralExit",
     "teleportCityHall",
-    "navigateToSandTable"
+    "teleportCentralExit",
+    "teleportCityHall"
   ]);
   assert.equal(context.keys.filter((code) => code === "KEYCODE_W").length, 28);
+  assert.equal(context.holds.length, 28);
+  assert.deepEqual(
+    context.holds,
+    Array.from({ length: 28 }, () => ({ code: "KEYCODE_W", durationMs: 700 }))
+  );
+  assert.equal(
+    context.keyCalls.some(({ code, options }) => code === "KEYCODE_W" && options?.longPress),
+    false
+  );
+  assert.equal(context.keyCalls.some(({ code }) => code === "KEYCODE_ESCAPE"), false);
+  assert.equal(context.keyCalls.some(({ code }) => code === "KEYCODE_F"), false);
 });
 
-test("the workflow moves, turns the camera with the requested swipe, talks to Dexter, and submits the selected weekday", async () => {
+test("the workflow waits three seconds after each W press, recognizes Dexter and talk, then submits the selected weekday", async () => {
   for (let targetWeekday = 1; targetWeekday <= 7; targetWeekday += 1) {
     const context = createContext({ findDexterOnAttempt: () => true });
     await runTradingCityApply(context, commandFor(targetWeekday), {}, undefined);
 
-    assert.deepEqual(context.flows.slice(0, 2), ["teleportCityHall", "navigateToSandTable"]);
-    assert.equal(context.keys[0], "KEYCODE_ESCAPE");
-    assert.equal(context.keys[1], "KEYCODE_W");
+    assert.equal(context.flows[0], "teleportCityHall");
     assert.deepEqual(context.shellCalls, [["input", "swipe", "500", "500", "1000", "500", "800"]]);
     assert.ok(context.keys.includes("KEYCODE_F"));
+    const dataCenterWaits = context.events.filter(([type]) => type === "waitAnyText");
+    assert.equal(dataCenterWaits.length, 2);
+    const firstHoldIndex = context.events.findIndex(([type]) => type === "holdKey");
+    assert.deepEqual(context.events.slice(firstHoldIndex - 1, firstHoldIndex + 2), [
+      ["key", "KEYCODE_W"],
+      ["holdKey", "KEYCODE_W", 700],
+      ["sleep", 3_000]
+    ]);
+    const cameraSwipeIndex = context.events.findIndex(([type]) => type === "camera-swipe");
+    assert.ok(cameraSwipeIndex > context.events.findIndex(([type]) => type === "data-center-second-seen"));
+    assert.ok(context.events.findIndex(([type, code]) => type === "key" && code === "KEYCODE_F") > cameraSwipeIndex);
+    assert.equal(context.keyCalls.some(({ code }) => code === "KEYCODE_ESCAPE"), false);
+    assert.deepEqual(
+      context.holds,
+      Array.from({ length: 2 }, () => ({ code: "KEYCODE_W", durationMs: 700 }))
+    );
+    const dexterCaptures = context.events
+      .map((event, index) => ({ event, index }))
+      .filter(({ event }) => event[0] === "capture" && event[1].startsWith("trading-city-dexter-"));
+    assert.equal(dexterCaptures.length, 1);
+    assert.deepEqual(context.events[dexterCaptures[0].index - 1], ["sleep", 3_000]);
     assert.deepEqual(context.taps, [
       TRADING_CITY_WEEKDAY_POSITIONS[targetWeekday],
       TRADING_CITY_APPLICATION_CONFIRM_POSITION
     ]);
-    const weekdayTapIndex = context.events.findIndex(
-      ([type, point]) => type === "tap" && point === TRADING_CITY_WEEKDAY_POSITIONS[targetWeekday]
-    );
-    assert.deepEqual(context.events.slice(weekdayTapIndex, weekdayTapIndex + 3), [
+    assert.deepEqual(context.events
+      .filter(([type]) => ["tap", "sleep"].includes(type))
+      .slice(-3), [
       ["tap", TRADING_CITY_WEEKDAY_POSITIONS[targetWeekday]],
       ["sleep", 2_000],
       ["tap", TRADING_CITY_APPLICATION_CONFIRM_POSITION]
     ]);
   }
+});
+
+test("the diagnostic can select Monday and stop without submitting the form", async () => {
+  const context = createContext({ findDexterOnAttempt: () => true });
+  await prepareTradingCityApplication(context, undefined, context.sleep);
+  await selectTradingCityWeekday(context, 1, undefined, context.sleep);
+
+  assert.deepEqual(context.taps, [TRADING_CITY_WEEKDAY_POSITIONS[1]]);
+  assert.equal(context.submitted, false);
+  assert.deepEqual(context.events.filter(([type]) => ["tap", "sleep"].includes(type)).slice(-2), [
+    ["tap", TRADING_CITY_WEEKDAY_POSITIONS[1]],
+    ["sleep", 2_000]
+  ]);
 });
 
 function commandFor(targetWeekday) {
@@ -94,15 +138,24 @@ function createContext({ findDexterOnAttempt }) {
     config: { adb: { screenWidth: 1920, screenHeight: 1200 } },
     flows: [],
     keys: [],
+    keyCalls: [],
+    holds: [],
     events: [],
     shellCalls: [],
     taps: [],
     submitted: false,
     dexterAttempts: 0,
     async sleep(ms) { context.events.push(["sleep", ms]); },
-    async report() {},
+    async report(_level, step) { context.events.push(["report", step]); },
     ui: {
       async executeFlow(name) { context.flows.push(name); },
+      async waitAnyText(texts) {
+        context.events.push(["waitAnyText", texts]);
+        if (context.events.filter(([type]) => type === "waitAnyText").length === 2) {
+          context.events.push(["data-center-second-seen"]);
+        }
+        return { text: "营地数据中心" };
+      },
       async clickText() {},
       async tap(point) {
         context.taps.push(point);
@@ -113,19 +166,31 @@ function createContext({ findDexterOnAttempt }) {
       }
     },
     adb: {
-      async key(code) { context.keys.push(code); },
-      async shell(args) { context.shellCalls.push(args); }
+      async key(code, _signal, options) {
+        context.keys.push(code);
+        context.keyCalls.push({ code, options });
+        context.events.push(["key", code]);
+      },
+      async holdKey(code, durationMs) {
+        context.holds.push({ code, durationMs });
+        context.events.push(["holdKey", code, durationMs]);
+      },
+      async shell(args) {
+        context.shellCalls.push(args);
+        context.events.push(["camera-swipe", args]);
+      }
     },
     vision: {
       find(observations, text) {
         return observations.find((item) => item.text.includes(text)) || null;
       },
       async capture(label) {
+        context.events.push(["capture", label]);
         if (label.startsWith("trading-city-dexter-")) {
           context.dexterAttempts += 1;
           return {
             observations: findDexterOnAttempt(context.dexterAttempts)
-              ? [observation("德克斯特"), observation("交谈(F)")]
+              ? [observation("德克斯特"), observation("交谈（F）")]
               : []
           };
         }

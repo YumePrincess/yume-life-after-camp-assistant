@@ -1,6 +1,18 @@
 const LOCALES = new Set(["zh-cn", "zh-tw", "en", "fr", "ja"]);
 
 const FIXED_TRANSLATIONS = {
+  "首次识别到营地数据中心，按住 W 700 毫秒寻路，不按 F 打开数据中心面板": {
+    "zh-tw": "首次識別到營地資料中心，按住 W 700 毫秒尋路，不按 F 開啟資料中心面板",
+    en: "First Camp Data Center detection: hold W for 700 ms to pathfind without opening the panel",
+    fr: "Première détection du centre de données : maintenir W pendant 700 ms pour avancer sans ouvrir le panneau",
+    ja: "キャンプデータセンターを初めて認識しました。Fでパネルを開かず、Wを700ミリ秒押し続けて移動します"
+  },
+  "再次识别到营地数据中心，切换视角后继续寻路": {
+    "zh-tw": "再次識別到營地資料中心，切換視角後繼續尋路",
+    en: "Camp Data Center detected again: turn the camera, then continue pathfinding",
+    fr: "Deuxième détection du centre de données : tourner la caméra, puis continuer le trajet",
+    ja: "キャンプデータセンターを再認識しました。視点を切り替えてから移動を続けます"
+  },
   "任务已由管理员中断": {
     "zh-tw": "任務已由管理員中斷",
     en: "The task was interrupted by an administrator",
@@ -269,12 +281,12 @@ const PATTERN_TRANSLATIONS = [
     }
   },
   {
-    test: /^TRADING_CITY_APPLICATION_UNRECOGNIZED: 竞标申请表关键词仅识别到 (\d+)\/10 个$/,
+    test: /^TRADING_CITY_APPLICATION_UNRECOGNIZED: 竞标申请表关键词仅识别到 (\d+)\/12 个$/,
     values: {
-      "zh-tw": "TRADING_CITY_APPLICATION_UNRECOGNIZED：競標申請表關鍵字僅識別到 $1/10 個",
-      en: "TRADING_CITY_APPLICATION_UNRECOGNIZED: Recognized only $1 of 10 application-form keywords",
-      fr: "TRADING_CITY_APPLICATION_UNRECOGNIZED : seulement $1 des 10 mots-clés du formulaire reconnus",
-      ja: "TRADING_CITY_APPLICATION_UNRECOGNIZED：申請フォームのキーワードを10個中$1個だけ認識しました"
+      "zh-tw": "TRADING_CITY_APPLICATION_UNRECOGNIZED：競標申請表關鍵字僅識別到 $1/12 個",
+      en: "TRADING_CITY_APPLICATION_UNRECOGNIZED: Recognized only $1 of 12 application-form keywords",
+      fr: "TRADING_CITY_APPLICATION_UNRECOGNIZED : seulement $1 des 12 mots-clés du formulaire reconnus",
+      ja: "TRADING_CITY_APPLICATION_UNRECOGNIZED：申請フォームのキーワードを12個中$1個だけ認識しました"
     }
   },
   {
@@ -287,7 +299,7 @@ const PATTERN_TRANSLATIONS = [
     }
   },
   {
-    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路后识别到“德克斯特”和“交谈\(F\)”，正在交谈$/,
+    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路后识别到“德克斯特”和“交谈”，正在交谈$/,
     values: {
       "zh-tw": "第 $1 輪第 $2/6 次尋路後識別到「德克斯特」和「交談(F)」，正在交談",
       en: "Recognized Dexter and Talk (F) on route $1, attempt $2/6; starting the conversation",
@@ -296,12 +308,21 @@ const PATTERN_TRANSLATIONS = [
     }
   },
   {
-    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路后通过高精度识别到“德克斯特”和“交谈\(F\)”，正在交谈$/,
+    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路后通过高精度识别到“德克斯特”和“交谈”，正在交谈$/,
     values: {
       "zh-tw": "第 $1 輪第 $2/6 次尋路後透過高精度識別到「德克斯特」和「交談(F)」，正在交談",
       en: "Accurately recognized Dexter and Talk (F) on route $1, attempt $2/6; starting the conversation",
       fr: "Dexter et l’option Parler (F) reconnus avec précision au trajet $1, essai $2/6 ; démarrage du dialogue",
       ja: "$1周目の経路探索$2/6回目で高精度認識によりデクスターと「会話(F)」を確認しました。会話を開始します。"
+    }
+  },
+  {
+    test: /^第 (\d+) 轮第 (\d+)\/6 次寻路：按住 W (\d+) 毫秒后识别德克斯特$/,
+    values: {
+      "zh-tw": "第 $1 輪第 $2/6 次尋路：按住 W $3 毫秒後識別德克斯特",
+      en: "Route $1, pathfind attempt $2/6: hold W for $3 ms, then look for Dexter",
+      fr: "Trajet $1, essai $2/6 : maintenir W pendant $3 ms, puis chercher Dexter",
+      ja: "$1周目の経路探索$2/6回目：Wを$3ミリ秒押し続けてからデクスターを探します"
     }
   },
   {

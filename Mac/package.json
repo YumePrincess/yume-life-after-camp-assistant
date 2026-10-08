@@ -12,6 +12,7 @@
     "test": "node --test",
     "doctor": "node src/doctor.mjs",
     "test:cityhall": "node scripts/cityhall-diagnostic.mjs",
+    "test:trading-city-current": "node scripts/trading-city-current-diagnostic.mjs",
     "test:cityhall-close-current": "node scripts/cityhall-close-current-diagnostic.mjs",
     "test:map-current": "node scripts/map-current-diagnostic.mjs",
     "test:contribution": "node scripts/contribution-diagnostic.mjs",
