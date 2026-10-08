@@ -86,6 +86,7 @@
     accessAllowed: false,
     activeEventRunId: null,
     eventRefreshInFlight: false,
+    eventRefreshQueued: false,
     eventSignature: "",
     eventEntries: [],
     eventLastId: null,
@@ -3963,15 +3964,21 @@
         Array.isArray(message.scopes) &&
         message.scopes.includes("admin")
       ) {
-        if (
-          message.reason === "agent-log-stream" &&
+        const refreshingRunEvents = Boolean(
           state.activeEventRunId &&
+          byId("run-dialog").open &&
           !document.hidden
-        ) {
+        );
+        if (refreshingRunEvents) {
+          // Run updates can be published by either the Agent log stream or
+          // the HTTP fallback. Refresh the open timeline for both sources.
           void refreshRunEvents(state.activeEventRunId);
-        } else if (document.hidden) {
+        }
+        if (document.hidden) {
           state.liveDirty = true;
-        } else {
+        } else if (!refreshingRunEvents || message.reason !== "agent-log-stream") {
+          // The open event timeline was refreshed above. Avoid an unrelated
+          // bootstrap round trip for every log batch.
           void refresh(false);
           refreshOpenAdminViews();
         }
@@ -4047,7 +4054,10 @@
             task: taskName(taskKey)
           });
       if (feedback) feedback.textContent = "";
-      await refresh(false);
+      // Once the server accepts the run, close any task-specific picker
+      // immediately. Bootstrap refresh is best-effort UI synchronization and
+      // must not make the user wait with the modal still open.
+      void refresh(false);
       return true;
     } catch (error) {
       if (feedback) feedback.textContent = error.message;
@@ -4092,13 +4102,15 @@
   }
 
   async function refreshRunEvents(runId) {
-    if (
-      state.activeEventRunId !== runId ||
-      state.eventRefreshInFlight
-    ) {
+    if (state.activeEventRunId !== runId) return;
+    if (state.eventRefreshInFlight) {
+      // Live updates can arrive while the event request is in flight. Keep a
+      // trailing refresh so the latest Worker log batch is never dropped.
+      state.eventRefreshQueued = true;
       return;
     }
     state.eventRefreshInFlight = true;
+    state.eventRefreshQueued = false;
     const root = byId("run-events");
     const requestedLocale = window.MrzhI18n.language();
     const localeRevision = state.eventLocaleRevision;
@@ -4122,9 +4134,9 @@
         requestedLocale !== window.MrzhI18n.language()
       ) {
         // A language switch happened while the previous request was in
-        // flight. Discard that response and issue a fresh full-timeline load
-        // after the in-flight guard is released.
-        window.setTimeout(() => refreshRunEvents(runId), 0);
+        // flight. Discard that response and reload after the in-flight guard
+        // is released.
+        state.eventRefreshQueued = true;
         return;
       }
       if (initialLoad) {
@@ -4170,11 +4182,19 @@
       }
     } finally {
       state.eventRefreshInFlight = false;
+      if (state.eventRefreshQueued) {
+        state.eventRefreshQueued = false;
+        const pendingRunId = state.activeEventRunId;
+        if (pendingRunId && byId("run-dialog").open) {
+          window.setTimeout(() => void refreshRunEvents(pendingRunId), 0);
+        }
+      }
     }
   }
 
   function stopEventRefresh() {
     state.activeEventRunId = null;
+    state.eventRefreshQueued = false;
     state.eventSignature = "";
     state.eventEntries = [];
     state.eventLastId = null;
@@ -5832,6 +5852,9 @@
       state.liveDirty = true;
       flushLiveRefresh();
       connectLiveUpdates();
+      if (state.activeEventRunId && byId("run-dialog").open) {
+        void refreshRunEvents(state.activeEventRunId);
+      }
     }
   });
   initializeUtcTimezoneOptions();

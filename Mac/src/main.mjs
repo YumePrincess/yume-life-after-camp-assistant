@@ -304,15 +304,19 @@ async function consumeCommand(command, source) {
   receivingCommands.set(command.id, command);
   try {
     if (command.type === "interrupt_task") {
-      if (!await acknowledgeReceivedCommand(command, source)) return;
       const target = command.payload?.runId;
       if (active && active.command.runId === target) {
+        // Signal the local task before waiting for the control-plane lease
+        // acknowledgement. That round trip can take seconds; cleanup must
+        // begin as soon as the authenticated interrupt delivery arrives.
         active.controller.abort(new Error("管理员请求中断"));
+        if (!await acknowledgeReceivedCommand(command, source)) return;
         // This only acknowledges delivery of the interrupt signal. The run
         // stays `cancelling` until its workflow and game-session cleanup have
         // completed and the run_task command reports its final state.
         await api.completeCommand(command, "completed", "已向运行任务发送中断信号");
       } else {
+        if (!await acknowledgeReceivedCommand(command, source)) return;
         await api.completeCommand(command, "cancelled", "目标任务当前未在本 Agent 运行");
       }
       sendAgentPresence();

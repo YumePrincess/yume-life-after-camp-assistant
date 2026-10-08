@@ -2464,18 +2464,17 @@ export async function completeCommand(
     : null;
   const completedRun = command?.run_id ? await getRun(env, command.run_id) : null;
   const now = isoNow();
-  const cancellationRequested = completedRun?.cancel_requested === 1;
+  const ownsRunLifecycle = command?.type === "run_task";
+  const cancellationRequested = ownsRunLifecycle && completedRun?.cancel_requested === 1;
   const terminalRunState =
-    command?.type === "interrupt_task" ||
-    input.state === "cancelled" ||
+    (ownsRunLifecycle && input.state === "cancelled") ||
     cancellationRequested
       ? "interrupted"
       : input.state === "completed"
         ? "succeeded"
         : "failed";
   const terminalRunMessage =
-    command?.type === "interrupt_task" ||
-    input.state === "cancelled" ||
+    (ownsRunLifecycle && input.state === "cancelled") ||
     cancellationRequested
       ? command?.type === "run_task" && input.state === "cancelled"
         ? input.message
@@ -2487,6 +2486,8 @@ export async function completeCommand(
          state = ?, message = ?, finished_at = ?, lease_expires_at = NULL
        WHERE id = ? AND state = 'claimed' AND lease_token = ?`
     ).bind(input.state, input.message, now, input.commandId, input.leaseToken),
+    // An interrupt command only acknowledges delivery. The run_task command
+    // owns the final state after Agent cleanup has completed.
     env.DB.prepare(
       `UPDATE task_runs SET
          state = ?,
@@ -2499,10 +2500,7 @@ export async function completeCommand(
          FROM command_queue
          WHERE id = ?
            AND lease_token = ?
-           AND (
-             type = 'run_task'
-             OR (type = 'interrupt_task' AND ? = 'cancelled')
-           )
+           AND type = 'run_task'
            AND state = ?
        )
          AND state IN ('queued', 'claimed', 'running', 'cancelling')`
@@ -2513,7 +2511,6 @@ export async function completeCommand(
       now,
       input.commandId,
       input.leaseToken,
-      input.state,
       input.state
     )
   ]);

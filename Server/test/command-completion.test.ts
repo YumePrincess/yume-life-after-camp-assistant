@@ -186,7 +186,7 @@ describe("completeCommand", () => {
     ).resolves.toBe(true);
     const runUpdate = statements.find(({ sql }) => sql.includes("UPDATE task_runs"));
     expect(runUpdate?.sql).toContain("type = 'run_task'");
-    expect(runUpdate?.sql).toContain("type = 'interrupt_task' AND ? = 'cancelled'");
+    expect(runUpdate?.sql).not.toContain("type = 'interrupt_task'");
     expect(runUpdate?.values).toContain("completed");
   });
 

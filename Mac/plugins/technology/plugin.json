@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.technology",
   "version": "27.1.0",
-  "build": 27134,
+  "build": 27135,
   "kind": "task",
   "architectures": [
     "arm64"
