@@ -199,10 +199,10 @@ test("Trading City task events and weekday names follow the Agent locale", () =>
   assert.equal(
     localizeTaskEvent(
       "trading_city_w_pathfinding",
-      "第 2 轮第 2/2 次寻路：按住 W 580 毫秒后识别德克斯特",
+      "第 2 轮第 2/2 次寻路：按住 W 450 毫秒后识别德克斯特",
       "fr"
     ),
-    "Trajet 2, essai 2/2 : maintenir W pendant 580 ms, puis chercher Dexter"
+    "Trajet 2, essai 2/2 : maintenir W pendant 450 ms, puis chercher Dexter"
   );
   assert.equal(
     localizeTaskEvent(

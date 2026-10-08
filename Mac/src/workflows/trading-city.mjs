@@ -48,7 +48,7 @@ const WEEKDAY_NAMES = ["", "周一", "周二", "周三", "周四", "周五", "�
 const MAX_DEXTER_ROUTE_RESTARTS = 6;
 const DEXTER_PATHFINDING_ATTEMPTS = 2;
 const DATA_CENTER_APPROACH_W_HOLD_MS = 700;
-const PATHFINDING_W_HOLD_MS = 580;
+const PATHFINDING_W_HOLD_MS = 450;
 
 export async function runTradingCityApply(context, command, _bundle, signal) {
   const sleep = context.sleep || delay;

@@ -62,8 +62,8 @@ test("a failed two-attempt Dexter route returns to the central exit before up to
     context.holds,
     Array.from({ length: 7 }, () => [
       { code: "KEYCODE_W", durationMs: 700 },
-      { code: "KEYCODE_W", durationMs: 580 },
-      { code: "KEYCODE_W", durationMs: 580 }
+      { code: "KEYCODE_W", durationMs: 450 },
+      { code: "KEYCODE_W", durationMs: 450 }
     ]).flat()
   );
   const restarts = context.reports.filter(({ step }) => step === "trading_city_route_restart");
@@ -107,12 +107,12 @@ test("the workflow waits three seconds after each W press, recognizes Dexter and
       context.holds,
       [
         { code: "KEYCODE_W", durationMs: 700 },
-        { code: "KEYCODE_W", durationMs: 580 }
+        { code: "KEYCODE_W", durationMs: 450 }
       ]
     );
     assert.equal(
       context.reports.find(({ step }) => step === "trading_city_w_pathfinding").message,
-      "第 1 轮第 1/2 次寻路：按住 W 580 毫秒后识别德克斯特"
+      "第 1 轮第 1/2 次寻路：按住 W 450 毫秒后识别德克斯特"
     );
     const dexterCaptures = context.events
       .map((event, index) => ({ event, index }))
