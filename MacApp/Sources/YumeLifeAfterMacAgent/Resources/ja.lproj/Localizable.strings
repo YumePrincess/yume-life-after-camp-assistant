@@ -234,3 +234,16 @@
 "Execution mode scheduled_window" = "定期ウィンドウ内";
 "Execution mode retry" = "リトライ";
 "Execution mode unknown" = "不明";
+"Task results" = "タスク結果";
+"Agent data" = "Agent データ";
+"Review or edit the member data uploaded by each task." = "各タスクが読み取り、アップロードしたメンバーデータを確認・編集します。";
+"Open in another editor" = "別のエディタで開く";
+"Save" = "保存";
+"Refresh" = "更新";
+"No task result documents yet." = "タスク結果ドキュメントはありません。";
+"Results appear after a member data task finishes." = "メンバーデータタスクの終了後に結果が表示されます。";
+"Unsaved changes" = "未保存の変更";
+"Saved" = "保存済み";
+"Task result saved" = "タスク結果を保存しました";
+"The task result file name is invalid." = "タスク結果ファイル名が無効です。";
+"Save or discard changes before reloading or selecting another document." = "ドキュメントを再読み込みまたは選択する前に、変更を保存または破棄してください。";

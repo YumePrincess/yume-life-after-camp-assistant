@@ -58,6 +58,10 @@ actor RuntimeService {
         applicationSupport.appending(path: "debug", directoryHint: .isDirectory)
     }
 
+    var taskResultsDirectory: URL {
+        applicationSupport.appending(path: "task-results", directoryHint: .isDirectory)
+    }
+
     var modelsDirectory: URL {
         applicationSupport.appending(path: "Models", directoryHint: .isDirectory)
     }
@@ -1331,7 +1335,56 @@ actor RuntimeService {
         }
         // A Debug image is evidence for a log entry. Clearing the complete
         // local log history must not leave unreferenced task evidence behind.
-        try? fileManager.removeItem(at: debugDirectory)
+        for directory in [debugDirectory, taskResultsDirectory]
+        where fileManager.fileExists(atPath: directory.path) {
+            try fileManager.removeItem(at: directory)
+        }
+    }
+
+    func taskResultDocuments() -> [TaskResultDocument] {
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: taskResultsDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        return files
+            .filter { $0.pathExtension.lowercased() == "md" }
+            .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+            .map { url in
+                let modifiedAt = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? .distantPast
+                return TaskResultDocument(
+                    id: url.lastPathComponent,
+                    fileName: url.lastPathComponent,
+                    modifiedAt: modifiedAt,
+                    url: url
+                )
+            }
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+    }
+
+    func readTaskResult(fileName: String) throws -> String {
+        let file = try taskResultFile(fileName)
+        return try String(contentsOf: file, encoding: .utf8)
+    }
+
+    func writeTaskResult(fileName: String, contents: String) throws {
+        let file = try taskResultFile(fileName)
+        try fileManager.createDirectory(at: taskResultsDirectory, withIntermediateDirectories: true)
+        try Data(contents.utf8).write(to: file, options: .atomic)
+        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+    }
+
+    private func taskResultFile(_ fileName: String) throws -> URL {
+        guard fileName.range(of: "^[A-Za-z0-9._-]+\\.md$", options: .regularExpression) != nil else {
+            throw RuntimeError.failed(String(localized: "The task result file name is invalid."))
+        }
+        let root = taskResultsDirectory.standardizedFileURL
+        let file = root.appending(path: fileName, directoryHint: .notDirectory).standardizedFileURL
+        guard file.path.hasPrefix(root.path + "/") else {
+            throw RuntimeError.failed(String(localized: "The task result file name is invalid."))
+        }
+        return file
     }
 
     func debugCaptureEnabled() -> Bool {

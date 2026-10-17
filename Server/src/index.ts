@@ -19,6 +19,7 @@ import {
   updateTemporaryKeyPermissions
 } from "./auth";
 import {
+  applyMemberProfileCorrection,
   activateAgentIdentity,
   appendRunEvent,
   clearFinishedRunHistory,
@@ -66,6 +67,7 @@ import {
   fixedTechnologyKeysForDate,
   normalizeBallotSelections
 } from "./tech";
+import { parseMemberTaskResultDocument } from "./member-task-result";
 import {
   isTaskKey,
   type ConfigBundle,
@@ -1639,6 +1641,114 @@ async function handleAdminApi(
   method: string,
   session: SessionRow
 ): Promise<Response> {
+  const memberCorrectionMatch = /^\/api\/admin\/members\/bulk-correction\/(validate|apply)$/.exec(path);
+  if (memberCorrectionMatch && method === "POST") {
+    try {
+      const body = await readJsonObject(request, 1_000_000);
+      const parsed = parseMemberTaskResultDocument(body.document);
+      if (memberCorrectionMatch[1] === "validate") {
+        return json({
+          ok: true,
+          taskKey: parsed.taskKey,
+          taskTitle: parsed.taskTitle,
+          runId: parsed.runId,
+          capturedAt: parsed.capturedAt,
+          memberCount: parsed.memberCount,
+          staffCount: parsed.staffCount
+        });
+      }
+      const requiredPlugin = {
+        contribution_sync: "contribution",
+        inactivity_sync: "inactivity",
+        member_profile_sync: "member-profile",
+        weekly_activity_sync: "weekly-activity"
+      }[parsed.taskKey];
+      if (requiredPlugin && !(await isWorkerPluginEnabled(env, requiredPlugin))) {
+        return problem("该任务对应的 Workers 插件未启用，未应用任何校正", 409, "plugin_disabled");
+      }
+
+      let updated = 0;
+      let ignored = 0;
+      let ambiguous = 0;
+      switch (parsed.taskKey) {
+        case "contribution_sync": {
+          const members = sanitizeContribution(parsed.payload);
+          const result = await updateContributionSnapshot(env, {
+            runId: parsed.runId,
+            capturedAt: parsed.capturedAt,
+            members
+          });
+          if (members.length > 0 && result.updates.length === 0) {
+            throw new Error("没有贡献数据与当前成员名单匹配，未应用任何校正");
+          }
+          updated = result.updates.length;
+          ignored = result.ignored;
+          ambiguous = result.ambiguous;
+          break;
+        }
+        case "inactivity_sync": {
+          const members = sanitizeActivity(parsed.payload);
+          const result = await updateActivitySnapshot(env, {
+            runId: parsed.runId,
+            capturedAt: parsed.capturedAt,
+            members
+          });
+          if (members.length > 0 && result.updates.length === 0) {
+            throw new Error("没有斩杀预警数据与当前成员名单匹配，未应用任何校正");
+          }
+          updated = result.updates.length;
+          ignored = result.ignored;
+          ambiguous = result.ambiguous;
+          break;
+        }
+        case "weekly_activity_sync": {
+          const members = sanitizeWeeklyActivity(parsed.payload);
+          const result = await updateWeeklyActivitySnapshot(env, {
+            runId: parsed.runId,
+            capturedAt: parsed.capturedAt,
+            members
+          });
+          if (members.length > 0 && result.updates.length === 0) {
+            throw new Error("没有周活跃点数据与当前成员名单匹配，未应用任何校正");
+          }
+          updated = result.updates.length;
+          ignored = result.ignored;
+          ambiguous = result.ambiguous;
+          break;
+        }
+        case "member_profile_sync": {
+          const payload = parsed.payload as Record<string, unknown>;
+          const members = sanitizeProfiles(payload.members);
+          const staff = sanitizeStaff(payload.staff);
+          const memberSummary = sanitizeMemberScanSummary(payload.memberSummary);
+          if (memberSummary.recognizedCount !== members.length) {
+            throw new Error("成员人数摘要与成员资料行数不一致");
+          }
+          const result = await applyMemberProfileCorrection(env, {
+            runId: parsed.runId,
+            capturedAt: parsed.capturedAt,
+            members,
+            staff
+          });
+          updated = result.profileCount + result.staffCount;
+          ignored = result.ignored;
+          ambiguous = result.ambiguous;
+          break;
+        }
+      }
+      return json({
+        ok: true,
+        taskKey: parsed.taskKey,
+        taskTitle: parsed.taskTitle,
+        received: parsed.memberCount + parsed.staffCount,
+        updated,
+        ignored,
+        ambiguous
+      });
+    } catch (error) {
+      return problem(errorMessage(error), 400, "member_task_result_invalid");
+    }
+  }
   const pluginResponse = await dispatchWorkerPluginRequest({
     request, env, path, method, scope: "admin"
   });

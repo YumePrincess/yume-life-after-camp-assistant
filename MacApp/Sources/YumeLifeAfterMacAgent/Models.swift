@@ -1,11 +1,12 @@
 import Foundation
 
 enum SidebarSection: String, CaseIterable, Identifiable {
-    case admin, logs, plugins, settings
+    case admin, logs, taskResults, plugins, settings
     var id: String { rawValue }
     var titleKey: String {
         switch self {
         case .logs: "Logs"
+        case .taskResults: "Task results"
         case .plugins: "Plugins"
         case .admin: "Camp admin"
         case .settings: "Settings"
@@ -14,6 +15,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .logs: "text.alignleft"
+        case .taskResults: "doc.text.magnifyingglass"
         case .plugins: "puzzlepiece.extension"
         case .admin: "building.columns"
         case .settings: "gearshape"
@@ -47,6 +49,13 @@ struct TaskDebugImage: Identifiable, Sendable {
     let id: String
     let sequence: Int
     let label: String
+    let url: URL
+}
+
+struct TaskResultDocument: Identifiable, Sendable {
+    let id: String
+    let fileName: String
+    let modifiedAt: Date
     let url: URL
 }
 

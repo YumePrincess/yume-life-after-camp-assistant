@@ -243,3 +243,16 @@
 "Execution mode scheduled_window" = "定时窗口内";
 "Execution mode retry" = "重试";
 "Execution mode unknown" = "未知";
+"Task results" = "任务结果";
+"Agent data" = "Agent 数据";
+"Review or edit the member data uploaded by each task." = "查看或编辑各任务读取并上传的成员数据。";
+"Open in another editor" = "在其他编辑器中打开";
+"Save" = "保存";
+"Refresh" = "刷新";
+"No task result documents yet." = "暂无任务结果文档。";
+"Results appear after a member data task finishes." = "成员数据任务结束后，结果文档会显示在这里。";
+"Unsaved changes" = "有未保存的修改";
+"Saved" = "已保存";
+"Task result saved" = "任务结果已保存";
+"The task result file name is invalid." = "任务结果文件名无效。";
+"Save or discard changes before reloading or selecting another document." = "请先保存或放弃当前修改，再重新载入或选择其他文档。";

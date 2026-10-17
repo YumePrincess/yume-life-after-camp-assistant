@@ -234,3 +234,16 @@
 "Execution mode scheduled_window" = "定時視窗內";
 "Execution mode retry" = "重試";
 "Execution mode unknown" = "未知";
+"Task results" = "任務結果";
+"Agent data" = "Agent 資料";
+"Review or edit the member data uploaded by each task." = "檢視或編輯各任務讀取並上傳的成員資料。";
+"Open in another editor" = "在其他編輯器中開啟";
+"Save" = "儲存";
+"Refresh" = "重新整理";
+"No task result documents yet." = "目前沒有任務結果文件。";
+"Results appear after a member data task finishes." = "成員資料任務完成後，結果文件會顯示在這裡。";
+"Unsaved changes" = "有尚未儲存的變更";
+"Saved" = "已儲存";
+"Task result saved" = "任務結果已儲存";
+"The task result file name is invalid." = "任務結果檔名無效。";
+"Save or discard changes before reloading or selecting another document." = "請先儲存或捨棄目前的變更，再重新載入或選擇其他文件。";

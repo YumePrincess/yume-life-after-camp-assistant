@@ -243,3 +243,16 @@
 "Execution mode scheduled_window" = "Scheduled window";
 "Execution mode retry" = "Retry";
 "Execution mode unknown" = "Unknown";
+"Task results" = "Task results";
+"Agent data" = "Agent data";
+"Review or edit the member data uploaded by each task." = "Review or edit the member data uploaded by each task.";
+"Open in another editor" = "Open in another editor";
+"Save" = "Save";
+"Refresh" = "Refresh";
+"No task result documents yet." = "No task result documents yet.";
+"Results appear after a member data task finishes." = "Results appear after a member data task finishes.";
+"Unsaved changes" = "Unsaved changes";
+"Saved" = "Saved";
+"Task result saved" = "Task result saved";
+"The task result file name is invalid." = "The task result file name is invalid.";
+"Save or discard changes before reloading or selecting another document." = "Save or discard changes before reloading or selecting another document.";

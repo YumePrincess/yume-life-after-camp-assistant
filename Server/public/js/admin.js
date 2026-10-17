@@ -45,6 +45,9 @@
     refreshing: false,
     saving: false,
     memberEditSaving: false,
+    memberCorrectionBusy: false,
+    memberCorrectionValidatedDocument: "",
+    memberCorrectionValidation: null,
     liveSocket: null,
     liveReconnectTimer: null,
     liveReconnectAttempt: 0,
@@ -3582,6 +3585,21 @@
     for (const control of byId("member-edit-form")?.querySelectorAll("input, button") || []) {
       control.disabled = !canManageMembers || state.memberEditSaving;
     }
+    const correctionOpen = byId("member-bulk-correction-open");
+    if (correctionOpen) {
+      correctionOpen.hidden = !canManageMembers;
+      correctionOpen.disabled = !canManageMembers || state.memberCorrectionBusy;
+    }
+    const correctionForm = byId("member-bulk-correction-form");
+    for (const control of correctionForm?.querySelectorAll("textarea, button") || []) {
+      control.disabled = !canManageMembers || state.memberCorrectionBusy;
+    }
+    const applyCorrection = byId("member-bulk-correction-apply");
+    if (applyCorrection) {
+      applyCorrection.disabled = !canManageMembers || state.memberCorrectionBusy ||
+        !state.memberCorrectionValidation ||
+        state.memberCorrectionValidatedDocument !== byId("member-task-result-document")?.value;
+    }
   }
 
   async function loadTemporaryKeys(page = state.temporaryKeys.page) {
@@ -3836,6 +3854,83 @@
       setText("member-edit-feedback", error.message);
     } finally {
       state.memberEditSaving = false;
+      setModuleActionState();
+    }
+  }
+
+  function openMemberBulkCorrection() {
+    state.memberCorrectionValidatedDocument = "";
+    state.memberCorrectionValidation = null;
+    byId("member-task-result-document").value = "";
+    setText("member-bulk-correction-preview", "");
+    setText("member-bulk-correction-feedback", "");
+    byId("member-bulk-correction-dialog").showModal();
+    setModuleActionState();
+  }
+
+  function closeMemberBulkCorrection() {
+    if (state.memberCorrectionBusy) return;
+    byId("member-bulk-correction-dialog").close();
+  }
+
+  async function validateMemberBulkCorrection() {
+    const document = String(byId("member-task-result-document").value || "");
+    state.memberCorrectionValidatedDocument = "";
+    state.memberCorrectionValidation = null;
+    setText("member-bulk-correction-preview", "");
+    setText("member-bulk-correction-feedback", "正在检查文档格式…");
+    state.memberCorrectionBusy = true;
+    setModuleActionState();
+    try {
+      const result = await request("/api/admin/members/bulk-correction/validate", {
+        method: "POST",
+        body: JSON.stringify({ document })
+      });
+      state.memberCorrectionValidatedDocument = document;
+      state.memberCorrectionValidation = result;
+      const staffDescription = result.staffCount
+        ? `，公职 ${result.staffCount} 项`
+        : "";
+      setText(
+        "member-bulk-correction-preview",
+        `格式有效：${result.taskTitle}；成员数据 ${result.memberCount} 行${staffDescription}；采集时间 ${formatDate(result.capturedAt)}。确认后将按该任务规则匹配和校正。`
+      );
+      setText("member-bulk-correction-feedback", "格式校验通过");
+    } catch (error) {
+      setText("member-bulk-correction-feedback", error.message);
+    } finally {
+      state.memberCorrectionBusy = false;
+      setModuleActionState();
+    }
+  }
+
+  async function applyMemberBulkCorrection(event) {
+    event.preventDefault();
+    const document = String(byId("member-task-result-document").value || "");
+    if (!state.memberCorrectionValidation || state.memberCorrectionValidatedDocument !== document) {
+      setText("member-bulk-correction-feedback", "请先校验当前文档格式。");
+      return;
+    }
+    state.memberCorrectionBusy = true;
+    setText("member-bulk-correction-feedback", "正在匹配并校正数据…");
+    setModuleActionState();
+    try {
+      const result = await request("/api/admin/members/bulk-correction/apply", {
+        method: "POST",
+        body: JSON.stringify({ document })
+      });
+      byId("member-bulk-correction-dialog").close();
+      setText(
+        "save-state",
+        `${result.taskTitle}校正完成：收到 ${result.received} 项，更新 ${result.updated} 项，忽略 ${result.ignored} 项${result.ambiguous ? `，其中 ${result.ambiguous} 项存在歧义` : ""}`
+      );
+      state.memberCorrectionValidatedDocument = "";
+      state.memberCorrectionValidation = null;
+      await refresh(true);
+    } catch (error) {
+      setText("member-bulk-correction-feedback", error.message);
+    } finally {
+      state.memberCorrectionBusy = false;
       setModuleActionState();
     }
   }
@@ -5541,6 +5636,18 @@
   byId("member-edit-close")?.addEventListener("click", closeMemberEdit);
   byId("member-edit-cancel")?.addEventListener("click", closeMemberEdit);
   byId("member-edit-form")?.addEventListener("submit", saveMemberEdit);
+  byId("member-bulk-correction-open")?.addEventListener("click", openMemberBulkCorrection);
+  byId("member-bulk-correction-close")?.addEventListener("click", closeMemberBulkCorrection);
+  byId("member-bulk-correction-validate")?.addEventListener("click", validateMemberBulkCorrection);
+  byId("member-bulk-correction-form")?.addEventListener("submit", applyMemberBulkCorrection);
+  byId("member-task-result-document")?.addEventListener("input", () => {
+    if (!state.memberCorrectionValidation) return;
+    state.memberCorrectionValidatedDocument = "";
+    state.memberCorrectionValidation = null;
+    setText("member-bulk-correction-preview", "文档内容已修改，请重新校验格式。");
+    setText("member-bulk-correction-feedback", "");
+    setModuleActionState();
+  });
   byId("technology-search").addEventListener("input", (event) => {
     state.technologyQuery = event.target.value || "";
     renderTechnologyEditor();

@@ -2105,6 +2105,16 @@ textarea:focus {
   margin-right: auto;
 }
 
+#member-task-result-document {
+  min-height: 280px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.member-bulk-correction-actions .feedback {
+  margin-right: auto;
+}
+
 .warning-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));

@@ -234,3 +234,16 @@
 "Execution mode scheduled_window" = "Fenêtre planifiée";
 "Execution mode retry" = "Reprise";
 "Execution mode unknown" = "Inconnu";
+"Task results" = "Résultats des tâches";
+"Agent data" = "Données de l’Agent";
+"Review or edit the member data uploaded by each task." = "Consultez ou modifiez les données des membres envoyées par chaque tâche.";
+"Open in another editor" = "Ouvrir dans un autre éditeur";
+"Save" = "Enregistrer";
+"Refresh" = "Actualiser";
+"No task result documents yet." = "Aucun résultat de tâche pour le moment.";
+"Results appear after a member data task finishes." = "Les résultats apparaissent à la fin d’une tâche de données des membres.";
+"Unsaved changes" = "Modifications non enregistrées";
+"Saved" = "Enregistré";
+"Task result saved" = "Résultat de tâche enregistré";
+"The task result file name is invalid." = "Le nom du fichier de résultat est invalide.";
+"Save or discard changes before reloading or selecting another document." = "Enregistrez ou annulez vos modifications avant de recharger ou de choisir un autre document.";

@@ -83,6 +83,7 @@ struct RootView: View {
     @ViewBuilder private var detail: some View {
         switch model.selection ?? .admin {
         case .logs: LogsView()
+        case .taskResults: TaskResultsView()
         case .plugins: PluginsView()
         case .admin: AdminView()
         case .settings: SettingsView()
@@ -165,6 +166,122 @@ struct SidebarView: View {
         }
         .padding(.top, 6)
         .background(.thinMaterial)
+    }
+}
+
+struct TaskResultsView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(model.text("Agent data"))
+                        .font(.caption.weight(.bold))
+                        .tracking(2)
+                        .foregroundStyle(YumePalette.gold)
+                    Text(model.text("Task results"))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                    Text(model.text("Review or edit the member data uploaded by each task."))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(model.text("Open in another editor")) {
+                    Task { await model.openSelectedTaskResultExternally() }
+                }
+                .buttonStyle(GlassButtonStyle())
+                .disabled(model.selectedTaskResultID == nil)
+                Button(model.text("Save")) { Task { await model.saveTaskResult() } }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(model.selectedTaskResultID == nil || !model.taskResultHasUnsavedChanges || model.isSavingTaskResult)
+                Button(model.text("Refresh")) { Task { await model.refreshTaskResults() } }
+                    .buttonStyle(GlassButtonStyle())
+            }
+
+            HStack(alignment: .top, spacing: 14) {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        if model.taskResultDocuments.isEmpty {
+                            Text(model.text("No task result documents yet."))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            ForEach(model.taskResultDocuments) { document in
+                                Button {
+                                    Task { await model.selectTaskResult(document.id) }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(document.fileName)
+                                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                            .lineLimit(2)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Text(document.modifiedAt == .distantPast
+                                            ? "—"
+                                            : model.displayTimestamp(ISO8601DateFormatter().string(from: document.modifiedAt)))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(10)
+                                    .background(
+                                        model.selectedTaskResultID == document.id
+                                            ? YumePalette.gold.opacity(0.16)
+                                            : .clear,
+                                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .glassPanel(radius: 20, padding: 12)
+                .frame(width: 292)
+                .frame(maxHeight: .infinity)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    if model.selectedTaskResultID == nil {
+                        ContentUnavailableView(
+                            model.text("No task result documents yet."),
+                            systemImage: "doc.text.magnifyingglass",
+                            description: Text(model.text("Results appear after a member data task finishes."))
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        HStack {
+                            Text(model.selectedTaskResultID ?? "")
+                                .font(.headline.monospaced())
+                                .lineLimit(1)
+                            Spacer()
+                            Text(model.taskResultHasUnsavedChanges
+                                ? model.text("Unsaved changes")
+                                : model.text("Saved"))
+                                .font(.caption)
+                                .foregroundStyle(model.taskResultHasUnsavedChanges ? .orange : .secondary)
+                        }
+                        TextEditor(text: $model.taskResultContent)
+                            .font(.system(size: 12, design: .monospaced))
+                            .scrollContentBackground(.hidden)
+                            .padding(8)
+                            .background(.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .textSelection(.enabled)
+                    }
+                }
+                .glassPanel(radius: 20, padding: 14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(maxWidth: 1050, maxHeight: .infinity, alignment: .topLeading)
+        .padding(30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .task {
+            await model.refreshTaskResults()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                await model.refreshTaskResults()
+            }
+        }
     }
 }
 
@@ -600,8 +717,10 @@ struct LogsView: View {
                                     }
                                     .onChange(of: debugState.focusedDebugImageID) { _, imageID in
                                         guard let imageID else { return }
-                                        withAnimation(.easeOut(duration: 0.2)) {
-                                            evidenceProxy.scrollTo(imageID, anchor: .center)
+                                        DispatchQueue.main.async {
+                                            withAnimation(.easeOut(duration: 0.2)) {
+                                                evidenceProxy.scrollTo(imageID, anchor: .center)
+                                            }
                                         }
                                     }
                                     .onChange(of: model.selectedTaskDebugImages.count) { _, _ in

@@ -11,6 +11,11 @@ final class AppModel: ObservableObject {
     @Published var logRunIdFilter: String?
     @Published private(set) var taskLogGroups: [TaskLogGroup] = []
     @Published private(set) var selectedTaskDebugImages: [TaskDebugImage] = []
+    @Published private(set) var taskResultDocuments: [TaskResultDocument] = []
+    @Published var selectedTaskResultID: String?
+    @Published var taskResultContent = ""
+    @Published private(set) var savedTaskResultContent = ""
+    @Published private(set) var isSavingTaskResult = false
     @Published var selectedTaskLogID: String?
     @Published var logDisplayMode: LogDisplayMode
     @Published private(set) var logPage = 0
@@ -418,7 +423,23 @@ final class AppModel: ObservableObject {
         return selectedTaskDebugImages.first(where: { image in
             let label = image.label.lowercased()
             return label == step || label == "log-\(step)" || label.hasSuffix("-\(step)")
-        })?.id
+        })?.id ?? nearestDirectDebugImageID(to: entry)
+    }
+
+    private func nearestDirectDebugImageID(to entry: SimplifiedLogEntry) -> String? {
+        guard let prefix = entry.id.split(separator: "-", maxSplits: 1).first,
+              let targetIndex = Int(prefix) else { return nil }
+        let captures: [(index: Int, imageID: String)] = filteredLogLines.enumerated().compactMap { index, line in
+            let candidate = Self.simplifiedLogEntry(line, index: index, language: language)
+            guard let path = candidate.debugImagePath, !path.isEmpty,
+                  let image = selectedTaskDebugImages.first(where: {
+                      $0.url.lastPathComponent == URL(fileURLWithPath: path).lastPathComponent
+                  }) else { return nil }
+            return (index, image.id)
+        }
+        return captures.min(by: {
+            abs($0.index - targetIndex) < abs($1.index - targetIndex)
+        })?.imageID
     }
 
     /// Select the log page that owns a debug image and return the stable row
@@ -464,12 +485,10 @@ final class AppModel: ObservableObject {
         guard let absoluteIndex else { return nil }
         let distanceFromEnd = lines.count - 1 - absoluteIndex
         logPage = max(0, distanceFromEnd / logPageSize)
-        let pageLines = visibleLogLines
         let end = max(0, lines.count - logPage * logPageSize)
         let start = max(0, end - logPageSize)
-        let visibleIndex = absoluteIndex - start
-        guard pageLines.indices.contains(visibleIndex) else { return nil }
-        return Self.simplifiedLogEntry(pageLines[visibleIndex], index: visibleIndex, language: language).id
+        guard absoluteIndex >= start, absoluteIndex < end else { return nil }
+        return parsed[absoluteIndex].id
     }
 
     func cancelCurrentTask() async {
@@ -528,11 +547,84 @@ final class AppModel: ObservableObject {
             taskLogGroups = []
             selectedTaskLogID = nil
             selectedTaskDebugImages = []
+            taskResultDocuments = []
+            selectedTaskResultID = nil
+            taskResultContent = ""
+            savedTaskResultContent = ""
             logPage = 0
             statusMessage = text("Logs cleared")
         } catch {
             alertMessage = error.localizedDescription
         }
+    }
+
+    var taskResultHasUnsavedChanges: Bool {
+        taskResultContent != savedTaskResultContent
+    }
+
+    func refreshTaskResults() async {
+        taskResultDocuments = await runtime.taskResultDocuments()
+        guard let selectedTaskResultID else {
+            if let first = taskResultDocuments.first {
+                await selectTaskResult(first.id)
+            }
+            return
+        }
+        guard taskResultDocuments.contains(where: { $0.id == selectedTaskResultID }) else {
+            self.selectedTaskResultID = nil
+            taskResultContent = ""
+            savedTaskResultContent = ""
+            return
+        }
+        guard !taskResultHasUnsavedChanges else { return }
+        do {
+            let contents = try await runtime.readTaskResult(fileName: selectedTaskResultID)
+            if contents != taskResultContent {
+                taskResultContent = contents
+                savedTaskResultContent = contents
+            }
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    func selectTaskResult(_ fileName: String) async {
+        guard taskResultDocuments.contains(where: { $0.id == fileName }) else { return }
+        guard !taskResultHasUnsavedChanges else {
+            statusMessage = text("Save or discard changes before reloading or selecting another document.")
+            return
+        }
+        do {
+            let contents = try await runtime.readTaskResult(fileName: fileName)
+            selectedTaskResultID = fileName
+            taskResultContent = contents
+            savedTaskResultContent = contents
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    func saveTaskResult() async {
+        guard let selectedTaskResultID else { return }
+        isSavingTaskResult = true
+        defer { isSavingTaskResult = false }
+        do {
+            try await runtime.writeTaskResult(fileName: selectedTaskResultID, contents: taskResultContent)
+            savedTaskResultContent = taskResultContent
+            taskResultDocuments = await runtime.taskResultDocuments()
+            statusMessage = text("Task result saved")
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    func openSelectedTaskResultExternally() async {
+        guard let document = taskResultDocuments.first(where: { $0.id == selectedTaskResultID }) else { return }
+        if taskResultHasUnsavedChanges {
+            await saveTaskResult()
+            guard !taskResultHasUnsavedChanges else { return }
+        }
+        NSWorkspace.shared.open(document.url)
     }
 
     private func rebuildVisibleLogCacheIfNeeded() {
@@ -550,7 +642,7 @@ final class AppModel: ObservableObject {
         let visible = Array(lines[start..<end])
         cachedVisibleLogLines = visible
         cachedVisibleLogEntries = visible.enumerated().map { index, line in
-            Self.simplifiedLogEntry(line, index: index, language: language)
+            Self.simplifiedLogEntry(line, index: start + index, language: language)
         }
         visibleCacheRevision = logRevision
         visibleCacheFilter = logRunIdFilter

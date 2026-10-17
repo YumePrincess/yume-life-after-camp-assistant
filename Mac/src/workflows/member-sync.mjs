@@ -15,6 +15,7 @@ import {
   isPlausibleMemberName
 } from "../member-name.mjs";
 import { delay } from "../process.mjs";
+import { writeMemberTaskResult } from "../task-results.mjs";
 import {
   memberAlignmentSwipe,
   scaledTableSwipeDurationMs,
@@ -144,11 +145,12 @@ export async function runContributionSync(context, command, _bundle, signal) {
   const locallyFiltered = Math.max(0, capturedRows.length - rows.length);
   await updateWorkflowProgress(context, 0.78, "contribution_validate");
   await updateWorkflowProgress(context, 0.86, "contribution_snapshot");
+  const capturedAt = new Date().toISOString();
   const result = await context.api.snapshot(
     command.runId,
     "contribution",
     rows,
-    new Date().toISOString(),
+    capturedAt,
     signal
   );
   const matched = Number(result?.count) || 0;
@@ -158,6 +160,12 @@ export async function runContributionSync(context, command, _bundle, signal) {
       "CONTRIBUTION_MASTER_LIST_UNMATCHED: 贡献数据未能匹配成员资料主名单，已保留上一份贡献数据"
     );
   }
+  await writeMemberTaskResult({
+    taskKey: "contribution_sync",
+    runId: command.runId,
+    capturedAt,
+    payload: rows
+  });
   const countMismatch = matched !== expectedMemberCount;
   await updateWorkflowProgress(context, 0.97, "contribution_complete");
   await context.report(
@@ -207,11 +215,12 @@ export async function runInactivitySync(context, command, bundle, signal) {
       "INACTIVITY_SCAN_UNREADABLE: 未识别到成员行或阈值边界，已保留原有斩杀预警数据"
     );
   }
+  const capturedAt = new Date().toISOString();
   const result = await context.api.snapshot(
     command.runId,
     "activity",
     rows,
-    new Date().toISOString(),
+    capturedAt,
     signal
   );
   const matched = Number(result?.count) || 0;
@@ -222,6 +231,12 @@ export async function runInactivitySync(context, command, bundle, signal) {
       "INACTIVITY_SCAN_UNREADABLE: 斩杀预警扫描结果在自身去重后为空，已保留上一份有效预警"
     );
   }
+  await writeMemberTaskResult({
+    taskKey: "inactivity_sync",
+    runId: command.runId,
+    capturedAt,
+    payload: rows
+  });
   await updateWorkflowProgress(context, 0.97, "activity_complete");
   await context.report(
     ignored ? "warning" : "info",
@@ -256,30 +271,36 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
       `MEMBER_PROFILE_COUNT_MISMATCH: normalized ${profiles.length}, page header reports ${expectedMembers}; profile snapshot was not uploaded`
     );
   }
+  const capturedAt = new Date().toISOString();
+  const uploadedMemberSummary = {
+    ...memberScanSummary,
+    expectedCount: expectedMembers,
+    recognizedCount: profiles.length,
+    missingCount: Math.max(0, expectedMembers - profiles.length)
+  };
   await context.api.snapshot(
     command.runId,
     "profiles",
     profiles,
-    new Date().toISOString(),
+    capturedAt,
     signal,
-    {
-      memberSummary: {
-        ...memberScanSummary,
-        expectedCount: expectedMembers,
-        recognizedCount: profiles.length,
-        missingCount: Math.max(0, expectedMembers - profiles.length)
-      }
-    }
+    { memberSummary: uploadedMemberSummary }
   );
   await updateWorkflowProgress(context, 0.91, "member_profile_staff");
   const staffResult = await context.api.snapshot(
     command.runId,
     "staff",
     staff,
-    new Date().toISOString(),
+    capturedAt,
     signal
   );
   const staffCount = checkedStaffCount(staff, staffResult);
+  await writeMemberTaskResult({
+    taskKey: "member_profile_sync",
+    runId: command.runId,
+    capturedAt,
+    payload: { members: profiles, staff, memberSummary: uploadedMemberSummary }
+  });
   await updateWorkflowProgress(context, 0.97, "member_profile_complete");
   await context.report(
     "info",
@@ -703,10 +724,10 @@ function buildMemberScanSummary(expectedCount, recognizedCount, scanState = {}) 
     missingAllowed:
       scanState.finalPageMissingAllowed === true &&
       Number(scanState.finalPageMissingCount) === 1,
-    finalPage: Number.isInteger(Number(scanState.finalPage))
+    finalPage: Number.isInteger(Number(scanState.finalPage)) && Number(scanState.finalPage) >= 1
       ? Number(scanState.finalPage)
       : null,
-    pages: Number.isInteger(Number(scanState.pages))
+    pages: Number.isInteger(Number(scanState.pages)) && Number(scanState.pages) >= 1
       ? Number(scanState.pages)
       : null,
     positionLocked: scanState.finalPagePositionLocked === true

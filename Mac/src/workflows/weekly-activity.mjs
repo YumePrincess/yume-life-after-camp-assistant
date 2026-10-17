@@ -1,4 +1,5 @@
 import { delay } from "../process.mjs";
+import { writeMemberTaskResult } from "../task-results.mjs";
 import { normalizeProfiles, parseTable } from "../table-parser.mjs";
 import { memberAlignmentSwipe } from "./member-sync.mjs";
 import { updateWorkflowProgress } from "./progress.mjs";
@@ -1015,14 +1016,21 @@ function parseInteger(value) {
 
 async function submitWeeklyActivity(context, command, rows, signal, detail = {}) {
   await updateWorkflowProgress(context, 0.88, "weekly_activity_snapshot");
+  const capturedAt = new Date().toISOString();
   const result = await context.api.snapshot(
     command.runId,
     "weekly_activity",
     rows,
-    new Date().toISOString(),
+    capturedAt,
     signal
   );
   const matched = Number(result?.count) || 0;
+  await writeMemberTaskResult({
+    taskKey: "weekly_activity_sync",
+    runId: command.runId,
+    capturedAt,
+    payload: rows
+  });
   await updateWorkflowProgress(context, 0.97, "weekly_activity_complete");
   await context.report(
     result?.ignored || result?.ambiguous ? "warning" : "info",
