@@ -582,6 +582,9 @@ table td { padding-block: 16px; font-size: 13px; }
 .admin-layout { grid-template-columns: 224px minmax(0, 1fr); gap: 24px; }
 .admin-page .site-header { margin-bottom: 24px; }
 .admin-header-context { flex: 1; }
+.admin-header-brand { display: flex; flex: 1; min-width: 0; align-items: center; gap: 14px; }
+.admin-header-context .admin-header-brand .brand { flex: 0 0 auto; }
+.admin-header-brand #save-state { flex: 0 1 360px; max-width: 360px; }
 .admin-header-context #logout { margin-left: 0; }
 .admin-header-context #save-state:empty { display: none; }
 .admin-nav { max-height: calc(100dvh - 36px); overflow-y: auto; padding: 14px; scrollbar-width: thin; }
@@ -674,6 +677,7 @@ table td { padding-block: 16px; font-size: 13px; }
 dialog:not(.feature-detail-dialog):not(.app-modal):not(.image-preview-dialog) { max-height: calc(100dvh - 48px); border-radius: 24px; padding: 26px; }
 .dialog-card { min-width: 0; padding: 6px; }
 .dialog-card .section-heading { align-items: flex-start; }
+.admin-page dialog .section-heading > div:first-child { flex: 1 1 0; }
 .dialog-card h2 { font-size: 24px; letter-spacing: -0.035em; }
 .app-modal-card { border: 1px solid var(--line); border-radius: 24px; padding: 26px; }
 .app-modal-message { color: var(--muted); line-height: 1.8; }
@@ -776,9 +780,9 @@ dialog:not(.feature-detail-dialog):not(.app-modal):not(.image-preview-dialog) { 
   .panel, .admin-page .panel:not(.admin-nav) { padding: 22px 18px; border-radius: 22px; }
   .admin-page .site-header { flex-wrap: wrap; margin-bottom: 16px; }
   .admin-header-context { flex-wrap: wrap; gap: 8px; }
-  .admin-header-context .brand { flex: 1; }
+  .admin-header-brand { flex-basis: 100%; gap: 10px; }
   .admin-header-context #logout { min-height: 32px; padding: 7px 12px; font-size: 11px; }
-  .admin-header-context #save-state { flex-basis: 100%; }
+  .admin-header-brand #save-state { flex: 0 1 360px; }
   .admin-page .site-header .preference-controls { margin-left: auto; }
   .admin-page h1 { font-size: 25px; }
   .admin-page .section-heading > div:first-child { flex-basis: 100%; }
@@ -1099,8 +1103,8 @@ dialog:not(.image-preview-dialog) {
   .overview-view .manual-tasks-panel .task-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* The dialog owns the glass material; identity forms and inset sections share it. */
-:is(#identity-application-dialog, #identity-password-reset-dialog, #identity-profile-dialog,
+/* The outer dialog owns the glass material; forms must not add a second surface. */
+:is(.admin-page dialog, #identity-application-dialog, #identity-password-reset-dialog, #identity-profile-dialog,
   #identity-cancellation-dialog, #identity-information-dialog, #identity-eligibility-dialog,
   #identity-eligibility-application-dialog) > .dialog-card {
   width: auto;
@@ -1111,6 +1115,15 @@ dialog:not(.image-preview-dialog) {
   -webkit-backdrop-filter: none;
 }
 dialog :is(.identity-rules, .identity-information-detail, .identity-eligibility-grid) {
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.admin-page dialog :is(.maintenance-dialog-copy, .identity-conflict-message,
+  .identity-information-permanent, .permission-fieldset, .vote-detail-item,
+  .event-item, .member-responsive-card) {
+  border-color: var(--line);
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;

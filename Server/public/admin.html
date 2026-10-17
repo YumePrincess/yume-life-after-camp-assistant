@@ -7,13 +7,13 @@
     <meta name="theme-color" content="#f3ece5" />
     <title>管理后台 · 明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260925-identity-code-nowrap" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261016-group-spacing" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261016-admin-feedback" />
     <link rel="stylesheet" href="/loading.css?v=20261016-resources" />
     <script src="/js/loading.js?v=20261016-resources" defer></script>
     <script src="/js/preferences.js" defer></script>
     <script src="/js/timezone.js?v=20261016-slash-timestamps" defer></script>
     <script src="/js/i18n.js?v=20261016-resources" defer></script>
-    <script src="/js/admin.js?v=20261016-resources" defer></script>
+    <script src="/js/admin.js?v=20261016-admin-feedback" defer></script>
   </head>
   <body class="admin-page">
     <div id="page-loading" class="page-loading" role="status" aria-label="正在载入">
@@ -31,15 +31,17 @@
     <a class="skip-link" href="#main-content">跳至主要内容</a>
     <header class="site-header shell">
       <div class="admin-header-context">
-        <a class="brand" href="/">
-          <span class="brand-mark">愿</span>
-          <span>
-            <strong>营地管理后台</strong>
-            <small id="session-email">正在验证身份</small>
-          </span>
-        </a>
+        <div class="admin-header-brand">
+          <a class="brand" href="/">
+            <span class="brand-mark">愿</span>
+            <span>
+              <strong>营地管理后台</strong>
+              <small id="session-email">正在验证身份</small>
+            </span>
+          </a>
+          <span id="save-state" class="feedback" role="status" aria-live="polite" aria-atomic="true"></span>
+        </div>
         <button id="logout" class="button button-quiet" type="button">退出登录</button>
-        <span id="save-state" class="feedback"></span>
       </div>
     </header>
 

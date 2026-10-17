@@ -130,6 +130,25 @@
     return document.getElementById(id);
   }
 
+  let saveStateTimer = null;
+
+  function setSaveState(value) {
+    window.clearTimeout(saveStateTimer);
+    saveStateTimer = null;
+    const element = byId("save-state");
+    if (!element) return;
+    const message = value ?? "";
+    element.textContent = message;
+    element.title = message;
+    if (message) {
+      saveStateTimer = window.setTimeout(() => {
+        element.textContent = "";
+        element.removeAttribute("title");
+        saveStateTimer = null;
+      }, 30_000);
+    }
+  }
+
   function translateUi(value) {
     return typeof value === "string" && window.MrzhI18n?.t
       ? window.MrzhI18n.t(value)
@@ -871,15 +890,16 @@
 
   function updateSaveState(fallback = "") {
     if (!state.dirtySections.size) {
-      byId("save-state").textContent = translateUi(fallback);
+      setSaveState(translateUi(fallback));
       return;
     }
-    byId("save-state").textContent =
+    setSaveState(
       state.dirtySections.size === 1
         ? formatUi("有 {count} 个分区未保存", { count: 1 })
         : formatUi("有 {count} 个分区未保存", {
             count: state.dirtySections.size
-          });
+          })
+    );
   }
 
   function renderTaskActions() {
@@ -1005,7 +1025,7 @@
       });
       await refresh(false);
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
       button.disabled = false;
     }
   }
@@ -1114,13 +1134,13 @@
         `/api/admin/agents/${encodeURIComponent(item.agent_id)}/activate`,
         { method: "POST", body: "{}" }
       );
-      byId("save-state").textContent = window.MrzhI18n.format(
+      setSaveState(window.MrzhI18n.format(
         "已启用设备 {name}",
         { name: item.display_name || item.agent_id }
-      );
+      ));
       await refresh(false);
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     } finally {
       button.disabled = false;
     }
@@ -1137,13 +1157,13 @@
       await request(`/api/admin/agents/${encodeURIComponent(item.agent_id)}`, {
         method: "DELETE"
       });
-      byId("save-state").textContent = window.MrzhI18n.format(
+      setSaveState(window.MrzhI18n.format(
         "已删除设备 {name}",
         { name }
-      );
+      ));
       await refresh(false);
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     } finally {
       button.disabled = false;
     }
@@ -3571,7 +3591,7 @@
       state.temporaryKeys = await request(`/api/admin/temp-keys?${params}`);
       renderTemporaryKeys();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     }
   }
 
@@ -3944,7 +3964,7 @@
           );
       render(data, sections);
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     } finally {
       state.refreshing = false;
       window.MrzhLoading?.settle("data");
@@ -4127,13 +4147,13 @@
           ...(routineId ? { routineId } : {})
         })
       });
-      byId("save-state").textContent = result.queuedBehindActiveRun
+      setSaveState(result.queuedBehindActiveRun
         ? window.MrzhI18n.format(
             "当前 Agent 已有任务正在运行或排队；手工任务已入队，等待上一个任务结束后执行"
           )
         : window.MrzhI18n.format("{task}已入队", {
             task: taskName(taskKey)
-          });
+          }));
       if (feedback) feedback.textContent = "";
       // Once the server accepts the run, close any task-specific picker
       // immediately. Bootstrap refresh is best-effort UI synchronization and
@@ -4142,7 +4162,7 @@
       return true;
     } catch (error) {
       if (feedback) feedback.textContent = error.message;
-      else byId("save-state").textContent = error.message;
+      else setSaveState(error.message);
       return false;
     } finally {
       if (state.pendingTradingCityButton !== button) button.disabled = false;
@@ -4156,13 +4176,12 @@
         method: "POST",
         body: JSON.stringify({ runId })
       });
-      byId("save-state").textContent =
-        result.state === "interrupted"
-          ? "排队任务已终止"
-          : "终止指令已发送";
+      setSaveState(
+        result.state === "interrupted" ? "排队任务已终止" : "终止指令已发送"
+      );
       await refresh(false);
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     } finally {
       button.disabled = false;
     }
@@ -4555,7 +4574,7 @@
     ];
     state.saving = true;
     feedback.textContent = "正在保存…";
-    byId("save-state").textContent = "正在保存…";
+    setSaveState("正在保存…");
     for (const button of buttons) button.disabled = true;
     try {
       const data = await request("/api/admin/config", {
@@ -4569,7 +4588,7 @@
       updateSaveState("配置已保存");
     } catch (error) {
       feedback.textContent = error.message;
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     } finally {
       state.saving = false;
       setConfigReadOnly();
@@ -4589,9 +4608,9 @@
       ...form.querySelectorAll('[name="keyPermission"]:checked')
     ].map((field) => field.value);
     if (!permissions.length) {
-      byId("save-state").textContent = window.MrzhI18n.t(
+      setSaveState(window.MrzhI18n.t(
         "请输入至少一项权限；仅预览请勾选 Demo 权限"
-      );
+      ));
       return;
     }
     const permanent = form.elements.keyPermanent.checked;
@@ -4613,7 +4632,7 @@
       setDefaultKeyExpiry();
       await loadTemporaryKeys(1);
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     }
   }
 
@@ -4626,7 +4645,7 @@
       });
       await loadTemporaryKeys();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
       button.disabled = false;
     }
   }
@@ -4644,7 +4663,7 @@
       });
       await loadTemporaryKeys();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
       button.disabled = false;
     }
   }
@@ -4723,7 +4742,7 @@
       );
       renderIdentityApplications();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     }
   }
 
@@ -4806,6 +4825,10 @@
   }
 
   function setText(id, value) {
+    if (id === "save-state") {
+      setSaveState(value);
+      return;
+    }
     const element = byId(id);
     if (element) element.textContent = value ?? "";
   }
@@ -5009,7 +5032,7 @@
         })
       });
       byId("identity-review-dialog").close();
-      byId("save-state").textContent = window.MrzhI18n.t("投票资格已更新");
+      setSaveState(window.MrzhI18n.t("投票资格已更新"));
       await loadIdentityCodes();
     } catch (error) {
       feedback.textContent = error.message;
@@ -5034,11 +5057,11 @@
           ? undefined
           : JSON.stringify({ recordType: item.record_type || "application" })
       });
-      byId("save-state").textContent = window.MrzhI18n.t("审批记录已删除");
+      setSaveState(window.MrzhI18n.t("审批记录已删除"));
       await loadIdentityApplications();
       if (canView("identity-codes")) await loadIdentityCodes();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     }
   }
 
@@ -5107,19 +5130,21 @@
       );
       byId("identity-review-dialog").close();
       if (isProfileChange) {
-        byId("save-state").textContent =
+        setSaveState(
           result.emailSent
             ? action === "approve"
               ? "资料变更已批准并应用，邮件已发送"
               : "资料变更已拒绝，通知邮件已发送"
-            : `资料变更已处理，但邮件发送失败：${result.emailError}`;
+            : `资料变更已处理，但邮件发送失败：${result.emailError}`
+        );
       } else {
-        byId("save-state").textContent =
+        setSaveState(
           result.emailSent
             ? action === "approve"
               ? "申请已通过并发送邮件"
               : "申请已拒绝并发送通知"
-            : `申请已处理，但邮件发送失败：${result.emailError}`;
+            : `申请已处理，但邮件发送失败：${result.emailError}`
+        );
       }
       await loadIdentityApplications(1);
       if (canView("identity-codes")) await loadIdentityCodes();
@@ -5139,7 +5164,7 @@
       state.identityCodes = await request(`/api/admin/identity-codes?${params}`);
       renderIdentityCodes();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     }
   }
 
@@ -5170,7 +5195,7 @@
         { method: "POST" }
       );
       byId("identity-password-reset-dialog").close();
-      byId("save-state").textContent = window.MrzhI18n.t("新密码已生成并发送到预留邮箱");
+      setSaveState(window.MrzhI18n.t("新密码已生成并发送到预留邮箱"));
       await loadIdentityCodes();
     } catch (error) {
       feedback.textContent = error.message;
@@ -5283,15 +5308,15 @@
         body: JSON.stringify(values)
       });
       if (values.status === "disabled") {
-        byId("save-state").textContent = result.emailSent
+        setSaveState(result.emailSent
           ? "识别码已取消，确认邮件已发送"
           : result.emailError
             ? `识别码已取消，但确认邮件发送失败：${result.emailError}`
-            : "识别码已取消";
+            : "识别码已取消");
       }
       await loadIdentityCodes();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     }
   }
 
@@ -5309,11 +5334,11 @@
       await request(`/api/admin/identity-codes/${encodeURIComponent(item.id)}`, {
         method: "DELETE"
       });
-      byId("save-state").textContent = window.MrzhI18n.t("身份识别码记录及其投票历史已删除");
+      setSaveState(window.MrzhI18n.t("身份识别码记录及其投票历史已删除"));
       await loadIdentityCodes();
       await loadIdentityApplications();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     }
   }
 
@@ -5379,7 +5404,7 @@
         }
       );
       byId("identity-information-dialog").close();
-      byId("save-state").textContent = window.MrzhI18n.t("识别码资料已修改");
+      setSaveState(window.MrzhI18n.t("识别码资料已修改"));
       await loadIdentityCodes();
       await loadIdentityApplications();
     } catch (error) {
@@ -5423,15 +5448,15 @@
           })
         }
       );
-      byId("save-state").textContent = result.emailSent
+      setSaveState(result.emailSent
         ? window.MrzhI18n.t("识别码已更换，并已发送识别码信息邮件")
         : window.MrzhI18n.format(
             "识别码已更换，但信息邮件发送失败：{error}",
             { error: result.emailError }
-          );
+          ));
       await loadIdentityCodes();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
     }
   }
 
@@ -5442,12 +5467,12 @@
         method: "POST",
         body: "{}"
       });
-      byId("save-state").textContent = window.MrzhI18n.t(
+      setSaveState(window.MrzhI18n.t(
         "识别码信息邮件已重新发送"
-      );
+      ));
       await loadIdentityCodes();
     } catch (error) {
-      byId("save-state").textContent = error.message;
+      setSaveState(error.message);
       button.disabled = false;
     }
   }
@@ -5868,7 +5893,7 @@
   window.addEventListener("scroll", positionRunActionMenu, true);
   byId("copy-temporary-key").addEventListener("click", async () => {
     await navigator.clipboard.writeText(byId("temporary-key-value").textContent);
-    byId("save-state").textContent = "临时 Key 已复制";
+    setSaveState("临时 Key 已复制");
   });
   byId("refresh-identity-applications").addEventListener("click", () =>
     loadIdentityApplications()
