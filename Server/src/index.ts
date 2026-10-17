@@ -466,9 +466,16 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
     if ("response" in auth) return auth.response;
     return handleAdminApi(request, env, path, method, auth.session);
   }
-  if (path === "/") {
+  if (path === "/" || path === "/index.html") {
     if (method !== "GET" && method !== "HEAD") return methodNotAllowed(["GET", "HEAD"]);
-    return fetchAsset(env, request, "/index.html");
+    const [asset, bundle] = await Promise.all([
+      fetchAsset(env, request, "/index.html"),
+      getConfigBundle(env).catch(() => {
+        console.warn(JSON.stringify({ event: "public_page_config_unavailable" }));
+        return null;
+      })
+    ]);
+    return withSecurityHeaders(asset, bundle?.campConfig.campGroupDataUrl);
   }
 
   const asset = await env.ASSETS.fetch(request);
@@ -2527,6 +2534,9 @@ async function handleAdminApi(
         ? {
             campConfig: {
               ...submitted.campConfig,
+              campGroupDataUrl: Object.prototype.hasOwnProperty.call(
+                submittedBody.campConfig ?? {}, "campGroupDataUrl"
+              ) ? submitted.campConfig.campGroupDataUrl : current.campConfig.campGroupDataUrl,
               specialDailyRefreshTime:
                 Object.prototype.hasOwnProperty.call(
                   submittedBody.campConfig ?? {},
@@ -3055,6 +3065,7 @@ async function buildPublicBootstrap(
       bundle.publicOverview.localized[normalizeLocale(locale)] ?? bundle.publicOverview,
     campConfig: {
       campName: bundle.campConfig.campName,
+      campGroupDataUrl: bundle.campConfig.campGroupDataUrl,
       serverName: bundle.campConfig.serverName,
       currentCampType: bundle.campConfig.currentCampType,
       timezone: bundle.campConfig.timezone,

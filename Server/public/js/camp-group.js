@@ -49,9 +49,19 @@
     return { title: typeof entry.title === "string" ? entry.title : "", blocks };
   }
 
-  async function load() {
+  function sourceUrl(value) {
+    if (value === undefined || value === null || value === "" || (typeof value === "string" && !value.trim())) return LIBRARY_URL;
+    if (typeof value !== "string") throw new Error("Invalid camp group URL");
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error("Invalid camp group URL");
+    return url.href;
+  }
+
+  async function load(configuredUrl) {
     // Use the mini-program's source directly, without sending identity credentials.
-    const upstream = await fetch(`${LIBRARY_URL}?t=${Date.now()}`, {
+    const url = new URL(sourceUrl(configuredUrl));
+    url.searchParams.set("t", String(Date.now()));
+    const upstream = await fetch(url.href, {
       headers: { Accept: "application/json" },
       credentials: "omit",
       referrerPolicy: "no-referrer",
@@ -89,5 +99,5 @@
     return fromLibrary(JSON.parse(new TextDecoder().decode(bytes)));
   }
 
-  window.MrzhCampGroup = Object.freeze({ fromLibrary, load });
+  window.MrzhCampGroup = Object.freeze({ fromLibrary, load, sourceUrl });
 })();

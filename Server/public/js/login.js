@@ -51,7 +51,9 @@
     location.replace(payload.returnTo || "/admin");
   });
 
-  initializeAuth();
+  void initializeAuth().catch(() => {
+    target.textContent = window.MrzhI18n.t("登录配置加载失败，请重新载入。");
+  }).finally(() => window.MrzhLoading?.settle("data"));
 
   async function initializeAuth() {
     const response = await fetch("/api/auth/config", { cache: "no-store" });

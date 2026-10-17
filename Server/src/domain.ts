@@ -28,6 +28,7 @@ export type TechnologyCategory = "military" | "agriculture" | "industry";
 export type TechnologyLane = "core" | "general";
 
 export interface CampConfig {
+  campGroupDataUrl: string;
   timezone: string;
   gameResetTime: string;
   specialDailyRefreshTime: string;

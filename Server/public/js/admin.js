@@ -1033,6 +1033,7 @@
         console.error(`Worker plugin client module failed: ${plugin.id}`, error);
       }
     }
+    window.MrzhLoading?.settle("plugins");
   }
 
   function renderAgents(heartbeats) {
@@ -1165,6 +1166,7 @@
       );
       for (const [name, value] of Object.entries({
         campName: camp.campName,
+        campGroupDataUrl: camp.campGroupDataUrl || "https://oss.yume.zone/mini-program/library/data.json",
         serverName: camp.serverName,
         publicSiteName: camp.publicSiteName,
         timezone: automation.timezone,
@@ -3945,6 +3947,8 @@
       byId("save-state").textContent = error.message;
     } finally {
       state.refreshing = false;
+      window.MrzhLoading?.settle("data");
+      if (!state.bootstrap) window.MrzhLoading?.settle("plugins");
       flushLiveRefresh();
     }
   }
@@ -4298,6 +4302,7 @@
       next.campConfig = {
         ...next.campConfig,
         campName: String(getField("campName")).trim(),
+        campGroupDataUrl: String(getField("campGroupDataUrl")).trim(),
         serverName: String(getField("serverName")).trim(),
         publicSiteName: String(getField("publicSiteName")).trim(),
         timezone,

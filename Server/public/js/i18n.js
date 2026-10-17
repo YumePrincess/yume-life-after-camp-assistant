@@ -4738,6 +4738,56 @@
     Object.assign(translations[language], additions);
   }
 
+  const loadingAndGroupSettingsTranslations = {
+  "zh-tw": {
+    "营地群资料 URL": "營地群資料 URL",
+    "填写支持跨域读取的 HTTPS data.json 地址；留空使用默认地址，内容格式与小程序一致。": "填寫支援跨域讀取的 HTTPS data.json 位址；留空使用預設位址，內容格式與小程式一致。",
+    "正在载入": "正在載入",
+    "载入进度": "載入進度",
+    "正在载入…": "正在載入…",
+    "重新载入": "重新載入",
+    "继续查看": "繼續查看",
+    "载入时间较长，可以重试或继续查看。": "載入時間較長，可以重試或繼續查看。",
+    "登录配置加载失败，请重新载入。": "登入設定載入失敗，請重新載入。"
+  },
+  "en": {
+    "营地群资料 URL": "Camp group data URL",
+    "填写支持跨域读取的 HTTPS data.json 地址；留空使用默认地址，内容格式与小程序一致。": "Use an HTTPS data.json URL that supports CORS. Leave blank for the default; use the same format as the mini-program.",
+    "正在载入": "Loading",
+    "载入进度": "Loading progress",
+    "正在载入…": "Loading…",
+    "重新载入": "Reload",
+    "继续查看": "Continue",
+    "载入时间较长，可以重试或继续查看。": "Loading is taking longer. Retry or continue viewing.",
+    "登录配置加载失败，请重新载入。": "Could not load sign-in settings. Please reload."
+  },
+  "fr": {
+    "营地群资料 URL": "URL des données du groupe",
+    "填写支持跨域读取的 HTTPS data.json 地址；留空使用默认地址，内容格式与小程序一致。": "URL HTTPS data.json compatible CORS. Laisser vide pour la valeur par défaut ; format identique au mini-programme.",
+    "正在载入": "Chargement",
+    "载入进度": "Progression du chargement",
+    "正在载入…": "Chargement…",
+    "重新载入": "Recharger",
+    "继续查看": "Continuer",
+    "载入时间较长，可以重试或继续查看。": "Le chargement prend du temps. Réessayez ou continuez.",
+    "登录配置加载失败，请重新载入。": "Impossible de charger les paramètres de connexion. Rechargez la page."
+  },
+  "ja": {
+    "营地群资料 URL": "営地グループ資料 URL",
+    "填写支持跨域读取的 HTTPS data.json 地址；留空使用默认地址，内容格式与小程序一致。": "CORS に対応した HTTPS data.json URL を入力します。空欄では既定の URL を使います。形式はミニプログラムと同じです。",
+    "正在载入": "読み込み中",
+    "载入进度": "読み込み状況",
+    "正在载入…": "読み込み中…",
+    "重新载入": "再読み込み",
+    "继续查看": "表示を続ける",
+    "载入时间较长，可以重试或继续查看。": "読み込みに時間がかかっています。再試行するか表示を続けてください。",
+    "登录配置加载失败，请重新载入。": "ログイン設定を読み込めませんでした。再読み込みしてください。"
+  }
+};
+  for (const [language, additions] of Object.entries(loadingAndGroupSettingsTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+
   function translate(source, language = currentLanguage()) {
     return translations[language]?.[source] || source;
   }

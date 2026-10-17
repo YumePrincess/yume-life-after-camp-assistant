@@ -24,6 +24,7 @@
     voteErrorRenewalCode: "",
     campGroup: null,
     campGroupStatus: "idle",
+    campGroupRequestedUrl: "",
     activeFeature: "",
     dailyPanel: "",
     dailyIdentityCodes: {},
@@ -718,7 +719,9 @@
       if (block.type === "text") {
         root.append(create("span", "group-text", block.text));
       } else if (block.type === "br") {
-        root.append(document.createElement("br"));
+        const separator = create("span", "group-break");
+        separator.setAttribute("aria-hidden", "true");
+        root.append(separator);
       } else if (block.type === "link" && safeGroupUrl(block.url)) {
         const link = create("a", "group-link", block.text);
         link.href = block.url;
@@ -751,13 +754,18 @@
   }
 
   async function loadCampGroup() {
-    if (state.campGroupStatus === "loading") return;
+    const sourceUrl = window.MrzhCampGroup.sourceUrl(state.data?.campConfig?.campGroupDataUrl);
+    if (state.campGroupStatus === "loading" && state.campGroupRequestedUrl === sourceUrl) return;
+    state.campGroupRequestedUrl = sourceUrl;
     state.campGroupStatus = "loading";
     renderCampGroup();
     try {
-      state.campGroup = await window.MrzhCampGroup.load();
+      const entry = await window.MrzhCampGroup.load(sourceUrl);
+      if (state.campGroupRequestedUrl !== sourceUrl) return;
+      state.campGroup = entry;
       state.campGroupStatus = "ready";
     } catch {
+      if (state.campGroupRequestedUrl !== sourceUrl) return;
       state.campGroupStatus = "error";
     }
     renderCampGroup();
@@ -2053,7 +2061,18 @@
   }
 
   function render(data) {
+    const sourceUrl = window.MrzhCampGroup.sourceUrl(data.campConfig?.campGroupDataUrl);
+    if (state.data && window.MrzhCampGroup.sourceUrl(state.data.campConfig?.campGroupDataUrl) !== sourceUrl) {
+      // A changed source needs the CSP issued with the latest page response.
+      window.location.reload();
+      return;
+    }
     state.data = data;
+    if (state.campGroupRequestedUrl && state.campGroupRequestedUrl !== sourceUrl) {
+      state.campGroupRequestedUrl = "";
+      state.campGroupStatus = "idle";
+      state.campGroup = null;
+    }
     if (identitySession()) void refreshVoteParticipation();
     applyPluginVisibility();
     document.documentElement.dataset.timezone =
@@ -2132,6 +2151,8 @@
           message: error.message
         })
       );
+    } finally {
+      window.MrzhLoading?.settle("data");
     }
   }
 
@@ -2896,7 +2917,10 @@
       void refreshFromLiveUpdate();
     }
   });
-  load();
+  const initialData = load();
+  void initialData.then(() => loadCampGroup()).finally(() => window.MrzhLoading?.settle("group"));
   connectLiveUpdates();
-  void refreshIdentitySession({ force: true });
+  void Promise.all([initialData, refreshIdentitySession({ force: true })])
+    .then(() => refreshVoteParticipation())
+    .finally(() => window.MrzhLoading?.settle("identity"));
 })();

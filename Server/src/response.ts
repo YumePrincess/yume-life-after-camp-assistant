@@ -1,6 +1,8 @@
+import { DEFAULT_CAMP_GROUP_DATA_URL, validateCampGroupDataUrl } from "./validate";
+
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy":
-    "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self'; connect-src 'self' https://oss.yume.zone/mini-program/library/data.json; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://account.yume.zone",
+    "default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://account.yume.zone",
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
@@ -9,14 +11,18 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Frame-Options": "DENY"
 };
 
-export function withSecurityHeaders(response: Response): Response {
+export function withSecurityHeaders(response: Response, campGroupDataUrl = DEFAULT_CAMP_GROUP_DATA_URL): Response {
   // A 101 response carries the live WebSocket endpoint in a non-standard
   // response slot. Re-wrapping it in `new Response(...)` would discard that
   // endpoint before the browser can complete the upgrade handshake.
   if (response.status === 101) return response;
   const next = new Response(response.body, response);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
-    if (!next.headers.has(key)) next.headers.set(key, value);
+    if (!next.headers.has(key)) {
+      const configuredOrigin = key === "Content-Security-Policy"
+        ? new URL(validateCampGroupDataUrl(campGroupDataUrl)).origin : "";
+      next.headers.set(key, configuredOrigin ? value.replace("connect-src 'self'", `connect-src 'self' ${configuredOrigin}`) : value);
+    }
   }
   return next;
 }

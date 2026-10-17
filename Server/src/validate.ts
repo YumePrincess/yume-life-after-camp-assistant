@@ -29,6 +29,21 @@ const CATEGORY_VALUES = new Set<TechnologyCategory>([
 const LANE_VALUES = new Set<TechnologyLane>(["core", "general"]);
 const TECH_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{1,63}$/;
 const DEFAULT_TASK_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const;
+export const DEFAULT_CAMP_GROUP_DATA_URL = "https://oss.yume.zone/mini-program/library/data.json";
+
+export function validateCampGroupDataUrl(value: unknown): string {
+  if (value === undefined || value === null || value === "" || (typeof value === "string" && !value.trim())) {
+    return DEFAULT_CAMP_GROUP_DATA_URL;
+  }
+  const source = text(value, "campConfig.campGroupDataUrl", { max: 2000 });
+  try {
+    const url = new URL(source);
+    if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error();
+    return url.href;
+  } catch {
+    throw new Error("营地群资料 URL 必须是 HTTPS 地址，且不能包含用户名、密码或片段标识");
+  }
+}
 
 function object(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -359,6 +374,7 @@ export function validateCampConfig(value: unknown): CampConfig {
   }
   return {
     timezone,
+    campGroupDataUrl: validateCampGroupDataUrl(source.campGroupDataUrl),
     gameResetTime,
     specialDailyRefreshTime,
     voteWindowStart,
