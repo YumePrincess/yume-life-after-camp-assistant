@@ -574,6 +574,12 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea {
 }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.85; }
 textarea { line-height: 1.65; }
+/* iOS zooms into small form text on focus. Keep the font large enough at all
+   times so opening or dismissing the keyboard never changes the page scale. */
+@media (max-width: 700px), (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px; }
+  input:not([type="checkbox"]):not([type="radio"]), select { line-height: 1.25; }
+}
 .field-checkbox { min-height: 44px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--glass-card); }
 .field-checkbox input { width: 18px; height: 18px; flex: 0 0 18px; }
 .form-grid { gap: 20px 18px; }
