@@ -1,5 +1,6 @@
 <script setup>
 import { X } from '@lucide/vue';
+import PresenceStatus from './PresenceStatus.vue';
 import UiAvatar from '../ui/Avatar.vue';
 import UiBadge from '../ui/Badge.vue';
 import UiButton from '../ui/Button.vue';
@@ -72,6 +73,7 @@ const emit = defineEmits(['close', 'update:inviteUserId', 'invite', 'remove-memb
             <SenderTitleBadge :identity="member" />
           </div>
           <span>@{{ member.username }}</span>
+          <PresenceStatus :user-id="member.id" />
         </div>
         <div class="member-chip__actions">
           <UiBadge :variant="member.role === 'owner' ? 'warm' : 'secondary'">

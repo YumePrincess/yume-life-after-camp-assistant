@@ -1,7 +1,10 @@
 import english from './en-US.js';
 
 const messages = {
-"camp.center":"Centre d’interaction de l’assistant du camp",
+"presence.online":"En ligne",
+"presence.offline":"Hors ligne",
+"presence.syncing":"Synchronisation",
+"camp.center":"Centre d’interaction",
   "camp.identity":"Code d’identité",
   "camp.home":"Retour à l’assistant du camp",
   "camp.profileManaged":"Gérez votre nom et votre avatar dans Code d’identité.",
@@ -92,7 +95,7 @@ const messages = {
   "profile.sendMessage": "Envoyer un message",
 
 
-  'app.description': 'Espace de discussion et de collaboration Centre d’interaction de l’assistant du camp',
+  'app.description': 'Espace de discussion et de collaboration Centre d’interaction',
   'auth.welcomeBack': 'Bienvenue',
   'auth.signIn': 'Se connecter avec',
   'auth.signingIn': 'Connexion…',

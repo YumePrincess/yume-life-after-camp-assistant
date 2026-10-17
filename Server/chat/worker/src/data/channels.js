@@ -1,5 +1,5 @@
 import { publicFileUrl } from "../utils.js";
-import { isUserDisabled } from "../user-status.js";
+import { activeUserSql, isUserDisabled } from "../user-status.js";
 
 function mapVisibleChannel(row) {
 	return {
@@ -51,7 +51,7 @@ export async function listVisibleChannels(db, userId) {
 			   EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?) AS is_member,
 			   COALESCE((SELECT cm.role FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ? LIMIT 1), '') AS my_role,
 			   EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ? AND cm.role = 'owner') AS can_manage,
-			   (SELECT COUNT(*) FROM channel_members cm WHERE cm.channel_id = c.id) AS member_count,
+			   (SELECT COUNT(*) FROM channel_members cm JOIN users active_member ON active_member.id=cm.user_id WHERE cm.channel_id = c.id AND active_member.deleted_at IS NULL AND ${activeUserSql("active_member")}) AS member_count,
 			   (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL) AS last_message_at,
 				   CASE WHEN EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?)
 				     THEN (SELECT COUNT(*) FROM messages m
@@ -107,7 +107,7 @@ export async function listAdminChannels(db, { includeAvatar = true } = {}) {
 				   c.id, c.name, c.description, c.avatar_key, c.kind, c.created_at,
 				   CASE WHEN c.name = 'general' THEN 1 ELSE 0 END AS is_general,
 			   owner.display_name AS owner_display_name,
-			   (SELECT COUNT(*) FROM channel_members cm WHERE cm.channel_id = c.id) AS member_count,
+			   (SELECT COUNT(*) FROM channel_members cm JOIN users active_member ON active_member.id=cm.user_id WHERE cm.channel_id = c.id AND active_member.deleted_at IS NULL AND ${activeUserSql("active_member")}) AS member_count,
 			   (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL) AS message_count
 			 FROM channels c
 			 LEFT JOIN users owner ON owner.id = c.created_by
@@ -125,7 +125,7 @@ export async function listChannelMembers(db, channelId) {
 			        u.is_admin, u.is_disabled, u.disabled_until
 			 FROM channel_members cm
 			 JOIN users u ON u.id = cm.user_id
-			 WHERE cm.channel_id = ? AND u.deleted_at IS NULL
+			 WHERE cm.channel_id = ? AND u.deleted_at IS NULL AND ${activeUserSql("u")}
 			 ORDER BY CASE cm.role WHEN 'owner' THEN 0 ELSE 1 END, u.display_name ASC`,
 		)
 		.bind(Number(channelId))

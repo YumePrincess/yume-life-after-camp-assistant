@@ -7,14 +7,14 @@
     <meta name="theme-color" content="#f3ece5" />
     <title>管理后台 · 明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260925-identity-code-nowrap" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261017-identity-chat-v2" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261017-chat-admin-v3" />
     <link rel="stylesheet" href="/loading.css?v=20261016-mini-program-colors" />
     <link rel="stylesheet" href="/mrzh-mobile.css?v=20261017-identity-chat-v2" />
     <script src="/js/loading.js?v=20261016-resources" defer></script>
     <script src="/js/preferences.js" defer></script>
     <script src="/js/timezone.js?v=20261017-identity-chat-v2" defer></script>
-    <script src="/js/i18n.js?v=20261017-identity-chat-v2" defer></script>
-    <script src="/js/chat-admin.js?v=20261017-identity-chat-v2" defer></script>
+    <script src="/js/i18n.js?v=20261017-chat-admin-v3" defer></script>
+    <script src="/js/chat-admin.js?v=20261017-chat-admin-v3" defer></script>
     <script src="/js/admin.js?v=20261017-identity-chat-v2" defer></script>
   </head>
   <body class="admin-page">
@@ -85,9 +85,21 @@
         <div class="admin-content">
           <section id="chat-admin" class="admin-view panel" data-admin-view="chat" hidden>
             <div class="section-heading"><div><p class="eyebrow">INTERACTION CENTER</p><h1>互动中心管理</h1></div><button id="chat-admin-refresh" class="button button-quiet" type="button">刷新</button></div>
-            <p id="chat-admin-summary" class="muted" role="status"></p>
-            <div class="action-row"><button id="chat-admin-rooms-tab" class="button button-quiet" type="button">全部会话（含私聊）</button><button id="chat-admin-files-tab" class="button button-quiet" type="button">聊天文件</button><button id="chat-admin-policy-tab" class="button button-quiet" type="button">聊天运行参数</button><button id="chat-admin-audit-tab" class="button button-quiet" type="button">访问日志</button></div>
-            <div class="chat-admin-grid"><div id="chat-admin-rooms" class="chat-admin-list"></div><div id="chat-admin-detail" class="chat-admin-messages"></div></div>
+            <div class="chat-admin-stats" aria-label="互动中心概览">
+              <div><span>会话</span><strong id="chat-admin-total-rooms">—</strong></div>
+              <div><span>消息</span><strong id="chat-admin-total-messages">—</strong></div>
+              <div><span>聊天文件</span><strong id="chat-admin-total-files">—</strong></div>
+            </div>
+            <div class="chat-admin-tabs" role="tablist" aria-label="互动中心管理">
+              <button id="chat-admin-rooms-tab" role="tab" aria-controls="chat-admin-workspace" aria-selected="true" type="button">全部会话（含私聊）</button>
+              <button id="chat-admin-files-tab" role="tab" aria-controls="chat-admin-workspace" aria-selected="false" tabindex="-1" type="button">聊天文件</button>
+              <button id="chat-admin-policy-tab" role="tab" aria-controls="chat-admin-workspace" aria-selected="false" tabindex="-1" type="button">聊天运行参数</button>
+            </div>
+            <p id="chat-admin-summary" class="chat-admin-feedback muted" role="status" aria-live="polite"></p>
+            <div id="chat-admin-workspace" class="chat-admin-grid" role="tabpanel" aria-labelledby="chat-admin-rooms-tab" data-mode="rooms">
+              <div id="chat-admin-rooms" class="chat-admin-list" aria-label="全部会话（含私聊）"></div>
+              <div id="chat-admin-detail" class="chat-admin-messages"></div>
+            </div>
           </section>
           <section class="admin-view overview-view" data-admin-view="overview" hidden>
             <div class="section-heading overview-heading">

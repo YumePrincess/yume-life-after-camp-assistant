@@ -1,6 +1,10 @@
-import { validateSession } from '../session.js';
-import { isVerifiedInternalRequest, parseVerifiedUserId } from '../verified-identity.js';
-import { durableObjectHealth } from '../maintenance/do-health.ts';
+import { IdentityDirectory, DIRECTORY_MARKER } from "./IdentityDirectory.js";
+import { validateSession } from "../session.js";
+import {
+  isVerifiedInternalRequest,
+  parseVerifiedUserId,
+} from "../verified-identity.js";
+import { durableObjectHealth } from "../maintenance/do-health.ts";
 
 export class UserInbox {
   constructor(state, env) {
@@ -9,7 +13,8 @@ export class UserInbox {
     this.connections = new Set();
 
     for (const socket of this.state.getWebSockets()) {
-      this.connections.add(socket);
+      if (socket.deserializeAttachment()?.kind !== DIRECTORY_MARKER)
+        this.connections.add(socket);
     }
   }
 
@@ -17,9 +22,11 @@ export class UserInbox {
     for (const socket of this.connections) {
       try {
         const meta = socket.deserializeAttachment();
-        const auth = await validateSession(this.env, meta?.token || '');
+        const auth = await validateSession(this.env, meta?.token || "");
         if (!auth.ok || auth.session.userId !== meta.userId) {
-          socket.close(1008,'Unauthorized'); this.connections.delete(socket); continue;
+          socket.close(1008, "Unauthorized");
+          this.connections.delete(socket);
+          continue;
         }
         socket.send(packet);
       } catch {
@@ -29,20 +36,22 @@ export class UserInbox {
   }
 
   async fetch(request) {
-    const health = durableObjectHealth(request, 'UserInbox');
+    const health = durableObjectHealth(request, "UserInbox");
     if (health) return health;
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/directory/"))
+      return this.directory().fetch(request);
 
-    if (url.pathname === '/connect') {
+    if (url.pathname === "/connect") {
       const userId = parseVerifiedUserId(request);
-      const token = url.searchParams.get('token') || '';
-      const auth = await validateSession(this.env,token);
+      const token = url.searchParams.get("token") || "";
+      const auth = await validateSession(this.env, token);
       if (!userId || !auth.ok || auth.session.userId !== userId) {
-        return new Response('Unauthorized', { status: 401 });
+        return new Response("Unauthorized", { status: 401 });
       }
 
-      if (request.headers.get('Upgrade') !== 'websocket') {
-        return new Response('Expected websocket', { status: 426 });
+      if (request.headers.get("Upgrade") !== "websocket") {
+        return new Response("Expected websocket", { status: 426 });
       }
 
       const pair = new WebSocketPair();
@@ -51,13 +60,13 @@ export class UserInbox {
       server.serializeAttachment({ userId, token });
       await this.state.storage.setAlarm(Date.now() + 60_000);
       this.connections.add(server);
-      server.send(JSON.stringify({ protocolVersion: 1, type: 'ready' }));
+      server.send(JSON.stringify({ protocolVersion: 1, type: "ready" }));
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    if (url.pathname === '/notify' && request.method === 'POST') {
+    if (url.pathname === "/notify" && request.method === "POST") {
       if (!isVerifiedInternalRequest(request)) {
-        return new Response('Unauthorized', { status: 401 });
+        return new Response("Unauthorized", { status: 401 });
       }
 
       const payload = await request.json();
@@ -65,19 +74,47 @@ export class UserInbox {
       return Response.json({ ok: true });
     }
 
-    return new Response('Not Found', { status: 404 });
+    return new Response("Not Found", { status: 404 });
+  }
+
+  directory() {
+    return (this.identityDirectory ||= new IdentityDirectory(
+      this.state,
+      this.env,
+    ));
+  }
+
+  async webSocketMessage(ws, message) {
+    if (ws.deserializeAttachment()?.kind === DIRECTORY_MARKER)
+      await this.directory().webSocketMessage(ws, message);
   }
 
   async alarm() {
-    await this.broadcast(JSON.stringify({protocolVersion:1,type:'heartbeat'}));
-    if (this.connections.size) await this.state.storage.setAlarm(Date.now()+60_000);
+    if (await this.state.storage.get(DIRECTORY_MARKER)) {
+      await this.directory().refresh();
+      return;
+    }
+    await this.broadcast(
+      JSON.stringify({ protocolVersion: 1, type: "heartbeat" }),
+    );
+    if (this.connections.size)
+      await this.state.storage.setAlarm(Date.now() + 60_000);
   }
 
-  webSocketClose(ws) {
+  async webSocketClose(ws) {
+    if (ws.deserializeAttachment()?.kind === DIRECTORY_MARKER) {
+      await this.directory().disconnect(ws);
+      return;
+    }
     this.connections.delete(ws);
   }
 
-  webSocketError(ws) {
+  async webSocketError(ws) {
+    if (ws.deserializeAttachment()?.kind === DIRECTORY_MARKER) {
+      ws.close(1011, "Connection error");
+      await this.directory().disconnect(ws);
+      return;
+    }
     this.connections.delete(ws);
   }
 }

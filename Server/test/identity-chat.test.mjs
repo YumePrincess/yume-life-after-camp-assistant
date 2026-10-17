@@ -1,8 +1,22 @@
+import {
+  IdentityDirectory,
+  DIRECTORY_MARKER,
+} from "../chat/worker/src/do/IdentityDirectory.js";
+import {
+  chatDirectoryMutation,
+  notifyChatDirectory,
+} from "../src/chat-directory";
+import { handleIdentityPasswordChange } from "../src/identity-password-change";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("worker-mailer", () => ({ WorkerMailer: class {} }));
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
-import { keyedHash, encryptSecret, hashPassword } from "../src/crypto";
+import {
+  keyedHash,
+  encryptSecret,
+  hashPassword,
+  verifyPassword,
+} from "../src/crypto";
 import {
   issueIdentitySession,
   validateIdentitySession,
@@ -459,7 +473,7 @@ describe("protected integrated chat", () => {
       expect(response.status).toBe(404);
     }
   });
-  it("denies private DM content and files to a non-member, while recording authorized admin reads", async () => {
+  it("denies private DM content and files to a non-member, allowing authorized camp admin reads", async () => {
     await bootstrap();
     await identity("two", "成员二", "22222222");
     await identity("three", "成员三", "33333333");
@@ -536,12 +550,8 @@ describe("protected integrated chat", () => {
     );
     expect((await result.json()).messages[0].content).toBe("私聊内容");
     expect(
-      sqlite
-        .prepare(
-          "SELECT actor FROM chat_admin_audit WHERE action='read_messages'",
-        )
-        .get().actor,
-    ).toBe(admin.email);
+      (await handleChatAdmin(req("/api/admin/chat/audit"), env, admin)).status,
+    ).toBe(404);
     expect(
       (
         await handleChatAdmin(req("/api/admin/chat"), env, {
@@ -663,5 +673,337 @@ describe("R2 avatars and backend-owned defaults", () => {
       ...(await getChatPolicy(env)),
     });
     expect(result.expiredMessagesDeleted).toBe(1);
+  });
+});
+
+describe("live identity directory and presence", () => {
+  async function get(path) {
+    return (
+      await chatApp.request(req(path, { headers: { cookie } }), undefined, env)
+    ).json();
+  }
+  function socket(userId, sessionToken = token, seenAt = Date.now()) {
+    let attachment = {
+      kind: DIRECTORY_MARKER,
+      userId,
+      token: sessionToken,
+      seenAt,
+    };
+    return {
+      readyState: 1,
+      frames: [],
+      close: vi.fn(function () {
+        this.readyState = 3;
+      }),
+      send(value) {
+        this.frames.push(JSON.parse(value));
+      },
+      deserializeAttachment: () => attachment,
+      serializeAttachment(value) {
+        attachment = value;
+      },
+    };
+  }
+  function directory(sockets) {
+    const storage = {
+      setAlarm: vi.fn(async () => {}),
+      deleteAlarm: vi.fn(async () => {}),
+      put: vi.fn(async () => {}),
+    };
+    return {
+      directory: new IdentityDirectory(
+        { getWebSockets: () => sockets, storage },
+        env,
+      ),
+      storage,
+    };
+  }
+  it("refreshes contacts and active group counts for new, disabled, expired and deleted identities without a new login", async () => {
+    const first = await get("/api/bootstrap");
+    const group = first.channels.find((c) => c.isGeneral).id;
+    await identity("two", "新增成员", "22222222");
+    expect(
+      (await get("/api/contacts")).users.map((u) => u.displayName),
+    ).toContain("新增成员");
+    const members = await get(`/api/channels/${group}/members`);
+    expect(members.members).toHaveLength(2);
+    sqlite
+      .prepare("UPDATE identity_codes SET status='disabled' WHERE id='two'")
+      .run();
+    expect((await get("/api/contacts")).users).toHaveLength(1);
+    expect((await get(`/api/channels/${group}/members`)).members).toHaveLength(
+      1,
+    );
+    expect(
+      (await get("/api/bootstrap")).channels.find((c) => c.isGeneral)
+        .memberCount,
+    ).toBe(1);
+    sqlite
+      .prepare(
+        "UPDATE identity_codes SET status='active',expires_at='2000-01-01T00:00:00Z' WHERE id='two'",
+      )
+      .run();
+    expect((await get(`/api/channels/${group}/members`)).members).toHaveLength(
+      1,
+    );
+    sqlite
+      .prepare("UPDATE identity_codes SET expires_at=NULL WHERE id='two'")
+      .run();
+    expect((await get(`/api/channels/${group}/members`)).members).toHaveLength(
+      2,
+    );
+    sqlite.prepare("DELETE FROM identity_codes WHERE id='two'").run();
+    expect((await get("/api/contacts")).users).toHaveLength(1);
+    expect((await get(`/api/channels/${group}/members`)).members).toHaveLength(
+      1,
+    );
+  });
+  it("keeps a member online across tabs, then removes revoked or expired connections and refreshes all observers", async () => {
+    const viewer = (await validateSession(env, token)).session.userId;
+    const watcher = socket(viewer);
+    const savedCookie = cookie;
+    await identity("two", "成员二", "22222222");
+    await login("22222222");
+    const member = (await validateSession(env, token)).session.userId;
+    const a = socket(member),
+      b = socket(member);
+    const live = directory([watcher, a, b]);
+    cookie = savedCookie;
+    await live.directory.refresh();
+    expect(watcher.frames.at(-1).onlineUserIds).toEqual([viewer, member]);
+    await live.directory.disconnect(a);
+    expect(watcher.frames.at(-1).onlineUserIds).toEqual([viewer, member]);
+    sqlite
+      .prepare("UPDATE identity_codes SET status='disabled' WHERE id='two'")
+      .run();
+    await live.directory.refresh(true);
+    expect(b.close).toHaveBeenCalledWith(1008, "Identity session expired");
+    expect(watcher.frames.at(-1).onlineUserIds).toEqual([viewer]);
+    expect(watcher.frames.at(-1).directoryChanged).toBe(true);
+    expect(JSON.stringify(watcher.frames.at(-1))).not.toContain(token);
+    await live.directory.disconnect(watcher);
+    expect(live.storage.deleteAlarm).toHaveBeenCalled();
+  });
+  it("wakes at identity expiry and detects members becoming invalid even without an admin request", async () => {
+    const id = (await validateSession(env, token)).session.userId;
+    const watcher = socket(id);
+    await identity("two", "成员二", "22222222");
+    const expires = new Date(Date.now() + 10_000).toISOString();
+    sqlite
+      .prepare("UPDATE identity_codes SET expires_at=? WHERE id='two'")
+      .run(expires);
+    const live = directory([watcher]);
+    await live.directory.refresh();
+    expect(live.storage.setAlarm.mock.calls.at(-1)[0]).toBeLessThanOrEqual(
+      Date.parse(expires) + 100,
+    );
+    await live.directory.refresh();
+    expect(watcher.frames.at(-1).directoryChanged).toBe(false);
+    sqlite
+      .prepare(
+        "UPDATE identity_codes SET expires_at='2000-01-01' WHERE id='two'",
+      )
+      .run();
+    await live.directory.refresh();
+    expect(watcher.frames.at(-1).directoryChanged).toBe(true);
+    expect(watcher.frames.at(-1).onlineUserIds).toEqual([id]);
+  });
+  it("restores presence after hibernation, ignores client-supplied identities, and expires lost heartbeats", async () => {
+    const id = (await validateSession(env, token)).session.userId;
+    const watcher = socket(id);
+    const lost = socket(id, token, Date.now() - 76_000);
+    const live = directory([watcher, lost]);
+    await live.directory.refresh();
+    expect(lost.close).toHaveBeenCalledWith(1001, "Presence heartbeat expired");
+    await live.directory.webSocketMessage(
+      watcher,
+      JSON.stringify({ type: "directory_changed", onlineUserIds: [999] }),
+    );
+    await live.directory.webSocketMessage(watcher, "null");
+    await live.directory.webSocketMessage(
+      watcher,
+      JSON.stringify({ type: "ping", userId: 999 }),
+    );
+    expect(watcher.deserializeAttachment().userId).toBe(id);
+    await live.directory.refresh();
+    expect(watcher.frames.at(-1).onlineUserIds).toEqual([id]);
+    expect(
+      (await live.directory.fetch(req("/directory/change", { method: "POST" })))
+        .status,
+    ).toBe(401);
+  });
+  it("invalidates only after successful mutations and uses the internal directory binding", async () => {
+    for (const path of [
+      "/api/admin/identity-codes/new",
+      "/api/admin/identity-applications/new/approve",
+      "/api/public/identity-cancellation",
+      "/api/public/identity-avatar",
+      "/api/public/identity-password-change",
+      "/api/public/identity-session",
+      "/chat/api/channels/1/members",
+    ]) {
+      expect(
+        chatDirectoryMutation(
+          req(path, { method: "POST" }),
+          new Response("{}"),
+        ),
+      ).toBe(true);
+      expect(chatDirectoryMutation(req(path), new Response("{}"))).toBe(false);
+      expect(
+        chatDirectoryMutation(
+          req(path, { method: "POST" }),
+          new Response("{}", { status: 400 }),
+        ),
+      ).toBe(false);
+    }
+    const fetch = vi.fn(async () => new Response("{}"));
+    env.USER_INBOX = { getByName: vi.fn(() => ({ fetch })) };
+    await notifyChatDirectory(env);
+    expect(env.USER_INBOX.getByName).toHaveBeenCalledWith("identity-roster");
+    expect(fetch.mock.calls[0][1].headers["x-cfchat-internal-auth"]).toBe(
+      "worker-verified",
+    );
+  });
+});
+
+describe("authenticated password changes", () => {
+  const change = (body, headers = jsonHeaders()) =>
+    handleIdentityPasswordChange(
+      req("/api/public/identity-password-change", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      }),
+      env,
+    );
+  it("requires the old password, binds its proof to the current login, and signs out every device after a successful change", async () => {
+    const firstToken = token;
+    expect(
+      (await change({ action: "verify", oldPassword: "incorrect" })).status,
+    ).toBe(400);
+    expect(
+      (await change({ action: "set", newPassword: "new-test-password" }))
+        .status,
+    ).toBe(400);
+    const proof = (
+      await (
+        await change({ action: "verify", oldPassword: "test-password" })
+      ).json()
+    ).verificationToken;
+    const firstCookie = cookie;
+    await login();
+    expect(
+      (
+        await change({
+          action: "set",
+          verificationToken: proof,
+          newPassword: "new-test-password",
+        })
+      ).status,
+    ).toBe(400);
+    const secondToken = token;
+    cookie = firstCookie;
+    expect(
+      (
+        await change({
+          action: "set",
+          verificationToken: proof,
+          newPassword: "test-password",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await change({
+          action: "set",
+          verificationToken: proof,
+          newPassword: "short",
+        })
+      ).status,
+    ).toBe(400);
+    const result = await change({
+      action: "set",
+      verificationToken: proof,
+      newPassword: "new-test-password",
+    });
+    expect(result.status).toBe(200);
+    expect(result.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect(await validateIdentitySession(env, firstToken)).toBeNull();
+    expect(await validateIdentitySession(env, secondToken)).toBeNull();
+    expect(
+      sqlite.prepare("SELECT count(*) n FROM identity_web_sessions").get().n,
+    ).toBe(0);
+    const hash = sqlite
+      .prepare("SELECT password_hash FROM identity_codes WHERE id='one'")
+      .get().password_hash;
+    expect(await verifyPassword("new-test-password", hash)).toBe(true);
+    expect(await verifyPassword("test-password", hash)).toBe(false);
+    expect(
+      (
+        await change({
+          action: "set",
+          verificationToken: proof,
+          newPassword: "another-password",
+        })
+      ).status,
+    ).toBe(401);
+  });
+  it("rejects guests, cross-origin requests, expired proofs and passwords after the identity expires", async () => {
+    expect(
+      (
+        await change(
+          { action: "verify", oldPassword: "test-password" },
+          { origin },
+        )
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await change(
+          { action: "verify", oldPassword: "test-password" },
+          { cookie, origin: "https://evil.example" },
+        )
+      ).status,
+    ).toBe(403);
+    const proof = (
+      await (
+        await change({ action: "verify", oldPassword: "test-password" })
+      ).json()
+    ).verificationToken;
+    expect(
+      (
+        await change({
+          action: "set",
+          verificationToken: `1.${proof.split(".")[1]}`,
+          newPassword: "new-password",
+        })
+      ).status,
+    ).toBe(400);
+    sqlite
+      .prepare(
+        "UPDATE identity_codes SET expires_at='2000-01-01' WHERE id='one'",
+      )
+      .run();
+    expect(
+      (
+        await change({
+          action: "set",
+          verificationToken: proof,
+          newPassword: "new-password",
+        })
+      ).status,
+    ).toBe(401);
+  });
+  it("limits repeated old-password guesses per identity", async () => {
+    for (let attempt = 0; attempt < 5; attempt++)
+      expect(
+        (await change({ action: "verify", oldPassword: "wrong" })).status,
+      ).toBe(400);
+    const response = await change({
+      action: "verify",
+      oldPassword: "test-password",
+    });
+    expect(response.status).toBe(429);
+    expect(Number(response.headers.get("Retry-After"))).toBeGreaterThan(0);
   });
 });

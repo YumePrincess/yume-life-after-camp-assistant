@@ -2,6 +2,7 @@
 import { Menu, Search, UsersRound } from "@lucide/vue";
 import { onBeforeUnmount, onMounted } from "vue";
 import type { UserSummary } from "../../../shared/user-profile.ts";
+import PresenceStatus from "../components/chat/PresenceStatus.vue";
 import UiAvatar from "../components/ui/Avatar.vue";
 import UiButton from "../components/ui/Button.vue";
 import { useContacts } from "../composables/useContacts.ts";
@@ -56,7 +57,8 @@ onBeforeUnmount(dispose);
             @click="emit('openProfile', user)"
           >
             <UiAvatar :src="user.avatarUrl" :fallback="user.displayName || user.username" size="md" />
-            <span>{{ user.displayName || user.username }}</span>
+            <span class="contacts-page__name">{{ user.displayName || user.username }}</span>
+            <PresenceStatus :user-id="user.id" />
           </button>
         </li>
       </ul>
@@ -79,12 +81,12 @@ onBeforeUnmount(dispose);
 .contacts-page__header {
   display: grid;
   gap: 20px;
-  padding: 28px clamp(20px, 5vw, 64px) 24px;
+  padding: 28px 24px 24px;
   border-bottom: 1px solid var(--chat-line);
   background: var(--chat-paper);
 }
 
-.contacts-page__title-row { display: flex; align-items: center; gap: 8px; }
+.contacts-page__title-row { display: flex; align-items: center; gap: 8px; width:min(100%,620px); margin-inline:auto; }
 .contacts-page__title-row h1 { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: 0; }
 
 .contacts-page__menu {
@@ -104,6 +106,7 @@ onBeforeUnmount(dispose);
   display: flex;
   align-items: center;
   width: min(100%, 620px);
+  margin-inline:auto;
   height: 44px;
   gap: 10px;
   padding: 0 14px;
@@ -117,15 +120,18 @@ onBeforeUnmount(dispose);
 .contacts-page__search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--chat-ink); font: inherit; letter-spacing: 0; }
 
 .contacts-page__body {
-  width: min(100%, 760px);
+  width:100%;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y:auto;
+  overflow-x:hidden;
+  scrollbar-width:none;
+  -ms-overflow-style:none;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  padding: 8px clamp(12px, 5vw, 64px) calc(24px + env(safe-area-inset-bottom));
+  padding: 8px 24px calc(24px + env(safe-area-inset-bottom));
 }
 
-.contacts-page__list { margin: 0; padding: 0; list-style: none; }
+.contacts-page__body::-webkit-scrollbar { display:none; width:0; height:0; }
+.contacts-page__list { width:min(100%,620px); margin:0 auto; padding:0; list-style:none; }
 .contacts-page__list li + li { border-top: 1px solid var(--chat-hover); }
 
 .contacts-page__row {
@@ -147,7 +153,7 @@ onBeforeUnmount(dispose);
 .contacts-page__row:hover { background: var(--chat-hover); }
 .contacts-page__row:active { background: var(--chat-selected); }
 .contacts-page__row:focus-visible, .contacts-page__menu:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 2px; }
-.contacts-page__row > span { min-width: 0; overflow: hidden; font-size: 15px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.contacts-page__row > .contacts-page__name { flex:1; min-width: 0; overflow: hidden; font-size: 15px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .contacts-page__row .ui-avatar { width: 42px; height: 42px; border-radius: 50%; box-shadow: none; }
 
 .contacts-page__state {

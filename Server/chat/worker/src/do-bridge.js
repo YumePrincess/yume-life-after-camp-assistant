@@ -94,3 +94,7 @@ export async function submitExternalRoomMessage(env, payload) {
 		},
 	);
 }
+
+export function forwardDirectoryConnection({env,request,principal}) {
+ return forwardVerifiedRequest({stub:env.USER_INBOX.getByName('identity-roster'),request,pathname:'/directory/connect',searchParams:{token:principal.token},principal});
+}

@@ -177,6 +177,11 @@ export default {
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     return url.toString();
   },
+  getDirectoryWebSocketUrl() {
+    const url = new URL(`${apiPrefix}/directory/ws`, getEdgeChatServerOrigin());
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return url.toString();
+  },
   getInboxWebSocketUrl() {
     const token = getStoredToken();
     const url = new URL(`${apiPrefix}/inbox/ws`, getEdgeChatServerOrigin());

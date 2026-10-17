@@ -2802,6 +2802,57 @@
     history.replaceState(null,"","/#identity");
     setTimeout(()=>showOperationNotice(window.MrzhI18n.t("请先登录身份识别码后进入互动中心。"),{kicker:"IDENTITY CODE"}),100);
   }
+  let passwordChangeProof = "", passwordChangeRevision = 0;
+  const passwordChangeDialog = byId("identity-password-change-dialog");
+  function resetPasswordChange() {
+    passwordChangeRevision += 1;
+    passwordChangeProof = "";
+    byId("identity-password-change-verify").reset();
+    byId("identity-password-change-set").reset();
+    byId("identity-password-change-verify").hidden = false;
+    byId("identity-password-change-set").hidden = true;
+    byId("identity-password-change-feedback").textContent = "";
+  }
+  byId("identity-change-password").addEventListener("click", () => {
+    if (!requireIdentitySession()) return;
+    resetPasswordChange(); passwordChangeDialog.showModal();
+    byId("identity-password-change-old").focus();
+  });
+  byId("identity-password-change-close").addEventListener("click",()=>passwordChangeDialog.close());
+  passwordChangeDialog.addEventListener("close",resetPasswordChange);
+  byId("identity-password-change-verify").addEventListener("submit",async(event)=>{
+    event.preventDefault();
+    const submit = event.currentTarget.querySelector('[type="submit"]');
+    const revision = ++passwordChangeRevision;
+    submit.disabled = true;
+    byId("identity-password-change-feedback").textContent = "";
+    try {
+      const result = await request("/api/public/identity-password-change",{method:"POST",body:JSON.stringify({action:"verify",oldPassword:byId("identity-password-change-old").value})});
+      if (revision !== passwordChangeRevision || !passwordChangeDialog.open) return;
+      passwordChangeProof = result.verificationToken;
+      byId("identity-password-change-old").value = "";
+      byId("identity-password-change-verify").hidden = true;
+      byId("identity-password-change-set").hidden = false;
+      byId("identity-password-change-new").focus();
+    } catch(error) { if (revision === passwordChangeRevision) byId("identity-password-change-feedback").textContent = window.MrzhI18n.t(error.message); }
+    finally { submit.disabled = false; }
+  });
+  byId("identity-password-change-set").addEventListener("submit",async(event)=>{
+    event.preventDefault();
+    const password = byId("identity-password-change-new").value;
+    const feedback = byId("identity-password-change-feedback");
+    if (password.length < 6 || password.length > 32) { feedback.textContent = window.MrzhI18n.t("密码必须为6至32位"); return; }
+    if (password !== byId("identity-password-change-confirm").value) { feedback.textContent = window.MrzhI18n.t("两次输入的新密码不一致。"); return; }
+    const submit = event.currentTarget.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      await request("/api/public/identity-password-change",{method:"POST",body:JSON.stringify({action:"set",verificationToken:passwordChangeProof,newPassword:password})});
+      passwordChangeDialog.close();
+      clearIdentitySession();
+      showOperationNotice(window.MrzhI18n.t("密码修改成功，请重新登录。"),{kicker:"IDENTITY CODE"});
+    } catch(error) { feedback.textContent = window.MrzhI18n.t(error.message); }
+    finally { submit.disabled = false; }
+  });
   byId("identity-logout").addEventListener("click", async () => {
     await request("/api/public/identity-session",{method:"DELETE"}).catch(()=>{});
     clearIdentitySession();

@@ -1,3 +1,5 @@
+import { handleIdentityPasswordChange } from "./identity-password-change";
+import { chatDirectoryMutation, notifyChatDirectory } from "./chat-directory";
 import { chatRuntimeEnv } from "./chat-policy";
 // @ts-expect-error Vendored JavaScript maintenance module.
 import { runScheduledGc as runChatGc } from "../chat/worker/src/gc.js";
@@ -291,6 +293,7 @@ const handler = {
         env,
         rawResponse
       );
+      if (chatDirectoryMutation(request, response)) ctx.waitUntil(notifyChatDirectory(env));
       const scopes = liveUpdateScopes(request, response);
       if (scopes.length) {
         // The response must not wait for a best-effort UI invalidation. Keeping
@@ -364,6 +367,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
   const method = request.method.toUpperCase();
   if (path.startsWith("/api/public/")) env = await withIdentityRequestSession(request,env);
   if (path === "/chat" || path.startsWith("/chat/")) return handleChat(request,env);
+  if (path === "/api/public/identity-password-change") return handleIdentityPasswordChange(request,env);
   if (path === "/api/public/identity-session") {
     if (method === "DELETE") {
       if (!identityRequestAllowed(request)) return problem("请求被拒绝",403);

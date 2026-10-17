@@ -94,7 +94,7 @@ export function useRoomManagement({
 		}
 	}
 
-	async function loadMembers() {
+	async function loadMembers(silent = false) {
 		const room = activeRoom.value;
 		if (!room || room.kind === "dm") {
 			groupMembers.value = [];
@@ -102,7 +102,7 @@ export function useRoomManagement({
 		}
 
 		const generation = ++memberLoadGeneration;
-		memberLoading.value = true;
+		if (!silent) memberLoading.value = true;
 		try {
 			const payload = await roomApi.getChannelMembers(room.id);
 			if (
@@ -120,7 +120,7 @@ export function useRoomManagement({
 				activeRoom.value.isGeneral = Boolean(payload.room.isGeneral);
 			activeRoom.value.avatarUrl = payload.room.avatarUrl || "";
 			activeRoom.value.avatarKey = payload.room.avatarKey || "";
-			syncGroupSettingsForm();
+			if (!showGroupEditor.value) syncGroupSettingsForm();
 		} catch (currentError) {
 			if (generation === memberLoadGeneration) {
 				error.value = currentError.message;

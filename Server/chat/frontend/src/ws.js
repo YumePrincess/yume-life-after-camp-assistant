@@ -52,3 +52,5 @@ export function connectInboxSocket({ onMessage, onStatus }) {
 	}
 	return openSocket(api.getInboxWebSocketUrl(), { onMessage, onStatus });
 }
+
+export function connectDirectorySocket(handlers) { return openSocket(api.getDirectoryWebSocketUrl(), handlers); }

@@ -15,18 +15,6 @@ import { getStorageObject } from "../chat/worker/src/storage-path.js";
 // @ts-expect-error Vendored JavaScript module.
 import { decryptAttachment } from "../chat/worker/src/encryption.js";
 
-async function audit(
-  env: Env,
-  actor: string,
-  action: string,
-  channelId: number | null = null,
-) {
-  await env.DB.prepare(
-    "INSERT INTO chat_admin_audit(actor,action,channel_id) VALUES(?,?,?)",
-  )
-    .bind(actor, action, channelId)
-    .run();
-}
 export async function handleChatAdmin(
   request: Request,
   env: Env,
@@ -52,7 +40,7 @@ export async function handleChatAdmin(
       const policy = validateChatPolicy(
         JSON.parse(new TextDecoder().decode(await boundedBody(request, 8000))),
       );
-      await audit(env, session.email, "update_chat_policy");
+
       await env.DB.prepare(
         "INSERT INTO settings(key,value,updated_at) VALUES('chat_policy',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
       )
@@ -68,7 +56,6 @@ export async function handleChatAdmin(
     }
   }
   if (path === "" && request.method === "GET") {
-    await audit(env, session.email, "list_conversations");
     const [rooms, totals] = await Promise.all([
       env.DB.prepare(`SELECT c.id,c.name,c.kind,c.created_at,c.deleted_at,
         (SELECT count(*) FROM messages m WHERE m.channel_id=c.id AND m.deleted_at IS NULL) AS message_count,
@@ -93,7 +80,7 @@ export async function handleChatAdmin(
       .first<{ name: string; kind: string }>();
     if (!room || room.name === "general" || room.kind === "dm")
       return problem("该会话不能删除", 400);
-    await audit(env, session.email, "delete_group", id);
+
     return json(await hardDeleteChannel(env.DB, id));
   }
   const messagesMatch = /^\/rooms\/(\d+)\/messages$/.exec(path);
@@ -105,7 +92,7 @@ export async function handleChatAdmin(
       .bind(id)
       .first();
     if (!room) return problem("会话不存在", 404);
-    await audit(env, session.email, "read_messages", id);
+
     const before = Number(url.searchParams.get("before")) || null;
     const messages = await chatMessages.listMessages(env, id, before, 50);
     return json({ room, messages });
@@ -114,7 +101,7 @@ export async function handleChatAdmin(
   if (messageMatch && request.method === "DELETE") {
     const roomId = Number(messageMatch[1]),
       messageId = Number(messageMatch[2]);
-    await audit(env, session.email, `delete_message:${messageId}`, roomId);
+
     const deleted = await chatMessages.softDeleteMessage(env.DB, {
       channelId: roomId,
       messageId,
@@ -148,7 +135,6 @@ export async function handleChatAdmin(
     return json({ ok: true });
   }
   if (path === "/files" && request.method === "GET") {
-    await audit(env, session.email, "list_files");
     const before =
       Number(url.searchParams.get("before")) || Number.MAX_SAFE_INTEGER;
     const files =
@@ -166,7 +152,7 @@ export async function handleChatAdmin(
       .bind(key)
       .first<{ filename: string; content_type: string }>();
     if (!file || !env.FILES) return problem("文件不存在", 404);
-    await audit(env, session.email, `read_file:${key}`);
+
     const object = await getStorageObject(env, key);
     if (!object) return problem("文件不存在", 404);
     const bytes = await decryptAttachment(env, await object.arrayBuffer(), key);
@@ -178,12 +164,6 @@ export async function handleChatAdmin(
         "X-Content-Type-Options": "nosniff",
       },
     });
-  }
-  if (path === "/audit" && request.method === "GET") {
-    const rows = await env.DB.prepare(
-      "SELECT * FROM chat_admin_audit ORDER BY id DESC LIMIT 100",
-    ).all();
-    return json({ events: rows.results });
   }
   return problem("Not found", 404);
 }

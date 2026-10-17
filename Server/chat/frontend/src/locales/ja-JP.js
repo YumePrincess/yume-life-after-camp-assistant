@@ -1,7 +1,10 @@
 import english from './en-US.js';
 
 const messages = {
-"camp.center":"野営地アシスタント交流センター",
+"presence.online":"オンライン",
+"presence.offline":"オフライン",
+"presence.syncing":"状態を同期中",
+"camp.center":"交流センター",
   "camp.identity":"本人確認コード",
   "camp.home":"営地アシスタントへ戻る",
   "camp.profileManaged":"プレイヤー名とアバターは本人確認コードで管理します。",
@@ -92,7 +95,7 @@ const messages = {
   "profile.sendMessage": "メッセージを送信",
 
 
-  'app.description': '野営地アシスタント交流センター チームコミュニケーションとコラボレーション',
+  'app.description': '交流センター チームコミュニケーションとコラボレーション',
   'auth.welcomeBack': 'ようこそ',
   'auth.signIn': '次のアカウントでログイン',
   'auth.signingIn': 'ログイン中…',

@@ -1,4 +1,5 @@
 <script setup>
+import { createDirectoryConnection, onDirectoryChange } from '../directory.js';
 import { ArrowLeft, Ban, Bell, BellOff, ContactRound, House, Menu, MessageCircle, Settings, UsersRound } from '@lucide/vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -462,6 +463,29 @@ async function copySelectedMessage() {
 	}
 }
 
+let directoryRefreshing = false, directoryRefreshPending = false;
+async function refreshDirectory() {
+  if (directoryRefreshing) { directoryRefreshPending = true; return; }
+  directoryRefreshing = true;
+  try {
+    do {
+      directoryRefreshPending = false;
+      await refreshSidebar(true);
+      const room = activeRoom.value;
+      if (room?.kind === 'dm') {
+        const updated = dms.value.find(item=>Number(item.id)===Number(room.id));
+        if (updated) room.otherUser = updated.otherUser;
+      } else if (room) {
+        const updated = channels.value.find(item=>Number(item.id)===Number(room.id));
+        if (updated) { room.memberCount = updated.memberCount; room.name = updated.name; }
+        if (showMemberPanel.value) await memberManagement.load(true);
+      }
+    } while (directoryRefreshPending);
+  } catch (cause) { console.warn('Chat directory refresh failed',cause); }
+  finally { directoryRefreshing = false; }
+}
+const directoryConnection = createDirectoryConnection();
+const stopDirectoryRefresh = onDirectoryChange(() => { void refreshDirectory(); });
 onMounted(() => {
   startViewportSync();
   window.addEventListener('focus', syncNotificationPermission);
@@ -469,6 +493,7 @@ onMounted(() => {
   void bootstrap().then(() => {
     nativeRoomNavigationReady = true;
     connectUnreadInbox();
+    directoryConnection.connect();
     openNativeRoom();
   });
 });
@@ -483,6 +508,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', syncNotificationPermission);
   window.removeEventListener(NATIVE_ROOM_OPEN_EVENT, openNativeRoom);
   clearInAppNotifications();
+  stopDirectoryRefresh();
+  directoryConnection.disconnect();
   disconnectUnreadInbox();
   disconnectSocket();
   stopViewportSync();

@@ -4,7 +4,7 @@ import { addAuthInvalidListener } from "./auth-storage.js";
 const state = reactive({
   ready: false,
   session: null,
-  site: { siteName: "营地助手互动中心", siteIconUrl: "" },
+  site: { siteName: "互动中心", siteIconUrl: "" },
 });
 function returnToIdentity() {
   window.location.replace("/?identityLoginRequired=1#identity");

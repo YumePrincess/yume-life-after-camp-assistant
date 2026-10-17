@@ -1,3 +1,4 @@
+import { syncIdentityChatUsers } from '../session.js';
 import {
   listChannelMembers,
   listVisibleChannels
@@ -173,6 +174,7 @@ export function registerChannelRoutes(app) {
     }
 
     const membership = await getChannelMembership(c.env.DB, channelId, session.userId);
+    await syncIdentityChatUsers(c.env);
     const members = await listChannelMembers(c.env.DB, channelId);
     return c.json({
       room: {
