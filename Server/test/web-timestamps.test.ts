@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 interface WebTimezone {
-  timestamp(value: unknown, timezone?: string, displayValue?: string): string;
+  timestamp(value: unknown, timezone?: string, displayValue?: string,
+    options?: { seconds?: boolean; showTimezone?: boolean }): string;
 }
 const browser: { MrzhTimezone?: WebTimezone } = {};
 
@@ -46,6 +47,27 @@ describe("web timestamps at minute precision", () => {
     expect(timezone().timestamp("invalid", "UTC+08:00")).toBe("—");
     expect(timezone().timestamp(null)).toBe("—");
   });
+});
 
+describe("task log timestamps", () => {
+  const options = { seconds: true, showTimezone: false };
 
+  it("shows seconds without a timezone and keeps the configured offset", () => {
+    expect(timezone().timestamp("2026-10-16T23:04:59.999Z", "UTC+08:00", "", options))
+      .toBe("2026/10/17 07:04:59");
+    expect(timezone().timestamp("2026-10-16T02:04:07Z", "UTC-05:30", "", options))
+      .toBe("2026/10/15 20:34:07");
+  });
+
+  it("recovers real seconds when the API display field has minute precision", () => {
+    expect(timezone().timestamp("2026-10-16T23:04:59Z", "UTC+08:00", "2026/10/17 07:04 (UTC+8)", options))
+      .toBe("2026/10/17 07:04:59");
+  });
+
+  it("preserves seconds in legacy display fields and handles missing data", () => {
+    expect(timezone().timestamp(null, "UTC+08:00", "2026-1-2 3:04:05 （GMT - 05:30）", options))
+      .toBe("2026/01/02 03:04:05");
+    expect(timezone().timestamp("invalid", "UTC+08:00", "", options)).toBe("—");
+    expect(timezone().timestamp(null, "UTC+08:00", "", options)).toBe("—");
+  });
 });

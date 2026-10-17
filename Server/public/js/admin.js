@@ -469,7 +469,10 @@
   }
 
   function formatTaskLogTimestamp(value, displayValue) {
-    return formatDate(value, displayValue);
+    return window.MrzhTimezone.timestamp(value, configuredTimezone(), displayValue, {
+      seconds: true,
+      showTimezone: false
+    });
   }
 
   function formatTimezoneLabel(value) {

@@ -2011,9 +2011,11 @@
       const content = create("div", "run-item-main");
       content.append(
         create("strong", "run-item-title", taskName(item.taskKey)),
-        create("time", "run-item-time muted", formatDate(
+        create("time", "run-item-time muted", window.MrzhTimezone.timestamp(
           item.finishedAt || item.createdAt,
-          item.finishedAt ? item.finishedAtDisplay : item.createdAtDisplay
+          configuredTimezone(),
+          item.finishedAt ? item.finishedAtDisplay : item.createdAtDisplay,
+          { seconds: true, showTimezone: false }
         ))
       );
       row.append(content, create("span", `status-badge status-${item.state}`, stateName(item.state)));

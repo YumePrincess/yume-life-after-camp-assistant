@@ -71,18 +71,24 @@
     return `UTC${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
   }
 
-  function timestamp(value, timezone = "UTC+08:00", displayValue = "") {
+  function timestamp(value, timezone = "UTC+08:00", displayValue = "", options = {}) {
+    const seconds = options.seconds === true;
+    const suffix = (zone, date) => options.showTimezone === false ? "" : ` (${label(zone, date)})`;
     // API display fields already contain wall time in their declared timezone.
     // Normalize those without parsing them in the browser's local timezone.
     function wallTime(source) {
       if (typeof source !== "string") return "";
       const match = source.trim().match(
-        /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:\s*[（(]\s*((?:UTC|GMT)(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?)\s*[）)]|\s+((?:UTC|GMT)(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?))?$/i
+        /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:\s*[（(]\s*((?:UTC|GMT)(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?)\s*[）)]|\s+((?:UTC|GMT)(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?))?$/i
       );
       if (!match) return "";
-      const zone = (match[6] || match[7] || timezone).replace(/\s+/g, "");
+      const zone = (match[7] || match[8] || timezone).replace(/\s+/g, "");
       const pad = (part) => part.padStart(2, "0");
-      return `${match[1]}/${pad(match[2])}/${pad(match[3])} ${pad(match[4])}:${match[5]} (${label(zone)})`;
+      // API display fields omit seconds; recover them from the original instant.
+      const rawDate = !seconds || value === null || value === undefined || value === "" ? null : new Date(value);
+      const second = match[6] || (rawDate && Number.isFinite(rawDate.getTime())
+        ? String(rawDate.getUTCSeconds()).padStart(2, "0") : "00");
+      return `${match[1]}/${pad(match[2])}/${pad(match[3])} ${pad(match[4])}:${match[5]}${seconds ? `:${second}` : ""}${suffix(zone)}`;
     }
     try {
       const preferred = wallTime(displayValue);
@@ -93,7 +99,7 @@
       const date = value instanceof Date ? value : new Date(value);
       if (!Number.isFinite(date.getTime())) return "—";
       const local = parts(date, timezone);
-      return `${local.year}/${local.month}/${local.day} ${local.hour}:${local.minute} (${label(timezone, date)})`;
+      return `${local.year}/${local.month}/${local.day} ${local.hour}:${local.minute}${seconds ? `:${local.second}` : ""}${suffix(timezone, date)}`;
     } catch {
       return "—";
     }
