@@ -23,7 +23,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var logPage = 0
     @Published private(set) var latestRunId: String?
     @Published var isBusy = false
-    @Published var statusMessage = ""
+    @Published var statusMessage = "" {
+        didSet { statusMessageRevision &+= 1 }
+    }
+    @Published private(set) var statusMessageRevision = 0
     @Published var alertMessage: String?
     @Published var showAbout = false
     @Published var serverURL: String

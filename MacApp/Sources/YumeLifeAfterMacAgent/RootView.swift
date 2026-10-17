@@ -16,8 +16,9 @@ struct RootView: View {
                         .navigationSplitViewColumnWidth(min: 210, ideal: 236, max: 270)
                 } detail: {
                     detail
-                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                        .overlay(alignment: .bottom) {
                             GlobalOperationStatusBar()
+                                .zIndex(10)
                         }
                 }
                 .navigationSplitViewStyle(.balanced)
@@ -649,50 +650,73 @@ private struct GlobalOperationStatusBar: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private struct DismissalKey: Equatable {
+        let revision: Int
+        let isBusy: Bool
+    }
+
     var body: some View {
-        if !model.statusMessage.isEmpty {
-            HStack(spacing: 10) {
-                Group {
-                    if model.isBusy {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+        Group {
+            if !model.statusMessage.isEmpty {
+                HStack(spacing: 10) {
+                    Group {
+                        if model.isBusy {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
                     }
-                }
-                .frame(width: 18, height: 18)
+                    .frame(width: 18, height: 18)
 
-                Text(model.statusMessage)
-                    .font(.callout)
-                    .lineLimit(1)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(model.statusMessage)
+                        .font(.callout)
+                        .lineLimit(1)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
-                        model.statusMessage = ""
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
+                            model.statusMessage = ""
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.semibold))
+                            .frame(width: 24, height: 24)
                     }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption.weight(.semibold))
-                        .frame(width: 24, height: 24)
+                    .buttonStyle(.plain)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .help(model.text("Close"))
                 }
-                .buttonStyle(.plain)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .help(model.text("Close"))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: 700)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.14), radius: 14, y: 5)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(maxWidth: 700)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
+        }
+        .task(id: DismissalKey(revision: model.statusMessageRevision, isBusy: model.isBusy)) {
+            guard !model.statusMessage.isEmpty, !model.isBusy else { return }
+            let revision = model.statusMessageRevision
+            do {
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+            } catch {
+                return
             }
-            .shadow(color: .black.opacity(0.14), radius: 14, y: 5)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 12)
-            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            guard !Task.isCancelled,
+                  !model.isBusy,
+                  model.statusMessageRevision == revision,
+                  !model.statusMessage.isEmpty else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
+                model.statusMessage = ""
+            }
         }
     }
 }

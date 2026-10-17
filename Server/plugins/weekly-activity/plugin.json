@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "weekly-activity",
   "version": "27.1.0",
-  "build": 27142,
+  "build": 27143,
   "displayName": "更新周活跃点",
   "description": "读取营地周计划中的活跃排行并更新成员周活跃点。",
   "builtin": true,
