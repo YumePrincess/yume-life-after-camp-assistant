@@ -483,6 +483,13 @@ CREATE TABLE identity_web_sessions (
 );
 CREATE INDEX identity_web_sessions_expiry ON identity_web_sessions(expires_at);
 ALTER TABLE identity_codes ADD COLUMN avatar_key TEXT;
+CREATE TABLE chat_admin_audit (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ actor TEXT NOT NULL,
+ action TEXT NOT NULL,
+ channel_id INTEGER,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 -- A signed identity number is permanent; resets and renewals retain it.
 CREATE TRIGGER identity_number_immutable BEFORE UPDATE OF code_hash, code_encrypted ON identity_codes
 WHEN NEW.code_hash <> OLD.code_hash OR NEW.code_encrypted <> OLD.code_encrypted
