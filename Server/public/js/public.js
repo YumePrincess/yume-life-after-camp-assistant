@@ -155,6 +155,8 @@
     if (loggedOut) loggedOut.hidden = Boolean(session);
     if (loggedIn) loggedIn.hidden = !session;
     setText("identity-account-state", session ? window.MrzhI18n.t("已登录") : window.MrzhI18n.t("未登录"));
+    byId("identity-account-status").dataset.signedIn = String(Boolean(session));
+    setText("identity-status-mark", session ? "✓" : "×");
     setText("daily-identity-panel-state", session ? "✓" : "—");
     renderIdentityEligibility(session);
     if (session) {

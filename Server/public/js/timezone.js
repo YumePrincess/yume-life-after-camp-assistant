@@ -82,7 +82,7 @@
       if (!match) return "";
       const zone = (match[6] || match[7] || timezone).replace(/\s+/g, "");
       const pad = (part) => part.padStart(2, "0");
-      return `${match[1]}-${pad(match[2])}-${pad(match[3])} ${pad(match[4])}:${match[5]} (${label(zone)})`;
+      return `${match[1]}/${pad(match[2])}/${pad(match[3])} ${pad(match[4])}:${match[5]} (${label(zone)})`;
     }
     try {
       const preferred = wallTime(displayValue);
@@ -93,7 +93,7 @@
       const date = value instanceof Date ? value : new Date(value);
       if (!Number.isFinite(date.getTime())) return "—";
       const local = parts(date, timezone);
-      return `${local.year}-${local.month}-${local.day} ${local.hour}:${local.minute} (${label(timezone, date)})`;
+      return `${local.year}/${local.month}/${local.day} ${local.hour}:${local.minute} (${label(timezone, date)})`;
     } catch {
       return "—";
     }

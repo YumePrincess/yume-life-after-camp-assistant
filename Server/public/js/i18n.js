@@ -3308,6 +3308,11 @@
   for (const [language, additions] of Object.entries(identityAccountTranslations)) {
     Object.assign(translations[language], additions);
   }
+  for (const [language, label] of Object.entries({
+    "zh-tw": "帳戶狀態", en: "Account status", fr: "État du compte", ja: "アカウント状態"
+  })) {
+    translations[language]["账户状态"] = label;
+  }
   const verificationSendLimitTranslations = {
     "zh-cn": {
       "验证码发送过于频繁：每分钟最多1次、每小时最多5次，请稍后重试。": "验证码发送过于频繁：每分钟最多1次、每小时最多5次，请稍后重试。"

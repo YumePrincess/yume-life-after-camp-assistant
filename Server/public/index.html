@@ -8,12 +8,12 @@
     <meta name="description" content="明日之后“愿”营地公共信息、科技投票与成员贡献" />
     <title>明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260921-vote-eligibility-override" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261016-dialog-material" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261016-notice-list" />
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/timezone.js?v=20261016-minute-timestamps" defer></script>
-    <script src="/js/i18n.js?v=20261016-mrzh-redesign" defer></script>
+    <script src="/js/timezone.js?v=20261016-slash-timestamps" defer></script>
+    <script src="/js/i18n.js?v=20261016-identity-status" defer></script>
     <script src="/js/camp-group.js?v=20261016-direct-library" defer></script>
-    <script src="/js/public.js?v=20261016-direct-library" defer></script>
+    <script src="/js/public.js?v=20261016-identity-status" defer></script>
   </head>
   <body class="public-page">
     <a class="skip-link" href="#main-content">跳至主要内容</a>
@@ -199,11 +199,9 @@
             </div>
           </section>
           <section class="daily-identity-section" data-daily-panel-content="identity" hidden>
-            <div class="section-heading">
-              <div>
-
-              </div>
-              <span id="identity-account-state" class="date-badge">未登录</span>
+            <div id="identity-account-status" class="identity-account-state" data-signed-in="false" role="status">
+              <span id="identity-status-mark" class="identity-status-mark" aria-hidden="true">×</span>
+              <div><span class="identity-status-kicker">账户状态</span><strong id="identity-account-state">未登录</strong></div>
             </div>
             <div id="identity-account-logged-out">
               <form id="identity-login-form" class="form-grid identity-account-form" novalidate>
