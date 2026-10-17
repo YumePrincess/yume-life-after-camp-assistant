@@ -1978,7 +1978,8 @@
       "抽签": "Draw",
       "提交抽签": "Enter draw",
       "开放 {start} - {end}": "Open {start} - {end}",
-      "投票时间 {start} - {end} ({timezone})": "Vote time {start} - {end} ({timezone})",
+      "开放时间 {start} - {end} ({timezone})": "Open {start} - {end} ({timezone})",
+      "共 {count} 人投票": "{count} voters",
       "投票截止时间 {end} ({timezone})": "Voting closes {end} ({timezone})",
       "参与 {count} 人": "Participants: {count}",
       "每人可选 {count} 项": "Up to {count} choices per person",
@@ -2033,7 +2034,8 @@
       "抽签": "Tirage",
       "提交抽签": "Participer au tirage",
       "开放 {start} - {end}": "Ouvert {start} - {end}",
-      "投票时间 {start} - {end} ({timezone})": "Période du vote {start} - {end} ({timezone})",
+      "开放时间 {start} - {end} ({timezone})": "Ouvert {start} - {end} ({timezone})",
+      "共 {count} 人投票": "{count} votants",
       "投票截止时间 {end} ({timezone})": "Clôture du vote : {end} ({timezone})",
       "参与 {count} 人": "Participants : {count}",
       "每人可选 {count} 项": "{count} choix maximum par personne",
@@ -2087,7 +2089,8 @@
       "抽签": "抽選",
       "提交抽签": "抽選に応募",
       "开放 {start} - {end}": "開始 {start} - {end}",
-      "投票时间 {start} - {end} ({timezone})": "投票時間 {start} - {end} ({timezone})",
+      "开放时间 {start} - {end} ({timezone})": "受付時間 {start} - {end} ({timezone})",
+      "共 {count} 人投票": "{count}人が投票",
       "投票截止时间 {end} ({timezone})": "投票締切 {end} ({timezone})",
       "参与 {count} 人": "参加者：{count}人",
       "每人可选 {count} 项": "1人{count}件まで選択",
@@ -2141,7 +2144,8 @@
       "抽签": "抽籤",
       "提交抽签": "提交抽籤",
       "开放 {start} - {end}": "開放 {start} - {end}",
-      "投票时间 {start} - {end} ({timezone})": "投票時間 {start} - {end} ({timezone})",
+      "开放时间 {start} - {end} ({timezone})": "開放時間 {start} - {end} ({timezone})",
+      "共 {count} 人投票": "共 {count} 人投票",
       "投票截止时间 {end} ({timezone})": "投票截止時間 {end} ({timezone})",
       "参与 {count} 人": "參與人數：{count}",
       "每人可选 {count} 项": "每人可選 {count} 項",
@@ -5008,6 +5012,17 @@
   document.addEventListener("DOMContentLoaded", () => {
     installControls();
     translateDocument();
+    // Reserve the actual footer height once, including its safe-area padding.
+    // Language wrapping and device rotation must not leave a fixed blank band.
+    const footer = document.querySelector(".site-footer");
+    if (footer && typeof ResizeObserver !== "undefined") {
+      const footerObserver = new ResizeObserver(() => {
+        document.documentElement.style.setProperty(
+          "--footer-reserved-height", `${Math.ceil(footer.getBoundingClientRect().height) + 8}px`
+        );
+      });
+      footerObserver.observe(footer);
+    }
     document.addEventListener("click", event => {
       if (event.target.closest(".preference-menu")) return;
       for (const menu of document.querySelectorAll(".preference-menu[open]")) {

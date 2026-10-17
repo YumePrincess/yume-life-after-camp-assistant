@@ -1,6 +1,8 @@
 /* Mobile counterpart of pages/mrzh/mrzh.wxss (750 rpx design canvas). */
 .mobile-site-name { display: none; }
 .member-last-active { display: none; }
+.vote-option-side, .daily-option-side { display: flex; flex-direction: column; align-items: flex-end; }
+.vote-option-checkmark, .daily-option-checkmark { display: none; }
 html:has(dialog[open]) { overflow: hidden; }
 @media (max-width: 700px) {
   :root { --rpx: calc(100vw / 750); }
@@ -93,22 +95,26 @@ html:has(dialog[open]) { overflow: hidden; }
   .public-page .vote-option { position: relative; height: auto; padding: calc(22 * var(--rpx)) calc(4 * var(--rpx)); gap: calc(18 * var(--rpx)); grid-template-columns: calc(84 * var(--rpx)) minmax(0, 1fr) calc(88 * var(--rpx)); border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; background: transparent; box-shadow: none; }
   .public-page .tech-icon { width: calc(84 * var(--rpx)); height: calc(84 * var(--rpx)); border-radius: calc(20 * var(--rpx)); }
   .public-page .tech-copy strong { font-size: calc(28 * var(--rpx)); }
-  .public-page .tech-copy small, .public-page .tech-description { font-size: calc(24 * var(--rpx)); line-height: 1.5; }
-  .public-page .vote-count { font-size: calc(24 * var(--rpx)); }
-  .public-page .vote-option::after { content: ""; position: absolute; right: calc(4 * var(--rpx)); bottom: calc(22 * var(--rpx)); width: calc(42 * var(--rpx)); height: calc(42 * var(--rpx)); display: grid; place-items: center; border: 1px solid var(--line); border-radius: calc(14 * var(--rpx)); color: transparent; }
-  .public-page .vote-option[data-selected="true"]::after { content: "✓"; color: #fff; background: #c66b46; border-color: #c66b46; }
-  .public-page .vote-option:disabled::after { display: none; }
+  .public-page .tech-copy small, .public-page .tech-description, .public-page .daily-vote-description { font-size: calc(26 * var(--rpx)); line-height: 1.5; }
+  .public-page .daily-vote-item-title { font-size: calc(28 * var(--rpx)); }
+  .public-page .vote-window-meta, .public-page .daily-vote-meta { gap: calc(12 * var(--rpx)); font-size: calc(23 * var(--rpx)); line-height: 1.45; }
+  .public-page .vote-limit-description, .public-page .vote-window-state { font-size: calc(26 * var(--rpx)); line-height: 1.5; }
+  .public-page .vote-option-side { align-self: center; justify-content: center; gap: calc(14 * var(--rpx)); }
+  .public-page .vote-option-side .vote-count { align-self: flex-end; padding: 0; font-size: calc(24 * var(--rpx)); }
+  .public-page .vote-option-checkmark { width: calc(46 * var(--rpx)); height: calc(46 * var(--rpx)); border-radius: calc(14 * var(--rpx)); }
+  .public-page .vote-option-checkmark, .public-page .daily-option-checkmark { display: grid; place-items: center; border: 1px solid var(--line-strong); color: transparent; font-size: calc(28 * var(--rpx)); line-height: 1; }
+  .public-page .vote-option[data-selected="true"] .vote-option-checkmark { color: #fff; background: #c66b46; border-color: #c66b46; }
   .public-page .daily-vote-item, .public-page .daily-history-card { padding: calc(20 * var(--rpx)) calc(18 * var(--rpx)); border-radius: calc(24 * var(--rpx)); }
-  .public-page .daily-vote-option { min-height: calc(78 * var(--rpx)); padding: calc(14 * var(--rpx)) calc(16 * var(--rpx)); border-radius: calc(18 * var(--rpx)); font-size: calc(28 * var(--rpx)); }
-  .public-page .daily-vote-option:not(.is-participated) { position: relative; min-height: calc(104 * var(--rpx)); padding-right: calc(112 * var(--rpx)); }
-  .public-page .daily-vote-option:not(.is-participated) .daily-vote-option-count { position: absolute; top: calc(14 * var(--rpx)); right: calc(16 * var(--rpx)); font-size: calc(23 * var(--rpx)); }
-  .public-page .daily-vote-option:not(.is-participated)::after { content: ""; position: absolute; right: calc(16 * var(--rpx)); bottom: calc(14 * var(--rpx)); display: grid; place-items: center; width: calc(36 * var(--rpx)); height: calc(36 * var(--rpx)); border: 1px solid var(--line); border-radius: calc(12 * var(--rpx)); color: transparent; }
-  .public-page .daily-vote-option.is-selected::after { content: "✓"; color: #fff; border-color: #c66b46; background: #c66b46; }
+  .public-page .daily-vote-option { min-height: calc(78 * var(--rpx)); align-items: center; gap: calc(14 * var(--rpx)); padding: calc(14 * var(--rpx)) calc(16 * var(--rpx)); border-radius: calc(18 * var(--rpx)); font-size: calc(28 * var(--rpx)); }
+  .public-page .daily-option-side { align-self: center; gap: calc(8 * var(--rpx)); min-width: calc(100 * var(--rpx)); }
+  .public-page .daily-option-side .daily-vote-option-count { font-size: calc(23 * var(--rpx)); }
+  .public-page .daily-option-checkmark { width: calc(36 * var(--rpx)); height: calc(36 * var(--rpx)); border-radius: calc(12 * var(--rpx)); }
+  .public-page .daily-vote-option.is-selected .daily-option-checkmark { color: #fff; border-color: #c66b46; background: #c66b46; }
   .public-page .identity-account-state { min-height: calc(76 * var(--rpx)); margin-bottom: calc(22 * var(--rpx)); padding: calc(16 * var(--rpx)) calc(20 * var(--rpx)); border-radius: calc(24 * var(--rpx)); }
   .public-page .identity-account-state strong { font-size: calc(27 * var(--rpx)); }
   .public-page .identity-account-summary { padding: calc(20 * var(--rpx)); margin-bottom: calc(22 * var(--rpx)); border-radius: calc(24 * var(--rpx)); }
   .public-page .daily-identity-section .identity-account-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(12 * var(--rpx)); }
-  .public-page .identity-account-actions .button { white-space: normal; font-size: calc(23 * var(--rpx)); padding: calc(12 * var(--rpx)); }
+  .public-page .identity-account-actions .button { min-height: calc(64 * var(--rpx)); white-space: normal; font-size: calc(23 * var(--rpx)); line-height: 1.2; padding: calc(8 * var(--rpx)) calc(14 * var(--rpx)); }
   .public-page #member-cards { grid-template-columns: minmax(0, 1fr); }
   .public-page .member-responsive-card, .public-page .run-item, .public-page .staff-card, .public-page .warning-card { padding: calc(22 * var(--rpx)) calc(4 * var(--rpx)); }
   .public-page .member-responsive-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: calc(8 * var(--rpx)); margin-top: calc(18 * var(--rpx)); padding-top: calc(16 * var(--rpx)); }
@@ -132,8 +138,8 @@ html:has(dialog[open]) { overflow: hidden; }
   body .feedback-dialog .vote-participant-name { font-size: calc(28 * var(--rpx)); padding: calc(14 * var(--rpx)) calc(18 * var(--rpx)); border-radius: calc(16 * var(--rpx)); }
   .public-page .button { min-height: calc(74 * var(--rpx)); }
   .public-page .feature-panel > .button, .public-page .daily-vote-submit { color: var(--accent); background: var(--glass-control); border: 1px solid var(--line); }
-  .public-page .site-footer { min-height: calc(92 * var(--rpx)); padding: calc(12 * var(--rpx)) calc(28 * var(--rpx)) calc(12 * var(--rpx) + env(safe-area-inset-bottom)); border-radius: calc(36 * var(--rpx)) calc(36 * var(--rpx)) 0 0; }
-  .public-page .site-footer .power { font-size: calc(20 * var(--rpx)); line-height: 1.7; }
+  .public-page .site-footer { min-height: 0; padding: 4px 14px max(4px, env(safe-area-inset-bottom)); border-radius: 16px 16px 0 0; }
+  .public-page .site-footer .power { font-size: 10px; line-height: 1.4; }
   .public-page .feature-detail-dialog[open] .feature-detail-card { animation: mini-sheet-in 260ms var(--ease-out) both; }
   .public-page .feature-detail-dialog.is-closing .feature-detail-card { animation: mini-sheet-out 220ms ease-in both; }
   @keyframes mini-sheet-in { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

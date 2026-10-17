@@ -1251,13 +1251,15 @@
     );
     setText(
       "vote-deadline",
-      window.MrzhI18n.format("开放时间 {opensAt} - {closesAt} ({timezone}) · 共 {count} 人投票", {
-        count: summary.ballotCount || 0,
-        opensAt: opensAt.value,
-        closesAt: closesAt.value,
+      window.MrzhI18n.format("开放时间 {start} - {end} ({timezone})", {
+        start: opensAt.value,
+        end: closesAt.value,
         timezone: formatTimezoneLabel(opensAt.timezone || closesAt.timezone || summary.timezone || configuredTimezone())
       })
     );
+    setText("vote-participant-count", window.MrzhI18n.format("共 {count} 人投票", {
+      count: summary.ballotCount || 0
+    }));
     const voteLimit = configuredVoteLimit(summary);
     setText(
       "vote-limit-description",
@@ -1352,14 +1354,18 @@
         if (option.description) {
           copy.append(create("span", "tech-description", option.description));
         }
-        button.append(
-          copy,
+        const side = create("span", "vote-option-side");
+        const checkmark = create("span", "vote-option-checkmark", "✓");
+        checkmark.setAttribute("aria-hidden", "true");
+        side.append(
           create(
             "span",
             "vote-count",
             `${option.votes} ${window.MrzhI18n.t("票")}`
-          )
+          ),
+          checkmark
         );
+        button.append(copy, side);
         button.addEventListener("click", () => toggleVote(summary, option));
         grid.append(button);
       }
@@ -1570,7 +1576,7 @@
     );
     meta.append(
       create("span", "daily-vote-meta-item", window.MrzhI18n.format(
-        "投票时间 {start} - {end} ({timezone})",
+        "开放时间 {start} - {end} ({timezone})",
         {
           start: startAt.value,
           end: endAt.value,
@@ -1599,9 +1605,13 @@
         button.setAttribute("aria-pressed", String(selected.has(option.id)));
         const content = create("div", "daily-vote-option-content");
         renderRichBlocks(content, option.blocks, window.MrzhI18n.t("未命名选项"));
-        button.append(content, create("strong", "daily-vote-option-count", window.MrzhI18n.format("{count} 票", {
+        const side = create("span", "daily-option-side");
+        const checkmark = create("span", "daily-option-checkmark", "✓");
+        checkmark.setAttribute("aria-hidden", "true");
+        side.append(create("strong", "daily-vote-option-count", window.MrzhI18n.format("{count} 票", {
           count: option.votes || 0
-        })));
+        })), checkmark);
+        button.append(content, side);
         button.addEventListener("click", () => {
           if (alreadyParticipated && item.isOpen) {
             void openVoteParticipants({
