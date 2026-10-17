@@ -4937,6 +4937,13 @@
       } else {
         target.append(controls);
       }
+      const publicBadgeRow = document.querySelector(".public-page #camp-hero .chips");
+      if (publicBadgeRow && header.matches(".public-page .site-header")) {
+        const mobile = window.matchMedia("(max-width: 700px)");
+        const placeControls = () => (mobile.matches ? publicBadgeRow : header).append(controls);
+        placeControls();
+        mobile.addEventListener("change", placeControls);
+      }
     }
     syncControls();
   }

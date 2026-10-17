@@ -656,6 +656,8 @@
     const activeCard = activeId
       ? document.querySelector(`.feature-card[data-feature-target="${activeId}"]`)
       : null;
+    const returnFocus = state.featureReturnFocus || activeCard;
+    state.featureReturnFocus = null;
     for (const panelId of FEATURE_IDS) {
       const item = byId(panelId);
       if (item) item.hidden = true;
@@ -670,10 +672,15 @@
     if (clearHash) {
       history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     }
-    if (restoreFocus && activeCard && !activeCard.hidden) activeCard.focus();
+    if (restoreFocus && returnFocus && !returnFocus.hidden) returnFocus.focus({ preventScroll: true });
   }
 
-  function showFeature(id, { updateHash = true } = {}) {
+  function resetFeatureScroll() {
+    const body = document.querySelector(".feature-detail-body");
+    if (body) body.scrollTop = 0;
+  }
+
+  function showFeature(id, { updateHash = true, returnFocus = document.activeElement } = {}) {
     if (!FEATURE_IDS.includes(id)) return false;
     const panel = byId(id);
     const selectedCard = document.querySelector(
@@ -681,6 +688,8 @@
     );
     const dialog = byId("feature-detail-dialog");
     if (!panel || !selectedCard || selectedCard.hidden || !dialog) return false;
+    window.clearTimeout(featureCloseTimer);
+    dialog.classList.remove("is-closing");
     if (id !== "vote") state.dailyPanel = "";
     for (const panelId of FEATURE_IDS) {
       const item = byId(panelId);
@@ -696,7 +705,11 @@
     if (updateHash) {
       history.replaceState(null, "", `#${id}`);
     }
-    if (!dialog.open) dialog.showModal();
+    resetFeatureScroll();
+    if (!dialog.open) {
+      state.featureReturnFocus = returnFocus;
+      dialog.showModal();
+    }
     if (id === "group" && state.campGroupStatus === "idle") void loadCampGroup();
     return true;
   }
@@ -776,7 +789,25 @@
     const id = control.dataset.featureTarget;
     if (!id) return;
     event.preventDefault();
-    showFeature(id);
+    showFeature(id, { returnFocus: control });
+  }
+
+  let featureCloseTimer = null;
+
+  function closeFeatureDialog() {
+    const dialog = byId("feature-detail-dialog");
+    if (!dialog.open || dialog.classList.contains("is-closing")) return;
+    if (!window.matchMedia("(max-width: 700px)").matches ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      dialog.close();
+      return;
+    }
+    dialog.classList.add("is-closing");
+    featureCloseTimer = window.setTimeout(() => {
+      dialog.close();
+      dialog.classList.remove("is-closing");
+      featureCloseTimer = null;
+    }, 220);
   }
 
   function initFeatureNavigation() {
@@ -787,12 +818,14 @@
       const id = window.location.hash.slice(1);
       if (FEATURE_IDS.includes(id)) showFeature(id, { updateHash: false });
     });
-    byId("close-feature-detail").addEventListener("click", () => {
-      byId("feature-detail-dialog").close();
-    });
+    byId("close-feature-detail").addEventListener("click", closeFeatureDialog);
     byId("back-daily-vote").addEventListener("click", backDailyPanels);
     byId("feature-detail-dialog").addEventListener("click", (event) => {
-      if (event.target === event.currentTarget) event.currentTarget.close();
+      if (event.target === event.currentTarget) closeFeatureDialog();
+    });
+    byId("feature-detail-dialog").addEventListener("cancel", event => {
+      event.preventDefault();
+      closeFeatureDialog();
     });
     byId("feature-detail-dialog").addEventListener("close", () => {
       resetFeatureSelection({ restoreFocus: true });
@@ -1014,14 +1047,14 @@
     const dialog = byId("vote-participants-dialog");
     const list = byId("vote-participants-list");
     list.replaceChildren();
+    list.hidden = true;
     setText("vote-participants-title", title);
     const subtitleElement = byId("vote-participants-subtitle");
     subtitleElement.textContent = subtitle;
     subtitleElement.hidden = !subtitle;
-    dialog.querySelector(".vote-participants-card")?.classList.toggle("has-subtitle", Boolean(subtitle));
     setText("vote-participants-status", "");
-    if (!dialog.open) dialog.showModal();
     const progressToken = showOperationProgress("DAILY VOTING");
+    let errorMessage = "";
     try {
       const result = await request("/api/public/vote-participants", {
         method: "POST",
@@ -1040,22 +1073,25 @@
       });
       list.replaceChildren();
       const names = Array.isArray(result.names) ? result.names : [];
+      list.hidden = names.length === 0;
       if (names.length) {
         for (const name of names) list.append(create("li", "vote-participant-name", String(name || "—")));
         setText("vote-participants-status", window.MrzhI18n.format("共 {count} 人", { count: names.length }));
       } else {
-        showOperationNotice(window.MrzhI18n.t("暂无参与人。"), { kicker: "DAILY VOTING" });
+        setText("vote-participants-status", window.MrzhI18n.t("暂无参与人。"));
       }
     } catch (error) {
       list.replaceChildren();
-      showOperationNotice(
-        window.MrzhI18n.t(error.code === "vote_participation_required"
+      errorMessage = window.MrzhI18n.t(error.code === "vote_participation_required"
           ? "请先完成本期投票后再查看名单。"
-          : "参与人名单暂时无法加载，请稍后重试。"),
-        { kicker: "DAILY VOTING" }
-      );
+          : "参与人名单暂时无法加载，请稍后重试。");
     } finally {
       hideOperationProgress(progressToken);
+    }
+    if (errorMessage) {
+      showOperationNotice(errorMessage, { kicker: "DAILY VOTING" });
+    } else if (!dialog.open) {
+      dialog.showModal();
     }
   }
 
@@ -1276,6 +1312,7 @@
         button.disabled = summary.isOpen === false || alreadyParticipated;
         button.dataset.key = option.key;
         button.dataset.selected = String(state.selections.has(option.key));
+        button.setAttribute("aria-pressed", String(state.selections.has(option.key)));
         if (option.iconUrl) {
           const image = document.createElement("img");
           image.className = "tech-icon";
@@ -1559,6 +1596,7 @@
         const button = create("button", `daily-vote-option${selected.has(option.id) ? " is-selected" : ""}${alreadyParticipated ? " is-participated" : ""}`);
         button.type = "button";
         button.disabled = item.isOpen === false;
+        button.setAttribute("aria-pressed", String(selected.has(option.id)));
         const content = create("div", "daily-vote-option-content");
         renderRichBlocks(content, option.blocks, window.MrzhI18n.t("未命名选项"));
         button.append(content, create("strong", "daily-vote-option-count", window.MrzhI18n.format("{count} 票", {
@@ -1801,6 +1839,7 @@
     if (state.activeFeature !== "vote") return;
     state.dailyPanel = panel;
     renderDailyVote(state.data?.dailyVote || {});
+    resetFeatureScroll();
     if (panel === "identity") void refreshIdentitySession();
     if (panel === "technology" || panel === "items") void refreshVoteParticipation({ force: true });
   }
@@ -1808,6 +1847,7 @@
   function backDailyPanels() {
     state.dailyPanel = "";
     renderDailyVote(state.data?.dailyVote || {});
+    resetFeatureScroll();
   }
 
   async function submitDailyVote(item) {
@@ -1954,6 +1994,9 @@
           )
         );
         const metrics = create("div", "member-responsive-metrics");
+        if (item.last_active_text) {
+          heading.append(create("span", "member-last-active", item.last_active_text));
+        }
         for (const [value, label] of [
           [item.weekly_contribution ?? 0, "本周贡献"],
           [item.technology_points_used ?? 0, "使用科技点"],
@@ -2082,6 +2125,7 @@
     const siteName = data.siteName || window.MrzhI18n.t("明日之后“愿”营地助手");
     document.title = window.MrzhI18n.t(siteName);
     setText("site-name", window.MrzhI18n.t(siteName));
+    setText("mobile-site-name", window.MrzhI18n.t(siteName));
     setText(
       "camp-name",
       data.campConfig?.campName || window.MrzhI18n.t("未命名营地")

@@ -8,15 +8,16 @@
     <meta name="description" content="明日之后“愿”营地公共信息、科技投票与成员贡献" />
     <title>明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260921-vote-eligibility-override" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261016-mainland-footer" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261016-compact-notices" />
     <link rel="stylesheet" href="/loading.css?v=20261016-mini-program-colors" />
+    <link rel="stylesheet" href="/mrzh-mobile.css?v=20261017-mini-program" />
     <script src="/js/loading.js?v=20261016-resources" defer></script>
     <script src="/js/preferences.js" defer></script>
     <script src="/js/timezone.js?v=20261016-task-log-seconds" defer></script>
-    <script src="/js/i18n.js?v=20261016-mainland-footer" defer></script>
+    <script src="/js/i18n.js?v=20261017-mobile-controls" defer></script>
     <script src="/js/camp-group.js?v=20261016-configurable-source" defer></script>
     <script src="/js/vote-participation.js?v=20261016-participation-sync" defer></script>
-    <script src="/js/public.js?v=20261016-task-log-seconds" defer></script>
+    <script src="/js/public.js?v=20261017-mobile-sheets" defer></script>
   </head>
   <body class="public-page">
     <div id="page-loading" class="page-loading" role="status" aria-label="正在载入">
@@ -47,6 +48,7 @@
         <div class="hero-content">
           <p class="eyebrow">LifeAfter “Wish” Camp Assistant</p>
           <h1 id="camp-name">正在连接营地…</h1>
+          <h1 id="mobile-site-name" class="mobile-site-name">明日之后“愿”营地助手</h1>
           <p id="announcement" class="hero-copy">正在读取最新公共信息。</p>
           <div class="chips">
             <span class="chip" id="server-name">中国大陆服务器</span>
@@ -499,7 +501,7 @@
   </form>
     </dialog>
 
-    <dialog id="identity-eligibility-dialog" class="compact-dialog">
+    <dialog id="identity-eligibility-dialog" class="compact-dialog feedback-dialog">
       <form method="dialog" class="dialog-card identity-eligibility-card">
         <div class="section-heading">
           <div>
@@ -534,7 +536,7 @@
       </form>
     </dialog>
 
-    <dialog id="identity-application-error-dialog" class="compact-dialog">
+    <dialog id="identity-application-error-dialog" class="compact-dialog feedback-dialog">
       <form method="dialog" class="dialog-card vote-success-card">
         <p class="eyebrow">IDENTITY CODE</p>
         <h2>申请未提交</h2>
@@ -546,7 +548,7 @@
       </form>
     </dialog>
 
-    <dialog id="identity-application-success-dialog" class="compact-dialog">
+    <dialog id="identity-application-success-dialog" class="compact-dialog feedback-dialog">
       <form method="dialog" class="dialog-card vote-success-card">
         <p class="eyebrow">IDENTITY CODE</p>
         <h2 id="identity-application-success-title">申请已提交</h2>
@@ -556,7 +558,7 @@
       </form>
     </dialog>
 
-    <dialog id="vote-success-dialog" class="compact-dialog">
+    <dialog id="vote-success-dialog" class="compact-dialog feedback-dialog">
       <form method="dialog" class="dialog-card vote-success-card">
         <p id="vote-success-kicker" class="eyebrow">TECHNOLOGY VOTE</p>
         <h2 id="vote-success-title">投票成功</h2>
@@ -566,7 +568,7 @@
         <button class="button button-primary" value="close">关闭</button>
       </form>
     </dialog>
-    <dialog id="operation-progress-dialog" class="compact-dialog operation-progress-dialog" aria-labelledby="operation-progress-title">
+    <dialog id="operation-progress-dialog" class="compact-dialog feedback-dialog operation-progress-dialog" aria-labelledby="operation-progress-title">
       <div class="dialog-card vote-success-card operation-progress-card" role="status" aria-live="polite">
         <p id="operation-progress-kicker" class="eyebrow">CAMP ASSISTANT</p>
         <h2 id="operation-progress-title">正在处理…</h2>
@@ -575,7 +577,7 @@
         </div>
       </div>
     </dialog>
-    <dialog id="vote-error-dialog" class="compact-dialog">
+    <dialog id="vote-error-dialog" class="compact-dialog feedback-dialog">
       <form method="dialog" class="dialog-card vote-success-card">
         <p class="eyebrow">TECHNOLOGY VOTE</p>
         <h2 id="vote-error-title">投票未提交</h2>
@@ -587,7 +589,7 @@
       </form>
     </dialog>
 
-    <dialog id="vote-participants-dialog" class="compact-dialog" aria-labelledby="vote-participants-title">
+    <dialog id="vote-participants-dialog" class="compact-dialog feedback-dialog" aria-labelledby="vote-participants-title">
       <div class="dialog-card vote-participants-card">
         <p class="eyebrow">VOTE PARTICIPANTS</p>
         <h2 id="vote-participants-title">投票人名单</h2>
