@@ -1,3 +1,5 @@
+import { attachConversationPreviews } from "../chat/worker/src/data/conversation-previews.js";
+import { ensureDmChannel } from "../chat/worker/src/data/dm-provisioning.js";
 import {
   IdentityDirectory,
   DIRECTORY_MARKER,
@@ -1005,5 +1007,200 @@ describe("authenticated password changes", () => {
     });
     expect(response.status).toBe(429);
     expect(Number(response.headers.get("Retry-After"))).toBeGreaterThan(0);
+  });
+});
+
+describe("authorized latest conversation messages", () => {
+  async function get(path) {
+    return (
+      await chatApp.request(req(path, { headers: { cookie } }), undefined, env)
+    ).json();
+  }
+  it("decrypts latest group and DM previews on bootstrap, and falls back after deleting the newest message", async () => {
+    const group = (await get("/api/bootstrap")).channels.find(
+      (c) => c.isGeneral,
+    );
+    const one = (await validateSession(env, token)).session.userId;
+    await identity("two", "成员二", "22222222");
+    await syncIdentityChatUsers(env);
+    const two = sqlite
+      .prepare("SELECT id FROM users WHERE identity_code_id='two'")
+      .get().id;
+    const dm = await ensureDmChannel(env.DB, one, two);
+    const first = await insertMessage(env, {
+      channelId: group.id,
+      senderId: one,
+      content: "群聊旧消息",
+      mentionUserIds: [],
+    });
+    const latest = await insertMessage(env, {
+      channelId: group.id,
+      senderId: one,
+      content: "群聊最新消息",
+      mentionUserIds: [],
+    });
+    await insertMessage(env, {
+      channelId: Number(dm.id),
+      senderId: two,
+      content: "新私聊消息",
+      mentionUserIds: [],
+    });
+    const payload = await get("/api/bootstrap");
+    expect(payload.channels.find((c) => c.isGeneral).lastMessage.content).toBe(
+      "群聊最新消息",
+    );
+    expect(
+      payload.dms.find((c) => c.id === Number(dm.id)).lastMessage.content,
+    ).toBe("新私聊消息");
+    expect((await get("/api/dm")).dms[0].lastMessage.content).toBe(
+      "新私聊消息",
+    );
+    expect(
+      sqlite.prepare("SELECT content FROM messages WHERE id=?").get(latest.id)
+        .content,
+    ).not.toBe("群聊最新消息");
+    sqlite
+      .prepare("UPDATE messages SET deleted_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(latest.id);
+    expect(
+      (await get("/api/bootstrap")).channels.find((c) => c.isGeneral)
+        .lastMessage.id,
+    ).toBe(first.id);
+    sqlite
+      .prepare("UPDATE messages SET deleted_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(first.id);
+    expect(
+      (await get("/api/bootstrap")).channels.find((c) => c.isGeneral)
+        .lastMessage,
+    ).toBeNull();
+  });
+  it("does not expose private or unjoined group previews to non-members", async () => {
+    await bootstrap();
+    const one = (await validateSession(env, token)).session.userId;
+    await identity("two", "成员二", "22222222");
+    await syncIdentityChatUsers(env);
+    const two = sqlite
+      .prepare("SELECT id FROM users WHERE identity_code_id='two'")
+      .get().id;
+    for (const kind of ["private", "public"]) {
+      const room = sqlite
+        .prepare("INSERT INTO channels(name,kind,created_by) VALUES(?,?,?)")
+        .run("hidden-" + kind, kind, two).lastInsertRowid;
+      sqlite
+        .prepare(
+          "INSERT INTO channel_members(channel_id,user_id,role) VALUES(?,?,?)",
+        )
+        .run(Number(room), two, "owner");
+      await insertMessage(env, {
+        channelId: Number(room),
+        senderId: two,
+        content: "不应泄露的消息",
+        mentionUserIds: [],
+      });
+      const result = await attachConversationPreviews(
+        env,
+        [{ id: Number(room), kind, isMember: true }],
+        one,
+      );
+      expect(result[0].lastMessage).toBeNull();
+    }
+    const payload = await get("/api/bootstrap");
+    expect(
+      payload.channels.find((c) => c.name === "hidden-private"),
+    ).toBeUndefined();
+    expect(
+      payload.channels.find((c) => c.name === "hidden-public").lastMessage,
+    ).toBeNull();
+    expect(JSON.stringify(payload)).not.toContain("不应泄露的消息");
+  });
+  it("projects attachment-only latest messages without exposing file contents", async () => {
+    const group = (await get("/api/bootstrap")).channels.find(
+      (c) => c.isGeneral,
+    );
+    const one = (await validateSession(env, token)).session.userId;
+    const upload = await saveUploadedFile(
+      { ...env, ...(await getChatPolicy(env)) },
+      { userId: one },
+      new File(["private file bytes"], "report.txt", { type: "text/plain" }),
+    );
+    await insertMessage(env, {
+      channelId: group.id,
+      senderId: one,
+      content: "",
+      mentionUserIds: [],
+      attachment: upload.file,
+    });
+    const preview = (await get("/api/bootstrap")).channels.find(
+      (c) => c.isGeneral,
+    ).lastMessage;
+    expect(preview.attachment.name).toBe("report.txt");
+    expect(preview.content).toBe("");
+    expect(JSON.stringify(preview)).not.toContain("private file bytes");
+  });
+});
+
+describe("chat admin message counts", () => {
+  it("returns current room and overall counts after deletion, without counting the message twice", async () => {
+    await bootstrap();
+    const one = (await validateSession(env, token)).session.userId;
+    const group = sqlite
+      .prepare("SELECT id FROM channels WHERE name='general'")
+      .get().id;
+    await insertMessage(env, {
+      channelId: group,
+      senderId: one,
+      content: "keep message",
+      mentionUserIds: [],
+    });
+    const deleted = await insertMessage(env, {
+      channelId: group,
+      senderId: one,
+      content: "delete message",
+      mentionUserIds: [],
+    });
+    const detail = async () =>
+      (
+        await handleChatAdmin(
+          req(`/api/admin/chat/rooms/${group}/messages`),
+          env,
+          admin,
+        )
+      ).json();
+    expect((await detail()).room).toMatchObject({
+      messageCount: 2,
+      totalMessageCount: 2,
+    });
+    expect(
+      (
+        await handleChatAdmin(
+          req(`/api/admin/chat/rooms/${group}/messages/${deleted.id}`, {
+            method: "DELETE",
+          }),
+          env,
+          admin,
+        )
+      ).status,
+    ).toBe(200);
+    const result = await detail();
+    expect(result.room).toMatchObject({
+      messageCount: 1,
+      totalMessageCount: 1,
+    });
+    expect(result.messages).toHaveLength(1);
+    expect(
+      (
+        await handleChatAdmin(
+          req(`/api/admin/chat/rooms/${group}/messages/${deleted.id}`, {
+            method: "DELETE",
+          }),
+          env,
+          admin,
+        )
+      ).status,
+    ).toBe(404);
+    expect((await detail()).room).toMatchObject({
+      messageCount: 1,
+      totalMessageCount: 1,
+    });
   });
 });

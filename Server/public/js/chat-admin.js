@@ -100,6 +100,22 @@
       el.setAttribute("aria-current", String(el.dataset.roomId === String(id)));
     }
   }
+  function syncMessageCounts(room, data) {
+    const count = Number(data.messageCount);
+    if (Number.isSafeInteger(count) && count >= 0) {
+      room.message_count = count;
+      for (const el of byId("chat-admin-rooms").querySelectorAll(
+        "[data-room-id]",
+      )) {
+        if (el.dataset.roomId === String(room.id))
+          el.querySelector(".chat-admin-room-count").textContent =
+            String(count);
+      }
+    }
+    const total = Number(data.totalMessageCount);
+    if (Number.isSafeInteger(total) && total >= 0)
+      byId("chat-admin-total-messages").textContent = String(total);
+  }
   async function messages(room, before = "") {
     const revision = ++generation;
     selectedRoom = room;
@@ -110,6 +126,7 @@
       `/rooms/${room.id}/messages${before ? `?before=${before}` : ""}`,
     );
     if (revision !== generation) return;
+    syncMessageCounts(room, payload.room);
     const head = node("div", "chat-admin-detail-heading");
     head.append(
       room.name === "general"
@@ -157,7 +174,8 @@
               await api(`/rooms/${room.id}/messages/${message.id}`, {
                 method: "DELETE",
               });
-              await messages(room, before);
+              if (mode === "rooms" && selectedRoom?.id === room.id)
+                await messages(room, before);
             }
           },
           true,

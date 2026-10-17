@@ -1,3 +1,4 @@
+import { attachConversationPreviews } from './data/conversation-previews.js';
 import { bodyLimit } from 'hono/body-limit';
 import { Hono } from 'hono';
 import { authMiddleware } from './middleware.js';
@@ -36,7 +37,8 @@ app.get('/api/bootstrap', async (c) => {
  const [users,channels,dms] = await Promise.all([
   listActiveUsers(c.env.DB,session.userId),listVisibleChannels(c.env.DB,session.userId),listUserDms(c.env.DB,session.userId)
  ]);
- return c.json({users,channels,dms});
+ const [previewChannels,previewDms] = await Promise.all([attachConversationPreviews(c.env,channels,session.userId),attachConversationPreviews(c.env,dms,session.userId)]);
+ return c.json({users,channels:previewChannels,dms:previewDms});
 });
 registerMessageRoutes(app);
 registerContactRoutes(app);

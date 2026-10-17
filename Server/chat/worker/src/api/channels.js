@@ -1,3 +1,4 @@
+import { attachConversationPreviews } from '../data/conversation-previews.js';
 import { syncIdentityChatUsers } from '../session.js';
 import {
   listChannelMembers,
@@ -59,7 +60,7 @@ export function registerChannelRoutes(app) {
     await ensureGeneralChannelMembership(c.env.DB, session.userId);
     const channels = await listVisibleChannels(c.env.DB, session.userId);
     return c.json({
-      channels,
+      channels:await attachConversationPreviews(c.env,channels,session.userId),
       publicChannels: channels.filter((channel) => channel.kind === 'public'),
       privateChannels: channels.filter((channel) => channel.kind === 'private')
     });

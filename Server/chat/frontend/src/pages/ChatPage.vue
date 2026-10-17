@@ -140,6 +140,7 @@ function handleRoomActivity({ room, message }) {
     kind: room.kind,
     roomId: room.id,
 	    lastMessageAt: message.createdAt,
+    lastMessage:message,
 	    unreadCount: 0,
 	    mentionUnreadCount: 0
   });
@@ -169,12 +170,14 @@ const {
   error,
   roomVisible: computed(() => !isContactsView.value),
   onRoomActivity: handleRoomActivity,
+  onRoomMessageDeleted:()=>{void refreshSidebar(true).catch(()=>{});},
   onRoomAccessRevoked: handleRoomAccessRevoked
 });
 
 const { connectUnreadInbox, disconnectUnreadInbox } = useUnreadInbox({
   activeRoom: inboxActiveRoom,
   markConversationRead,
+  refreshConversations:()=>refreshSidebar(true),
   applyConversationActivity,
   notifyInApp: notifyInAppRoom,
   notifySystem: notifyRoom

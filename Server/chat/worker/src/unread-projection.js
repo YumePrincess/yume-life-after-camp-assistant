@@ -39,7 +39,8 @@ export function createUnreadProjection({
 				room: {
 					id: Number(room.id),
 					kind: room.kind,
-					name: room.name,
+					name: room.kind === "dm" ? (message.sender?.displayName || message.sender?.username || "") : room.name,
+          isGeneral:room.kind === "public" && room.name === "general",
 				},
 				messageId: Number(message.id),
 				createdAt: message.createdAt,
@@ -47,7 +48,8 @@ export function createUnreadProjection({
 				...(mentionUnreadCount === undefined ? {} : { mentionUnreadCount }),
 				mentionsMe,
 				replyToMe,
-				contentPreview: String(message.content || "").slice(0, 160),
+				contentPreview: String(message.content || "").slice(0, 512),
+        attachment:message.attachment ? {name:message.attachment.name || "",type:message.attachment.type || "",kind:message.attachment.kind || ""} : null,
 				sender: message.sender,
 			});
 		} catch (error) {

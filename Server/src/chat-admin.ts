@@ -87,7 +87,10 @@ export async function handleChatAdmin(
   if (messagesMatch && request.method === "GET") {
     const id = Number(messagesMatch[1]);
     const room = await env.DB.prepare(
-      "SELECT id,name,kind FROM channels WHERE id=? AND deleted_at IS NULL",
+      `SELECT id,name,kind,
+       (SELECT count(*) FROM messages WHERE channel_id=channels.id AND deleted_at IS NULL) AS messageCount,
+       (SELECT count(*) FROM messages WHERE deleted_at IS NULL) AS totalMessageCount
+       FROM channels WHERE id=? AND deleted_at IS NULL`,
     )
       .bind(id)
       .first();

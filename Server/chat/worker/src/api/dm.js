@@ -1,3 +1,4 @@
+import { attachConversationPreviews } from '../data/conversation-previews.js';
 import { ensureDmChannel } from '../data/dm-provisioning.js';
 import { listUserDms } from '../data/dm-queries.js';
 import { getUserBlockStatus } from '../data/user-blocks.ts';
@@ -8,7 +9,7 @@ export function registerDmRoutes(app) {
   app.get('/api/dm', async (c) => {
     const session = c.get('session');
     const dms = await listUserDms(c.env.DB, session.userId);
-    return c.json({ dms });
+    return c.json({ dms:await attachConversationPreviews(c.env,dms,session.userId) });
   });
 
   app.post('/api/dm/open', async (c) => {

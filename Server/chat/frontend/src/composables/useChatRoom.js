@@ -17,6 +17,7 @@ export function useChatRoom({
 	error,
 	roomVisible = { value: true },
 	onRoomActivity = () => {},
+  onRoomMessageDeleted=()=>{},
 	onRoomAccessRevoked = () => {},
 	roomApi = api,
 	openRoomConnection = connectRoomSocket,
@@ -163,6 +164,7 @@ export function useChatRoom({
 							? { ...message, replyTo: { id: messageId, deleted: true } }
 							: message,
 					);
+        onRoomMessageDeleted(messageId);
 				if (Number(pinnedMessage.value?.id) === messageId) {
 					pinnedMessage.value = null;
 				}
