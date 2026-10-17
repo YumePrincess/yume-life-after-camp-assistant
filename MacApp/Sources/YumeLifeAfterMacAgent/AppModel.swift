@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import CoreFoundation
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -18,6 +19,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var isSavingTaskResult = false
     @Published var selectedTaskLogID: String?
     @Published var logDisplayMode: LogDisplayMode
+    @Published var taskResultDisplayMode: LogDisplayMode
     @Published private(set) var logPage = 0
     @Published private(set) var latestRunId: String?
     @Published var isBusy = false
@@ -99,6 +101,9 @@ final class AppModel: ObservableObject {
         theme = AppTheme(rawValue: defaults.string(forKey: "theme") ?? "system") ?? .system
         logDisplayMode = LogDisplayMode(
             rawValue: defaults.string(forKey: "logDisplayMode") ?? LogDisplayMode.raw.rawValue
+        ) ?? .raw
+        taskResultDisplayMode = LogDisplayMode(
+            rawValue: defaults.string(forKey: "taskResultDisplayMode") ?? LogDisplayMode.raw.rawValue
         ) ?? .raw
         setupCompleted = defaults.bool(forKey: "setupCompleted")
         logRunIdFilter = nil
@@ -187,6 +192,223 @@ final class AppModel: ObservableObject {
         }
         let localized = text(key)
         return localized == key ? group.taskName : localized
+    }
+
+    func localizedTaskResultName(_ document: TaskResultDocument) -> String {
+        guard let taskKey = document.taskKey else { return document.fileName }
+        let key = "Task \(taskKey)"
+        let localized = text(key)
+        return localized == key ? taskKey : localized
+    }
+
+    var selectedTaskResultDocument: TaskResultDocument? {
+        taskResultDocuments.first { $0.id == selectedTaskResultID }
+    }
+
+    var taskResultTables: [TaskResultTable] {
+        guard let envelope = taskResultEnvelope()?.value,
+              let payload = envelope["payload"] else { return [] }
+        let taskKey = envelope["taskKey"] as? String ?? selectedTaskResultDocument?.taskKey ?? ""
+
+        if let rows = payload as? [[String: Any]] {
+            return [makeTaskResultTable(path: [], titleKey: taskResultTitleKey(taskKey, path: []), rows: rows)]
+        }
+        guard let object = payload as? [String: Any] else { return [] }
+
+        var tables: [TaskResultTable] = []
+        for pathKey in ["members", "staff"] {
+            guard let rows = object[pathKey] as? [[String: Any]], !rows.isEmpty else { continue }
+            tables.append(makeTaskResultTable(
+                path: [pathKey],
+                titleKey: taskResultTitleKey(taskKey, path: [pathKey]),
+                rows: rows
+            ))
+        }
+        if let summary = object["memberSummary"] as? [String: Any] {
+            tables.append(makeTaskResultTable(
+                path: ["memberSummary"],
+                titleKey: "Member summary",
+                rows: [summary]
+            ))
+        }
+        if tables.isEmpty {
+            tables.append(makeTaskResultTable(path: [], titleKey: taskResultTitleKey(taskKey, path: []), rows: [object]))
+        }
+        return tables
+    }
+
+    func setTaskResultDisplayMode(_ mode: LogDisplayMode) {
+        taskResultDisplayMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "taskResultDisplayMode")
+    }
+
+    func copyTaskResultForWorkers() {
+        guard !taskResultContent.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(taskResultContent, forType: .string)
+        statusMessage = text("Task result copied for Workers")
+    }
+
+    func updateTaskResultCell(path: [String], rowIndex: Int, key: String, value: String) {
+        guard var document = taskResultEnvelope(), let payload = document.value["payload"] else { return }
+        var updatedPayload = payload
+        if path.isEmpty {
+            guard updateTaskResultRow(in: &updatedPayload, rowIndex: rowIndex, key: key, value: value) else { return }
+        } else {
+            guard path.count == 1, var object = updatedPayload as? [String: Any],
+                  var table = object[path[0]],
+                  updateTaskResultRow(in: &table, rowIndex: rowIndex, key: key, value: value) else { return }
+            object[path[0]] = table
+            updatedPayload = object
+        }
+        document.value["payload"] = updatedPayload
+        guard let serialized = try? JSONSerialization.data(
+            withJSONObject: document.value,
+            options: [.prettyPrinted, .sortedKeys]
+        ), let json = String(data: serialized, encoding: .utf8) else { return }
+        taskResultContent = document.prefix + json + document.lineBreak + document.suffix
+    }
+
+    private func taskResultEnvelope() -> (value: [String: Any], prefix: String, suffix: String, lineBreak: String)? {
+        var jsonStart: String.Index?
+        var lineBreak = "\n"
+        for marker in ["```json\r\n", "```json\n", "```json\r", "```json"] {
+            guard let opening = taskResultContent.range(of: marker) else { continue }
+            jsonStart = opening.upperBound
+            if marker.hasSuffix("\r\n") { lineBreak = "\r\n" }
+            else if marker.hasSuffix("\r") { lineBreak = "\r" }
+            else { lineBreak = "\n" }
+            break
+        }
+        guard let jsonStart,
+              let closing = taskResultContent.range(of: "```", range: jsonStart..<taskResultContent.endIndex),
+              let data = String(taskResultContent[jsonStart..<closing.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              value["format"] as? String == "yla-member-task-result/v1" else { return nil }
+        return (
+            value,
+            String(taskResultContent[..<jsonStart]),
+            String(taskResultContent[closing.lowerBound...]),
+            lineBreak
+        )
+    }
+
+    private func updateTaskResultRow(in target: inout Any, rowIndex: Int, key: String, value: String) -> Bool {
+        if var rows = target as? [[String: Any]], rows.indices.contains(rowIndex),
+           let oldValue = rows[rowIndex][key], let updated = parsedTaskResultValue(value, matching: oldValue) {
+            rows[rowIndex][key] = updated
+            target = rows
+            return true
+        }
+        if var object = target as? [String: Any], rowIndex == 0,
+           let oldValue = object[key], let updated = parsedTaskResultValue(value, matching: oldValue) {
+            object[key] = updated
+            target = object
+            return true
+        }
+        return false
+    }
+
+    private func parsedTaskResultValue(_ value: String, matching oldValue: Any) -> Any? {
+        if oldValue is NSNull { return value.isEmpty ? NSNull() : value }
+        if let number = oldValue as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                case "true", "1": return true
+                case "false", "0": return false
+                default:
+                    statusMessage = text("Enter true or false for this value.")
+                    return nil
+                }
+            }
+            let numberType = String(cString: number.objCType)
+            if ["f", "d"].contains(numberType) {
+                guard let parsed = Double(value), parsed.isFinite else {
+                    statusMessage = text("Enter a valid number for this value.")
+                    return nil
+                }
+                return parsed
+            }
+            guard let parsed = Int64(value) else {
+                statusMessage = text("Enter a valid number for this value.")
+                return nil
+            }
+            return parsed
+        }
+        return value
+    }
+
+    private func taskResultTitleKey(_ taskKey: String, path: [String]) -> String {
+        if path == ["members"] { return "Members" }
+        if path == ["staff"] { return "Staff roles" }
+        switch taskKey {
+        case "contribution_sync": return "Contribution data"
+        case "inactivity_sync": return "Inactivity data"
+        case "member_profile_sync": return "Member profiles"
+        case "weekly_activity_sync": return "Weekly activity data"
+        default: return "Task data"
+        }
+    }
+
+    private func makeTaskResultTable(path: [String], titleKey: String, rows: [[String: Any]]) -> TaskResultTable {
+        let taskKey = taskResultDocumentTaskKey
+        let preferredKeys: [String]
+        if path == ["members"] || (path.isEmpty && taskKey == "member_profile_sync") {
+            preferredKeys = ["name", "profession", "manorLevel", "roommateName", "campTitle", "weeklyContribution"]
+        } else if path == ["staff"] {
+            preferredKeys = ["roleKey", "roleName", "memberName"]
+        } else {
+            switch taskKey {
+            case "contribution_sync": preferredKeys = ["name", "weeklyContribution", "technologyPointsUsed", "materialContribution"]
+            case "inactivity_sync": preferredKeys = ["name", "lastActiveText", "inactiveDays"]
+            case "weekly_activity_sync": preferredKeys = ["name", "weeklyActivityPoints"]
+            case "member_profile_sync": preferredKeys = ["name", "profession", "manorLevel", "roommateName", "campTitle", "weeklyContribution"]
+            default: preferredKeys = []
+            }
+        }
+        let allKeys = Set(rows.flatMap { $0.keys })
+        let orderedKeys = preferredKeys.filter(allKeys.contains) + allKeys.subtracting(Set(preferredKeys)).sorted()
+        return TaskResultTable(
+            path: path,
+            titleKey: titleKey,
+            columns: orderedKeys.map { TaskResultColumn(key: $0, titleKey: taskResultFieldTitleKey($0)) },
+            rows: rows.map { row in
+                Dictionary(uniqueKeysWithValues: row.compactMap { key, value in
+                    guard let stringValue = taskResultString(value) else { return nil }
+                    return (key, stringValue)
+                })
+            }
+        )
+    }
+
+    private var taskResultDocumentTaskKey: String {
+        taskResultEnvelope()?.value["taskKey"] as? String ?? selectedTaskResultDocument?.taskKey ?? ""
+    }
+
+    private func taskResultString(_ value: Any) -> String? {
+        if value is NSNull { return "" }
+        if let string = value as? String { return string }
+        if let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() {
+            return number.boolValue ? "true" : "false"
+        }
+        if let number = value as? NSNumber { return number.stringValue }
+        return nil
+    }
+
+    private func taskResultFieldTitleKey(_ key: String) -> String {
+        let keys = [
+            "name": "Member name", "weeklyContribution": "Weekly contribution",
+            "technologyPointsUsed": "Technology points used", "materialContribution": "Material contribution",
+            "lastActiveText": "Last active", "inactiveDays": "Inactive days",
+            "profession": "Profession", "manorLevel": "Manor level", "roommateName": "Roommate",
+            "campTitle": "Camp title", "weeklyActivityPoints": "Weekly activity points",
+            "roleKey": "Role key", "roleName": "Role name", "memberName": "Member",
+            "expectedCount": "Expected members", "recognizedCount": "Recognized members",
+            "missingCount": "Missing members", "missingAllowed": "Missing allowed",
+            "finalPage": "Final page", "pages": "Pages scanned", "positionLocked": "Position locked"
+        ]
+        return keys[key] ?? key
     }
 
     func localizedExecutionMode(_ mode: String) -> String {

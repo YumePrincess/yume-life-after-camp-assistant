@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.trading-city",
   "version": "27.1.0",
-  "build": 27141,
+  "build": 27142,
   "kind": "task",
   "architectures": [
     "arm64"

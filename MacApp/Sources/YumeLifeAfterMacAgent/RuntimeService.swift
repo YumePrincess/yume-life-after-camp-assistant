@@ -1357,14 +1357,38 @@ actor RuntimeService {
             .map { url in
                 let modifiedAt = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate ?? .distantPast
+                let metadata = taskResultMetadata(at: url)
                 return TaskResultDocument(
                     id: url.lastPathComponent,
                     fileName: url.lastPathComponent,
+                    taskKey: metadata?.taskKey,
+                    runId: metadata?.runId,
                     modifiedAt: modifiedAt,
                     url: url
                 )
             }
             .sorted { $0.modifiedAt > $1.modifiedAt }
+    }
+
+    private func taskResultMetadata(at url: URL) -> (taskKey: String, runId: String)? {
+        guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        var jsonStart: String.Index?
+        for marker in ["```json\r\n", "```json\n", "```json\r", "```json"] {
+            if let opening = contents.range(of: marker) {
+                jsonStart = opening.upperBound
+                break
+            }
+        }
+        guard let jsonStart,
+              let closing = contents.range(of: "```", range: jsonStart..<contents.endIndex),
+              let data = String(contents[jsonStart..<closing.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+              let document = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let taskKey = document["taskKey"] as? String,
+              let runId = document["runId"] as? String else {
+            return nil
+        }
+        return (taskKey, runId)
     }
 
     func readTaskResult(fileName: String) throws -> String {

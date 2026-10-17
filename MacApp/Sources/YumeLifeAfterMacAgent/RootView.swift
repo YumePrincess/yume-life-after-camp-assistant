@@ -32,6 +32,7 @@ struct RootView: View {
                 .allowsHitTesting(false)
         }
         .environment(\.locale, model.locale)
+        .tint(YumePalette.gold)
         .onAppear {
             MenuLocalization.apply(language: model.language)
             model.syncLanguageToBrowser()
@@ -135,20 +136,24 @@ struct SidebarView: View {
             List(SidebarSection.allCases, selection: $model.selection) { section in
                 Label(model.text(section.titleKey), systemImage: section.symbol)
                     .tag(section)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 3)
             }
+            .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
             Spacer()
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 11) {
                 HStack(spacing: 8) {
-                    Circle()
-                        .fill(model.health?.ok == true ? .green : .orange)
-                        .frame(width: 8, height: 8)
+                    Circle().fill(model.health?.ok == true ? .green : .orange).frame(width: 7, height: 7)
                     Text(model.text(model.health?.ok == true ? "Agent online" : "Agent offline"))
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
                     Spacer()
+                    Text(model.text(model.health?.ok == true ? "Connected" : "Local"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 HStack(spacing: 8) {
                     SidebarAgentButton(symbol: "play.fill", title: "Start", tint: .green) {
                         await model.performAgentAction("start")
@@ -178,66 +183,127 @@ struct TaskResultsView: View {
     @StateObject private var viewState = TaskResultsViewState()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack {
-                VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(model.text("Agent data"))
                         .font(.caption.weight(.bold))
-                        .tracking(2)
+                        .tracking(1.4)
                         .foregroundStyle(YumePalette.gold)
                     Text(model.text("Task results"))
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .font(.system(size: 29, weight: .semibold, design: .rounded))
                     Text(model.text("Review or edit the member data uploaded by each task."))
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Button(model.text("Open in another editor")) {
+                Spacer(minLength: 16)
+                Label("\(model.taskResultDocuments.count)", systemImage: "doc.text")
+                    .font(.callout.monospacedDigit().weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: Capsule())
+            }
+
+            HStack(spacing: 9) {
+                Picker(
+                    model.text("Task result display"),
+                    selection: Binding(
+                        get: { model.taskResultDisplayMode },
+                        set: { model.setTaskResultDisplayMode($0) }
+                    )
+                ) {
+                    ForEach(LogDisplayMode.allCases) { mode in
+                        Text(model.text(mode.titleKey)).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 210)
+                Button {
+                    model.copyTaskResultForWorkers()
+                } label: {
+                    Label(model.text("Copy for Workers"), systemImage: "doc.on.doc")
+                }
+                .buttonStyle(GlassButtonStyle())
+                .disabled(model.selectedTaskResultID == nil || model.taskResultContent.isEmpty)
+                Spacer(minLength: 10)
+                Button {
                     Task { await model.openSelectedTaskResultExternally() }
+                } label: {
+                    Label(model.text("Open in another editor"), systemImage: "arrow.up.right.square")
                 }
                 .buttonStyle(GlassButtonStyle())
                 .disabled(model.selectedTaskResultID == nil)
+                Button {
+                    Task { await model.refreshTaskResults() }
+                } label: {
+                    Label(model.text("Refresh"), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(GlassButtonStyle())
                 Button(model.text("Clear task results"), role: .destructive) {
                     viewState.confirmingClear = true
                 }
                 .buttonStyle(GlassButtonStyle())
                 .disabled(model.taskResultDocuments.isEmpty || model.isSavingTaskResult)
-                Button(model.text("Save")) { Task { await model.saveTaskResult() } }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(model.selectedTaskResultID == nil || !model.taskResultHasUnsavedChanges || model.isSavingTaskResult)
-                Button(model.text("Refresh")) { Task { await model.refreshTaskResults() } }
-                    .buttonStyle(GlassButtonStyle())
+                Button {
+                    Task { await model.saveTaskResult() }
+                } label: {
+                    Label(model.text("Save"), systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(model.selectedTaskResultID == nil || !model.taskResultHasUnsavedChanges || model.isSavingTaskResult)
             }
 
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: 16) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                    LazyVStack(alignment: .leading, spacing: 7) {
                         if model.taskResultDocuments.isEmpty {
-                            Text(model.text("No task result documents yet."))
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            ContentUnavailableView(
+                                model.text("No task result documents yet."),
+                                systemImage: "doc.text.magnifyingglass",
+                                description: Text(model.text("Results appear after a member data task finishes."))
+                            )
+                            .padding(.vertical, 30)
                         } else {
                             ForEach(model.taskResultDocuments) { document in
                                 Button {
                                     Task { await model.selectTaskResult(document.id) }
                                 } label: {
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(document.fileName)
-                                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                            .lineLimit(2)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                        Text(document.modifiedAt == .distantPast
-                                            ? "—"
-                                            : model.displayTimestamp(ISO8601DateFormatter().string(from: document.modifiedAt)))
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                                    HStack(spacing: 11) {
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .fill(model.selectedTaskResultID == document.id ? YumePalette.gold : .clear)
+                                            .frame(width: 3)
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text(model.localizedTaskResultName(document))
+                                                .font(.callout.weight(.semibold))
+                                                .lineLimit(1)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                            if let runId = document.runId, !runId.isEmpty {
+                                                Text("\(model.text("Task ID")) · \(runId)")
+                                                    .font(.system(size: 10, design: .monospaced))
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                                    .textSelection(.enabled)
+                                            }
+                                            Text(document.fileName)
+                                                .font(.system(size: 10, design: .monospaced))
+                                                .foregroundStyle(.tertiary)
+                                                .lineLimit(1)
+                                            Text(document.modifiedAt == .distantPast
+                                                ? "—"
+                                                : model.displayTimestamp(ISO8601DateFormatter().string(from: document.modifiedAt)))
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
                                     }
-                                    .padding(10)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 9)
                                     .background(
                                         model.selectedTaskResultID == document.id
-                                            ? YumePalette.gold.opacity(0.16)
-                                            : .clear,
-                                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            ? YumePalette.gold.opacity(0.12)
+                                            : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -245,8 +311,8 @@ struct TaskResultsView: View {
                         }
                     }
                 }
-                .glassPanel(radius: 20, padding: 12)
-                .frame(width: 292)
+                .glassPanel(radius: 18, padding: 9)
+                .frame(width: 288)
                 .frame(maxHeight: .infinity)
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -258,31 +324,64 @@ struct TaskResultsView: View {
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        HStack {
-                            Text(model.selectedTaskResultID ?? "")
-                                .font(.headline.monospaced())
-                                .lineLimit(1)
-                            Spacer()
-                            Text(model.taskResultHasUnsavedChanges
-                                ? model.text("Unsaved changes")
-                                : model.text("Saved"))
-                                .font(.caption)
-                                .foregroundStyle(model.taskResultHasUnsavedChanges ? .orange : .secondary)
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(model.selectedTaskResultDocument.map { model.localizedTaskResultName($0) } ?? model.selectedTaskResultID ?? "")
+                                    .font(.title3.weight(.semibold))
+                                    .lineLimit(1)
+                                if let runId = model.selectedTaskResultDocument?.runId, !runId.isEmpty {
+                                    Text("\(model.text("Task ID")) · \(runId)")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .textSelection(.enabled)
+                                }
+                                Text(model.selectedTaskResultID ?? "")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            Label(
+                                model.taskResultHasUnsavedChanges
+                                    ? model.text("Unsaved changes")
+                                    : model.text("Saved"),
+                                systemImage: model.taskResultHasUnsavedChanges ? "circle.dotted" : "checkmark.circle.fill"
+                            )
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(model.taskResultHasUnsavedChanges ? .orange : .secondary)
+                            .padding(.top, 4)
                         }
-                        TextEditor(text: $model.taskResultContent)
-                            .font(.system(size: 12, design: .monospaced))
-                            .scrollContentBackground(.hidden)
-                            .padding(8)
-                            .background(.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .textSelection(.enabled)
+                        if model.taskResultDisplayMode == .raw {
+                            TextEditor(text: $model.taskResultContent)
+                                .font(.system(size: 12, design: .monospaced))
+                                .scrollContentBackground(.hidden)
+                                .padding(9)
+                                .background(.black.opacity(0.12), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                                .textSelection(.enabled)
+                        } else if model.taskResultTables.isEmpty {
+                            ContentUnavailableView(
+                                model.text("Structured view unavailable"),
+                                systemImage: "tablecells", description: Text(model.text("This document cannot be shown in simplified mode. Use Raw to edit it."))
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 12) {
+                                    ForEach(model.taskResultTables) { table in
+                                        taskResultTable(table)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
                     }
                 }
-                .glassPanel(radius: 20, padding: 14)
+                .glassPanel(radius: 18, padding: 14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(maxWidth: 1050, maxHeight: .infinity, alignment: .topLeading)
-        .padding(30)
+        .frame(maxWidth: 1400, maxHeight: .infinity, alignment: .topLeading)
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task {
             await model.refreshTaskResults()
@@ -303,6 +402,69 @@ struct TaskResultsView: View {
             Button(model.text("Cancel"), role: .cancel) { }
         } message: {
             Text(model.text("All task result documents and unsaved edits will be deleted."))
+        }
+    }
+
+    private func taskResultTable(_ table: TaskResultTable) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(model.text(table.titleKey))
+                    .font(.callout.weight(.semibold))
+                Spacer()
+                Text("\(table.rows.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+
+            ScrollView(.horizontal) {
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        Text("#")
+                            .frame(width: 42, alignment: .center)
+                        ForEach(table.columns) { column in
+                            Text(model.text(column.titleKey))
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .multilineTextAlignment(.leading)
+                                .frame(width: column.key == "name" || column.key == "memberName" ? 168 : 156, alignment: .leading)
+                                .padding(.horizontal, 7)
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+                    .background(.white.opacity(0.035))
+
+                    ForEach(Array(table.rows.enumerated()), id: \.offset) { index, row in
+                        HStack(spacing: 0) {
+                            Text("\(index + 1)")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                                .frame(width: 42, alignment: .center)
+                            ForEach(table.columns) { column in
+                                TextField("", text: Binding(
+                                    get: { row[column.key] ?? "" },
+                                    set: { model.updateTaskResultCell(path: table.path, rowIndex: index, key: column.key, value: $0) }
+                                ))
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: column.key == "name" || column.key == "memberName" ? 168 : 156)
+                                .padding(.horizontal, 6)
+                            }
+                        }
+                        .padding(.vertical, 5)
+                        .background(index.isMultiple(of: 2) ? Color.white.opacity(0.025) : Color.clear)
+                    }
+                }
+                .padding(.horizontal, 7)
+                .padding(.bottom, 6)
+            }
+        }
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
         }
     }
 }
@@ -485,10 +647,11 @@ struct MetricCard: View {
 
 private struct GlobalOperationStatusBar: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if !model.statusMessage.isEmpty {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Group {
                     if model.isBusy {
                         ProgressView().controlSize(.small)
@@ -497,43 +660,39 @@ private struct GlobalOperationStatusBar: View {
                             .foregroundStyle(.green)
                     }
                 }
-                .frame(width: 22, height: 22)
+                .frame(width: 18, height: 18)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Operation status")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(model.statusMessage)
-                        .font(.callout.monospaced())
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(model.statusMessage)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button {
-                    withAnimation(.easeOut(duration: 0.18)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
                         model.statusMessage = ""
                     }
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.caption.weight(.bold))
-                        .frame(width: 28, height: 28)
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
-                .background(.thinMaterial, in: Circle())
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .help(model.text("Close"))
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: 700)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(.white.opacity(0.18), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
-            .padding(.horizontal, 30)
-            .padding(.bottom, 18)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .shadow(color: .black.opacity(0.14), radius: 14, y: 5)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
         }
     }
 }

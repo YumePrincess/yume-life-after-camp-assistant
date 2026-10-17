@@ -56,8 +56,24 @@ struct TaskDebugImage: Identifiable, Sendable {
 struct TaskResultDocument: Identifiable, Sendable {
     let id: String
     let fileName: String
+    let taskKey: String?
+    let runId: String?
     let modifiedAt: Date
     let url: URL
+}
+
+struct TaskResultColumn: Identifiable {
+    let key: String
+    let titleKey: String
+    var id: String { key }
+}
+
+struct TaskResultTable: Identifiable {
+    let path: [String]
+    let titleKey: String
+    let columns: [TaskResultColumn]
+    let rows: [[String: String]]
+    var id: String { path.joined(separator: ".") }
 }
 
 struct TaskLogGroup: Identifiable {

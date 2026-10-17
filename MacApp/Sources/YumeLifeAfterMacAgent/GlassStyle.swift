@@ -7,17 +7,18 @@ enum YumePalette {
 }
 
 struct GlassPanel: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
     var radius: CGFloat = 24
     var padding: CGFloat = 20
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(.white.opacity(0.16), lineWidth: 1)
+                    .stroke(colorScheme == .dark ? .white.opacity(0.105) : .black.opacity(0.075), lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.18), radius: 24, y: 12)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.16 : 0.08), radius: 20, y: 8)
     }
 }
 
@@ -28,32 +29,31 @@ extension View {
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .font(.system(size: 13, weight: .semibold))
             .lineLimit(2)
             .minimumScaleFactor(0.76)
             .allowsTightening(true)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 12)
-            .padding(.vertical, 2)
-            .frame(minHeight: 40)
-            .foregroundStyle(.black.opacity(0.82))
-            .background(
-                LinearGradient(
-                    colors: [YumePalette.warmGold, YumePalette.gold],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: Capsule()
-            )
-            .shadow(color: YumePalette.gold.opacity(configuration.isPressed ? 0.12 : 0.28), radius: 12, y: 4)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.78), value: configuration.isPressed)
+            .frame(minHeight: 36)
+            .foregroundStyle(Color.black.opacity(0.84))
+            .background(YumePalette.warmGold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(.white.opacity(0.25), lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
 struct GlassButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .medium))
@@ -62,12 +62,15 @@ struct GlassButtonStyle: ButtonStyle {
             .allowsTightening(true)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 12)
-            .padding(.vertical, 2)
-            .frame(minHeight: 40)
-            .background(.thinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.16)))
-            .opacity(configuration.isPressed ? 0.72 : 1)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .frame(minHeight: 36)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(colorScheme == .dark ? .white.opacity(0.12) : .black.opacity(0.09), lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.76 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.99 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
