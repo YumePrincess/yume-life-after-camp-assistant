@@ -30,6 +30,7 @@
     smtp: "admin:smtp",
     access: "admin:access",
     members: "admin:members",
+    chat: "admin:chat",
     history: "admin:history"
   };
   const TASK_NAMES = {
@@ -424,6 +425,7 @@
   }
 
   function canView(view) {
+    if (view === "chat" && state.bootstrap?.session?.permissions?.includes("demo:preview")) return false;
     const permissions = state.bootstrap?.session?.permissions || [];
     const declaredOwner = document.querySelector(
       `[data-admin-view="${CSS.escape(view)}"][data-worker-plugin], [data-nav-target="${CSS.escape(view)}"][data-worker-plugin]`
@@ -3340,6 +3342,7 @@
       }
     }
     state.activeView = resolved;
+    if (resolved === "chat" && viewChanged) window.MrzhChatAdmin.load(state.csrfToken, message=>showAppConfirm(message,{title:"互动中心管理",danger:true}));
     for (const element of document.querySelectorAll("[data-admin-view]")) {
       element.hidden =
         element.dataset.adminView !== resolved ||
@@ -5268,12 +5271,6 @@
             onSelect: () => openIdentityVoteEligibilityEditor(item)
           },
           {
-            label: "更换识别码",
-            icon: "events",
-            disabled: !item.email || !item.player_name,
-            onSelect: () => reissueIdentity(item)
-          },
-          {
             label: "重新发送识别码信息邮件",
             icon: "events",
             disabled: !item.email || !item.player_name,
@@ -5414,52 +5411,6 @@
       feedback.textContent = error.message;
     } finally {
       button.disabled = false;
-    }
-  }
-
-  async function reissueIdentity(item) {
-    const value = await showAppPrompt(
-      window.MrzhI18n.t(
-        "更换会立即作废旧识别码。请输入更换后识别码的有效日期（YYYY-MM-DD），或输入 permanent 设置为永久有效："
-      ),
-      {
-        title: "更换识别码",
-        inputLabel: "有效期",
-        inputValue: item.expires_at ? identityExpiryDate(item.expires_at) : ""
-      }
-    );
-    if (!value) return;
-    if (!(await showAppConfirm(
-      window.MrzhI18n.t(
-        "确认作废旧识别码、生成更换后的识别码并发送识别码信息邮件？"
-      ),
-      { title: "更换识别码", danger: true }
-    ))) {
-      return;
-    }
-    try {
-      const result = await request(
-        `/api/admin/identity-codes/${encodeURIComponent(item.id)}/reissue`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            permanent: value.trim().toLowerCase() === "permanent",
-            expiresOn:
-              value.trim().toLowerCase() === "permanent"
-                ? null
-                : value.trim()
-          })
-        }
-      );
-      setSaveState(result.emailSent
-        ? window.MrzhI18n.t("识别码已更换，并已发送识别码信息邮件")
-        : window.MrzhI18n.format(
-            "识别码已更换，但信息邮件发送失败：{error}",
-            { error: result.emailError }
-          ));
-      await loadIdentityCodes();
-    } catch (error) {
-      setSaveState(error.message);
     }
   }
 

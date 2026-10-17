@@ -1,3 +1,4 @@
+import { requestIdentityAccount } from "./identity-session";
 import {
   decryptSecret,
   encryptSecret,
@@ -685,6 +686,8 @@ export async function verifyIdentityPassword(
   const verification = await verifyIdentityCode(env, input.identityCode, options);
   if (!verification.ok) return verification;
   const password = typeof input.password === "string" ? input.password : "";
+  const session = requestIdentityAccount(env);
+  if (!password && session?.id === verification.code.id && session.password_hash === verification.code.password_hash) return verification;
   if (!verification.code.password_hash) {
     const application = await applicationForCode(env, verification.code);
     return {
@@ -808,7 +811,7 @@ export async function submitRenewal(
   };
 }
 
-async function codeForReissue(
+async function codeForAccountRecovery(
   env: Env,
   input: {
     identityCode: unknown;
@@ -890,112 +893,6 @@ async function codeForReissue(
     throw new Error("只有状态为有效的身份识别码可以申请更换");
   }
   throw new Error("未找到匹配的身份识别码记录");
-}
-
-export async function reissuePreview(
-  env: Env,
-  input: {
-    identityCode: unknown;
-    applicationNumber: unknown;
-    email: unknown;
-  }
-): Promise<{
-  applicationNumber: string;
-  email: string;
-  playerName: string;
-  status: string;
-  canSubmit: boolean;
-}> {
-  const code = await codeForReissue(env, input);
-  const application = await ensureApplicationForCode(env, code);
-  if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
-  if (application.status === "pending") {
-    throw new Error(PENDING_IDENTITY_REQUEST_MESSAGE);
-  }
-  if (application.status === "rejected") {
-    throw new Error("该申请已被拒绝，请重新申请身份识别码");
-  }
-  return {
-    applicationNumber: application.application_number,
-    email: application.email,
-    playerName: application.player_name,
-    status: application.status,
-    canSubmit: true
-  };
-}
-
-export async function submitReissue(
-  env: Env,
-  input: {
-    identityCode: unknown;
-    applicationNumber: unknown;
-    lookupEmail?: unknown;
-    email?: unknown;
-    playerName?: unknown;
-    locale: unknown;
-  }
-): Promise<{ applicationNumber: string; status: "pending" }> {
-  const code = await codeForReissue(env, {
-    identityCode: input.identityCode,
-    applicationNumber: input.applicationNumber,
-    email: input.lookupEmail ?? input.email
-  });
-  const application = await ensureApplicationForCode(env, code);
-  if (!application) throw new Error("该识别码没有完整申请记录，请联系市长处理");
-  if (
-    application.request_type === "reissue" &&
-    application.status === "rejected"
-  ) {
-    throw new Error("该申请已被拒绝，请重新申请身份识别码");
-  }
-  const email =
-    cleanEmail(input.email, false) || cleanEmail(application.email);
-  const playerName =
-    cleanPlayerName(input.playerName, false) ||
-    cleanPlayerName(application.player_name);
-  await assertNoOtherActiveIdentityCode(env, {
-    email,
-    playerName,
-    excludeId: code.id
-  });
-  await assertNoPendingIdentityApplication(env, {
-    email,
-    playerName,
-    excludeId: application.id
-  });
-  const submittedAt = now();
-  const invalidateCurrentVotes = await currentVoteInvalidations(
-    env,
-    code.id,
-    new Date(submittedAt)
-  );
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE identity_code_applications SET
-        request_type = 'reissue', email = ?, player_name = ?, status = 'pending',
-        locale = ?, submitted_at = ?,
-        identity_code_id = ?, reviewed_at = NULL, reviewed_by = NULL,
-        rejection_reason = NULL, email_sent_at = NULL, last_email_error = NULL
-       WHERE id = ?`
-    ).bind(
-      email,
-      playerName,
-      normalizeLocale(input.locale),
-      submittedAt,
-      code.id,
-      application.id
-    ),
-    env.DB.prepare(
-      `UPDATE identity_codes SET status = 'disabled', disabled_at = ?,
-       eligibility_override_votes = NULL, eligibility_override_expires_at = NULL,
-       updated_at = ? WHERE id = ?`
-    ).bind(submittedAt, submittedAt, code.id),
-    ...invalidateCurrentVotes
-  ]);
-  return {
-    applicationNumber: application.application_number,
-    status: "pending"
-  };
 }
 
 export async function recoverIdentityCode(
@@ -1080,7 +977,7 @@ export async function requestIdentityCancellation(
     identityCode: unknown;
   }
 ): Promise<{ challengeId: string; expiresAt: string }> {
-  const code = await codeForReissue(env, {
+  const code = await codeForAccountRecovery(env, {
     applicationNumber: input.applicationNumber,
     identityCode: input.identityCode,
     email: input.email
@@ -1307,7 +1204,7 @@ export async function requestIdentityApplicationVerification(
         "您提供的信息可能已经成功申请身份识别码。如果您忘记了身份识别码，请通过“忘记识别码”功能找回。如果这不是您提交的申请，请联系市长处理。"
     });
   } else {
-    const code = await codeForReissue(env, {
+    const code = await codeForAccountRecovery(env, {
       identityCode: input.identityCode,
       applicationNumber: input.applicationNumber,
       email: emailInput
@@ -2434,50 +2331,7 @@ export async function approveIdentityApplication(
       .bind(application.identity_code_id)
       .first<IdentityCodeRow>();
   } else if (application.request_type === "reissue") {
-    if (!application.identity_code_id) throw new Error("更换申请未关联识别码");
-    await assertNoOtherActiveIdentityCode(env, {
-      email: application.email,
-      playerName: application.player_name,
-      excludeId: application.identity_code_id
-    });
-    const generated = await generateCode(env);
-    initialPassword = generateInitialPassword();
-    const invalidateCurrentVotes = await currentVoteInvalidations(
-      env,
-      application.identity_code_id,
-      new Date(reviewedAt)
-    );
-    await env.DB.batch([
-      env.DB.prepare(
-        `UPDATE identity_codes SET
-           code_hash = ?, code_encrypted = ?, player_name = ?, email = ?,
-           locale = ?, status = 'active', expires_at = ?, disabled_at = NULL,
-           renewal_grace_vote_used_at = NULL, eligibility_override_votes = NULL,
-           eligibility_override_expires_at = NULL, password_hash = ?,
-           password_set_at = ?, password_updated_at = ?, updated_at = ?
-         WHERE id = ?`
-      ).bind(
-        generated.hash,
-        await encryptSecret(env, "identity-code-value", generated.code),
-        application.player_name,
-        application.email,
-        application.locale,
-        expiresAt,
-        await hashPassword(initialPassword),
-        reviewedAt,
-        reviewedAt,
-        reviewedAt,
-        application.identity_code_id
-      ),
-      env.DB.prepare(
-        `UPDATE identity_code_applications SET status = 'approved',
-         reviewed_at = ?, reviewed_by = ?, rejection_reason = NULL WHERE id = ?`
-      ).bind(reviewedAt, input.reviewedBy, application.id),
-      ...invalidateCurrentVotes
-    ]);
-    code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
-      .bind(application.identity_code_id)
-      .first<IdentityCodeRow>();
+    throw new Error("身份识别码号码固定，不再支持更换");
   } else {
     await assertNoOtherActiveIdentityCode(env, {
       email: application.email,
@@ -3174,93 +3028,6 @@ export async function updateIdentityCodeInformation(
       expires_at: expiresAt,
       updated_at: timestamp
     });
-  }
-}
-
-export async function reissueIdentityCode(
-  env: Env,
-  input: {
-    id: string;
-    permanent: unknown;
-    expiresAt: unknown;
-    reissuedBy: string;
-  }
-): Promise<{ emailSent: boolean; emailError: string | null }> {
-  const code = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
-    .bind(input.id)
-    .first<IdentityCodeRow>();
-  if (!code) throw new Error("识别码不存在");
-  if (!code.email || !code.player_name) {
-    throw new Error("更换识别码前必须先补全玩家名称和邮箱");
-  }
-  await assertNoOtherActiveIdentityCode(env, {
-    email: code.email,
-    playerName: code.player_name,
-    excludeId: code.id
-  });
-  const generated = await generateCode(env);
-  const initialPassword = generateInitialPassword();
-  const expiresAt = parseExpiry(input);
-  const timestamp = now();
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE identity_codes SET
-         code_hash = ?, code_encrypted = ?, status = 'active', expires_at = ?,
-         disabled_at = NULL, renewal_grace_vote_used_at = NULL, updated_at = ?,
-         created_by = ?, password_hash = ?, password_set_at = ?, password_updated_at = ?
-       WHERE id = ?`
-    ).bind(
-      generated.hash,
-      await encryptSecret(env, "identity-code-value", generated.code),
-      expiresAt,
-      timestamp,
-      input.reissuedBy,
-      await hashPassword(initialPassword),
-      timestamp,
-      timestamp,
-      code.id
-    ),
-    ...(await currentVoteInvalidations(env, code.id, new Date(timestamp)))
-  ]);
-  const updated = await env.DB.prepare("SELECT * FROM identity_codes WHERE id = ?")
-    .bind(code.id)
-    .first<IdentityCodeRow>();
-  if (!updated) throw new Error("更换身份识别码失败");
-  const application = code.application_id
-    ? await env.DB.prepare("SELECT * FROM identity_code_applications WHERE id = ?")
-        .bind(code.application_id)
-        .first<IdentityApplicationRow>()
-    : null;
-  const mailApplication: IdentityApplicationRow = {
-    id: application?.id ?? "",
-    application_number:
-      application?.application_number ?? `MANUAL-${code.id.slice(0, 8)}`,
-    request_type: "reissue",
-    email: code.email,
-    player_name: code.player_name,
-    locale: code.locale,
-    status: "approved",
-    identity_code_id: code.id,
-    submitted_at: application?.submitted_at ?? code.created_at,
-    reviewed_at: timestamp,
-    reviewed_by: input.reissuedBy,
-    rejection_reason: null,
-    email_sent_at: null,
-    last_email_error: null
-  };
-  try {
-    await sendApplicationMail(env, mailApplication, {
-      approved: true,
-      code: updated,
-      expiresAt,
-      initialPassword
-    });
-    await recordMailResult(env, application?.id ?? null, code.id, null);
-    return { emailSent: true, emailError: null };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await recordMailResult(env, application?.id ?? null, code.id, message);
-    return { emailSent: false, emailError: message };
   }
 }
 

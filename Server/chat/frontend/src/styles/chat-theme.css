@@ -1,0 +1,101 @@
+/* Shared visual language with yume-all-in-one-frontend/frontend/css/style.css:
+ * warm canvas, navy ink, glass rims, 1.35/1.8rem surfaces and 0.85rem controls.
+ * Chat uses denser materials to keep long-form text readable.
+ */
+:root {
+  --chat-radius-surface: 1.35rem;
+  --chat-radius-dialog: 1.8rem;
+  --chat-radius-control: 0.85rem;
+  --chat-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --chat-glass: color-mix(in srgb, var(--chat-paper) 94%, transparent);
+  --chat-glass-rim: color-mix(in srgb, var(--chat-paper) 70%, transparent);
+  --chat-glass-shadow: 0 18px 36px rgb(5 7 11 / 18%), inset 1px 1px 0 var(--chat-glass-rim);
+  --chat-paper: #fffdfa;
+  --chat-canvas: #f3ece5;
+  --chat-rail: #ece5de;
+  --chat-hover: #f3f0ed;
+  --chat-selected: #e5edf7;
+  --chat-pressed: #d6e3f3;
+  --chat-outgoing: #e4edf8;
+  --chat-ink: #1b2f4d;
+  --chat-muted: #58667b;
+  --chat-subtle: #647185;
+  --chat-line: rgba(27, 47, 77, 0.12);
+  --chat-accent: #365d88;
+  --chat-accent-hover: #294a70;
+  --chat-accent-pressed: #1b3657;
+  --chat-danger: oklch(49% 0.17 27);
+  --chat-danger-soft: oklch(96% 0.02 27);
+  --chat-disabled: oklch(91% 0.016 155);
+  --chat-online: oklch(54% 0.12 155);
+  --chat-scrollbar: oklch(65% 0.02 155 / 0.45);
+  --chat-scrim: oklch(20% 0.025 165 / 0.36);
+  --chat-shadow: 0 1px 2px oklch(25% 0.025 165 / 0.08);
+  --chat-shadow-panel: 0 12px 36px oklch(25% 0.025 165 / 0.12);
+  /* 中英文均沿用系统无衬线字体，聊天正文不引入外部字体请求。 */
+  --chat-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif;
+  --chat-font-heading: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --chat-control: 44px;
+  --chat-radius: 12px;
+  --chat-space-xs: 4px;
+  --chat-space-sm: 8px;
+  --chat-space-md: 12px;
+  --chat-space-lg: 16px;
+  --chat-space-xl: 24px;
+}
+
+html[data-theme="dark"] {
+  --chat-paper: #151b26;
+  --chat-canvas: #0b1019;
+  --chat-rail: #111620;
+  --chat-hover: #202938;
+  --chat-selected: #29394f;
+  --chat-pressed: #354963;
+  --chat-outgoing: #25384f;
+  --chat-ink: #f4f6fb;
+  --chat-muted: #b4bcc9;
+  --chat-subtle: #a1acbd;
+  --chat-line: rgba(255, 255, 255, 0.12);
+  --chat-accent: #a7c5ed;
+  --chat-accent-hover: #c0d6f3;
+  --chat-accent-pressed: #91b3df;
+  --chat-danger: oklch(74% 0.16 27);
+  --chat-danger-soft: oklch(30% 0.045 27);
+  --chat-disabled: oklch(31% 0.016 165);
+  --chat-online: oklch(73% 0.13 155);
+  --chat-scrollbar: oklch(74% 0.02 155 / 0.35);
+  --chat-scrim: oklch(8% 0.02 165 / 0.65);
+  --chat-shadow: 0 1px 2px oklch(5% 0.025 165 / 0.24);
+  --chat-shadow-panel: 0 12px 36px oklch(5% 0.025 165 / 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    --chat-paper: #151b26;
+    --chat-canvas: #0b1019;
+    --chat-rail: #111620;
+    --chat-hover: #202938;
+    --chat-selected: #29394f;
+    --chat-pressed: #354963;
+    --chat-outgoing: #25384f;
+    --chat-ink: #f4f6fb;
+    --chat-muted: #b4bcc9;
+    --chat-subtle: #a1acbd;
+    --chat-line: rgba(255, 255, 255, 0.12);
+    --chat-accent: #a7c5ed;
+    --chat-accent-hover: #c0d6f3;
+    --chat-accent-pressed: #91b3df;
+    --chat-danger: oklch(74% 0.16 27);
+    --chat-danger-soft: oklch(30% 0.045 27);
+    --chat-disabled: oklch(31% 0.016 165);
+    --chat-online: oklch(73% 0.13 155);
+    --chat-scrollbar: oklch(74% 0.02 155 / 0.35);
+    --chat-scrim: oklch(8% 0.02 165 / 0.65);
+    --chat-shadow: 0 1px 2px oklch(5% 0.025 165 / 0.24);
+    --chat-shadow-panel: 0 12px 36px oklch(5% 0.025 165 / 0.3);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root { --chat-glass: var(--chat-paper); }
+}

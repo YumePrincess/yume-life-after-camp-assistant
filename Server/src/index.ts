@@ -1,3 +1,12 @@
+import { chatRuntimeEnv } from "./chat-policy";
+// @ts-expect-error Vendored JavaScript maintenance module.
+import { runScheduledGc as runChatGc } from "../chat/worker/src/gc.js";
+import { handleChatAdmin } from "./chat-admin";
+import { handleChat } from "./chat";
+import { handleIdentityAvatar } from "./identity-avatar";
+import { issueIdentitySession, identityCookieToken, validateIdentitySession, revokeIdentitySession, identityCookie, identityRequestAllowed, identitySessionSummary, withIdentityRequestSession } from "./identity-session";
+// @ts-expect-error Upstream Durable Objects are JavaScript classes.
+export { ChannelRoom as ChatRoom, UserInbox as ChatInbox } from "../chat/worker/src/index.js";
 import {
   canViewAdminModule,
   deleteRevokedTemporaryKey,
@@ -120,8 +129,6 @@ import {
   listActiveIdentityCodeOptions,
   listIdentityProfileChangeRequests,
   listVoteBallotDetails,
-  reissueIdentityCode,
-  reissuePreview,
   recoverIdentityCode,
   rejectIdentityApplication,
   rejectVoteEligibilityApplication,
@@ -135,7 +142,6 @@ import {
   resendIdentityCode,
   reviewIdentityProfileChangeRequest,
   setIdentityPassword,
-  submitReissue,
   submitRenewal,
   updateIdentityPlayerName,
   updateIdentityCode,
@@ -315,6 +321,11 @@ const handler = {
     _ctx: ExecutionContext
   ): Promise<void> {
     const now = new Date(controller.scheduledTime);
+    if (now.getUTCMinutes() % 10 === 0) {
+      _ctx.waitUntil(chatRuntimeEnv(env).then(runChatGc).catch((error: unknown) => {
+        console.error(JSON.stringify({event:"chat_gc_failed",message:error instanceof Error?error.message:String(error)}));
+      }));
+    }
     let settledDrawWinners = 0;
     try {
       settledDrawWinners = await finalizeEndedDraws(env, now);
@@ -351,6 +362,25 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method.toUpperCase();
+  if (path.startsWith("/api/public/")) env = await withIdentityRequestSession(request,env);
+  if (path === "/chat" || path.startsWith("/chat/")) return handleChat(request,env);
+  if (path === "/api/public/identity-session") {
+    if (method === "DELETE") {
+      if (!identityRequestAllowed(request)) return problem("请求被拒绝",403);
+      await revokeIdentitySession(env,request);
+      return json({ok:true},200,{"Set-Cookie":identityCookie(request,"")});
+    }
+    if (method !== "GET") return methodNotAllowed(["GET","DELETE"]);
+    const account = await validateIdentitySession(env,identityCookieToken(request));
+    if (!account) return problem("请先登录身份识别码", 401, "identity_login_required");
+    const summary = await identitySessionSummary(env, account);
+    return json({
+      ...await identityAccount(env, { identityCode: summary.identityCode, password: undefined }),
+      avatarUrl: summary.avatarUrl,
+      cookieSession: true
+    }, 200, { "Cache-Control": "no-store" });
+  }
+  if (path === "/api/public/identity-avatar" || path.startsWith("/api/public/identity-avatar/")) return handleIdentityAvatar(request,env);
 
   if (method === "OPTIONS" && path.startsWith("/api/public/")) {
     return new Response(null, { status: 204, headers: publicCors(request) });
@@ -919,6 +949,7 @@ async function handlePublicApi(
     const limited = await rejectIfRateLimited(request, env, IDENTITY_APPLICATION_LIMIT, cors);
     if (limited) return limited;
     const body = await readJsonObject(request, 12_000);
+    if (body.purpose === "reissue") return problem("身份识别码号码固定，不再支持更换",410,"identity_number_locked");
     const action = typeof body.action === "string" ? body.action : "request";
     const target = identityLookupFingerprint({
       action,
@@ -990,7 +1021,9 @@ async function handlePublicApi(
         clearRateLimitAttempts(request, env, IDENTITY_PASSWORD_LIMIT),
         clearValueRateLimitAttempts(target, env, IDENTITY_PASSWORD_TARGET_LIMIT)
       ]);
-      return json(account, 200, cors);
+      const webSession = identityRequestAllowed(request)
+        ? await issueIdentitySession(env,request,account.identityCode) : null;
+      return json({...account,avatarUrl:webSession?.avatarUrl || "",cookieSession:Boolean(webSession && !webSession.cookie.includes("Max-Age=0"))}, 200, {...cors,...(webSession ? {"Set-Cookie":webSession.cookie} : {})});
     } catch (error) {
       await Promise.all([
         recordRateLimitAttempt(request, env, IDENTITY_PASSWORD_LIMIT),
@@ -1528,116 +1561,6 @@ async function handlePublicApi(
       return problem(errorMessage(error), 400, "identity_renewal_invalid");
     }
   }
-  if (path === "/api/public/identity-code-reissue-preview" && method === "POST") {
-    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
-    if (limited) return limited;
-    let body: Record<string, unknown>;
-    try {
-      body = await readJsonObject(request, 8_000);
-    } catch (error) {
-      await recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT);
-      return problem(errorMessage(error), 400, "identity_reissue_unavailable");
-    }
-    const reissueLookupValue = identityLookupFingerprint({
-      email: body.email,
-      identityCode: body.identityCode,
-      applicationNumber: body.applicationNumber
-    });
-    const valueLimited = await rejectIfValueRateLimited(
-      reissueLookupValue,
-      env,
-      IDENTITY_VALUE_CHECK_LIMIT,
-      cors
-    );
-    if (valueLimited) return valueLimited;
-    try {
-      const result = await reissuePreview(env, {
-          identityCode: body.identityCode,
-          applicationNumber: body.applicationNumber,
-          email: body.email
-        });
-      await Promise.all([
-        clearRateLimitAttempts(request, env, IDENTITY_CHECK_LIMIT),
-        clearValueRateLimitAttempts(
-          reissueLookupValue,
-          env,
-          IDENTITY_VALUE_CHECK_LIMIT
-        )
-      ]);
-      return json(result, 200, cors);
-    } catch (error) {
-      await Promise.all([
-        recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
-        recordValueRateLimitAttempt(
-          reissueLookupValue,
-          env,
-          IDENTITY_VALUE_CHECK_LIMIT
-        )
-      ]);
-      return problem(errorMessage(error), 400, "identity_reissue_unavailable");
-    }
-  }
-  if (path === "/api/public/identity-code-reissue" && method === "POST") {
-    const limited = await rejectIfRateLimited(request, env, IDENTITY_CHECK_LIMIT, cors);
-    if (limited) return limited;
-    let body: Record<string, unknown>;
-    try {
-      body = await readJsonObject(request, 16_000);
-    } catch (error) {
-      await recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT);
-      return problem(errorMessage(error), 400, "identity_reissue_invalid");
-    }
-    const reissueLookupValue = identityLookupFingerprint({
-      email: body.email,
-      identityCode: body.identityCode,
-      applicationNumber: body.applicationNumber
-    });
-    const valueLimited = await rejectIfValueRateLimited(
-      reissueLookupValue,
-      env,
-      IDENTITY_VALUE_CHECK_LIMIT,
-      cors
-    );
-    if (valueLimited) return valueLimited;
-    try {
-      await consumeIdentityApplicationVerification(env, {
-        challengeId: body.verificationId,
-        verificationToken: body.verificationToken,
-        purpose: "reissue",
-        email: body.lookupEmail ?? body.email,
-        identityCode: body.identityCode
-      });
-      const result = await submitReissue(env, {
-          // The email challenge is consumed before the reissue request is created.
-          // It is bound to the old identity code and its reserved email.
-          identityCode: body.identityCode,
-          applicationNumber: body.applicationNumber,
-          lookupEmail: body.lookupEmail,
-          playerName: body.playerName,
-          email: body.email,
-          locale: body.locale
-        });
-      await Promise.all([
-        clearRateLimitAttempts(request, env, IDENTITY_CHECK_LIMIT),
-        clearValueRateLimitAttempts(
-          reissueLookupValue,
-          env,
-          IDENTITY_VALUE_CHECK_LIMIT
-        )
-      ]);
-      return json(result, 200, cors);
-    } catch (error) {
-      await Promise.all([
-        recordRateLimitAttempt(request, env, IDENTITY_CHECK_LIMIT),
-        recordValueRateLimitAttempt(
-          reissueLookupValue,
-          env,
-          IDENTITY_VALUE_CHECK_LIMIT
-        )
-      ]);
-      return problem(errorMessage(error), 400, "identity_reissue_invalid");
-    }
-  }
   return problem("Not found", 404, "not_found");
 }
 
@@ -1648,6 +1571,7 @@ async function handleAdminApi(
   method: string,
   session: SessionRow
 ): Promise<Response> {
+  if (path === "/api/admin/chat" || path.startsWith("/api/admin/chat/")) return handleChatAdmin(request,env,session);
   const memberCorrectionMatch = /^\/api\/admin\/members\/bulk-correction\/(validate|apply)$/.exec(path);
   if (memberCorrectionMatch && method === "POST") {
     let correctionLocale = normalizeLocale(request.headers.get("X-UI-Locale"));
@@ -2236,7 +2160,7 @@ async function handleAdminApi(
     }
   }
   const identityCodeMatch =
-    /^\/api\/admin\/identity-codes\/([^/]+)(?:\/(resend|information|reissue|reset-password|vote-eligibility))?$/.exec(path);
+    /^\/api\/admin\/identity-codes\/([^/]+)(?:\/(resend|information|reset-password|vote-eligibility))?$/.exec(path);
   if (identityCodeMatch && !identityCodeMatch[2] && method === "DELETE") {
     try {
       await deleteIdentityCodeRecord(env, identityCodeMatch[1]!);
@@ -2321,28 +2245,7 @@ async function handleAdminApi(
       return problem(errorMessage(error), 400, "identity_code_resend_failed");
     }
   }
-  if (identityCodeMatch?.[2] === "reissue" && method === "POST") {
-    const codeId = identityCodeMatch[1];
-    if (!codeId) return problem("识别码不存在", 404);
-    try {
-      const body = await readJsonObject(request, 16_000);
-      const expiry = await resolveIdentityExpiry(
-        env,
-        body.permanent,
-        body.expiresOn
-      );
-      return json(
-        await reissueIdentityCode(env, {
-          id: codeId,
-          permanent: expiry.permanent,
-          expiresAt: expiry.expiresAt,
-          reissuedBy: session.email
-        })
-      );
-    } catch (error) {
-      return problem(errorMessage(error), 400, "identity_code_reissue_failed");
-    }
-  }
+
   if (identityCodeMatch?.[2] === "reset-password" && method === "POST") {
     const codeId = identityCodeMatch[1];
     if (!codeId) return problem("识别码不存在", 404);
@@ -3494,6 +3397,7 @@ function permissionForAdminRequest(
   path: string,
   method: string
 ): string | null {
+  if (path === "/api/admin/chat" || path.startsWith("/api/admin/chat/")) return "admin:chat";
   if (path === "/api/admin/daily-vote" || path.startsWith("/api/admin/daily-vote/")) {
     return "admin:daily-vote";
   }

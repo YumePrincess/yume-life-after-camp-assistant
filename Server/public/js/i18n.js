@@ -4792,6 +4792,178 @@
     Object.assign(translations[language], additions);
   }
 
+
+  // Identity and interaction center share the site locale preference.
+  Object.assign(translations["en"], {
+  "互动中心": "Interaction center",
+  "成员群聊与私聊": "Group chats and private messages",
+  "进入聊天": "Open chat",
+  "请先登录身份识别码后进入互动中心。": "Sign in with your identity code to open the interaction center.",
+  "上传 / 修改头像": "Upload / change avatar",
+  "选择头像图片": "Choose an avatar image",
+  "缩放头像": "Zoom avatar",
+  "保存头像": "Save avatar",
+  "请选择5MB以内的PNG、JPEG或WebP图片": "Choose a PNG, JPEG or WebP image under 5 MB",
+  "拖动图片调整位置，使用滑块缩放。": "Drag to reposition; use the slider to zoom.",
+  "图片尺寸过大": "Image dimensions are too large",
+  "无法读取图片": "Unable to read the image",
+  "互动中心管理": "Interaction center management",
+  "全部会话（含私聊）": "All conversations (including DMs)",
+  "聊天文件": "Chat files",
+  "聊天运行参数": "Chat operation settings",
+  "访问日志": "Access log",
+  "全体成员群": "All members",
+  "私聊": "Private messages",
+  "群聊": "Group chat",
+  "暂无消息": "No messages yet",
+  "删除群组": "Delete group",
+  "删除消息": "Delete message",
+  "确认删除这个群组及其消息？": "Delete this group and its messages?",
+  "确认删除这条消息？": "Delete this message?",
+  "更早的消息": "Older messages",
+  "更多会话": "More conversations",
+  "更多文件": "More files",
+  "会话 {rooms} · 消息 {messages} · 文件 {files}": "Conversations {rooms} · Messages {messages} · Files {files}",
+  "消息保留天数": "Message retention (days)",
+  "删除后保留天数": "Soft-delete retention (days)",
+  "单文件大小上限（字节）": "Maximum file size (bytes)",
+  "未发送文件保留天数": "Unsent file retention (days)",
+  "允许的文件类型": "Allowed file types",
+  "保存聊天参数": "Save chat settings",
+  "恢复默认值": "Restore defaults",
+  "聊天参数已保存": "Chat settings saved",
+  "保存后立即生效；保留天数的清理任务每10分钟执行。单文件最大支持25MB。": "Settings apply immediately; retention cleanup runs every 10 minutes. Maximum file size: 25 MB.",
+  "互动中心管理（含私聊与全站文件）": "Manage chat, including private messages and all files"
+});
+  Object.assign(translations["fr"], {
+  "互动中心": "Centre d’interaction",
+  "成员群聊与私聊": "Groupes et messages privés",
+  "进入聊天": "Ouvrir le chat",
+  "请先登录身份识别码后进入互动中心。": "Connectez-vous avec votre code d’identité pour ouvrir le centre d’interaction.",
+  "上传 / 修改头像": "Ajouter / modifier l’avatar",
+  "选择头像图片": "Choisir une image d’avatar",
+  "缩放头像": "Zoom de l’avatar",
+  "保存头像": "Enregistrer l’avatar",
+  "请选择5MB以内的PNG、JPEG或WebP图片": "Choisissez une image PNG, JPEG ou WebP de moins de 5 Mo",
+  "拖动图片调整位置，使用滑块缩放。": "Faites glisser l’image et utilisez le curseur pour zoomer.",
+  "图片尺寸过大": "Dimensions de l’image trop grandes",
+  "无法读取图片": "Impossible de lire l’image",
+  "互动中心管理": "Gestion du centre d’interaction",
+  "全部会话（含私聊）": "Toutes les conversations (y compris privées)",
+  "聊天文件": "Fichiers du chat",
+  "聊天运行参数": "Paramètres de fonctionnement du chat",
+  "访问日志": "Journal d’accès",
+  "全体成员群": "Tous les membres",
+  "私聊": "Messages privés",
+  "群聊": "Groupe",
+  "暂无消息": "Aucun message",
+  "删除群组": "Supprimer le groupe",
+  "删除消息": "Supprimer le message",
+  "确认删除这个群组及其消息？": "Supprimer ce groupe et ses messages ?",
+  "确认删除这条消息？": "Supprimer ce message ?",
+  "更早的消息": "Messages précédents",
+  "更多会话": "Plus de conversations",
+  "更多文件": "Plus de fichiers",
+  "会话 {rooms} · 消息 {messages} · 文件 {files}": "Conversations {rooms} · Messages {messages} · Fichiers {files}",
+  "消息保留天数": "Conservation des messages (jours)",
+  "删除后保留天数": "Conservation après suppression (jours)",
+  "单文件大小上限（字节）": "Taille maximale par fichier (octets)",
+  "未发送文件保留天数": "Conservation des fichiers non envoyés (jours)",
+  "允许的文件类型": "Types de fichiers autorisés",
+  "保存聊天参数": "Enregistrer les paramètres",
+  "恢复默认值": "Rétablir les valeurs par défaut",
+  "聊天参数已保存": "Paramètres du chat enregistrés",
+  "保存后立即生效；保留天数的清理任务每10分钟执行。单文件最大支持25MB。": "Les paramètres prennent effet immédiatement. Nettoyage toutes les 10 minutes. Taille maximale : 25 Mo.",
+  "互动中心管理（含私聊与全站文件）": "Gérer le chat, y compris les messages privés et tous les fichiers"
+});
+  Object.assign(translations["ja"], {
+  "互动中心": "交流センター",
+  "成员群聊与私聊": "グループチャットと個別メッセージ",
+  "进入聊天": "チャットを開く",
+  "请先登录身份识别码后进入互动中心。": "交流センターを開くには本人確認コードでログインしてください。",
+  "上传 / 修改头像": "アバターをアップロード・変更",
+  "选择头像图片": "アバター画像を選択",
+  "缩放头像": "アバターを拡大・縮小",
+  "保存头像": "アバターを保存",
+  "请选择5MB以内的PNG、JPEG或WebP图片": "5MB以下のPNG、JPEGまたはWebP画像を選択してください",
+  "拖动图片调整位置，使用滑块缩放。": "画像をドラッグして位置を調整し、スライダーで拡大・縮小します。",
+  "图片尺寸过大": "画像のサイズが大きすぎます",
+  "无法读取图片": "画像を読み込めません",
+  "互动中心管理": "交流センター管理",
+  "全部会话（含私聊）": "すべての会話（個別メッセージを含む）",
+  "聊天文件": "チャットファイル",
+  "聊天运行参数": "チャット動作設定",
+  "访问日志": "アクセスログ",
+  "全体成员群": "全メンバーグループ",
+  "私聊": "個別メッセージ",
+  "群聊": "グループチャット",
+  "暂无消息": "メッセージはありません",
+  "删除群组": "グループを削除",
+  "删除消息": "メッセージを削除",
+  "确认删除这个群组及其消息？": "このグループとメッセージを削除しますか？",
+  "确认删除这条消息？": "このメッセージを削除しますか？",
+  "更早的消息": "以前のメッセージ",
+  "更多会话": "会話をさらに表示",
+  "更多文件": "ファイルをさらに表示",
+  "会话 {rooms} · 消息 {messages} · 文件 {files}": "会話 {rooms} · メッセージ {messages} · ファイル {files}",
+  "消息保留天数": "メッセージ保存日数",
+  "删除后保留天数": "削除後の保持日数",
+  "单文件大小上限（字节）": "ファイルサイズ上限（バイト）",
+  "未发送文件保留天数": "未送信ファイル保存日数",
+  "允许的文件类型": "許可するファイル形式",
+  "保存聊天参数": "チャット設定を保存",
+  "恢复默认值": "初期値に戻す",
+  "聊天参数已保存": "チャット設定を保存しました",
+  "保存后立即生效；保留天数的清理任务每10分钟执行。单文件最大支持25MB。": "保存後すぐに反映します。保存期限の整理は10分ごとに実行します。ファイル上限は25MBです。",
+  "互动中心管理（含私聊与全站文件）": "チャット管理（個別メッセージと全ファイルを含む）"
+});
+  Object.assign(translations["zh-tw"], {
+  "互动中心": "互動中心",
+  "成员群聊与私聊": "成員群聊與私聊",
+  "进入聊天": "進入聊天",
+  "请先登录身份识别码后进入互动中心。": "請先登入身分識別碼後進入互動中心。",
+  "上传 / 修改头像": "上傳 / 修改頭像",
+  "选择头像图片": "選擇頭像圖片",
+  "缩放头像": "縮放頭像",
+  "保存头像": "儲存頭像",
+  "请选择5MB以内的PNG、JPEG或WebP图片": "請選擇5MB以內的PNG、JPEG或WebP圖片",
+  "拖动图片调整位置，使用滑块缩放。": "拖動圖片調整位置，使用滑桿縮放。",
+  "图片尺寸过大": "圖片尺寸過大",
+  "无法读取图片": "無法讀取圖片",
+  "互动中心管理": "互動中心管理",
+  "全部会话（含私聊）": "全部會話（含私聊）",
+  "聊天文件": "聊天檔案",
+  "聊天运行参数": "聊天運行參數",
+  "访问日志": "存取日誌",
+  "全体成员群": "全體成員群",
+  "私聊": "私聊",
+  "群聊": "群聊",
+  "暂无消息": "暫無訊息",
+  "删除群组": "刪除群組",
+  "删除消息": "刪除訊息",
+  "确认删除这个群组及其消息？": "確認刪除這個群組及其訊息？",
+  "确认删除这条消息？": "確認刪除這條訊息？",
+  "更早的消息": "更早的訊息",
+  "更多会话": "更多會話",
+  "更多文件": "更多檔案",
+  "会话 {rooms} · 消息 {messages} · 文件 {files}": "會話 {rooms} · 訊息 {messages} · 檔案 {files}",
+  "消息保留天数": "訊息保留天數",
+  "删除后保留天数": "刪除後保留天數",
+  "单文件大小上限（字节）": "單檔大小上限（位元組）",
+  "未发送文件保留天数": "未傳送檔案保留天數",
+  "允许的文件类型": "允許的檔案類型",
+  "保存聊天参数": "儲存聊天參數",
+  "恢复默认值": "還原預設值",
+  "聊天参数已保存": "聊天參數已儲存",
+  "保存后立即生效；保留天数的清理任务每10分钟执行。单文件最大支持25MB。": "儲存後立即生效；保留天數的清理工作每10分鐘執行。單檔最大支援25MB。",
+  "互动中心管理（含私聊与全站文件）": "互動中心管理（含私聊與全站檔案）"
+});
+  for (const [language, avatar, label, changed] of [
+    ["en","Avatar","Avatar:","Your avatar changed or your session expired. Please try again."],
+    ["fr","Avatar","Avatar :","Votre avatar a changé ou votre session a expiré. Réessayez."],
+    ["ja","アバター","アバター：","アバターが更新されたかログインが失効しました。もう一度お試しください。"],
+    ["zh-tw","頭像","頭像：","頭像已更新或登入已失效，請重試"]
+  ]) Object.assign(translations[language], {"头像":avatar,"头像：":label,"头像已更新或登录已失效，请重试":changed});
   function translate(source, language = currentLanguage()) {
     return translations[language]?.[source] || source;
   }
@@ -4869,7 +5041,7 @@
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
     while ((node = walker.nextNode())) {
-      if (["SCRIPT", "STYLE", "CODE", "TEXTAREA"].includes(node.parentElement?.tagName)) {
+      if (node.parentElement?.closest("[data-i18n-ignore]") || ["SCRIPT", "STYLE", "CODE", "TEXTAREA"].includes(node.parentElement?.tagName)) {
         continue;
       }
       if (!originalText.has(node)) originalText.set(node, node.nodeValue);
@@ -4887,10 +5059,10 @@
         translate(originalPlaceholder.get(field), language)
       );
     }
-    for (const element of document.querySelectorAll("[aria-label], [title]")) {
+    for (const element of document.querySelectorAll("[aria-label], [title], [alt]")) {
       if (!originalAttributes.has(element)) originalAttributes.set(element, {});
       const originals = originalAttributes.get(element);
-      for (const attribute of ["aria-label", "title"]) {
+      for (const attribute of ["aria-label", "title", "alt"]) {
         if (!element.hasAttribute(attribute)) continue;
         if (!(attribute in originals)) originals[attribute] = element.getAttribute(attribute);
         element.setAttribute(attribute, translate(originals[attribute], language));
@@ -5040,6 +5212,7 @@
     if (event.key === "lang") translateDocument();
     if (event.key === "yume-theme") P.applyTheme(P.getThemeChoice());
   });
+  window.addEventListener("focus", () => { P.applyTheme(P.getThemeChoice()); translateDocument(); });
   window.addEventListener("yume:preferenceschange", () => {
     P.applyTheme(P.getThemeChoice());
     translateDocument();

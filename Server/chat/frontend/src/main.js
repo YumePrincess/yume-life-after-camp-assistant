@@ -1,0 +1,22 @@
+import { createApp } from 'vue';
+import App from './App.vue';
+import router from './router.js';
+import store from './store.js';
+import './styles/base.css';
+import './styles/theme.css';
+import './styles.css';
+import './styles-liquid.css';
+import './styles/tokens.css';
+import './styles/layout.css';
+import './styles/ui.css';
+import { initLiquidGlass } from './liquid-glass.js';
+import { initializeI18n } from './i18n.js';
+import { initializeTheme } from './theme.js';
+import { installChunkLoadRecovery } from './chunk-load.ts';
+installChunkLoadRecovery(window);
+initializeTheme();
+initializeI18n().then(()=>store.initialize()).then(()=>{
+ if (!store.session) return;
+ createApp(App).use(router).mount('#app');
+ initLiquidGlass();
+});

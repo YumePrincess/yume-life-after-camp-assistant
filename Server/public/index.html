@@ -8,16 +8,17 @@
     <meta name="description" content="明日之后“愿”营地公共信息、科技投票与成员贡献" />
     <title>明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260921-vote-eligibility-override" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261017-shared-hero" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261017-identity-chat-v2" />
     <link rel="stylesheet" href="/loading.css?v=20261016-mini-program-colors" />
-    <link rel="stylesheet" href="/mrzh-mobile.css?v=20261017-shared-hero" />
+    <link rel="stylesheet" href="/mrzh-mobile.css?v=20261017-identity-chat-v2" />
     <script src="/js/loading.js?v=20261016-resources" defer></script>
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/timezone.js?v=20261016-task-log-seconds" defer></script>
-    <script src="/js/i18n.js?v=20261017-shared-hero" defer></script>
+    <script src="/js/timezone.js?v=20261017-identity-chat-v2" defer></script>
+    <script src="/js/i18n.js?v=20261017-identity-chat-v2" defer></script>
     <script src="/js/camp-group.js?v=20261016-configurable-source" defer></script>
     <script src="/js/vote-participation.js?v=20261016-participation-sync" defer></script>
-    <script src="/js/public.js?v=20261017-shared-hero" defer></script>
+    <script src="/js/identity-avatar.js?v=20261017-identity-chat-v2" defer></script>
+    <script src="/js/public.js?v=20261017-identity-chat-v2" defer></script>
   </head>
   <body class="public-page">
     <div id="page-loading" class="page-loading" role="status" aria-label="正在载入">
@@ -77,6 +78,14 @@
             <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M16 4a4 4 0 0 1 0 8m6 9v-2a5 5 0 0 0-3-4.6"/></svg></span><span class="feature-card-kicker" aria-hidden="true">Group</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>营地群资料</strong><small>查看营地群资料与加入方式</small></span>
             <span class="feature-card-action">查看营地群信息</span>
+          </button>
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-controls="feature-detail-dialog" aria-expanded="false" data-feature-target="identity">
+            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M5 16a3 3 0 0 1 6 0m3-7h5m-5 4h5m-5 4h3"/></svg></span><span class="feature-card-kicker" aria-hidden="true">Identity</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-copy"><strong>身份识别码</strong><small>登录、申请与找回身份识别码</small></span><span class="feature-card-action" id="daily-identity-panel-state">—</span>
+          </button>
+          <button class="feature-card" type="button" id="open-chat">
+            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-5 5V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/><path d="M7 8h10M7 12h7"/></svg></span><span class="feature-card-kicker" aria-hidden="true">Chat</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-copy"><strong>互动中心</strong><small>成员群聊与私聊</small></span><span class="feature-card-action">进入聊天</span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="vote">
             <span class="feature-card-topline"><span class="feature-card-icon feature-icon-vote" aria-hidden="true">
@@ -156,18 +165,72 @@
         <p id="warning-empty" class="empty-state" hidden>当前没有达到预警线的成员。</p>
       </section>
 
+          <section class="daily-identity-section feature-panel" id="identity" data-feature-panel="identity" hidden>
+            <div id="identity-account-status" class="identity-account-state" data-signed-in="false" role="status">
+              <span id="identity-status-mark" class="identity-status-mark" aria-hidden="true">×</span>
+              <div><span class="identity-status-kicker">账户状态</span><strong id="identity-account-state">未登录</strong></div>
+            </div>
+            <div id="identity-account-logged-out">
+              <form id="identity-login-form" class="form-grid identity-account-form" novalidate>
+                <label class="field">
+                  <span>身份识别码</span>
+                  <input id="identity-login-code" inputmode="numeric" maxlength="8" autocomplete="username" />
+                </label>
+                <label class="field">
+                  <span>密码</span>
+                  <input id="identity-login-password" type="password" autocomplete="current-password" />
+                </label>
+                <div class="action-row identity-login-actions">
+                  <button class="button button-primary" type="submit">登录身份识别码</button>
+                </div>
+              </form>
+              <div class="identity-login-divider" aria-hidden="true"></div>
+              <div class="action-row identity-account-actions">
+                <button id="identity-apply" class="button button-quiet" type="button">申请身份识别码</button>
+                <button id="identity-renew" class="button button-quiet" type="button">申请延长有效期</button>
+                <button id="identity-cancel" class="button button-quiet" type="button">申请注销身份识别码</button>
+                <button id="identity-recover" class="button button-quiet" type="button">忘记识别码</button>
+                <button id="identity-forgot-password" class="button button-quiet" type="button">忘记密码</button>
+              </div>
+            </div>
+            <div id="identity-account-logged-in" hidden>
+              <div class="identity-account-summary">
+                <div class="identity-account-table">
+                  <div class="identity-account-line identity-avatar-line"><span class="identity-account-label">头像：</span><div class="identity-avatar-controls"><span class="identity-avatar-preview"><img id="identity-avatar" alt="头像" hidden /><span id="identity-avatar-fallback" data-i18n-ignore aria-hidden="true">?</span></span><button id="identity-avatar-edit" class="daily-history-result is-winner daily-history-participant-button identity-avatar-upload" type="button">上传 / 修改头像</button></div></div>
+                  <div class="identity-account-line"><span class="identity-account-label">玩家名称：</span><strong id="identity-account-name">—</strong></div>
+                  <div class="identity-account-line"><span class="identity-account-label">识别码：</span><span id="identity-account-code" class="muted">—</span></div>
+                  <div class="identity-account-line"><span class="identity-account-label">邮箱：</span><span id="identity-account-email" class="muted">—</span></div>
+                  <div class="identity-account-line"><span class="identity-account-label">有效期：</span><span id="identity-account-expiry" class="muted">—</span></div>
+                  <div id="identity-eligibility-line" class="identity-account-line identity-eligibility-line" hidden>
+                    <span class="identity-account-label">投票资格状态：</span>
+                    <span class="identity-eligibility-value">
+                      <span class="identity-eligibility-content">
+                        <strong id="identity-account-eligibility" class="identity-eligibility-status">—</strong>
+                        <button id="identity-eligibility-info" class="identity-info-button" type="button" aria-label="查看投票资格标准" title="查看投票资格标准">
+                          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 10.4v6.1M12 7.6h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.2"/></svg>
+                        </button>
+                      </span>
+                    </span>
+                  </div>
+                  <div id="identity-eligibility-override" class="identity-account-line identity-eligibility-override" hidden>
+                    <span class="identity-account-label">破格投票资格：</span>
+                    <strong id="identity-account-eligibility-override" class="identity-eligibility-override-value">—</strong>
+                  </div>
+                </div>
+              </div>
+              <div class="action-row identity-account-actions">
+                <button id="identity-eligibility-apply" class="button button-quiet" type="button" hidden>申请破格投票资格</button>
+                <button id="identity-update-name" class="button button-quiet" type="button">修改玩家名称</button>
+                <button id="identity-change-email" class="button button-quiet" type="button">绑定/修改邮箱</button>
+                <button id="identity-renew-logged-in" class="button button-quiet" type="button">申请延长有效期</button>
+                <button id="identity-cancel-logged-in" class="button button-quiet" type="button">申请注销身份识别码</button>
+                <button id="identity-logout" class="button button-quiet" type="button">退出身份识别码账号</button>
+              </div>
+            </div>
+          </section>
+
       <article class="vote-panel feature-panel" id="vote" data-feature-panel="vote" hidden>
         <div id="daily-vote-panels" class="daily-vote-panel-list">
-          <button class="daily-vote-panel-card" type="button" data-daily-panel="identity">
-            <span class="daily-vote-panel-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" /><path d="m9 12 2 2 4-4" /></svg>
-            </span>
-            <span class="daily-vote-panel-copy">
-              <strong>身份识别码</strong>
-              <small>登录、申请与找回身份识别码</small>
-            </span>
-            <span class="daily-vote-panel-stat"><b id="daily-identity-panel-state">—</b><small>状态</small><span aria-hidden="true">›</span></span>
-          </button>
           <button class="daily-vote-panel-card" type="button" data-daily-panel="technology">
             <span class="daily-vote-panel-icon" aria-hidden="true">✓</span>
             <span class="daily-vote-panel-copy">
@@ -177,7 +240,7 @@
             <span class="daily-vote-panel-stat"><b id="daily-tech-panel-count">1</b><small>项</small><span aria-hidden="true">›</span></span>
           </button>
           <button class="daily-vote-panel-card" type="button" data-daily-panel="items">
-            <span class="daily-vote-panel-icon" aria-hidden="true">☷</span>
+            <span class="daily-vote-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-5 5V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/><path d="M7 8h10M7 12h7"/></svg></span>
             <span class="daily-vote-panel-copy">
               <strong>投票事项与抽签</strong>
               <small>参与当前开放事项</small>
@@ -205,70 +268,6 @@
             <div id="vote-options" class="vote-options" aria-live="polite"></div>
             <div class="action-row vote-action-row">
               <button id="submit-vote" class="button button-primary" type="button">提交投票</button>
-            </div>
-          </section>
-          <section class="daily-identity-section" data-daily-panel-content="identity" hidden>
-            <div id="identity-account-status" class="identity-account-state" data-signed-in="false" role="status">
-              <span id="identity-status-mark" class="identity-status-mark" aria-hidden="true">×</span>
-              <div><span class="identity-status-kicker">账户状态</span><strong id="identity-account-state">未登录</strong></div>
-            </div>
-            <div id="identity-account-logged-out">
-              <form id="identity-login-form" class="form-grid identity-account-form" novalidate>
-                <label class="field">
-                  <span>身份识别码</span>
-                  <input id="identity-login-code" inputmode="numeric" maxlength="8" autocomplete="username" />
-                </label>
-                <label class="field">
-                  <span>密码</span>
-                  <input id="identity-login-password" type="password" autocomplete="current-password" />
-                </label>
-                <div class="action-row identity-login-actions">
-                  <button class="button button-primary" type="submit">登录身份识别码</button>
-                </div>
-              </form>
-              <div class="identity-login-divider" aria-hidden="true"></div>
-              <div class="action-row identity-account-actions">
-                <button id="identity-apply" class="button button-quiet" type="button">申请身份识别码</button>
-                <button id="identity-renew" class="button button-quiet" type="button">申请延长有效期</button>
-                <button id="identity-reissue" class="button button-quiet" type="button">申请更换识别码</button>
-                <button id="identity-cancel" class="button button-quiet" type="button">申请注销身份识别码</button>
-                <button id="identity-recover" class="button button-quiet" type="button">忘记识别码</button>
-                <button id="identity-forgot-password" class="button button-quiet" type="button">忘记密码</button>
-              </div>
-            </div>
-            <div id="identity-account-logged-in" hidden>
-              <div class="identity-account-summary">
-                <div class="identity-account-table">
-                  <div class="identity-account-line"><span class="identity-account-label">玩家名称：</span><strong id="identity-account-name">—</strong></div>
-                  <div class="identity-account-line"><span class="identity-account-label">识别码：</span><span id="identity-account-code" class="muted">—</span></div>
-                  <div class="identity-account-line"><span class="identity-account-label">邮箱：</span><span id="identity-account-email" class="muted">—</span></div>
-                  <div class="identity-account-line"><span class="identity-account-label">有效期：</span><span id="identity-account-expiry" class="muted">—</span></div>
-                  <div id="identity-eligibility-line" class="identity-account-line identity-eligibility-line" hidden>
-                    <span class="identity-account-label">投票资格状态：</span>
-                    <span class="identity-eligibility-value">
-                      <span class="identity-eligibility-content">
-                        <strong id="identity-account-eligibility" class="identity-eligibility-status">—</strong>
-                        <button id="identity-eligibility-info" class="identity-info-button" type="button" aria-label="查看投票资格标准" title="查看投票资格标准">
-                          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 10.4v6.1M12 7.6h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.2"/></svg>
-                        </button>
-                      </span>
-                    </span>
-                  </div>
-                  <div id="identity-eligibility-override" class="identity-account-line identity-eligibility-override" hidden>
-                    <span class="identity-account-label">破格投票资格：</span>
-                    <strong id="identity-account-eligibility-override" class="identity-eligibility-override-value">—</strong>
-                  </div>
-                </div>
-              </div>
-              <div class="action-row identity-account-actions">
-                <button id="identity-eligibility-apply" class="button button-quiet" type="button" hidden>申请破格投票资格</button>
-                <button id="identity-update-name" class="button button-quiet" type="button">修改玩家名称</button>
-                <button id="identity-change-email" class="button button-quiet" type="button">绑定/修改邮箱</button>
-                <button id="identity-renew-logged-in" class="button button-quiet" type="button">申请延长有效期</button>
-                <button id="identity-reissue-logged-in" class="button button-quiet" type="button">申请更换识别码</button>
-                <button id="identity-cancel-logged-in" class="button button-quiet" type="button">申请注销身份识别码</button>
-                <button id="identity-logout" class="button button-quiet" type="button">退出身份识别码账号</button>
-              </div>
             </div>
           </section>
           <section class="daily-items-section" data-daily-panel-content="items" hidden>
@@ -325,14 +324,6 @@
             <span>申请编号</span>
             <input id="identity-recovery-number" maxlength="40" />
           </label>
-          <label id="identity-reissue-application-number-field" class="field" hidden>
-            <span>申请编号</span>
-            <input id="identity-reissue-application-number" maxlength="40" />
-          </label>
-          <label id="identity-reissue-code-field" class="field" hidden>
-            <span>旧身份识别码</span>
-            <input id="identity-reissue-code" inputmode="numeric" maxlength="8" />
-          </label>
           <label id="identity-renewal-application-number-field" class="field" hidden>
             <span>申请编号</span>
             <input id="identity-renewal-application-number" maxlength="40" />
@@ -368,14 +359,6 @@
           <li>请输入申请时预留的信息（至少一条）。</li>
           <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
           <li>找回的识别码将发送到申请时预留的邮箱，如果您更换了邮箱，请联系市长人工处理。</li>
-        </ol>
-        <ol id="identity-reissue-rules" class="identity-rules" hidden>
-          <li>申请更换身份识别码将作废旧识别码并更换一个新的识别码。申请一旦提交，现有识别码将立即失效。</li>
-          <li>在识别码被盗用等情况下建议立即申请更换身份识别码。</li>
-          <li>新发行的识别码的有效期以审批为准。</li>
-          <li>申请更换身份识别码请输入申请编号、申请时预留的邮箱、旧识别码的其中一项。</li>
-          <li>如果您是通过人工申请的识别码且预留信息不详细，请联系市长人工处理。</li>
-          <li>提交申请后预计于48小时内完成审核，请留意邮箱的审核结果邮件。</li>
         </ol>
         <ol id="identity-renewal-lookup-rules" class="identity-rules" hidden>
           <li>填写申请编号或身份识别码任一项，然后核对原申请信息。</li>

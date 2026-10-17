@@ -39,6 +39,8 @@ html:has(dialog[open]) { overflow: hidden; }
   .public-page .feature-card-icon::before { content: ""; width: 80%; height: 80%; background: currentColor; mask: var(--mini-icon) center / contain no-repeat; -webkit-mask: var(--mini-icon) center / contain no-repeat; }
   .feature-card[data-feature-target="overview"] { --mini-icon: url('/icons/mrzh/megaphone.svg'); }
   .feature-card[data-feature-target="group"] { --mini-icon: url('/icons/mrzh/users-round.svg'); }
+  .feature-card[data-feature-target="identity"] { --mini-icon: url('/icons/mrzh/id-card.svg'); }
+  #open-chat { --mini-icon: url('/icons/mrzh/message-square.svg'); }
   .feature-card[data-feature-target="vote"] { --mini-icon: url('/icons/mrzh/vote.svg'); }
   .feature-card[data-feature-target="staff"] { --mini-icon: url('/icons/mrzh/badge-check.svg'); }
   .feature-card[data-feature-target="members"] { --mini-icon: url('/icons/mrzh/user-round-check.svg'); }

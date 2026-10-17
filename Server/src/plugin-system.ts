@@ -76,6 +76,7 @@ export const CORE_PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   { key: "admin:agent", label: "执行策略", pluginId: null, aliases: ["config:write"] },
   { key: "admin:plugins", label: "Workers 插件", pluginId: null, aliases: ["plugins:manage"] },
   { key: "admin:identity-review", label: "识别码审批", pluginId: null, aliases: ["identity:review"] },
+  { key: "admin:chat", label: "互动中心管理（含私聊与全站文件）", pluginId: null, aliases: [] },
   { key: "admin:identity-codes", label: "身份识别码", pluginId: null, aliases: ["identity:manage"] },
   { key: "admin:smtp", label: "SMTP 发信", pluginId: null, aliases: ["smtp:manage"] },
   { key: "admin:access", label: "访问密钥", pluginId: null, aliases: ["keys:manage"] },
