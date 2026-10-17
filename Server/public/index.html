@@ -8,15 +8,14 @@
     <meta name="description" content="明日之后“愿”营地公共信息、科技投票与成员贡献" />
     <title>明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260921-vote-eligibility-override" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261017-27142-glass" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261016-identity-responsive" />
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/timezone.js?v=20260925-compact-timezone-label" defer></script>
-    <script src="/js/i18n.js?v=20260922-identity-controls" defer></script>
-    <script src="/js/public.js?v=20260925-compact-timezone-label" defer></script>
+    <script src="/js/timezone.js?v=20261016-minute-timestamps" defer></script>
+    <script src="/js/i18n.js?v=20261016-mrzh-redesign" defer></script>
+    <script src="/js/public.js?v=20261016-detail-refinement" defer></script>
   </head>
   <body class="public-page">
-    <div class="ambient ambient-a"></div>
-    <div class="ambient ambient-b"></div>
+    <a class="skip-link" href="#main-content">跳至主要内容</a>
     <header class="site-header shell">
       <a class="brand" href="/" aria-label="返回营地助手首页">
         <span class="brand-mark">愿</span>
@@ -25,20 +24,20 @@
           <small>LifeAfter “Wish” Camp Assistant</small>
         </span>
       </a>
-      <a class="button button-quiet" href="/admin">管理后台</a>
     </header>
 
-    <main class="shell">
+    <main id="main-content" class="shell" tabindex="-1">
       <section class="hero panel" id="camp-hero">
         <div class="hero-content">
-          <p class="eyebrow">CAMP OVERVIEW</p>
+          <p class="eyebrow">LifeAfter “Wish” Camp Assistant</p>
           <h1 id="camp-name">正在连接营地…</h1>
           <p id="announcement" class="hero-copy">正在读取最新公共信息。</p>
           <div class="chips">
             <span class="chip" id="server-name">中国大陆服务器</span>
           </div>
         </div>
-        <div class="hero-summary" aria-label="营地摘要">
+      </section>
+      <section class="hero-summary" aria-label="营地摘要">
           <a class="overview-stat" href="#members" data-feature-target="members">
             <strong id="hero-member-count">—</strong>
             <span>成员</span>
@@ -51,70 +50,73 @@
             <strong id="hero-vote-count">—</strong>
             <span>日常投票</span>
           </a>
-        </div>
       </section>
 
-      <section class="feature-section panel" aria-labelledby="feature-heading">
+      <section class="feature-section" aria-labelledby="feature-heading">
         <div class="section-heading feature-heading">
           <div>
-            <p class="eyebrow">CAMP SERVICES</p>
-            <h2 id="feature-heading">营地功能</h2>
+            <h2 id="feature-heading"><svg class="section-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>营地功能</h2>
           </div>
         </div>
-        <div class="feature-grid" role="list" aria-label="营地功能">
+        <div class="feature-grid" aria-label="营地功能">
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="overview">
-            <span class="feature-card-icon feature-icon-overview" aria-hidden="true">
+            <span class="feature-card-topline"><span class="feature-card-icon feature-icon-overview" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15M8 7h8M8 11h7"/></svg>
-            </span>
+            </span><span class="feature-card-kicker" aria-hidden="true">Notice</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>营地公告</strong><small>查看营地公告与重要信息</small></span>
-            <span class="feature-card-value" id="feature-overview-count">—</span>
-            <span class="feature-card-arrow" aria-hidden="true">›</span>
+            <span class="feature-card-metric"><span class="feature-card-value" id="feature-overview-count">—</span><small>条</small></span>
           </button>
-          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="staff">
-            <span class="feature-card-icon feature-icon-staff" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            </span>
-            <span class="feature-card-copy"><strong>营地公职</strong><small>查看当前营地工作人员</small></span>
-            <span class="feature-card-value" id="feature-staff-count">—</span>
-            <span class="feature-card-arrow" aria-hidden="true">›</span>
-          </button>
-          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="warnings">
-            <span class="feature-card-icon feature-icon-warning" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="m10.3 3.3-8 14A2 2 0 0 0 4 20.3h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
-            </span>
-            <span class="feature-card-copy"><strong>斩杀预警</strong><small>关注长时间未上线的成员</small></span>
-            <span class="feature-card-value" id="feature-warning-count">—</span>
-            <span class="feature-card-arrow" aria-hidden="true">›</span>
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="group">
+            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M16 4a4 4 0 0 1 0 8m6 9v-2a5 5 0 0 0-3-4.6"/></svg></span><span class="feature-card-kicker" aria-hidden="true">Group</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-copy"><strong>营地群资料</strong><small>查看营地群资料与加入方式</small></span>
+            <span class="feature-card-action">查看营地群信息</span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="vote">
-            <span class="feature-card-icon feature-icon-vote" aria-hidden="true">
+            <span class="feature-card-topline"><span class="feature-card-icon feature-icon-vote" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="m9 12 2 2 4-4"/><path d="M5 7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v12H5zM2 19h20"/></svg>
-            </span>
+            </span><span class="feature-card-kicker" aria-hidden="true">Vote</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>日常投票</strong><small>科技投票、日常投票与抽签</small></span>
-            <span class="feature-card-value" id="feature-vote-count">—</span>
-            <span class="feature-card-arrow" aria-hidden="true">›</span>
+            <span class="feature-card-metric"><span class="feature-card-value" id="feature-vote-count">—</span><small>项</small></span>
+          </button>
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="staff">
+            <span class="feature-card-topline"><span class="feature-card-icon feature-icon-staff" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span><span class="feature-card-kicker" aria-hidden="true">Staff</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-copy"><strong>营地公职</strong><small>查看当前营地工作人员</small></span>
+            <span class="feature-card-metric"><span class="feature-card-value" id="feature-staff-count">—</span><small>人</small></span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="members">
-            <span class="feature-card-icon feature-icon-members" aria-hidden="true">
+            <span class="feature-card-topline"><span class="feature-card-icon feature-icon-members" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.4-2-6.5-4-8a5 5 0 0 0-.5-8.3"/></svg>
-            </span>
+            </span><span class="feature-card-kicker" aria-hidden="true">Members</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>成员信息与贡献</strong><small>查看贡献、职业、庄园与同居信息</small></span>
-            <span class="feature-card-value" id="feature-members-count">—</span>
-            <span class="feature-card-arrow" aria-hidden="true">›</span>
+            <span class="feature-card-metric"><span class="feature-card-value" id="feature-members-count">—</span><small>人</small></span>
+          </button>
+          <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="warnings">
+            <span class="feature-card-topline"><span class="feature-card-icon feature-icon-warning" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="m10.3 3.3-8 14A2 2 0 0 0 4 20.3h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+            </span><span class="feature-card-kicker" aria-hidden="true">Alert</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-copy"><strong>斩杀预警</strong><small>关注长时间未上线的成员</small></span>
+            <span class="feature-card-metric"><span class="feature-card-value" id="feature-warning-count">—</span><small>人</small></span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="runs">
-            <span class="feature-card-icon feature-icon-runs" aria-hidden="true">
+            <span class="feature-card-topline"><span class="feature-card-icon feature-icon-runs" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M13 5h8M13 12h8M13 19h8"/><path d="m3 7 2 2 4-4M3 17l2 2 4-4"/></svg>
-            </span>
+            </span><span class="feature-card-kicker" aria-hidden="true">Tasks</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>最近自动任务</strong><small>查看最近自动化执行状态</small></span>
-            <span class="feature-card-value" id="feature-runs-count">—</span>
-            <span class="feature-card-arrow" aria-hidden="true">›</span>
+            <span class="feature-card-metric"><span class="feature-card-value" id="feature-runs-count">—</span><small>条</small></span>
           </button>
+          <a class="feature-card" href="/admin">
+            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></span><span class="feature-card-kicker" aria-hidden="true">Admin</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-copy"><strong>管理后台</strong><small>管理排程、成员、科技与临时任务</small></span>
+            <span class="feature-card-action">打开</span>
+          </a>
         </div>
       </section>
 
       <dialog id="feature-detail-dialog" class="feature-detail-dialog" aria-labelledby="feature-detail-title">
         <div class="feature-detail-card">
+          <div class="sheet-grabber" aria-hidden="true"></div>
           <div class="feature-detail-heading">
             <div>
               <p id="feature-detail-kicker" class="eyebrow">FEATURE DETAIL</p>
@@ -124,37 +126,24 @@
               <button id="back-daily-vote" class="feature-detail-back" type="button" aria-label="返回日常投票" hidden>
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6" /></svg>
               </button>
-              <button id="close-feature-detail" class="feature-detail-close" type="button" aria-label="关闭">×</button>
+              <button id="close-feature-detail" class="feature-detail-close" type="button" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
             </div>
           </div>
           <div class="feature-detail-body">
       <section id="overview" class="feature-panel" data-feature-panel="overview" hidden>
-        <div class="section-heading">
-          <div>
-            <h2 class="sr-only">营地公告</h2>
-          </div>
-          <span class="date-badge" id="overview-count">0</span>
-        </div>
         <div id="highlights" class="highlight-list"></div>
       </section>
 
+      <section id="group" class="feature-panel group-detail" data-feature-panel="group" hidden>
+        <div id="camp-group-content" class="camp-group-content" aria-live="polite"></div>
+        <button id="retry-camp-group" class="button button-quiet" type="button" hidden>重试</button>
+      </section>
+
       <section class="feature-panel" id="staff" data-feature-panel="staff" hidden>
-        <div class="section-heading">
-          <div>
-            <h2 class="sr-only">营地公职</h2>
-          </div>
-          <span class="muted" id="staff-updated"></span>
-        </div>
         <div id="staff-list" class="staff-grid"></div>
       </section>
 
       <section class="feature-panel" id="warnings" data-feature-panel="warnings" hidden>
-        <div class="section-heading">
-          <div>
-            <h2 class="sr-only">斩杀预警</h2>
-          </div>
-          <span class="date-badge" id="warning-count">0</span>
-        </div>
         <p id="warning-description" class="muted"></p>
         <div id="warning-list" class="warning-list"></div>
         <p id="warning-empty" class="empty-state" hidden>当前没有达到预警线的成员。</p>
@@ -199,12 +188,6 @@
         </div>
         <div id="daily-vote-panel-detail" class="daily-vote-panel-detail" hidden>
           <section class="daily-tech-card" data-daily-panel-content="technology" hidden>
-            <div class="section-heading">
-              <div>
-                <h3>科技投票</h3>
-              </div>
-              <div class="date-badge" id="poll-date">--</div>
-            </div>
             <p class="muted" id="vote-deadline">投票截止时间读取中。</p>
             <p id="vote-limit-description" class="muted vote-limit-description">每人最多选择 6 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。</p>
             <p id="vote-window-state" class="vote-window-state">当前未开放</p>
@@ -217,8 +200,7 @@
           <section class="daily-identity-section" data-daily-panel-content="identity" hidden>
             <div class="section-heading">
               <div>
-                <h3>身份识别码</h3>
-                <p class="muted">投票前请在此登录身份识别码账户。</p>
+
               </div>
               <span id="identity-account-state" class="date-badge">未登录</span>
             </div>
@@ -282,36 +264,15 @@
             </div>
           </section>
           <section class="daily-items-section" data-daily-panel-content="items" hidden>
-            <div class="section-heading">
-              <div>
-                <h3>开放事项</h3>
-              </div>
-            </div>
             <div id="daily-vote-items" class="daily-vote-items" aria-live="polite"></div>
           </section>
           <section class="daily-history-section" data-daily-panel-content="history" hidden>
-            <div class="section-heading">
-              <div>
-                <h3>历史投票结果</h3>
-              </div>
-              <span class="muted">科技 7 天 · 事项 14 天</span>
-            </div>
             <div id="daily-vote-history" class="daily-vote-history"></div>
           </section>
         </div>
       </article>
 
       <section class="feature-panel" id="members" data-feature-panel="members" hidden>
-        <div class="section-heading member-heading">
-          <div>
-            <h2 class="sr-only">成员信息与贡献</h2>
-            <p id="member-list-count" class="muted"></p>
-          </div>
-          <label class="search-field">
-            <span class="sr-only">搜索成员</span>
-            <input id="member-search" type="search" placeholder="搜索姓名、职业或同居" />
-          </label>
-        </div>
         <div class="table-scroll">
           <table>
             <thead>
@@ -334,11 +295,6 @@
       </section>
 
       <section class="feature-panel" id="runs" data-feature-panel="runs" hidden>
-        <div class="section-heading">
-          <div>
-            <h2 class="sr-only">最近自动任务</h2>
-          </div>
-        </div>
         <div id="run-list" class="run-list"></div>
       </section>
           </div>
@@ -630,7 +586,7 @@
 
     <dialog id="image-preview-dialog" class="image-preview-dialog">
       <form method="dialog" class="image-preview-card">
-        <button class="image-preview-close" type="submit" aria-label="关闭">×</button>
+        <button class="image-preview-close" type="submit" aria-label="关闭"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
         <img id="image-preview" alt="营地公告图片" />
       </form>
     </dialog>
@@ -639,7 +595,6 @@
       <div class="power" data-footer-copy>
         Copyright © <a href="https://www.yume.zone/">Yume Internet LLC</a>. All Rights Reserved.
       </div>
-      <div class="footer-timezone"><span id="timezone-label">UTC+08:00</span></div>
       <div class="lrc" hidden></div>
     </footer>
   </body>

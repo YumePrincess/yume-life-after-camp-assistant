@@ -1806,6 +1806,159 @@
     Object.assign(translations[language], additions);
   }
 
+  // Shared labels for the mrzh-inspired page and administration layout.
+  const workspaceTranslations = {
+    "en": {
+      "人": "people",
+      "跳至主要内容": "Skip to main content",
+      "运行概况": "Operations overview",
+      "在线设备": "Online devices",
+      "最近任务": "Recent tasks",
+      "最近运行记录": "Recent run records",
+      "已启用插件": "Enabled plugins",
+      "共 {count} 台设备": "{count} devices in total",
+      "共 {count} 个插件": "{count} plugins in total",
+      "执行设备": "Execution devices",
+      "手动任务": "Manual tasks",
+      "营地资料": "Camp profile",
+      "时间与公共访问": "Time and public access",
+      "公告内容": "Announcements",
+      "失败重试策略": "Failure retry policy",
+      "任务队列": "Task queue",
+      "健康检查": "Health checks",
+      "无响应恢复": "Recovery policy",
+      "创建临时 Key": "Create temporary key",
+      "服务器连接": "Server connection",
+      "发信身份": "Sender identity"
+    },
+    "fr": {
+      "人": "pers.",
+      "跳至主要内容": "Aller au contenu principal",
+      "运行概况": "Vue des opérations",
+      "在线设备": "Appareils en ligne",
+      "最近任务": "Tâches récentes",
+      "最近运行记录": "Exécutions récentes",
+      "已启用插件": "Extensions actives",
+      "共 {count} 台设备": "{count} appareils au total",
+      "共 {count} 个插件": "{count} extensions au total",
+      "执行设备": "Appareils d’exécution",
+      "手动任务": "Tâches manuelles",
+      "营地资料": "Profil du camp",
+      "时间与公共访问": "Horaires et accès public",
+      "公告内容": "Annonces",
+      "失败重试策略": "Politique de nouvelle tentative",
+      "任务队列": "File des tâches",
+      "健康检查": "Contrôles de santé",
+      "无响应恢复": "Reprise après blocage",
+      "创建临时 Key": "Créer une clé temporaire",
+      "服务器连接": "Connexion au serveur",
+      "发信身份": "Identité de l’expéditeur"
+    },
+    "ja": {
+      "人": "人",
+      "跳至主要内容": "本文へ移動",
+      "运行概况": "稼働状況",
+      "在线设备": "オンライン端末",
+      "最近任务": "最近のタスク",
+      "最近运行记录": "最近の実行履歴",
+      "已启用插件": "有効なプラグイン",
+      "共 {count} 台设备": "全 {count} 台",
+      "共 {count} 个插件": "全 {count} 個",
+      "执行设备": "実行端末",
+      "手动任务": "手動タスク",
+      "营地资料": "キャンプ情報",
+      "时间与公共访问": "時刻と公開設定",
+      "公告内容": "お知らせ",
+      "失败重试策略": "失敗時の再試行",
+      "任务队列": "タスクキュー",
+      "健康检查": "ヘルスチェック",
+      "无响应恢复": "応答停止時の復旧",
+      "创建临时 Key": "一時キーを作成",
+      "服务器连接": "サーバー接続",
+      "发信身份": "送信者情報"
+    },
+    "zh-tw": {
+      "人": "人",
+      "跳至主要内容": "跳至主要內容",
+      "运行概况": "執行概況",
+      "在线设备": "線上裝置",
+      "最近任务": "最近任務",
+      "最近运行记录": "最近執行紀錄",
+      "已启用插件": "已啟用外掛",
+      "共 {count} 台设备": "共 {count} 台裝置",
+      "共 {count} 个插件": "共 {count} 個外掛",
+      "执行设备": "執行裝置",
+      "手动任务": "手動任務",
+      "营地资料": "營地資料",
+      "时间与公共访问": "時間與公開存取",
+      "公告内容": "公告內容",
+      "失败重试策略": "失敗重試策略",
+      "任务队列": "任務佇列",
+      "健康检查": "健康檢查",
+      "无响应恢复": "無回應復原",
+      "创建临时 Key": "建立臨時 Key",
+      "服务器连接": "伺服器連線",
+      "发信身份": "寄件身分"
+    }
+  };
+  for (const [language, additions] of Object.entries(workspaceTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+
+  const campGroupTranslations = {
+    "en": {
+      "营地群资料": "Camp group",
+      "查看营地群资料与加入方式": "View camp group details and how to join",
+      "查看营地群信息": "View camp group",
+      "管理排程、成员、科技与临时任务": "Manage schedules, members, technology and tasks",
+      "正在加载营地群资料…": "Loading camp group information…",
+      "营地群资料加载失败，请稍后重试。": "Camp group information could not be loaded. Please try again.",
+      "暂无营地群资料。": "No camp group information yet.",
+      "营地群二维码": "Camp group QR code",
+      "查看营地群图片": "View camp group image",
+      "打开": "Open"
+    },
+    "fr": {
+      "营地群资料": "Groupe du camp",
+      "查看营地群资料与加入方式": "Voir les informations du groupe et comment le rejoindre",
+      "查看营地群信息": "Voir le groupe",
+      "管理排程、成员、科技与临时任务": "Gérer les horaires, membres, technologies et tâches",
+      "正在加载营地群资料…": "Chargement du groupe du camp…",
+      "营地群资料加载失败，请稍后重试。": "Impossible de charger le groupe. Veuillez réessayer.",
+      "暂无营地群资料。": "Aucune information de groupe pour le moment.",
+      "营地群二维码": "Code QR du groupe",
+      "查看营地群图片": "Voir l’image du groupe",
+      "打开": "Ouvrir"
+    },
+    "ja": {
+      "营地群资料": "野営地グループ",
+      "查看营地群资料与加入方式": "野営地グループの案内と参加方法を見る",
+      "查看营地群信息": "グループ情報を見る",
+      "管理排程、成员、科技与临时任务": "予定、メンバー、技術、一時タスクを管理",
+      "正在加载营地群资料…": "グループ情報を読み込み中…",
+      "营地群资料加载失败，请稍后重试。": "グループ情報を読み込めません。もう一度お試しください。",
+      "暂无营地群资料。": "グループ情報はまだありません。",
+      "营地群二维码": "グループのQRコード",
+      "查看营地群图片": "グループ画像を表示",
+      "打开": "開く"
+    },
+    "zh-tw": {
+      "营地群资料": "營地群資料",
+      "查看营地群资料与加入方式": "查看營地群資料與加入方式",
+      "查看营地群信息": "查看營地群資訊",
+      "管理排程、成员、科技与临时任务": "管理排程、成員、科技與臨時任務",
+      "正在加载营地群资料…": "正在載入營地群資料…",
+      "营地群资料加载失败，请稍后重试。": "營地群資料載入失敗，請稍後重試。",
+      "暂无营地群资料。": "暫無營地群資料。",
+      "营地群二维码": "營地群 QR 碼",
+      "查看营地群图片": "查看營地群圖片",
+      "打开": "開啟"
+    }
+  };
+  for (const [language, additions] of Object.entries(campGroupTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+
   const dailyVoteTranslations = {
     en: {
       "日常投票": "Daily voting",

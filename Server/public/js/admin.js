@@ -446,28 +446,11 @@
   }
 
   function formatDate(value, displayValue) {
-    if (!value) return "—";
-    if (typeof displayValue === "string" && displayValue) {
-      return normalizeTimestampDateSeparator(displayValue);
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "—";
-    const timezone = configuredTimezone();
-    const parts = window.MrzhTimezone.parts(date, timezone);
-    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second} (${formatTimezoneLabel(timezone)})`;
+    return window.MrzhTimezone.timestamp(value, configuredTimezone(), displayValue);
   }
 
   function formatTaskLogTimestamp(value, displayValue) {
-    const formatted = formatDate(value);
-    if (formatted !== "—") return formatted;
-    return displayValue ? normalizeTimestampDateSeparator(displayValue) : formatted;
-  }
-
-  function normalizeTimestampDateSeparator(value) {
-    const text = String(value || "").replace(/^(\d{4})-(\d{2})-(\d{2})(?=\s)/, "$1/$2/$3");
-    const suffix = text.match(/(?:[\s\u00a0]*[（(]\s*(UTC(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?|GMT(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?)\s*[）)]|[\s\u00a0]+(UTC(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?|GMT(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?))\s*$/i);
-    if (!suffix) return text;
-    return `${text.slice(0, suffix.index).trimEnd()} (${formatTimezoneLabel(suffix[1] || suffix[2])})`;
+    return formatDate(value, displayValue);
   }
 
   function formatTimezoneLabel(value) {
@@ -492,64 +475,13 @@
   }
 
   function formatIdentityExpiry(value, displayValue) {
-    if (!value) return window.MrzhI18n.t("永久有效");
-    if (typeof displayValue === "string" && displayValue) return displayValue;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "—";
-    const locale = {
-      "zh-cn": "zh-CN",
-      "zh-tw": "zh-TW",
-      en: "en",
-      fr: "fr",
-      ja: "ja"
-    }[window.MrzhI18n.language()] || "zh-CN";
-    const timezone = configuredTimezone();
-    const formatted = window.MrzhTimezone.format(date, locale, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23"
-    }, timezone);
-    return `${formatted} (${formatTimezoneLabel(timezone)})`;
+    return value
+      ? formatDate(value, displayValue)
+      : window.MrzhI18n.t("永久有效");
   }
 
   function formatVoteDate(value, displayValue) {
-    if (!value) return "—";
-    if (typeof displayValue === "string" && displayValue) return displayValue;
-    const locale = {
-      "zh-cn": "zh-CN",
-      "zh-tw": "zh-TW",
-      en: "en",
-      fr: "fr",
-      ja: "ja"
-    }[window.MrzhI18n.language()] || "zh-CN";
-    return window.MrzhTimezone.format(new Date(value), locale, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    }, configuredTimezone());
-  }
-
-  function formatDateOnly(value, displayValue) {
-    if (!value) return "—";
-    if (typeof displayValue === "string" && displayValue) return displayValue.split(" ")[0];
-    const locale = {
-      "zh-cn": "zh-CN",
-      "zh-tw": "zh-TW",
-      en: "en",
-      fr: "fr",
-      ja: "ja"
-    }[window.MrzhI18n.language()] || "zh-CN";
-    return window.MrzhTimezone.format(new Date(value), locale, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
-    }, configuredTimezone());
+    return formatDate(value, displayValue);
   }
 
   function configuredTimezone() {
@@ -965,11 +897,12 @@
       button.addEventListener("click", () => key === "trading_city_apply"
         ? openTradingCityManualDialog(button)
         : runTask(key, button));
-      card.append(
+      const content = create("div", "task-card-copy");
+      content.append(
         create("h3", "", translateUi(name)),
-        create("p", "", translateUi(copy)),
-        button
+        create("p", "", translateUi(copy))
       );
+      card.append(content, button);
       root.append(card);
     }
   }
@@ -1006,6 +939,25 @@
         );
         root.append(label);
       }
+    }
+  }
+
+  function renderWorkspaceSummary(data) {
+    const heartbeats = data.heartbeats || [];
+    const online = heartbeats.filter((item) => {
+      const age = Date.now() - Date.parse(item.updated_at);
+      return item.status !== "offline" && Number.isFinite(age) && age >= 0 &&
+        age < (data.agentOnlineThresholdSeconds || 45) * 1000;
+    }).length;
+    setText("admin-online-count", String(online));
+    setText("admin-device-total", formatUi("共 {count} 台设备", { count: heartbeats.length }));
+    setText("admin-recent-run-count", String((data.recentRuns || []).length));
+    byId("admin-recent-run-count").closest(".admin-summary-card").hidden = !canView("history");
+    const plugins = data.plugins || [];
+    setText("admin-plugin-count", String(plugins.filter((plugin) => plugin.enabled).length));
+    setText("admin-plugin-total", formatUi("共 {count} 个插件", { count: plugins.length }));
+    for (const link of document.querySelectorAll("[data-dashboard-link]")) {
+      link.hidden = !canView(link.dataset.dashboardLink);
     }
   }
 
@@ -3504,7 +3456,10 @@
         !(data.session.permissions || []).includes("*")
     );
     byId("next-tech-date").textContent = data.nextTechnologyTargetDate || "--";
-    if (canView("overview")) renderAgents(data.heartbeats || []);
+    if (canView("overview")) {
+      renderAgents(data.heartbeats || []);
+      renderWorkspaceSummary(data);
+    }
     if (canView("technology")) renderVote(data.voteSummary || { options: [] });
     if (canView("history")) renderRuns(data.recentRuns || []);
     if (canView("members")) {
@@ -5239,7 +5194,7 @@
         item.player_name || "—",
         item.email || "—",
         item.status === "disabled" ? "取消" : expired ? "已过期" : "有效",
-        item.expires_at ? formatDateOnly(item.expires_at, item.expires_at_display) : "永久有效",
+        formatIdentityExpiry(item.expires_at, item.expires_at_display),
         item.last_emailed_at ? formatDate(item.last_emailed_at, item.last_emailed_at_display) : "—"
       ]) {
         row.append(create("td", "", value));
@@ -5645,13 +5600,39 @@
     state.pendingTradingCityButton = null;
   });
   byId("trading-city-manual-form")?.addEventListener("submit", submitTradingCityManualTask);
+  const adminMenuToggle = byId("admin-menu-toggle");
+  const adminShell = document.querySelector(".admin-shell");
+  function closeAdminMenu({ restoreFocus = false } = {}) {
+    adminShell?.removeAttribute("data-menu-open");
+    adminMenuToggle?.setAttribute("aria-expanded", "false");
+    if (restoreFocus) adminMenuToggle?.focus();
+  }
+  adminMenuToggle?.addEventListener("click", () => {
+    const open = adminMenuToggle.getAttribute("aria-expanded") !== "true";
+    adminMenuToggle.setAttribute("aria-expanded", String(open));
+    adminShell?.toggleAttribute("data-menu-open", open);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && adminShell?.hasAttribute("data-menu-open")) {
+      closeAdminMenu({ restoreFocus: true });
+    }
+  });
   for (const link of document.querySelectorAll("[data-nav-target]")) {
     link.addEventListener("click", () => {
+      const mobileMenuOpen = adminShell?.hasAttribute("data-menu-open");
       activateView(link.dataset.navTarget);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      closeAdminMenu();
+      if (mobileMenuOpen) {
+        const heading = [...document.querySelectorAll('[data-admin-view]:not([hidden]) h1, [data-admin-view]:not([hidden]) summary')]
+          .find((element) => element.getClientRects().length) || byId("main-content");
+        heading?.setAttribute("tabindex", "-1");
+        heading?.focus({ preventScroll: true });
+      }
+      window.scrollTo({ top: 0, behavior: "instant" });
     });
   }
   window.addEventListener("hashchange", () => {
+    if (location.hash === "#main-content") return;
     activateView(location.hash.slice(1) || "overview");
   });
   byId("admin-member-search").addEventListener("input", (event) => {

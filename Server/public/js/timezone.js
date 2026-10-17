@@ -71,5 +71,33 @@
     return `UTC${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
   }
 
-  window.MrzhTimezone = Object.freeze({ offsetMinutes, parts, format, label });
+  function timestamp(value, timezone = "UTC+08:00", displayValue = "") {
+    // API display fields already contain wall time in their declared timezone.
+    // Normalize those without parsing them in the browser's local timezone.
+    function wallTime(source) {
+      if (typeof source !== "string") return "";
+      const match = source.trim().match(
+        /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:\s*[（(]\s*((?:UTC|GMT)(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?)\s*[）)]|\s+((?:UTC|GMT)(?:\s*[+-]\s*\d{1,2}(?::?\d{2})?)?))?$/i
+      );
+      if (!match) return "";
+      const zone = (match[6] || match[7] || timezone).replace(/\s+/g, "");
+      const pad = (part) => part.padStart(2, "0");
+      return `${match[1]}-${pad(match[2])}-${pad(match[3])} ${pad(match[4])}:${match[5]} (${label(zone)})`;
+    }
+    try {
+      const preferred = wallTime(displayValue);
+      if (preferred) return preferred;
+      if (value === null || value === undefined || value === "") return "—";
+      const existing = wallTime(value);
+      if (existing) return existing;
+      const date = value instanceof Date ? value : new Date(value);
+      if (!Number.isFinite(date.getTime())) return "—";
+      const local = parts(date, timezone);
+      return `${local.year}-${local.month}-${local.day} ${local.hour}:${local.minute} (${label(timezone, date)})`;
+    } catch {
+      return "—";
+    }
+  }
+
+  window.MrzhTimezone = Object.freeze({ offsetMinutes, parts, format, label, timestamp });
 })();

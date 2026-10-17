@@ -4,7 +4,6 @@
   const state = {
     data: null,
     selections: new Set(),
-    memberQuery: "",
     identityMode: "new",
     renewalCode: "",
     renewalApplicationNumber: "",
@@ -23,6 +22,8 @@
     identitySessionRefreshInFlight: false,
     identitySessionRefreshQueued: false,
     voteErrorRenewalCode: "",
+    campGroup: null,
+    campGroupStatus: "idle",
     activeFeature: "",
     dailyPanel: "",
     dailyIdentityCodes: {},
@@ -46,20 +47,10 @@
     liveRefreshQueued: false,
     liveDirty: false
   };
-  const FEATURE_IDS = ["overview", "staff", "warnings", "vote", "members", "runs"];
+  const FEATURE_IDS = ["overview", "group", "vote", "staff", "members", "warnings", "runs"];
   const FEATURE_DETAIL_KICKERS = {
-    overview: "CAMP NOTES",
-    staff: "OFFICERS",
-    warnings: "INACTIVITY WATCH",
-    vote: "DAILY VOTING",
-    members: "MEMBER CONTRIBUTION",
-    runs: "AUTOMATION"
-  };
-  const DAILY_PANEL_KICKERS = {
-    identity: "IDENTITY CODE",
-    technology: "NEXT TECHNOLOGY",
-    items: "OPEN ITEMS",
-    history: "HISTORY"
+    overview: "Notice", group: "Group", vote: "Vote", staff: "Staff",
+    members: "Members", warnings: "Alert", runs: "Tasks"
   };
   const IDENTITY_SESSION_STORAGE_KEY = "mrzh.identity-session";
   const IDENTITY_SESSION_REFRESH_INTERVAL_MS = 30_000;
@@ -88,11 +79,11 @@
   }
 
   function syncFeatureDetailKicker() {
-    const kicker =
-      state.activeFeature === "vote" && state.dailyPanel
-        ? DAILY_PANEL_KICKERS[state.dailyPanel] || FEATURE_DETAIL_KICKERS.vote
-        : FEATURE_DETAIL_KICKERS[state.activeFeature] || "FEATURE DETAIL";
-    setText("feature-detail-kicker", kicker);
+    setText("feature-detail-kicker", FEATURE_DETAIL_KICKERS[state.activeFeature] || "");
+    const source = state.activeFeature === "vote" && state.dailyPanel
+      ? document.querySelector(`[data-daily-panel="${state.dailyPanel}"] .daily-vote-panel-copy strong`)
+      : document.querySelector(`.feature-card[data-feature-target="${state.activeFeature}"] .feature-card-copy strong`);
+    setText("feature-detail-title", source?.textContent || "");
   }
 
   function dailyVoteFeatureCount(payload) {
@@ -714,15 +705,76 @@
     state.activeFeature = id;
     syncFeatureDetailKicker();
     syncDailyFeatureBackButton();
-    setText(
-      "feature-detail-title",
-      selectedCard?.querySelector(".feature-card-copy strong")?.textContent || ""
-    );
     if (updateHash) {
       history.replaceState(null, "", `#${id}`);
     }
     if (!dialog.open) dialog.showModal();
+    if (id === "group" && state.campGroupStatus === "idle") void loadCampGroup();
     return true;
+  }
+
+  function renderCampGroup() {
+    const root = byId("camp-group-content");
+    if (!root) return;
+    root.replaceChildren();
+    byId("retry-camp-group").hidden = state.campGroupStatus !== "error";
+    if (state.campGroupStatus !== "ready" || !state.campGroup) {
+      const message = state.campGroupStatus === "error"
+        ? "营地群资料加载失败，请稍后重试。"
+        : state.campGroupStatus === "ready"
+          ? "暂无营地群资料。"
+          : "正在加载营地群资料…";
+      root.append(create("p", "empty-state", window.MrzhI18n.t(message)));
+      return;
+    }
+    for (const block of state.campGroup.blocks || []) {
+      if (block.type === "text") {
+        root.append(create("span", "group-text", block.text));
+      } else if (block.type === "br") {
+        root.append(document.createElement("br"));
+      } else if (block.type === "link" && safeGroupUrl(block.url)) {
+        const link = create("a", "group-link", block.text);
+        link.href = block.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        root.append(link);
+      } else if (block.type === "image" && safeGroupUrl(block.src)) {
+        const button = create("button", "group-image-button");
+        button.type = "button";
+        const image = document.createElement("img");
+        image.className = "group-image";
+        image.src = block.src;
+        image.alt = block.alt || window.MrzhI18n.t("营地群二维码");
+        image.loading = "lazy";
+        button.setAttribute("aria-label", window.MrzhI18n.t("查看营地群图片"));
+        button.append(image);
+        button.addEventListener("click", () => openImagePreview(image.src, image.alt));
+        root.append(button);
+      }
+    }
+  }
+
+  function safeGroupUrl(value) {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && !url.username && !url.password;
+    } catch {
+      return false;
+    }
+  }
+
+  async function loadCampGroup() {
+    if (state.campGroupStatus === "loading") return;
+    state.campGroupStatus = "loading";
+    renderCampGroup();
+    try {
+      const payload = await request("/api/public/camp-group");
+      state.campGroup = payload.entry || null;
+      state.campGroupStatus = "ready";
+    } catch {
+      state.campGroupStatus = "error";
+    }
+    renderCampGroup();
   }
 
   function handleFeatureNavigation(event) {
@@ -772,10 +824,7 @@
 
   function identityExpiryLabel(value) {
     const expiry = value
-      ? window.MrzhTimezone.format(new Date(value), window.MrzhI18n.language(), {
-          dateStyle: "long",
-          timeStyle: "short"
-        }, configuredTimezone())
+      ? formatDate(value)
       : window.MrzhI18n.t("永久有效");
     return window.MrzhI18n.format("识别码有效期：{date}", { date: expiry });
   }
@@ -1177,12 +1226,11 @@
   }
 
   function renderVote(summary) {
-    setText("poll-date", summary.pollDate || "--");
     const opensAt = splitTimezoneSuffix(
-      summary.opensAtDisplay || summary.opensAt || "--"
+      formatVoteDateTime(summary.opensAt, summary.opensAtDisplay)
     );
     const closesAt = splitTimezoneSuffix(
-      summary.closesAtDisplay || summary.closesAt || "--"
+      formatVoteDateTime(summary.closesAt, summary.closesAtDisplay)
     );
     setText(
       "vote-deadline",
@@ -1391,15 +1439,12 @@
       root.append(create("p", "empty-state", "当前没有需要公示的营地公告。"));
       return;
     }
-    for (const [index, item] of entries.entries()) {
+    for (const item of entries) {
       const blocks = Array.isArray(item?.blocks) ? item.blocks : [];
       const card = create("article", "highlight-item");
-      const header = create("div", "highlight-item-header");
-      header.append(
-        create("span", "highlight-item-index", String(index + 1).padStart(2, "0")),
-        create("span", "highlight-item-label", "营地公告")
-      );
-      card.append(header);
+      const bullet = create("span", "highlight-item-bullet", "⌁");
+      bullet.setAttribute("aria-hidden", "true");
+      card.append(bullet);
       for (const block of blocks) {
         if (block?.type === "image" && /^https:\/\//i.test(String(block.url || ""))) {
           const figure = document.createElement("figure");
@@ -1887,24 +1932,11 @@
       );
       root.append(card);
     }
-    const updated = items.map((item) => item.updated_at).filter(Boolean).sort().at(-1);
-    setText(
-      "staff-updated",
-      updated
-        ? window.MrzhI18n.format("更新于 {date}", {
-            date: formatDate(updated, items.find((item) => item.updated_at === updated)?.updated_at_display)
-          })
-        : ""
-    );
+
   }
 
   function renderMembers(items) {
-    const query = state.memberQuery.toLowerCase();
-    const filtered = (items || []).filter((item) =>
-      [item.name, item.profession, item.roommate_name, item.camp_title]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query))
-    );
+    const filtered = items || [];
     const root = byId("member-table");
     const cardsRoot = byId("member-cards");
     root.replaceChildren();
@@ -1963,28 +1995,27 @@
   }
 
   function renderWarnings(items, thresholdDays) {
-    setText(
-      "warning-description",
-      window.MrzhI18n.format(
-        "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。",
-        { days: thresholdDays }
-      )
+    const description = byId("warning-description");
+    const [before, after] = window.MrzhI18n.t(
+      "根据营地惯例，离线超过 {days} 天的玩家可能会被请离营地。"
+    ).split("{days}");
+    description.replaceChildren(
+      document.createTextNode(before || ""),
+      create("strong", "warning-description-days", String(thresholdDays)),
+      document.createTextNode(after || "")
     );
-    setText("warning-count", String(items.length));
     byId("warning-empty").hidden = items.length > 0;
     const root = byId("warning-list");
     root.replaceChildren();
     for (const item of items) {
       const card = create("article", "warning-card");
-      card.append(
-        create("strong", "", item.name),
-        create(
-          "span",
-          "",
-          item.last_active_text ||
-            window.MrzhI18n.format("{days} 天前", { days: item.inactive_days })
-        )
-      );
+      const content = create("div", "warning-card-main");
+      content.append(create("strong", "", item.name));
+      if (item.profession || item.manor_level) {
+        content.append(create("small", "muted", `${item.profession || "—"} · ${window.MrzhI18n.t("庄园")} ${item.manor_level || "—"}`));
+      }
+      card.append(content, create("span", "warning-age", item.last_active_text ||
+        window.MrzhI18n.format("{days} 天前", { days: item.inactive_days })));
       root.append(card);
     }
   }
@@ -1998,47 +2029,25 @@
     }
     for (const item of items) {
       const row = create("div", "run-item");
-      row.append(
-        create("time", "muted", formatDate(
+      const content = create("div", "run-item-main");
+      content.append(
+        create("strong", "run-item-title", taskName(item.taskKey)),
+        create("time", "run-item-time muted", formatDate(
           item.finishedAt || item.createdAt,
           item.finishedAt ? item.finishedAtDisplay : item.createdAtDisplay
-        )),
-        create("strong", "", taskName(item.taskKey)),
-        create(
-          "span",
-          `status-badge status-${item.state}`,
-          stateName(item.state)
-        )
+        ))
       );
+      row.append(content, create("span", `status-badge status-${item.state}`, stateName(item.state)));
       root.append(row);
     }
   }
 
   function formatDate(value, displayValue) {
-    if (!value) return "—";
-    if (typeof displayValue === "string" && displayValue) {
-      return normalizeTimestampDateSeparator(displayValue);
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "—";
-    const timezone = configuredTimezone();
-    const parts = window.MrzhTimezone.parts(date, timezone);
-    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second} (${formatTimezoneLabel(timezone)})`;
+    return window.MrzhTimezone.timestamp(value, configuredTimezone(), displayValue);
   }
 
   function formatVoteDateTime(value, displayValue) {
-    if (!value) return "—";
-    if (typeof displayValue === "string" && displayValue) {
-      return normalizeTimestampDateSeparator(displayValue);
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "—";
-    try {
-      const parts = window.MrzhTimezone.parts(date, configuredTimezone());
-      return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
-    } catch (_) {
-      return formatDate(value);
-    }
+    return formatDate(value, displayValue);
   }
 
   function splitTimezoneSuffix(value) {
@@ -2054,14 +2063,6 @@
       : { value: text, timezone: "" };
   }
 
-  function normalizeTimestampDateSeparator(value) {
-    const text = String(value || "").replace(/^(\d{4})-(\d{2})-(\d{2})(?=\s)/, "$1/$2/$3");
-    const suffix = splitTimezoneSuffix(text);
-    return suffix.timezone
-      ? `${suffix.value} (${formatTimezoneLabel(suffix.timezone)})`
-      : text;
-  }
-
   function formatTimezoneLabel(value) {
     try {
       return window.MrzhTimezone.label(value || configuredTimezone());
@@ -2071,25 +2072,9 @@
   }
 
   function formatIdentityExpiry(value, timezone, displayValue) {
-    if (!value) return window.MrzhI18n.t("永久有效");
-    if (typeof displayValue === "string" && displayValue) return displayValue;
-    const source = timezone || configuredTimezone();
-    const locale = {
-      "zh-cn": "zh-CN",
-      "zh-tw": "zh-TW",
-      en: "en",
-      fr: "fr",
-      ja: "ja"
-    }[window.MrzhI18n.language()] || "zh-CN";
-    const formatted = window.MrzhTimezone.format(new Date(value), locale, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23"
-    }, source);
-    return `${formatted} (${formatTimezoneLabel(source)})`;
+    return value
+      ? window.MrzhTimezone.timestamp(value, timezone || configuredTimezone(), displayValue)
+      : window.MrzhI18n.t("永久有效");
   }
 
   function configuredTimezone() {
@@ -2114,20 +2099,12 @@
       data.campConfig?.serverName || window.MrzhI18n.t("中国大陆服务器")
     );
     setText("announcement", data.publicOverview?.announcement || "");
-    setText("timezone-label", data.campConfig?.timezone || "UTC+08:00");
     const listedMemberCount = data.members?.length || 0;
     const reportedMemberCount = Number(data.memberSummary?.expectedCount);
     const totalMemberCount = Number.isInteger(reportedMemberCount) && reportedMemberCount >= 0
       ? reportedMemberCount
       : listedMemberCount;
     setText("hero-member-count", String(totalMemberCount));
-    setText(
-      "member-list-count",
-      window.MrzhI18n.format("当前列表 {listed} / 总人数 {total}", {
-        listed: listedMemberCount,
-        total: totalMemberCount
-      })
-    );
     setText(
       "hero-warning-count",
       String(data.inactivityWarnings?.length || 0)
@@ -2140,7 +2117,6 @@
       ? data.publicOverview.highlights.length
       : 0;
     setText("feature-overview-count", String(highlightCount));
-    setText("overview-count", String(highlightCount));
     setText("feature-staff-count", String(data.staffAssignments?.length || 0));
     setText(
       "feature-warning-count",
@@ -2149,19 +2125,6 @@
     setText("feature-vote-count", String(dailyVoteFeatureCount(data.dailyVote)));
     setText("feature-members-count", String(totalMemberCount));
     setText("feature-runs-count", String(data.recentRuns?.length || 0));
-    const memberSync = (data.recentRuns || []).find(
-      (run) =>
-        run.taskKey === "member_profile_sync" &&
-        ["succeeded", "partially_succeeded"].includes(run.state)
-    );
-    setText(
-      "sync-state",
-      memberSync
-        ? window.MrzhI18n.format("已同步 {date}", {
-        date: formatDate(memberSync.finishedAt, memberSync.finishedAtDisplay)
-          })
-        : window.MrzhI18n.t("等待首次同步")
-    );
     renderHighlights(data.publicOverview?.highlights || []);
     renderVote(data.voteSummary || { options: [] });
     renderDailyVote(data.dailyVote || {});
@@ -2948,12 +2911,10 @@
   byId("close-identity-dialog").addEventListener("click", () => {
     byId("identity-application-dialog").close();
   });
-  byId("member-search").addEventListener("input", (event) => {
-    state.memberQuery = event.target.value || "";
-    renderMembers(state.data?.members || []);
-  });
   initFeatureNavigation();
+  byId("retry-camp-group")?.addEventListener("click", () => void loadCampGroup());
   document.addEventListener("mrzh:languagechange", () => {
+    renderCampGroup();
     if (state.data) render(state.data);
     syncFeatureDetailKicker();
     load();

@@ -7,15 +7,15 @@
     <meta name="theme-color" content="#f3ece5" />
     <title>登录 · 明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260921-vote-eligibility-override" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261017-27142-glass" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261016-identity-responsive" />
     <script src="/js/preferences.js" defer></script>
-    <script src="/js/i18n.js?v=20260921-vote-eligibility-override" defer></script>
+    <script src="/js/timezone.js?v=20261016-minute-timestamps" defer></script>
+    <script src="/js/i18n.js?v=20261016-mrzh-redesign" defer></script>
     <script src="/js/login.js" defer></script>
   </head>
   <body class="login-page">
-    <div class="ambient ambient-a"></div>
-    <div class="ambient ambient-b"></div>
-    <main class="login-shell">
+    <a class="skip-link" href="#main-content">跳至主要内容</a>
+    <main id="main-content" class="login-shell" tabindex="-1">
       <section class="panel login-card">
         <a class="brand login-brand" href="/">
           <span class="brand-mark">愿</span>
@@ -24,7 +24,8 @@
             <small>Camp Operations Console</small>
           </span>
         </a>
-        <p class="eyebrow">AUTHORIZED PERSONNEL ONLY</p>
+        <div class="login-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/></svg></div>
+        <p class="eyebrow">CAMP OPERATIONS</p>
         <h1>进入管理后台</h1>
         <p class="muted">
           营地配置、任务执行与中断操作仅向授权的 Yume Account 开放。
