@@ -1366,15 +1366,12 @@
           copy.append(create("span", "tech-description", option.description));
         }
         const side = create("span", "vote-option-side");
-        const checkmark = create("span", "vote-option-checkmark", "✓");
-        checkmark.setAttribute("aria-hidden", "true");
         side.append(
           create(
             "span",
             "vote-count",
             `${option.votes} ${window.MrzhI18n.t("票")}`
-          ),
-          checkmark
+          )
         );
         button.append(copy, side);
         button.addEventListener("click", () => toggleVote(summary, option));
@@ -1617,11 +1614,9 @@
         const content = create("div", "daily-vote-option-content");
         renderRichBlocks(content, option.blocks, window.MrzhI18n.t("未命名选项"));
         const side = create("span", "daily-option-side");
-        const checkmark = create("span", "daily-option-checkmark", "✓");
-        checkmark.setAttribute("aria-hidden", "true");
         side.append(create("strong", "daily-vote-option-count", window.MrzhI18n.format("{count} 票", {
           count: option.votes || 0
-        })), checkmark);
+        })));
         button.append(content, side);
         button.addEventListener("click", () => {
           if (alreadyParticipated && item.isOpen) {

@@ -1,7 +1,6 @@
 /* Mobile counterpart of pages/mrzh/mrzh.wxss (750 rpx design canvas). */
 .member-last-active { display: none; }
-.vote-option-side, .daily-option-side { display: flex; flex-direction: column; align-items: flex-end; }
-.vote-option-checkmark, .daily-option-checkmark { display: none; }
+.vote-option-side, .daily-option-side { display: flex; align-self: start; justify-content: flex-end; white-space: nowrap; }
 html:has(dialog[open]) { overflow: hidden; }
 @media (max-width: 700px) {
   :root { --rpx: calc(100vw / 750); }
@@ -90,19 +89,17 @@ html:has(dialog[open]) { overflow: hidden; }
   .public-page .vote-selection-row + .vote-selection-row { margin-top: calc(14 * var(--rpx)); }
   .public-page .vote-selection-slots { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: calc(8 * var(--rpx)); margin-top: calc(8 * var(--rpx)); }
   .public-page .vote-selection-slot { border-radius: calc(14 * var(--rpx)); }
-  .public-page .vote-lane-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .public-page .vote-option { position: relative; height: auto; padding: calc(22 * var(--rpx)) calc(4 * var(--rpx)); gap: calc(18 * var(--rpx)); grid-template-columns: calc(84 * var(--rpx)) minmax(0, 1fr) calc(88 * var(--rpx)); border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; background: transparent; box-shadow: none; }
+  .public-page .vote-lane-grid { grid-template-columns: minmax(0, 1fr); gap: calc(16 * var(--rpx)); }
+  .public-page .vote-option { position: relative; height: auto; padding: calc(22 * var(--rpx)) calc(24 * var(--rpx)); gap: calc(18 * var(--rpx)); grid-template-columns: calc(84 * var(--rpx)) minmax(0, 1fr) auto; border: 1px solid var(--line-strong); border-radius: calc(24 * var(--rpx)); background: transparent; box-shadow: none; }
+  .public-page .vote-option[data-selected="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
   .public-page .tech-icon { width: calc(84 * var(--rpx)); height: calc(84 * var(--rpx)); border-radius: calc(20 * var(--rpx)); }
   .public-page .tech-copy strong { font-size: calc(28 * var(--rpx)); }
   .public-page .tech-copy small, .public-page .tech-description, .public-page .daily-vote-description { font-size: calc(26 * var(--rpx)); line-height: 1.5; }
   .public-page .daily-vote-item-title { font-size: calc(28 * var(--rpx)); }
   .public-page .vote-window-meta, .public-page .daily-vote-meta { gap: calc(12 * var(--rpx)); font-size: calc(23 * var(--rpx)); line-height: 1.45; }
   .public-page .vote-limit-description, .public-page .vote-window-state { font-size: calc(23 * var(--rpx)); line-height: 1.45; }
-  .public-page .vote-option-side { align-self: center; justify-content: center; gap: calc(14 * var(--rpx)); }
-  .public-page .vote-option-side .vote-count { align-self: flex-end; padding: 0; font-size: calc(24 * var(--rpx)); }
-  .public-page .vote-option-checkmark { width: calc(46 * var(--rpx)); height: calc(46 * var(--rpx)); border-radius: calc(14 * var(--rpx)); }
-  .public-page .vote-option-checkmark, .public-page .daily-option-checkmark { display: grid; place-items: center; border: 1px solid var(--line-strong); color: transparent; font-size: calc(28 * var(--rpx)); line-height: 1; }
-  .public-page .vote-option[data-selected="true"] .vote-option-checkmark { color: #fff; background: #c66b46; border-color: #c66b46; }
+  .public-page .vote-option-side { align-self: start; }
+  .public-page .vote-option-side .vote-count { padding: 0; font-size: calc(24 * var(--rpx)); }
   .public-page .daily-vote-item, .public-page .daily-history-card { padding: calc(20 * var(--rpx)) calc(18 * var(--rpx)); border-radius: calc(24 * var(--rpx)); }
   .public-page .daily-history-section { padding-bottom: calc(24 * var(--rpx)); }
   .public-page .daily-vote-history { display: block; }
@@ -127,10 +124,8 @@ html:has(dialog[open]) { overflow: hidden; }
   .public-page .daily-history-selection-preview .vote-selection-label { display: block; font-size: calc(23 * var(--rpx)); line-height: 1.45; }
   .public-page .daily-history-selection-preview .vote-selection-slots { margin-top: calc(10 * var(--rpx)); }
   .public-page .daily-vote-option { min-height: calc(78 * var(--rpx)); align-items: center; gap: calc(14 * var(--rpx)); padding: calc(14 * var(--rpx)) calc(16 * var(--rpx)); border-radius: calc(18 * var(--rpx)); font-size: calc(28 * var(--rpx)); }
-  .public-page .daily-option-side { align-self: center; gap: calc(8 * var(--rpx)); min-width: calc(100 * var(--rpx)); }
+  .public-page .daily-option-side { align-self: start; }
   .public-page .daily-option-side .daily-vote-option-count { font-size: calc(23 * var(--rpx)); }
-  .public-page .daily-option-checkmark { width: calc(36 * var(--rpx)); height: calc(36 * var(--rpx)); border-radius: calc(12 * var(--rpx)); }
-  .public-page .daily-vote-option.is-selected .daily-option-checkmark { color: #fff; border-color: #c66b46; background: #c66b46; }
   .public-page .identity-account-state { min-height: calc(76 * var(--rpx)); margin-bottom: calc(22 * var(--rpx)); padding: calc(16 * var(--rpx)) calc(20 * var(--rpx)); border-radius: calc(24 * var(--rpx)); }
   .public-page .identity-account-state strong { font-size: calc(27 * var(--rpx)); }
   .public-page .identity-account-summary { padding: calc(20 * var(--rpx)); margin-bottom: calc(22 * var(--rpx)); border-radius: calc(24 * var(--rpx)); }

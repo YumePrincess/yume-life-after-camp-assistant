@@ -1004,9 +1004,13 @@ dialog:not(.image-preview-dialog) {
 .daily-history-result.is-voted, .technology-history-tech.technology-result-voted,
 .vote-selection-slot.is-filled.is-voted { border-color: var(--result-voted-border); }
 
-/* Selection remains clear through borders, checkmarks and a restrained tint. */
+/* Voting selections use the same orange border in both themes. */
 .vote-option[data-selected="true"],
-.daily-vote-option.is-selected,
+.daily-vote-option.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
 .field-checkbox:has(input:checked) {
   border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
   background: color-mix(in srgb, var(--accent) 5%, transparent);
