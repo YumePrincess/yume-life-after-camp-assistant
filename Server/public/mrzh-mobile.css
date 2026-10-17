@@ -1,5 +1,4 @@
 /* Mobile counterpart of pages/mrzh/mrzh.wxss (750 rpx design canvas). */
-.mobile-site-name { display: none; }
 .member-last-active { display: none; }
 .vote-option-side, .daily-option-side { display: flex; flex-direction: column; align-items: flex-end; }
 .vote-option-checkmark, .daily-option-checkmark { display: none; }
@@ -15,14 +14,12 @@ html:has(dialog[open]) { overflow: hidden; }
   .page-loading-percent, .page-loading-percent-contrast { font-size: calc(26 * var(--rpx)); }
   .page-loading-message { position: absolute; top: calc(50% + 132 * var(--rpx)); left: 50%; transform: translateX(-50%); width: calc(560 * var(--rpx)); font-size: calc(28 * var(--rpx)); }
   .page-loading-actions { position: absolute; top: calc(50% + 270 * var(--rpx)); left: 10%; width: 80%; }
-  .public-page > .site-header { display: none; }
   .public-page > main.shell { width: auto; margin: 0; padding: calc(28 * var(--rpx)); }
   .public-page .hero { margin: 0 0 calc(20 * var(--rpx)); padding: calc(32 * var(--rpx)); border-radius: calc(34 * var(--rpx)); }
   .public-page .hero .eyebrow { margin: 0; font-size: calc(20 * var(--rpx)); letter-spacing: .14em; }
-  .public-page #camp-name { display: none; }
-  .public-page .hero .mobile-site-name { display: block; margin: calc(12 * var(--rpx)) 0 0; font-size: calc(44 * var(--rpx)); line-height: 1.35; font-weight: 700; letter-spacing: -.03em; }
+  .public-page .hero .hero-site-name { margin: calc(12 * var(--rpx)) 0 0; font-size: calc(44 * var(--rpx)); line-height: 1.35; font-weight: 700; letter-spacing: -.03em; }
   .public-page .hero-copy { display: -webkit-box; margin: calc(18 * var(--rpx)) 0 0; font-size: calc(28 * var(--rpx)); line-height: 1.65; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .public-page .hero .chips { display: flex; flex-wrap: wrap; gap: calc(12 * var(--rpx)); align-items: center; margin-top: calc(22 * var(--rpx)); }
+  .public-page .hero .chips { display: flex; flex-wrap: wrap; gap: calc(12 * var(--rpx)); align-items: center; margin-top: calc(22 * var(--rpx)); padding-top: 0; }
   .public-page .hero .chip { padding: calc(10 * var(--rpx)) calc(18 * var(--rpx)); font-size: calc(22 * var(--rpx)); }
   .public-page .hero .preference-controls { display: flex; position: relative; z-index: 30; margin-left: auto; gap: 6px; }
   .public-page .hero .preference-trigger { width: 28px; height: 28px; min-width: 28px; min-height: 28px; }

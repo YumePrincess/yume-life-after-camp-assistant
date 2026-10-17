@@ -4906,7 +4906,7 @@
   }
 
   function installControls() {
-    for (const header of document.querySelectorAll(".site-header, .login-card")) {
+    for (const header of document.querySelectorAll(".site-header, .login-card, .public-page #camp-hero")) {
       if (header.querySelector(".preference-controls")) continue;
       const controls = document.createElement("div");
       controls.className = "preference-controls";
@@ -4934,19 +4934,12 @@
         })
       );
       const adminContext = header.querySelector(".admin-header-context");
-      const target = adminContext || header;
+      const target = adminContext || (header.matches("#camp-hero") ? header.querySelector(".chips") : null) || header;
       const logout = target.querySelector("#logout");
       if (logout) {
         target.insertBefore(controls, logout);
       } else {
         target.append(controls);
-      }
-      const publicBadgeRow = document.querySelector(".public-page #camp-hero .chips");
-      if (publicBadgeRow && header.matches(".public-page .site-header")) {
-        const mobile = window.matchMedia("(max-width: 700px)");
-        const placeControls = () => (mobile.matches ? publicBadgeRow : header).append(controls);
-        placeControls();
-        mobile.addEventListener("change", placeControls);
       }
     }
     syncControls();

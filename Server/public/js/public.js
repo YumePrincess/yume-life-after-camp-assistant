@@ -2135,11 +2135,6 @@
     const siteName = data.siteName || window.MrzhI18n.t("明日之后“愿”营地助手");
     document.title = window.MrzhI18n.t(siteName);
     setText("site-name", window.MrzhI18n.t(siteName));
-    setText("mobile-site-name", window.MrzhI18n.t(siteName));
-    setText(
-      "camp-name",
-      data.campConfig?.campName || window.MrzhI18n.t("未命名营地")
-    );
     setText(
       "server-name",
       data.campConfig?.serverName || window.MrzhI18n.t("中国大陆服务器")
