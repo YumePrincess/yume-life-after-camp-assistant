@@ -119,6 +119,12 @@ body::after,
   border-radius: 26px;
 }
 
+/* Menus must escape their glass card and paint above the following cards. */
+.panel:has(.preference-menu[open]) {
+  overflow: visible;
+  z-index: 30;
+}
+
 .panel::after {
   box-shadow: none;
 }
