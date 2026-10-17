@@ -624,9 +624,9 @@ table td { padding-block: 16px; font-size: 13px; }
 /* Public detail and all secondary dialogs share a frosted sheet. */
 .feature-detail-dialog { height: min(820px, calc(100dvh - 64px)); max-height: calc(100dvh - 64px); border-radius: 28px; }
 .feature-detail-card { display: flex; height: 100%; flex-direction: column; overflow: hidden; max-height: 100%; padding: 20px 28px 28px; border-radius: 28px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
-.feature-detail-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.feature-detail-body { flex: 1; min-width: 0; min-height: 0; margin: -6px -10px -6px -6px; padding: 6px 10px 6px 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .sheet-grabber { flex: 0 0 4px; width: 38px; height: 4px; border-radius: 999px; margin: 0 auto 22px; background: var(--line-strong); }
-.feature-detail-heading { flex: 0 0 auto; align-items: center; margin-bottom: 24px; }
+.feature-detail-heading { flex: 0 0 auto; align-items: center; margin-bottom: 16px; }
 .feature-detail-heading h2 { font-size: 25px; letter-spacing: -0.035em; }
 .feature-detail-close, .feature-detail-back { width: 36px; height: 36px; min-width: 36px; border: 1px solid var(--line); }
 .feature-detail-close:hover, .feature-detail-back:hover { transform: none; }
@@ -765,7 +765,7 @@ dialog:not(.feature-detail-dialog):not(.app-modal):not(.image-preview-dialog) { 
   .feature-detail-dialog { width: calc(100% - 16px); height: calc(100dvh - 32px - env(safe-area-inset-bottom)); max-height: calc(100dvh - 32px); margin: auto 8px max(8px, env(safe-area-inset-bottom)); }
   .feature-detail-card { max-height: calc(100dvh - 32px - env(safe-area-inset-bottom)); padding: 12px 16px 20px; border-radius: 26px; }
   .sheet-grabber { margin-bottom: 18px; }
-  .feature-detail-heading { gap: 12px; margin-bottom: 20px; }
+  .feature-detail-heading { gap: 12px; margin-bottom: 16px; }
   .feature-detail-heading h2 { font-size: 22px; }
   .daily-vote-panel-card { padding: 15px 12px; gap: 12px; }
   .daily-vote-panel-icon { width: 42px; height: 42px; flex-basis: 42px; border-radius: 14px; }
@@ -1041,7 +1041,10 @@ dialog:not(.image-preview-dialog) {
 .public-page .daily-tech-card { padding: 0; border: 0; border-radius: 0; }
 .run-log-col-time { width: 230px; }
 .run-log-table .run-time { font-size: 12px; font-variant-numeric: tabular-nums; }
-.event-item { grid-template-columns: 64px minmax(210px, auto) minmax(0, 1fr); }
+.event-list { grid-template-columns: minmax(0, 1fr); min-width: 0; margin: -6px -10px -6px -6px; padding: 6px 10px 6px 6px; scrollbar-gutter: stable; }
+#run-dialog .dialog-card { min-width: 0; }
+.event-item { min-width: 0; max-width: 100%; grid-template-columns: 64px minmax(0, 210px) minmax(0, 1fr); }
+.event-item > * { min-width: 0; overflow-wrap: anywhere; }
 .event-item time { font-size: 12px; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 700px) {
@@ -1056,3 +1059,40 @@ dialog:not(.image-preview-dialog) {
 
 .warning-description-days { color: var(--accent); font-weight: 650; }
 .public-page .feature-detail-card .highlight-item:hover { background: transparent; transform: none; }
+
+/* Back navigation follows the visible panel, including after live refreshes. */
+.feature-detail-back { display: none; }
+.feature-detail-dialog:has(#vote:not([hidden]) .daily-vote-panel-detail:not([hidden])) .feature-detail-back { display: inline-grid; }
+
+/* Keep nested borders and focus rings inside the scrolling sheet. */
+.feature-detail-body :is(.feature-panel, .daily-vote-panel-detail, [data-daily-panel-content], .vote-lane, .vote-lane-grid, .daily-vote-items, .daily-vote-history, .daily-history-group) { min-width: 0; max-width: 100%; }
+.feature-detail-body :is(.vote-option, .daily-vote-panel-card, .daily-vote-item, .daily-vote-option, .daily-history-card, .daily-history-result-button, .identity-account-summary) { min-width: 0; max-width: 100%; }
+.feature-detail-body .vote-option { width: 100%; }
+.feature-detail-body :is(.tech-copy, .daily-rich-text, .daily-vote-description, .daily-history-option-content) { overflow-wrap: anywhere; }
+.feature-detail-body :is(.daily-vote-panel-list, .daily-vote-panel-detail, [data-daily-panel-content]) { margin-top: 0; }
+.feature-detail-body [data-daily-panel-content] { padding-top: 0; border-top: 0; }
+.feature-detail-body .daily-tech-card > p:first-child { margin-top: 0; }
+.feature-detail-heading > div:first-child { min-width: 0; }
+.feature-detail-heading h2 { overflow-wrap: anywhere; }
+#run-dialog .section-heading { margin-bottom: 16px; align-items: center; }
+#run-dialog h2 { margin: 0; }
+.admin-view[data-admin-view="members"] > .search-field { margin-bottom: 18px; }
+.public-page :is(#run-list, .staff-grid, .warning-list, .highlight-list) > :first-child { padding-top: 4px; }
+.public-page #member-cards > .member-responsive-card:nth-child(-n+2) { padding-top: 4px; }
+.camp-group-content > :first-child { margin-top: 0; }
+@media (max-width: 700px) {
+  .public-page #member-cards > .member-responsive-card:nth-child(2) { padding-top: 18px; }
+}
+
+.manual-tasks-panel { container: manual-tasks / inline-size; }
+.overview-view .manual-tasks-panel .task-grid { grid-template-columns: minmax(0, 1fr); gap: 0 24px; }
+.overview-view .manual-tasks-panel .task-card { min-width: 0; padding: 18px 2px; gap: 16px; border-bottom: 1px solid var(--line-strong); }
+.manual-tasks-panel .task-card-copy { overflow-wrap: anywhere; }
+@container manual-tasks (min-width: 560px) {
+  .overview-view .manual-tasks-panel .task-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-view .manual-tasks-panel .task-card { flex-direction: column; align-items: stretch; }
+  .overview-view .manual-tasks-panel .task-card > .button { align-self: flex-start; }
+}
+@container manual-tasks (min-width: 840px) {
+  .overview-view .manual-tasks-panel .task-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

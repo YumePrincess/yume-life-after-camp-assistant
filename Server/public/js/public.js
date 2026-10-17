@@ -650,17 +650,6 @@
     }
   }
 
-  function syncDailyFeatureBackButton() {
-    const button = byId("back-daily-vote");
-    if (!button) return;
-    // The child panel is rendered from dailyPanel alone. Do not gate its back
-    // button on activeFeature: live refresh/navigation can briefly leave those
-    // state fields out of sync while the child content is already visible.
-    const visible = Boolean(state.dailyPanel);
-    button.toggleAttribute("hidden", !visible);
-    button.setAttribute("aria-hidden", String(!visible));
-  }
-
   function resetFeatureSelection({ clearHash = true, restoreFocus = false } = {}) {
     const activeId = state.activeFeature;
     const activeCard = activeId
@@ -677,7 +666,6 @@
     state.activeFeature = "";
     state.dailyPanel = "";
     syncFeatureDetailKicker();
-    syncDailyFeatureBackButton();
     if (clearHash) {
       history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     }
@@ -704,7 +692,6 @@
     }
     state.activeFeature = id;
     syncFeatureDetailKicker();
-    syncDailyFeatureBackButton();
     if (updateHash) {
       history.replaceState(null, "", `#${id}`);
     }
@@ -1813,21 +1800,18 @@
     if (state.activeFeature === "vote") syncFeatureDetailKicker();
     setText("hero-vote-count", String(dailyVoteFeatureCount(payload)));
     setText("feature-vote-count", String(dailyVoteFeatureCount(payload)));
-    syncDailyFeatureBackButton();
   }
 
   function openDailyPanel(panel) {
     if (!["identity", "technology", "items", "history"].includes(panel)) return;
     if (state.activeFeature !== "vote") return;
     state.dailyPanel = panel;
-    syncDailyFeatureBackButton();
     renderDailyVote(state.data?.dailyVote || {});
     if (panel === "identity") void refreshIdentitySession();
   }
 
   function backDailyPanels() {
     state.dailyPanel = "";
-    syncDailyFeatureBackButton();
     renderDailyVote(state.data?.dailyVote || {});
   }
 
