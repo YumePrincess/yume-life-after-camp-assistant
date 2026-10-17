@@ -160,8 +160,8 @@ html:has(dialog[open]) { overflow: hidden; }
   body .feedback-dialog .vote-participant-name { font-size: calc(28 * var(--rpx)); padding: calc(14 * var(--rpx)) calc(18 * var(--rpx)); border-radius: calc(16 * var(--rpx)); }
   .public-page .button { min-height: calc(74 * var(--rpx)); }
   .public-page .feature-panel > .button, .public-page .daily-vote-submit { color: var(--accent); background: var(--glass-control); border: 1px solid var(--line); }
-  .public-page .site-footer { min-height: 0; padding: 4px 14px max(4px, env(safe-area-inset-bottom)); border-radius: 16px 16px 0 0; }
-  .public-page .site-footer .power { font-size: 10px; line-height: 1.4; }
+  .public-page .site-footer { min-height: calc(92 * var(--rpx)); padding: calc(12 * var(--rpx)) calc(28 * var(--rpx)) calc(12 * var(--rpx) + env(safe-area-inset-bottom)); border-radius: calc(36 * var(--rpx)) calc(36 * var(--rpx)) 0 0; }
+  .public-page .site-footer .power { font-size: calc(20 * var(--rpx)); line-height: 1.7; }
   .public-page .feature-detail-dialog[open] .feature-detail-card { animation: mini-sheet-in 260ms var(--ease-out) both; }
   .public-page .feature-detail-dialog.is-closing .feature-detail-card { animation: mini-sheet-out 220ms ease-in both; }
   @keyframes mini-sheet-in { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

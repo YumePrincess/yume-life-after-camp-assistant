@@ -445,7 +445,7 @@ dialog:not(.feature-detail-dialog):not(.app-modal):not(.image-preview-dialog) {
 html { scrollbar-width: none; scrollbar-gutter: auto; }
 :root *, body { scrollbar-width: none; }
 :root::-webkit-scrollbar, :root *::-webkit-scrollbar { display: none; width: 0; height: 0; }
-:root { --footer-reserved-height: calc(58px + env(safe-area-inset-bottom)); }
+:root { --footer-reserved-height: calc(72px + env(safe-area-inset-bottom)); }
 body { padding-bottom: var(--footer-reserved-height); }
 body::before { pointer-events: none; }
 body::after { pointer-events: none; }
@@ -725,8 +725,8 @@ dialog:not(.feature-detail-dialog):not(.app-modal):not(.image-preview-dialog) { 
 .login-divider { font-size: 11px; color: var(--muted); }
 .login-card .back-link { margin-top: 18px; }
 .login-card #login-error:empty { display: none; }
-.site-footer { position: fixed; inset: auto 0 0; margin-top: 0; min-height: 0; padding: 6px 20px max(6px, env(safe-area-inset-bottom)); box-shadow: none; }
-.site-footer .power { font-size: 11px; line-height: 1.45; }
+.site-footer { position: fixed; inset: auto 0 0; margin-top: 0; min-height: 54px; padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); box-shadow: none; }
+.site-footer .power { font-size: 11px; line-height: 1.7; }
 .footer-mainland-notice { display: inline; }
 @media (max-width: 700px) {
   .footer-mainland-notice { display: block; }
@@ -838,8 +838,8 @@ dialog:not(.feature-detail-dialog):not(.app-modal):not(.image-preview-dialog) { 
   .login-brand .brand-mark { display: none; }
   .login-card h1 { font-size: 28px; }
   .login-card .login-brand > span:last-child { display: block; }
-  .site-footer { padding: 4px 14px max(4px, env(safe-area-inset-bottom)); border-radius: 16px 16px 0 0; }
-  .site-footer .power { font-size: 10px; line-height: 1.4; }
+  .site-footer { padding-inline: 18px; }
+  .site-footer .power { font-size: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
