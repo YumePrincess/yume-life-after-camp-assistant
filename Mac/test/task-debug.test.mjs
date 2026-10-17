@@ -39,6 +39,15 @@ test("debug evidence publishes complete masked images atomically", async () => {
       ),
       ["0001-member-details-avatar-column-masked.png"]
     );
+    const imageIndex = (await readFile(
+      resolve(artifacts.taskDirectory, "images.jsonl"),
+      "utf8"
+    )).trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(imageIndex.length, 1);
+    assert.equal(imageIndex[0].sequence, 1);
+    assert.equal(imageIndex[0].label, "member-details-avatar-column-masked");
+    assert.equal(imageIndex[0].fileName, "0001-member-details-avatar-column-masked.png");
+    assert.ok(Number.isFinite(Date.parse(imageIndex[0].capturedAt)));
   } finally {
     await rm(rootDirectory, { recursive: true, force: true });
   }

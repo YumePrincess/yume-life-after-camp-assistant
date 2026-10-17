@@ -235,6 +235,10 @@
 "Execution mode retry" = "Reprise";
 "Execution mode unknown" = "Inconnu";
 "Task results" = "Résultats des tâches";
+"Clear task results" = "Effacer les résultats des tâches";
+"Clear task results?" = "Effacer tous les résultats des tâches ?";
+"All task result documents and unsaved edits will be deleted." = "Tous les documents de résultats et les modifications non enregistrées seront supprimés.";
+"Task results cleared" = "Résultats des tâches effacés";
 "Agent data" = "Données de l’Agent";
 "Review or edit the member data uploaded by each task." = "Consultez ou modifiez les données des membres envoyées par chaque tâche.";
 "Open in another editor" = "Ouvrir dans un autre éditeur";

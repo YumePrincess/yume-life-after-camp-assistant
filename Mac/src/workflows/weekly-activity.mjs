@@ -1029,7 +1029,8 @@ async function submitWeeklyActivity(context, command, rows, signal, detail = {})
     taskKey: "weekly_activity_sync",
     runId: command.runId,
     capturedAt,
-    payload: rows
+    payload: rows,
+    locale: context.locale
   });
   await updateWorkflowProgress(context, 0.97, "weekly_activity_complete");
   await context.report(

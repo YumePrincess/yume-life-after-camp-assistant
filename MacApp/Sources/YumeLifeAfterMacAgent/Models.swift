@@ -49,6 +49,7 @@ struct TaskDebugImage: Identifiable, Sendable {
     let id: String
     let sequence: Int
     let label: String
+    let capturedAt: Date?
     let url: URL
 }
 

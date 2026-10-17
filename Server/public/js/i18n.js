@@ -1513,6 +1513,77 @@
     }
   };
 
+  const memberCorrectionTranslations = {
+    "zh-cn": {},
+    "zh-tw": {
+      "批量数据校正": "批次資料校正",
+      "粘贴 Agent「任务结果」中的完整文档。校验通过并确认后，Workers 才会按文档任务类型校正对应数据。": "貼上 Agent「任務結果」中的完整文件。驗證通過並確認後，Workers 才會依文件中的任務類型校正對應資料。",
+      "Agent 任务结果文档": "Agent 任務結果文件",
+      "校验文档格式": "驗證文件格式",
+      "确认并校正": "確認並校正",
+      "正在检查文档格式…": "正在檢查文件格式…",
+      "格式校验通过": "格式驗證通過",
+      "格式有效：{taskTitle}；成员数据 {memberCount} 行{staffDescription}；采集时间 {capturedAt}。确认后将按该任务规则匹配和校正。": "格式有效：{taskTitle}；成員資料 {memberCount} 行{staffDescription}；擷取時間 {capturedAt}。確認後將依該任務規則比對並校正。",
+      "，公职 {count} 项": "，公職 {count} 項",
+      "请先校验当前文档格式。": "請先驗證目前文件格式。",
+      "正在匹配并校正数据…": "正在比對並校正資料…",
+      "{taskTitle}校正完成：收到 {received} 项，更新 {updated} 项，忽略 {ignored} 项{ambiguous}": "{taskTitle}校正完成：收到 {received} 項，更新 {updated} 項，忽略 {ignored} 項{ambiguous}",
+      "，其中 {count} 项存在歧义": "，其中 {count} 項有歧義",
+      "文档内容已修改，请重新校验格式。": "文件內容已修改，請重新驗證格式。"
+    },
+    en: {
+      "批量数据校正": "Bulk data correction",
+      "粘贴 Agent「任务结果」中的完整文档。校验通过并确认后，Workers 才会按文档任务类型校正对应数据。": "Paste a complete Agent task result document. After validation and confirmation, Workers applies the correction using that task’s normal update rules.",
+      "Agent 任务结果文档": "Agent task result document",
+      "校验文档格式": "Validate document",
+      "确认并校正": "Confirm and correct",
+      "正在检查文档格式…": "Checking document format…",
+      "格式校验通过": "Document format is valid",
+      "格式有效：{taskTitle}；成员数据 {memberCount} 行{staffDescription}；采集时间 {capturedAt}。确认后将按该任务规则匹配和校正。": "Valid document: {taskTitle}; {memberCount} member rows{staffDescription}; captured {capturedAt}. Confirmation applies the task’s normal matching and update rules.",
+      "，公职 {count} 项": ", {count} officer assignments",
+      "请先校验当前文档格式。": "Validate the current document first.",
+      "正在匹配并校正数据…": "Matching members and applying corrections…",
+      "{taskTitle}校正完成：收到 {received} 项，更新 {updated} 项，忽略 {ignored} 项{ambiguous}": "{taskTitle} correction complete: received {received}, updated {updated}, skipped {ignored}{ambiguous}",
+      "，其中 {count} 项存在歧义": ", including {count} ambiguous rows",
+      "文档内容已修改，请重新校验格式。": "The document changed. Validate its format again."
+    },
+    fr: {
+      "批量数据校正": "Correction groupée des données",
+      "粘贴 Agent「任务结果」中的完整文档。校验通过并确认后，Workers 才会按文档任务类型校正对应数据。": "Collez un document complet de résultats de tâche de l’Agent. Après validation et confirmation, Workers applique les règles normales de mise à jour de cette tâche.",
+      "Agent 任务结果文档": "Document de résultats de tâche de l’Agent",
+      "校验文档格式": "Valider le document",
+      "确认并校正": "Confirmer et corriger",
+      "正在检查文档格式…": "Vérification du format…",
+      "格式校验通过": "Format du document valide",
+      "格式有效：{taskTitle}；成员数据 {memberCount} 行{staffDescription}；采集时间 {capturedAt}。确认后将按该任务规则匹配和校正。": "Document valide : {taskTitle} ; {memberCount} lignes de membres{staffDescription} ; collecte {capturedAt}. La confirmation applique les règles normales de correspondance et de mise à jour.",
+      "，公职 {count} 项": ", {count} fonctions",
+      "请先校验当前文档格式。": "Validez d’abord le format du document actuel.",
+      "正在匹配并校正数据…": "Correspondance et correction des données…",
+      "{taskTitle}校正完成：收到 {received} 项，更新 {updated} 项，忽略 {ignored} 项{ambiguous}": "Correction {taskTitle} terminée : {received} reçues, {updated} mises à jour, {ignored} ignorées{ambiguous}",
+      "，其中 {count} 项存在歧义": ", dont {count} ambiguës",
+      "文档内容已修改，请重新校验格式。": "Le document a changé. Validez à nouveau son format."
+    },
+    ja: {
+      "批量数据校正": "データの一括修正",
+      "粘贴 Agent「任务结果」中的完整文档。校验通过并确认后，Workers 才会按文档任务类型校正对应数据。": "Agent のタスク結果ドキュメント全体を貼り付けてください。検証後に確定すると、Workers が該当タスクと同じ更新ルールで修正します。",
+      "Agent 任务结果文档": "Agent タスク結果ドキュメント",
+      "校验文档格式": "ドキュメントを検証",
+      "确认并校正": "確定して修正",
+      "正在检查文档格式…": "ドキュメント形式を確認中…",
+      "格式校验通过": "ドキュメント形式を確認しました",
+      "格式有效：{taskTitle}；成员数据 {memberCount} 行{staffDescription}；采集时间 {capturedAt}。确认后将按该任务规则匹配和校正。": "形式は有効です：{taskTitle}、メンバー {memberCount} 行{staffDescription}、取得時刻 {capturedAt}。確定すると通常の照合・更新ルールを適用します。",
+      "，公职 {count} 项": "、役職 {count} 件",
+      "请先校验当前文档格式。": "先に現在のドキュメントを検証してください。",
+      "正在匹配并校正数据…": "メンバー照合と修正を実行中…",
+      "{taskTitle}校正完成：收到 {received} 项，更新 {updated} 项，忽略 {ignored} 项{ambiguous}": "{taskTitle}の修正が完了しました：受信 {received} 件、更新 {updated} 件、スキップ {ignored} 件{ambiguous}",
+      "，其中 {count} 项存在歧义": "（うち {count} 件は照合があいまい）",
+      "文档内容已修改，请重新校验格式。": "ドキュメントが変更されました。形式を再検証してください。"
+    }
+  };
+  for (const [language, additions] of Object.entries(memberCorrectionTranslations)) {
+    Object.assign(translations[language], additions);
+  }
+
   const technologyHistoryTranslations = {
     en: {
       "科技投票历史": "Technology vote history",

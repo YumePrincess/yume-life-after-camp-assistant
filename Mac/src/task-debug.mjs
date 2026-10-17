@@ -87,13 +87,15 @@ export class TaskDebugArtifacts {
     return this.#enqueue(async () => {
       if (!this.started || !this.enabled || !sourcePath) return null;
       const sequence = ++this.imageSequence;
+      const capturedAt = new Date().toISOString();
+      const safeLabel = safeComponent(label, "step");
       const target = resolve(
         this.taskDirectory,
-        `${String(sequence).padStart(4, "0")}-${safeComponent(label, "step")}${imageExtension(sourcePath)}`
+        `${String(sequence).padStart(4, "0")}-${safeLabel}${imageExtension(sourcePath)}`
       );
       const temporaryTarget = resolve(
         this.taskDirectory,
-        `.${String(sequence).padStart(4, "0")}-${safeComponent(label, "step")}.partial`
+        `.${String(sequence).padStart(4, "0")}-${safeLabel}.partial`
       );
       try {
         // The App indexes files while a task is still running. Publish each
@@ -101,6 +103,16 @@ export class TaskDebugArtifacts {
         // screenshot as a broken thumbnail under its permanent ID.
         await copyFile(sourcePath, temporaryTarget);
         await rename(temporaryTarget, target);
+        await appendFile(
+          resolve(this.taskDirectory, "images.jsonl"),
+          `${JSON.stringify({
+            sequence,
+            label: safeLabel,
+            fileName: target.split("/").at(-1),
+            capturedAt
+          })}\n`,
+          { encoding: "utf8", mode: 0o600 }
+        ).catch(() => undefined);
         return target;
       } catch (error) {
         await rm(temporaryTarget, { force: true }).catch(() => undefined);

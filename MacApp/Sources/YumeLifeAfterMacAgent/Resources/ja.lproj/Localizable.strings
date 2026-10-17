@@ -235,6 +235,10 @@
 "Execution mode retry" = "リトライ";
 "Execution mode unknown" = "不明";
 "Task results" = "タスク結果";
+"Clear task results" = "タスク結果を消去";
+"Clear task results?" = "すべてのタスク結果を消去しますか？";
+"All task result documents and unsaved edits will be deleted." = "すべてのタスク結果ドキュメントと未保存の変更が削除されます。";
+"Task results cleared" = "タスク結果を消去しました";
 "Agent data" = "Agent データ";
 "Review or edit the member data uploaded by each task." = "各タスクが読み取り、アップロードしたメンバーデータを確認・編集します。";
 "Open in another editor" = "別のエディタで開く";

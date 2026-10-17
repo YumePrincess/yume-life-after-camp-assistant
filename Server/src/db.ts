@@ -1154,11 +1154,10 @@ export async function updateWeeklyActivitySnapshot(
     calibratedMembers,
     master.results
   );
-  if (input.members.length > 0 && reconciliation.updates.length === 0) {
-    return reconciliation;
-  }
   // The game leaderboard contains only members who earned activity points.
-  // A completed scan therefore resets absent roster members to zero first.
+  // A completed scan is authoritative for the current Workers roster: anyone
+  // absent from the ranking, including rows the fuzzy matcher could not safely
+  // identify, follows the same zero-reset behavior as the automatic task.
   await env.DB.prepare(
     "UPDATE members SET weekly_activity_points = 0, last_seen_at = ?"
   ).bind(input.capturedAt).run();
@@ -1655,114 +1654,6 @@ export function reconcileStaffAssignments(
   }
 
   return { staff, ignored, ambiguous };
-}
-
-export async function applyMemberProfileCorrection(
-  env: Env,
-  input: {
-    runId: string;
-    capturedAt: string;
-    members: Array<{
-      name: string;
-      profession: string | null;
-      manorLevel: number | null;
-      roommateName: string | null;
-      campTitle: string | null;
-      weeklyContribution: number;
-    }>;
-    staff: Array<{ roleKey: string; roleName: string; memberName: string | null }>;
-  }
-): Promise<{ profileCount: number; staffCount: number; ignored: number; ambiguous: number }> {
-  const [identityNames, master] = await Promise.all([
-    listActiveIdentityPlayerNames(env),
-    env.DB.prepare("SELECT name FROM members ORDER BY name").all<{ name: string }>()
-  ]);
-  const calibratedMembers = calibrateMemberNames(input.members, identityNames);
-  const masterMembers = master.results.map((member) => ({ name: member.name }));
-  if (calibratedMembers.length !== masterMembers.length) {
-    throw new Error("成员资料人数与当前主名单不一致，未应用任何校正");
-  }
-  const exactNames = new Map<string, string[]>();
-  const comparableNames = new Map<string, string[]>();
-  for (const member of masterMembers) {
-    const rawKey = rawMemberName(member.name);
-    exactNames.set(rawKey, [...(exactNames.get(rawKey) ?? []), member.name]);
-    const coreKey = comparableMemberName(member.name);
-    comparableNames.set(coreKey, [...(comparableNames.get(coreKey) ?? []), member.name]);
-  }
-
-  const matchedByName = new Map<string, (typeof calibratedMembers)[number]>();
-  let ignored = 0;
-  let ambiguous = 0;
-  for (const member of calibratedMembers) {
-    const rawCandidates = exactNames.get(rawMemberName(member.name)) ?? [];
-    const coreCandidates = comparableNames.get(comparableMemberName(member.name)) ?? [];
-    const candidates = rawCandidates.length
-      ? rawCandidates
-      : coreCandidates.length
-        ? coreCandidates
-        : hasMemberCoreBoundaryVariant(member.name, masterMembers).map((item) => item.name);
-    if (candidates.length !== 1) {
-      ignored += 1;
-      if (candidates.length > 1) ambiguous += 1;
-      continue;
-    }
-    const canonicalName = candidates[0]!;
-    if (matchedByName.has(canonicalName)) {
-      ignored += 1;
-      continue;
-    }
-    matchedByName.set(canonicalName, { ...member, name: canonicalName });
-  }
-  if (matchedByName.size === 0) {
-    throw new Error("没有成员资料与当前成员名单匹配，未应用任何校正");
-  }
-  if (matchedByName.size !== calibratedMembers.length) {
-    throw new Error("部分成员资料无法与当前主名单唯一匹配，未应用任何校正");
-  }
-
-  const staff = reconcileStaffAssignments(input.staff);
-  if (input.staff.length > 0 && staff.staff.length === 0) {
-    throw new Error("公职数据无法安全匹配，未应用任何校正");
-  }
-  const statements: D1PreparedStatement[] = [
-    ...[...matchedByName.values()].map((member) =>
-      env.DB.prepare(
-        `UPDATE members
-         SET profession = ?, manor_level = ?, roommate_name = ?, camp_title = ?,
-             last_seen_at = ?
-         WHERE name = ?`
-      ).bind(
-        member.profession,
-        member.manorLevel,
-        member.roommateName,
-        member.campTitle,
-        input.capturedAt,
-        member.name
-      )
-    ),
-    env.DB.prepare("DELETE FROM staff_assignments"),
-    ...staff.staff.map((item) =>
-      env.DB.prepare(
-        `INSERT INTO staff_assignments(
-           role_key, role_name, member_id, member_name, updated_at, source_run_id
-         ) VALUES(?, ?, NULL, ?, ?, ?)
-         ON CONFLICT(role_key) DO UPDATE SET
-           role_name = excluded.role_name,
-           member_id = excluded.member_id,
-           member_name = excluded.member_name,
-           updated_at = excluded.updated_at,
-           source_run_id = excluded.source_run_id`
-      ).bind(item.roleKey, item.roleName, item.memberName, input.capturedAt, input.runId)
-    )
-  ];
-  await env.DB.batch(statements);
-  return {
-    profileCount: matchedByName.size,
-    staffCount: staff.staff.length,
-    ignored: ignored + staff.ignored,
-    ambiguous: ambiguous + staff.ambiguous
-  };
 }
 
 async function stableMemberId(name: string): Promise<string> {

@@ -1333,12 +1333,16 @@ actor RuntimeService {
             let file = logDirectory.appending(path: name)
             try Data().write(to: file, options: .atomic)
         }
-        // A Debug image is evidence for a log entry. Clearing the complete
-        // local log history must not leave unreferenced task evidence behind.
-        for directory in [debugDirectory, taskResultsDirectory]
-        where fileManager.fileExists(atPath: directory.path) {
-            try fileManager.removeItem(at: directory)
+        // Debug images are evidence attached to the task logs, so clear them
+        // together. Task result documents have their own dedicated control.
+        if fileManager.fileExists(atPath: debugDirectory.path) {
+            try fileManager.removeItem(at: debugDirectory)
         }
+    }
+
+    func clearTaskResults() throws {
+        guard fileManager.fileExists(atPath: taskResultsDirectory.path) else { return }
+        try fileManager.removeItem(at: taskResultsDirectory)
     }
 
     func taskResultDocuments() -> [TaskResultDocument] {
@@ -1431,6 +1435,22 @@ actor RuntimeService {
                 options: [.skipsHiddenFiles]
               )
         else { return [] }
+        let indexedCaptures: [String: Date] = {
+            let indexFile = directory.appending(path: "images.jsonl")
+            guard let indexData = try? Data(contentsOf: indexFile) else { return [:] }
+            let formatter = ISO8601DateFormatter()
+            return Dictionary(uniqueKeysWithValues: String(decoding: indexData, as: UTF8.self)
+                .split(separator: "\n")
+                .compactMap { line -> (String, Date)? in
+                    guard let data = String(line).data(using: .utf8),
+                          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let fileName = object["fileName"] as? String,
+                          let capturedAt = object["capturedAt"] as? String,
+                          let date = formatter.date(from: capturedAt) else { return nil }
+                    return (fileName, date)
+                }
+            )
+        }()
         return files
             .filter { ["png", "jpg", "jpeg", "webp"].contains($0.pathExtension.lowercased()) }
             .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
@@ -1441,7 +1461,15 @@ actor RuntimeService {
                 let components = name.split(separator: "-", maxSplits: 1).map(String.init)
                 let sequence = Int(components.first ?? "") ?? index + 1
                 let label = components.count > 1 ? components[1] : name
-                return TaskDebugImage(id: "\(safeID)-\(sequence)-\(url.lastPathComponent)", sequence: sequence, label: label, url: url)
+                let capturedAt = indexedCaptures[url.lastPathComponent]
+                    ?? (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                return TaskDebugImage(
+                    id: "\(safeID)-\(sequence)-\(url.lastPathComponent)",
+                    sequence: sequence,
+                    label: label,
+                    capturedAt: capturedAt,
+                    url: url
+                )
             }
     }
 

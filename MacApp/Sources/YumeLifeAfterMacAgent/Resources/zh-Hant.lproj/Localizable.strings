@@ -235,6 +235,10 @@
 "Execution mode retry" = "重試";
 "Execution mode unknown" = "未知";
 "Task results" = "任務結果";
+"Clear task results" = "清除任務結果";
+"Clear task results?" = "要清除所有任務結果嗎？";
+"All task result documents and unsaved edits will be deleted." = "所有任務結果文件和未儲存的變更都會刪除。";
+"Task results cleared" = "任務結果已清除";
 "Agent data" = "Agent 資料";
 "Review or edit the member data uploaded by each task." = "檢視或編輯各任務讀取並上傳的成員資料。";
 "Open in another editor" = "在其他編輯器中開啟";

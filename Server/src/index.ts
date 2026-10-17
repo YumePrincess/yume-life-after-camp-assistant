@@ -19,7 +19,6 @@ import {
   updateTemporaryKeyPermissions
 } from "./auth";
 import {
-  applyMemberProfileCorrection,
   activateAgentIdentity,
   appendRunEvent,
   clearFinishedRunHistory,
@@ -68,6 +67,7 @@ import {
   normalizeBallotSelections
 } from "./tech";
 import { parseMemberTaskResultDocument } from "./member-task-result";
+import { localizeMemberTaskResultError } from "./member-task-result-localization";
 import {
   isTaskKey,
   type ConfigBundle,
@@ -1643,8 +1643,10 @@ async function handleAdminApi(
 ): Promise<Response> {
   const memberCorrectionMatch = /^\/api\/admin\/members\/bulk-correction\/(validate|apply)$/.exec(path);
   if (memberCorrectionMatch && method === "POST") {
+    let correctionLocale = normalizeLocale(request.headers.get("X-UI-Locale"));
     try {
       const body = await readJsonObject(request, 1_000_000);
+      correctionLocale = normalizeLocale(body.locale);
       const parsed = parseMemberTaskResultDocument(body.document);
       if (memberCorrectionMatch[1] === "validate") {
         return json({
@@ -1664,7 +1666,12 @@ async function handleAdminApi(
         weekly_activity_sync: "weekly-activity"
       }[parsed.taskKey];
       if (requiredPlugin && !(await isWorkerPluginEnabled(env, requiredPlugin))) {
-        return problem("该任务对应的 Workers 插件未启用，未应用任何校正", 409, "plugin_disabled");
+        const message = "该任务对应的 Workers 插件未启用，未应用任何校正";
+        return problem(
+          localizeMemberTaskResultError(message, correctionLocale),
+          409,
+          "plugin_disabled"
+        );
       }
 
       let updated = 0;
@@ -1708,9 +1715,6 @@ async function handleAdminApi(
             capturedAt: parsed.capturedAt,
             members
           });
-          if (members.length > 0 && result.updates.length === 0) {
-            throw new Error("没有周活跃点数据与当前成员名单匹配，未应用任何校正");
-          }
           updated = result.updates.length;
           ignored = result.ignored;
           ambiguous = result.ambiguous;
@@ -1724,15 +1728,28 @@ async function handleAdminApi(
           if (memberSummary.recognizedCount !== members.length) {
             throw new Error("成员人数摘要与成员资料行数不一致");
           }
-          const result = await applyMemberProfileCorrection(env, {
+          // The profile task is the authoritative roster form. Manual
+          // correction follows the same upsert-and-prune and officer snapshot
+          // functions as the automatic task, using the document's latest
+          // submitted rows instead of reconciling them against a stale roster.
+          await updateMemberProfiles(env, {
             runId: parsed.runId,
             capturedAt: parsed.capturedAt,
-            members,
+            members
+          });
+          const staffResult = await replaceStaffSnapshot(env, {
+            runId: parsed.runId,
+            capturedAt: parsed.capturedAt,
             staff
           });
-          updated = result.profileCount + result.staffCount;
-          ignored = result.ignored;
-          ambiguous = result.ambiguous;
+          await saveMemberScanSummary(env, {
+            ...memberSummary,
+            runId: parsed.runId,
+            capturedAt: parsed.capturedAt
+          });
+          updated = members.length + staffResult.staff.length;
+          ignored = staffResult.ignored;
+          ambiguous = staffResult.ambiguous;
           break;
         }
       }
@@ -1746,7 +1763,11 @@ async function handleAdminApi(
         ambiguous
       });
     } catch (error) {
-      return problem(errorMessage(error), 400, "member_task_result_invalid");
+      return problem(
+        localizeMemberTaskResultError(errorMessage(error), correctionLocale),
+        400,
+        "member_task_result_invalid"
+      );
     }
   }
   const pluginResponse = await dispatchWorkerPluginRequest({

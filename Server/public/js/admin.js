@@ -330,6 +330,7 @@
   async function request(path, options = {}) {
     const headers = {
       "Content-Type": "application/json",
+      "X-UI-Locale": window.MrzhI18n?.language?.() || "zh-cn",
       ...(options.headers || {})
     };
     if (options.method && !["GET", "HEAD"].includes(options.method)) {
@@ -3878,24 +3879,35 @@
     state.memberCorrectionValidatedDocument = "";
     state.memberCorrectionValidation = null;
     setText("member-bulk-correction-preview", "");
-    setText("member-bulk-correction-feedback", "正在检查文档格式…");
+    setText("member-bulk-correction-feedback", window.MrzhI18n.t("正在检查文档格式…"));
     state.memberCorrectionBusy = true;
     setModuleActionState();
     try {
       const result = await request("/api/admin/members/bulk-correction/validate", {
         method: "POST",
-        body: JSON.stringify({ document })
+        body: JSON.stringify({
+          document,
+          locale: window.MrzhI18n.language()
+        })
       });
       state.memberCorrectionValidatedDocument = document;
       state.memberCorrectionValidation = result;
       const staffDescription = result.staffCount
-        ? `，公职 ${result.staffCount} 项`
+        ? window.MrzhI18n.format("，公职 {count} 项", { count: result.staffCount })
         : "";
       setText(
         "member-bulk-correction-preview",
-        `格式有效：${result.taskTitle}；成员数据 ${result.memberCount} 行${staffDescription}；采集时间 ${formatDate(result.capturedAt)}。确认后将按该任务规则匹配和校正。`
+        window.MrzhI18n.format(
+          "格式有效：{taskTitle}；成员数据 {memberCount} 行{staffDescription}；采集时间 {capturedAt}。确认后将按该任务规则匹配和校正。",
+          {
+            taskTitle: taskName(result.taskKey),
+            memberCount: result.memberCount,
+            staffDescription,
+            capturedAt: formatDate(result.capturedAt)
+          }
+        )
       );
-      setText("member-bulk-correction-feedback", "格式校验通过");
+      setText("member-bulk-correction-feedback", window.MrzhI18n.t("格式校验通过"));
     } catch (error) {
       setText("member-bulk-correction-feedback", error.message);
     } finally {
@@ -3908,21 +3920,35 @@
     event.preventDefault();
     const document = String(byId("member-task-result-document").value || "");
     if (!state.memberCorrectionValidation || state.memberCorrectionValidatedDocument !== document) {
-      setText("member-bulk-correction-feedback", "请先校验当前文档格式。");
+      setText("member-bulk-correction-feedback", window.MrzhI18n.t("请先校验当前文档格式。"));
       return;
     }
     state.memberCorrectionBusy = true;
-    setText("member-bulk-correction-feedback", "正在匹配并校正数据…");
+    setText("member-bulk-correction-feedback", window.MrzhI18n.t("正在匹配并校正数据…"));
     setModuleActionState();
     try {
       const result = await request("/api/admin/members/bulk-correction/apply", {
         method: "POST",
-        body: JSON.stringify({ document })
+        body: JSON.stringify({
+          document,
+          locale: window.MrzhI18n.language()
+        })
       });
       byId("member-bulk-correction-dialog").close();
       setText(
         "save-state",
-        `${result.taskTitle}校正完成：收到 ${result.received} 项，更新 ${result.updated} 项，忽略 ${result.ignored} 项${result.ambiguous ? `，其中 ${result.ambiguous} 项存在歧义` : ""}`
+        window.MrzhI18n.format(
+          "{taskTitle}校正完成：收到 {received} 项，更新 {updated} 项，忽略 {ignored} 项{ambiguous}",
+          {
+            taskTitle: taskName(result.taskKey),
+            received: result.received,
+            updated: result.updated,
+            ignored: result.ignored,
+            ambiguous: result.ambiguous
+              ? window.MrzhI18n.format("，其中 {count} 项存在歧义", { count: result.ambiguous })
+              : ""
+          }
+        )
       );
       state.memberCorrectionValidatedDocument = "";
       state.memberCorrectionValidation = null;
@@ -5644,7 +5670,7 @@
     if (!state.memberCorrectionValidation) return;
     state.memberCorrectionValidatedDocument = "";
     state.memberCorrectionValidation = null;
-    setText("member-bulk-correction-preview", "文档内容已修改，请重新校验格式。");
+    setText("member-bulk-correction-preview", window.MrzhI18n.t("文档内容已修改，请重新校验格式。"));
     setText("member-bulk-correction-feedback", "");
     setModuleActionState();
   });

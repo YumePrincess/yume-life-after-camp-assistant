@@ -169,8 +169,13 @@ struct SidebarView: View {
     }
 }
 
+private final class TaskResultsViewState: ObservableObject {
+    @Published var confirmingClear = false
+}
+
 struct TaskResultsView: View {
     @EnvironmentObject private var model: AppModel
+    @StateObject private var viewState = TaskResultsViewState()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -191,6 +196,11 @@ struct TaskResultsView: View {
                 }
                 .buttonStyle(GlassButtonStyle())
                 .disabled(model.selectedTaskResultID == nil)
+                Button(model.text("Clear task results"), role: .destructive) {
+                    viewState.confirmingClear = true
+                }
+                .buttonStyle(GlassButtonStyle())
+                .disabled(model.taskResultDocuments.isEmpty || model.isSavingTaskResult)
                 Button(model.text("Save")) { Task { await model.saveTaskResult() } }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(model.selectedTaskResultID == nil || !model.taskResultHasUnsavedChanges || model.isSavingTaskResult)
@@ -281,6 +291,18 @@ struct TaskResultsView: View {
                 guard !Task.isCancelled else { return }
                 await model.refreshTaskResults()
             }
+        }
+        .confirmationDialog(
+            model.text("Clear task results?"),
+            isPresented: $viewState.confirmingClear,
+            titleVisibility: .visible
+        ) {
+            Button(model.text("Clear task results"), role: .destructive) {
+                Task { await model.clearTaskResults() }
+            }
+            Button(model.text("Cancel"), role: .cancel) { }
+        } message: {
+            Text(model.text("All task result documents and unsaved edits will be deleted."))
         }
     }
 }

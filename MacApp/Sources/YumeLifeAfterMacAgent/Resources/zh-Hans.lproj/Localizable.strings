@@ -244,6 +244,10 @@
 "Execution mode retry" = "重试";
 "Execution mode unknown" = "未知";
 "Task results" = "任务结果";
+"Clear task results" = "清空任务结果";
+"Clear task results?" = "清空所有任务结果？";
+"All task result documents and unsaved edits will be deleted." = "所有任务结果文档和未保存的修改都会被删除。";
+"Task results cleared" = "任务结果已清空";
 "Agent data" = "Agent 数据";
 "Review or edit the member data uploaded by each task." = "查看或编辑各任务读取并上传的成员数据。";
 "Open in another editor" = "在其他编辑器中打开";

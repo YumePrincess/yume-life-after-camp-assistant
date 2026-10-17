@@ -418,12 +418,22 @@ final class AppModel: ObservableObject {
                 return exact.id
             }
         }
-        guard !entry.step.isEmpty else { return nil }
-        let step = entry.step.lowercased()
-        return selectedTaskDebugImages.first(where: { image in
-            let label = image.label.lowercased()
-            return label == step || label == "log-\(step)" || label.hasSuffix("-\(step)")
-        })?.id ?? nearestDirectDebugImageID(to: entry)
+        if let timestamp = Self.parseTimestamp(entry.timestamp),
+           let closest = selectedTaskDebugImages.compactMap({ image -> (TaskDebugImage, TimeInterval)? in
+               guard let capturedAt = image.capturedAt else { return nil }
+               return (image, abs(capturedAt.timeIntervalSince(timestamp)))
+           }).min(by: { $0.1 < $1.1 }) {
+            return closest.0.id
+        }
+        if !entry.step.isEmpty {
+            let step = entry.step.lowercased()
+            let labelMatches = selectedTaskDebugImages.filter { image in
+                let label = image.label.lowercased()
+                return label == step || label == "log-\(step)" || label.hasSuffix("-\(step)")
+            }
+            if labelMatches.count == 1 { return labelMatches[0].id }
+        }
+        return nearestDirectDebugImageID(to: entry)
     }
 
     private func nearestDirectDebugImageID(to entry: SimplifiedLogEntry) -> String? {
@@ -456,19 +466,16 @@ final class AppModel: ObservableObject {
             guard let path = entry.debugImagePath, !path.isEmpty else { return false }
             return URL(fileURLWithPath: path).lastPathComponent == exactImageName
         }
-        if absoluteIndex == nil, !image.label.isEmpty {
-            let step = image.label
-                .replacingOccurrences(of: "^log-", with: "", options: .regularExpression)
-                .lowercased()
-            absoluteIndex = parsed.firstIndex { entry in
-                entry.step.lowercased() == step
-            }
+        if absoluteIndex == nil, let imageTime = image.capturedAt {
+            absoluteIndex = parsed.enumerated().compactMap { index, entry -> (Int, TimeInterval)? in
+                guard let logTime = Self.parseTimestamp(entry.timestamp) else { return nil }
+                return (index, abs(logTime.timeIntervalSince(imageTime)))
+            }.min(by: { $0.1 < $1.1 })?.0
         }
         if absoluteIndex == nil, !parsed.isEmpty {
-            // OCR/crop captures can be useful evidence without being the
-            // extra log capture attached to a task event. Associate them
-            // with the nearest event capture so every visible image still
-            // has a deterministic log destination.
+            // Older Debug folders have no image timestamp index. Use the
+            // nearest image sequence attached to a log event; labels are not
+            // unique (one event can produce several screenshots).
             let directCaptures: [(index: Int, sequence: Int)] = parsed.enumerated().compactMap { entryIndex, entry in
                 guard let path = entry.debugImagePath, !path.isEmpty,
                       let image = selectedTaskDebugImages.first(where: {
@@ -481,6 +488,15 @@ final class AppModel: ObservableObject {
             }) {
                 absoluteIndex = nearest.index
             }
+        }
+        if absoluteIndex == nil, !image.label.isEmpty {
+            let step = image.label
+                .replacingOccurrences(of: "^log-", with: "", options: .regularExpression)
+                .lowercased()
+            let matchingEntries = parsed.enumerated().filter { _, entry in
+                entry.step.lowercased() == step
+            }
+            if matchingEntries.count == 1 { absoluteIndex = matchingEntries[0].offset }
         }
         guard let absoluteIndex else { return nil }
         let distanceFromEnd = lines.count - 1 - absoluteIndex
@@ -547,12 +563,22 @@ final class AppModel: ObservableObject {
             taskLogGroups = []
             selectedTaskLogID = nil
             selectedTaskDebugImages = []
+            logPage = 0
+            statusMessage = text("Logs cleared")
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    func clearTaskResults() async {
+        guard !isSavingTaskResult else { return }
+        do {
+            try await runtime.clearTaskResults()
             taskResultDocuments = []
             selectedTaskResultID = nil
             taskResultContent = ""
             savedTaskResultContent = ""
-            logPage = 0
-            statusMessage = text("Logs cleared")
+            statusMessage = text("Task results cleared")
         } catch {
             alertMessage = error.localizedDescription
         }

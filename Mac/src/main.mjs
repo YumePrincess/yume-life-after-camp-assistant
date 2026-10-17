@@ -671,6 +671,7 @@ async function executeCommand(command, signal) {
   const positionIndependent = plugin.manifest.task.positionIndependent === true;
   const context = {
     config: taskConfig,
+    locale: taskLocale,
     api,
     adb,
     mumu,

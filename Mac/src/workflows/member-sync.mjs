@@ -164,7 +164,8 @@ export async function runContributionSync(context, command, _bundle, signal) {
     taskKey: "contribution_sync",
     runId: command.runId,
     capturedAt,
-    payload: rows
+    payload: rows,
+    locale: context.locale
   });
   const countMismatch = matched !== expectedMemberCount;
   await updateWorkflowProgress(context, 0.97, "contribution_complete");
@@ -235,7 +236,8 @@ export async function runInactivitySync(context, command, bundle, signal) {
     taskKey: "inactivity_sync",
     runId: command.runId,
     capturedAt,
-    payload: rows
+    payload: rows,
+    locale: context.locale
   });
   await updateWorkflowProgress(context, 0.97, "activity_complete");
   await context.report(
@@ -299,7 +301,8 @@ export async function runMemberProfileSync(context, command, _bundle, signal) {
     taskKey: "member_profile_sync",
     runId: command.runId,
     capturedAt,
-    payload: { members: profiles, staff, memberSummary: uploadedMemberSummary }
+    payload: { members: profiles, staff, memberSummary: uploadedMemberSummary },
+    locale: context.locale
   });
   await updateWorkflowProgress(context, 0.97, "member_profile_complete");
   await context.report(

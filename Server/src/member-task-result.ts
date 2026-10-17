@@ -26,6 +26,29 @@ const TASK_TITLES: Record<string, string> = {
   weekly_activity_sync: "更新周活跃点"
 };
 
+const DOCUMENT_COPY = [
+  {
+    title: "Agent 任务结果",
+    description: "此文档记录本次任务读取并上传的成员数据。可以在 Agent 内或其他编辑器中修改；Workers 仅接受格式正确的版本。"
+  },
+  {
+    title: "Agent 任務結果",
+    description: "此文件記錄本次任務讀取並上傳的成員資料。可在 Agent 或其他編輯器中修改；Workers 僅接受格式正確的版本。"
+  },
+  {
+    title: "Agent Task Results",
+    description: "This document records member data read and uploaded by this task. Edit it in Agent or another editor; Workers accepts only documents that pass format validation."
+  },
+  {
+    title: "Résultats de tâche de l’Agent",
+    description: "Ce document répertorie les données des membres lues et envoyées par cette tâche. Modifiez-le dans l’Agent ou un autre éditeur ; Workers n’accepte que les documents au format valide."
+  },
+  {
+    title: "Agent タスク結果",
+    description: "このドキュメントには、タスクが読み取り送信したメンバーデータを記録します。Agent または他のエディタで編集できます。Workers は形式が正しいドキュメントのみ受け付けます。"
+  }
+];
+
 export type ParsedMemberTaskResult = {
   taskKey: keyof typeof TASK_MEMBER_FIELDS;
   taskTitle: string;
@@ -176,14 +199,21 @@ export function parseMemberTaskResultDocument(text: unknown): ParsedMemberTaskRe
     throw new Error("请粘贴完整的 Agent 任务结果文档（不超过 950 KB）");
   }
   const normalized = text.replace(/\r\n?/gu, "\n").trim();
-  const match = /^# Agent 任务结果\n\n<!-- yla-member-task-result:v1 -->\n\n此文档记录本次任务读取并上传的成员数据。可以在 Agent 内或其他编辑器中修改；Workers 仅接受格式正确的版本。\n\n```json\n([\s\S]+)\n```$/u.exec(normalized);
-  if (!match) {
+  const marker = "<!-- yla-member-task-result:v1 -->";
+  const fenceStart = "\n\n```json\n";
+  const fenceEnd = "\n```";
+  const jsonText = DOCUMENT_COPY.map(({ title, description }) => {
+    const prefix = `# ${title}\n\n${marker}\n\n${description}${fenceStart}`;
+    if (!normalized.startsWith(prefix) || !normalized.endsWith(fenceEnd)) return null;
+    return normalized.slice(prefix.length, -fenceEnd.length);
+  }).find((candidate): candidate is string => candidate !== null && candidate.length > 0);
+  if (!jsonText) {
     throw new Error("文档格式不符：请保留 Agent 任务结果标题、版本标记和唯一的 JSON 数据块");
   }
 
   let decoded: unknown;
   try {
-    decoded = JSON.parse(match[1]!);
+    decoded = JSON.parse(jsonText);
   } catch {
     throw new Error("JSON 数据块无法解析，请修正文档后重新校验");
   }
