@@ -755,8 +755,7 @@
     state.campGroupStatus = "loading";
     renderCampGroup();
     try {
-      const payload = await request("/api/public/camp-group");
-      state.campGroup = payload.entry || null;
+      state.campGroup = await window.MrzhCampGroup.load();
       state.campGroupStatus = "ready";
     } catch {
       state.campGroupStatus = "error";

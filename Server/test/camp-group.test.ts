@@ -1,5 +1,23 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { campGroupFromLibrary, loadCampGroup } from "../src/camp-group";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { withSecurityHeaders } from "../src/response";
+
+interface CampGroup { title: string; blocks: unknown[] }
+interface CampGroupHelpers {
+  fromLibrary(value: unknown): CampGroup | null;
+  load(): Promise<CampGroup | null>;
+}
+const browser: { MrzhCampGroup?: CampGroupHelpers } = {};
+beforeAll(async () => {
+  vi.stubGlobal("window", browser);
+  const browserModule = "../public/js/camp-group.js";
+  await import(browserModule);
+});
+function campGroupFromLibrary(value: unknown) {
+  return browser.MrzhCampGroup!.fromLibrary(value);
+}
+function loadCampGroup() {
+  return browser.MrzhCampGroup!.load();
+}
 
 const entry = {
   id: "life_after", languages: ["zh-cn"], title: "营地群",
@@ -46,13 +64,19 @@ describe("shared mini-program camp group", () => {
     expect(() => campGroupFromLibrary({ entries: [{ ...entry, blocks: null }] })).toThrow("Invalid camp group blocks");
   });
 
-  it("uses the fixed shared source with a timeout and short edge cache", async () => {
+  it("fetches the mini-program source directly without identity credentials", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ entries: [entry] })));
     vi.stubGlobal("fetch", fetcher);
     expect((await loadCampGroup())?.title).toBe("营地群");
-    expect(fetcher).toHaveBeenCalledWith("https://oss.yume.zone/mini-program/library/data.json", expect.objectContaining({
-      redirect: "error", signal: expect.any(AbortSignal), cf: { cacheEverything: true, cacheTtl: 300 }
+    expect(fetcher).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/oss\.yume\.zone\/mini-program\/library\/data\.json\?t=\d+$/), expect.objectContaining({
+      redirect: "error", signal: expect.any(AbortSignal), credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store"
     }));
+  });
+
+  it("allows only the shared library path in the page connection policy", () => {
+    const csp = withSecurityHeaders(new Response()).headers.get("Content-Security-Policy");
+    expect(csp?.split(";").find(value => value.trim().startsWith("connect-src"))?.trim())
+      .toBe("connect-src 'self' https://oss.yume.zone/mini-program/library/data.json");
   });
 
   it("rejects upstream failure and oversized streamed responses", async () => {

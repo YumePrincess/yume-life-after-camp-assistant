@@ -1,4 +1,3 @@
-import { loadCampGroup } from "./camp-group";
 import {
   canViewAdminModule,
   deleteRevokedTemporaryKey,
@@ -1182,16 +1181,6 @@ async function handlePublicApi(
         recordValueRateLimitAttempt(target, env, IDENTITY_VALUE_CHECK_LIMIT)
       ]);
       return problem(errorMessage(error), 400, "identity_cancellation_failed", cors);
-    }
-  }
-  if (path === "/api/public/camp-group" && method === "GET") {
-    try {
-      const entry = await loadCampGroup();
-      const headers = new Headers(cors);
-      headers.set("Cache-Control", "public, max-age=300");
-      return json({ entry }, 200, headers);
-    } catch {
-      return problem("营地群资料加载失败，请稍后重试。", 502, "camp_group_unavailable", cors);
     }
   }
   if (path === "/api/public/bootstrap" && method === "GET") {

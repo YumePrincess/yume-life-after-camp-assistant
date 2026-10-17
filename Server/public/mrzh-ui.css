@@ -672,7 +672,7 @@ table td { padding-block: 16px; font-size: 13px; }
 .warning-age { color: var(--accent); }
 .identity-rules { color: var(--muted); font-size: 13px; line-height: 1.8; }
 dialog:not(.feature-detail-dialog):not(.app-modal):not(.image-preview-dialog) { max-height: calc(100dvh - 48px); border-radius: 24px; padding: 26px; }
-.dialog-card { padding: 0; }
+.dialog-card { min-width: 0; padding: 6px; }
 .dialog-card .section-heading { align-items: flex-start; }
 .dialog-card h2 { font-size: 24px; letter-spacing: -0.035em; }
 .app-modal-card { border: 1px solid var(--line); border-radius: 24px; padding: 26px; }
@@ -1095,4 +1095,22 @@ dialog:not(.image-preview-dialog) {
 }
 @container manual-tasks (min-width: 840px) {
   .overview-view .manual-tasks-panel .task-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* The dialog owns the glass material; identity forms and inset sections share it. */
+:is(#identity-application-dialog, #identity-password-reset-dialog, #identity-profile-dialog,
+  #identity-cancellation-dialog, #identity-information-dialog, #identity-eligibility-dialog,
+  #identity-eligibility-application-dialog) > .dialog-card {
+  width: auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+dialog :is(.identity-rules, .identity-information-detail, .identity-eligibility-grid) {
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
