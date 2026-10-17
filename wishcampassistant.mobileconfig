@@ -12,39 +12,36 @@
         <key>IsRemovable</key>
         <true />
         <key>Label</key>
-        <string>营地助手</string>
+        <string>愿·营地助手</string>
         <key>PayloadDescription</key>
         <string>en_US
   Tap “Install” in the upper-right corner.
   This adds Camp Assistant to your Home Screen.
   If prompted, enter your device passcode to finish installation.
-  Website: https://lifeafter.yume.zone
 zh_CN
   点击右上角的“安装”按钮。
   安装后，营地助手会添加到主屏幕。
   如有提示，请输入设备锁屏密码以完成安装。
-  网址：https://lifeafter.yume.zone
 ja_JP
   右上の「インストール」をタップしてください。
   ホーム画面にキャンプアシスタントが追加されます。
   求められた場合は、デバイスのパスコードを入力してインストールを完了してください。
-  URL：https://lifeafter.yume.zone
 fr-FR
   Touchez « Installer » en haut à droite.
   L’assistant du camp sera ajouté à l’écran d’accueil.
   Si demandé, saisissez le code de votre appareil pour terminer l’installation.
-  Site web : https://lifeafter.yume.zone</string>
+  </string>
         <key>PayloadDisplayName</key>
-        <string>营地助手</string>
+        <string>愿·营地助手</string>
         <key>PayloadIdentifier</key>
-        <string>webclip.yume.zone.6377dadb-cc21-4f57-a2bf-c9130fca7bfd</string>
+        <string>webclip.lifeafter.yume.zone.5377dadb-cc21-4f57-a2bf-c9130fca7bf1</string>
         <key>PayloadOrganization</key>
         <string>
         </string>
         <key>PayloadType</key>
         <string>com.apple.webClip.managed</string>
         <key>PayloadUUID</key>
-        <string>6377dadb-cc21-4f57-a2bf-c9130fca7bfd</string>
+        <string>5377dadb-cc21-4f57-a2bf-c9130fca7bf1</string>
         <key>PayloadVersion</key>
         <integer>1</integer>
         <key>URL</key>
@@ -56,26 +53,23 @@ fr-FR
   Tap “Install” in the upper-right corner.
   This adds Camp Assistant to your Home Screen.
   If prompted, enter your device passcode to finish installation.
-  Website: https://lifeafter.yume.zone
 zh_CN
   点击右上角的“安装”按钮。
   安装后，营地助手会添加到主屏幕。
   如有提示，请输入设备锁屏密码以完成安装。
-  网址：https://lifeafter.yume.zone
 ja_JP
   右上の「インストール」をタップしてください。
   ホーム画面にキャンプアシスタントが追加されます。
   求められた場合は、デバイスのパスコードを入力してインストールを完了してください。
-  URL：https://lifeafter.yume.zone
 fr-FR
   Touchez « Installer » en haut à droite.
   L’assistant du camp sera ajouté à l’écran d’accueil.
   Si demandé, saisissez le code de votre appareil pour terminer l’installation.
-  Site web : https://lifeafter.yume.zone</string>
+  </string>
     <key>PayloadDisplayName</key>
-    <string>营地助手</string>
+    <string>愿·营地助手</string>
     <key>PayloadIdentifier</key>
-    <string>webclip.yume.zone.6377dadb-cc21-4f57-a2bf-c9130fca7bfd</string>
+    <string>webclip.lifeafter.yume.zone.5377dadb-cc21-4f57-a2bf-c9130fca7bf1</string>
     <key>PayloadOrganization</key>
     <string>
     </string>
@@ -84,7 +78,7 @@ fr-FR
     <key>PayloadType</key>
     <string>Configuration</string>
     <key>PayloadUUID</key>
-    <string>6377dadb-cc21-4f57-a2bf-c9130fca7bfd</string>
+    <string>5377dadb-cc21-4f57-a2bf-c9130fca7bf1</string>
     <key>PayloadVersion</key>
     <integer>1</integer>
   </dict>
