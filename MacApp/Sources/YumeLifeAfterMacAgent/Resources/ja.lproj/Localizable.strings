@@ -243,6 +243,9 @@
 "Review or edit the member data uploaded by each task." = "各タスクが読み取り、アップロードしたメンバーデータを確認・編集します。";
 "Open in another editor" = "別のエディタで開く";
 "Save" = "保存";
+"Restore changes" = "変更を元に戻す";
+"Task result changes restored" = "タスク結果の変更を元に戻しました";
+"Unsaved task result changes discarded" = "未保存のタスク結果の変更を破棄しました";
 "Refresh" = "更新";
 "No task result documents yet." = "タスク結果ドキュメントはありません。";
 "Results appear after a member data task finishes." = "メンバーデータタスクの終了後に結果が表示されます。";

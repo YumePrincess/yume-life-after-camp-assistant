@@ -252,6 +252,9 @@
 "Review or edit the member data uploaded by each task." = "Review or edit the member data uploaded by each task.";
 "Open in another editor" = "Open in another editor";
 "Save" = "Save";
+"Restore changes" = "Restore changes";
+"Task result changes restored" = "Task result changes restored";
+"Unsaved task result changes discarded" = "Unsaved task result changes discarded";
 "Refresh" = "Refresh";
 "No task result documents yet." = "No task result documents yet.";
 "Results appear after a member data task finishes." = "Results appear after a member data task finishes.";

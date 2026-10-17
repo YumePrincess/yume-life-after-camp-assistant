@@ -247,6 +247,13 @@ struct TaskResultsView: View {
                 .buttonStyle(GlassButtonStyle())
                 .disabled(model.taskResultDocuments.isEmpty || model.isSavingTaskResult)
                 Button {
+                    model.restoreTaskResultChanges()
+                } label: {
+                    Label(model.text("Restore changes"), systemImage: "arrow.uturn.backward")
+                }
+                .buttonStyle(GlassButtonStyle())
+                .disabled(model.selectedTaskResultID == nil || !model.taskResultHasUnsavedChanges || model.isSavingTaskResult)
+                Button {
                     Task { await model.saveTaskResult() }
                 } label: {
                     Label(model.text("Save"), systemImage: "square.and.arrow.down")
@@ -308,6 +315,7 @@ struct TaskResultsView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .disabled(model.isSavingTaskResult)
                             }
                         }
                     }

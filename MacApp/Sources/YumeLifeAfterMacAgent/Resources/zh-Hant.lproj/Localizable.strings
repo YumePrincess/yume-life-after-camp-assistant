@@ -243,6 +243,9 @@
 "Review or edit the member data uploaded by each task." = "檢視或編輯各任務讀取並上傳的成員資料。";
 "Open in another editor" = "在其他編輯器中開啟";
 "Save" = "儲存";
+"Restore changes" = "還原變更";
+"Task result changes restored" = "任務結果變更已還原";
+"Unsaved task result changes discarded" = "已捨棄未儲存的任務結果變更";
 "Refresh" = "重新整理";
 "No task result documents yet." = "目前沒有任務結果文件。";
 "Results appear after a member data task finishes." = "成員資料任務完成後，結果文件會顯示在這裡。";

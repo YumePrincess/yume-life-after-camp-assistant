@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.inactivity",
   "version": "27.1.0",
-  "build": 27143,
+  "build": 27159,
   "kind": "task",
   "architectures": [
     "arm64"

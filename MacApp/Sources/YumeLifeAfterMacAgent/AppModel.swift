@@ -813,6 +813,12 @@ final class AppModel: ObservableObject {
         taskResultContent != savedTaskResultContent
     }
 
+    func restoreTaskResultChanges() {
+        guard !isSavingTaskResult, taskResultHasUnsavedChanges else { return }
+        taskResultContent = savedTaskResultContent
+        statusMessage = text("Task result changes restored")
+    }
+
     func refreshTaskResults() async {
         taskResultDocuments = await runtime.taskResultDocuments()
         guard let selectedTaskResultID else {
@@ -840,16 +846,18 @@ final class AppModel: ObservableObject {
     }
 
     func selectTaskResult(_ fileName: String) async {
+        guard !isSavingTaskResult else { return }
         guard taskResultDocuments.contains(where: { $0.id == fileName }) else { return }
-        guard !taskResultHasUnsavedChanges else {
-            statusMessage = text("Save or discard changes before reloading or selecting another document.")
-            return
-        }
+        guard fileName != selectedTaskResultID else { return }
+        let discardedChanges = taskResultHasUnsavedChanges
         do {
             let contents = try await runtime.readTaskResult(fileName: fileName)
             selectedTaskResultID = fileName
             taskResultContent = contents
             savedTaskResultContent = contents
+            if discardedChanges {
+                statusMessage = text("Unsaved task result changes discarded")
+            }
         } catch {
             alertMessage = error.localizedDescription
         }

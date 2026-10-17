@@ -252,6 +252,9 @@
 "Review or edit the member data uploaded by each task." = "查看或编辑各任务读取并上传的成员数据。";
 "Open in another editor" = "在其他编辑器中打开";
 "Save" = "保存";
+"Restore changes" = "还原改动";
+"Task result changes restored" = "任务结果改动已还原";
+"Unsaved task result changes discarded" = "已放弃未保存的任务结果改动";
 "Refresh" = "刷新";
 "No task result documents yet." = "暂无任务结果文档。";
 "Results appear after a member data task finishes." = "成员数据任务结束后，结果文档会显示在这里。";

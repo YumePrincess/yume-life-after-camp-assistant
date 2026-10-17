@@ -243,6 +243,9 @@
 "Review or edit the member data uploaded by each task." = "Consultez ou modifiez les données des membres envoyées par chaque tâche.";
 "Open in another editor" = "Ouvrir dans un autre éditeur";
 "Save" = "Enregistrer";
+"Restore changes" = "Annuler les modifications";
+"Task result changes restored" = "Modifications du résultat restaurées";
+"Unsaved task result changes discarded" = "Modifications non enregistrées abandonnées";
 "Refresh" = "Actualiser";
 "No task result documents yet." = "Aucun résultat de tâche pour le moment.";
 "Results appear after a member data task finishes." = "Les résultats apparaissent à la fin d’une tâche de données des membres.";
