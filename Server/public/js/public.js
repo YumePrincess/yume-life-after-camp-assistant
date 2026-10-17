@@ -37,8 +37,6 @@
       dailyOpenItemIds: [],
       dailyParticipatedItemIds: []
     },
-    voteParticipationRefreshInFlight: null,
-    voteParticipationRefreshQueued: false,
     identityCodeEdited: false,
     liveSocket: null,
     liveReconnectTimer: null,
@@ -937,36 +935,27 @@
     return state.voteParticipation.dailyParticipatedItemIds.includes(itemId);
   }
 
-  async function refreshVoteParticipation({ force = false } = {}) {
-    const session = identitySession();
-    if (!session?.identityCode || !session.password) return;
-    const scopeKey = currentParticipationScopeKey();
-    const revision = state.voteParticipation.revision || 0;
-    if (
-      !force &&
-      state.voteParticipation.identityCode === session.identityCode &&
-      state.voteParticipation.scopeKey === scopeKey
-    ) return;
-    if (state.voteParticipationRefreshInFlight) {
-      if (force) state.voteParticipationRefreshQueued = true;
-      return;
-    }
-    const requestState = { identityCode: session.identityCode, scopeKey };
-    state.voteParticipationRefreshInFlight = requestState;
-    try {
-      const result = await request("/api/public/vote-participation", {
+  const participationSync = window.MrzhVoteParticipation.create({
+    getContext() {
+      const session = identitySession();
+      if (!state.data || !session?.identityCode || !session.password) return null;
+      return {
+        identityCode: session.identityCode,
+        password: session.password,
+        scopeKey: currentParticipationScopeKey(),
+        revision: state.voteParticipation.revision || 0
+      };
+    },
+    request(context) {
+      return request("/api/public/vote-participation", {
         method: "POST",
         body: JSON.stringify({
-          identityCode: session.identityCode,
-          identityPassword: session.password
+          identityCode: context.identityCode,
+          identityPassword: context.password
         })
       });
-      if (
-        identitySession()?.identityCode !== session.identityCode ||
-        identitySession()?.password !== session.password ||
-        revision !== (state.voteParticipation.revision || 0) ||
-        scopeKey !== currentParticipationScopeKey()
-      ) return;
+    },
+    apply(result, context) {
       const dailyOpenItemIds = Array.isArray(result.dailyOpenItemIds)
         ? [...new Set(result.dailyOpenItemIds.map(String))]
         : [];
@@ -974,29 +963,25 @@
         ? [...new Set(result.dailyParticipatedItemIds.map(String))]
         : [];
       state.voteParticipation = {
-        revision,
-        identityCode: session.identityCode,
-        scopeKey: participationScopeKey(result.technologyPollDate, dailyOpenItemIds),
+        revision: context.revision,
+        identityCode: context.identityCode,
+        scopeKey: context.scopeKey,
         technologyPollDate: String(result.technologyPollDate || ""),
         technologyParticipated: result.technologyParticipated === true,
         dailyOpenItemIds,
         dailyParticipatedItemIds
       };
-      if (state.data) {
-        renderVote(state.data.voteSummary || {});
-        renderDailyVote(state.data.dailyVote || {});
-      }
-    } catch {
-      // Server-side insert guards remain authoritative if this status refresh fails.
-    } finally {
-      if (state.voteParticipationRefreshInFlight === requestState) {
-        state.voteParticipationRefreshInFlight = null;
-      }
-      if (state.voteParticipationRefreshQueued) {
-        state.voteParticipationRefreshQueued = false;
-        void refreshVoteParticipation({ force: true });
-      }
+      renderVote(state.data.voteSummary || {});
+      renderDailyVote(state.data.dailyVote || {});
+    },
+    onError(error) {
+      if (isIdentitySessionInvalidError(error)) clearIdentitySession({ openPanel: true });
+      // A failed read is not cached. Reopening the panel or resuming retries it.
     }
+  });
+
+  function refreshVoteParticipation(options) {
+    return participationSync.refresh(options);
   }
 
   async function openVoteParticipants({
@@ -1809,6 +1794,7 @@
     state.dailyPanel = panel;
     renderDailyVote(state.data?.dailyVote || {});
     if (panel === "identity") void refreshIdentitySession();
+    if (panel === "technology" || panel === "items") void refreshVoteParticipation({ force: true });
   }
 
   function backDailyPanels() {
