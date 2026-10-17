@@ -1753,7 +1753,7 @@
             timezone: formatTimezoneLabel(endAt.timezone || configuredTimezone())
           }
         )));
-        const participantRow = create("div", "daily-history-participant-row");
+        const participantRow = create("div", `daily-history-participant-row${kind === "draw" ? " daily-history-draw-meta-row" : ""}`);
         participantRow.append(create("small", "muted", window.MrzhI18n.format(
           "参与 {count} 人",
           { count: item.participantCount || 0 }

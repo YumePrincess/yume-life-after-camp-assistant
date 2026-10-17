@@ -682,7 +682,10 @@ table td { padding-block: 16px; font-size: 13px; }
 }
 .vote-window-meta, .daily-vote-meta { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; font-size: 12px; line-height: 1.5; }
 .vote-window-meta p { margin: 0; }
+.vote-limit-description, .vote-window-state { font-size: 12px; line-height: 1.5; }
 .daily-vote-meta-item { min-width: 0; width: 100%; white-space: normal; }
+.vote-selection-slot { position: relative; }
+.vote-selection-slot > img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
 @container identity-account (min-width: 340px) {
   .daily-identity-section .identity-account-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
