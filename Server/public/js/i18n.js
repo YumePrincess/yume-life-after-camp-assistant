@@ -4810,7 +4810,8 @@
       "zh-cn": {
         prefix: `版权所有 © ${year} `,
         company: "美国雨梦互联网有限公司",
-        suffix: " 保留所有权利。"
+        suffix: " 保留所有权利。",
+        notice: "本页面为在中国大陆使用而设计。"
       },
       "zh-tw": {
         prefix: `Copyright © ${year} `,
@@ -4846,6 +4847,12 @@
         link,
         document.createTextNode(localized.suffix)
       );
+      if (localized.notice) {
+        const notice = document.createElement("span");
+        notice.className = "footer-mainland-notice";
+        notice.textContent = localized.notice;
+        footer.append(document.createTextNode(" "), notice);
+      }
       footer.dataset.footerLanguage = language;
       footer.dataset.footerYear = year;
     }

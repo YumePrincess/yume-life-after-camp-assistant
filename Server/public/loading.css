@@ -1,3 +1,8 @@
+:root { --loading-overlay: rgba(255, 255, 255, 0.3); --loading-track: rgba(255, 255, 255, 0.24); }
+:root[data-theme="dark"] { --loading-overlay: rgba(5, 7, 11, 0.64); --loading-track: rgba(255, 255, 255, 0.08); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) { --loading-overlay: rgba(5, 7, 11, 0.64); --loading-track: rgba(255, 255, 255, 0.08); }
+}
 html.is-page-loading { overflow: hidden; }
 .page-loading {
   position: fixed;
@@ -7,7 +12,9 @@ html.is-page-loading { overflow: hidden; }
   place-items: center;
   padding: 24px;
   color: var(--text);
-  background: var(--bg);
+  background: var(--loading-overlay);
+  backdrop-filter: blur(20px) saturate(1.08);
+  -webkit-backdrop-filter: blur(20px) saturate(1.08);
   opacity: 1;
   visibility: visible;
 }
@@ -25,10 +32,10 @@ html.is-page-loading { overflow: hidden; }
 .page-loading-rings > span:nth-child(2) { border-right: 3px solid currentColor; animation: page-loading-two 1s linear infinite; }
 .page-loading-rings > span:nth-child(3) { border-top: 3px solid currentColor; animation: page-loading-three 1s linear infinite; }
 .page-loading-title { margin: 0; font-size: 20px; font-weight: 650; line-height: 1.5; }
-.page-loading-progress { position: relative; width: 100%; height: 22px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--glass-control); }
-.page-loading-bar { position: absolute; inset: 0; border-radius: inherit; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform var(--duration-ui) var(--ease-out); }
+.page-loading-progress { position: relative; width: 100%; height: 22px; overflow: hidden; border-radius: 999px; background: var(--loading-track); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), inset 2px 2px 1px rgba(255, 255, 255, 0.5); }
+.page-loading-bar { position: absolute; inset: 0; border-radius: inherit; background: var(--text); transform: scaleX(0); transform-origin: left; transition: transform var(--duration-ui) var(--ease-out); }
 .page-loading-percent, .page-loading-percent-contrast { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1; }
-.page-loading-percent-contrast { color: var(--primary-ink); clip-path: inset(0 100% 0 0); transition: clip-path var(--duration-ui) var(--ease-out); }
+.page-loading-percent-contrast { color: var(--bg); clip-path: inset(0 100% 0 0); transition: clip-path var(--duration-ui) var(--ease-out); }
 .page-loading-message { min-height: 20px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .page-loading-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
 .page-loading-actions[hidden] { display: none; }
