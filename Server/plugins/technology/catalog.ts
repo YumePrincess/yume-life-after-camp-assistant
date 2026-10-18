@@ -420,6 +420,17 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "uiLabel": "武装订单"
   },
   {
+    "key": "tech-b01597cba11e20f67638",
+    "name": "强化巡逻",
+    "iconUrl": "/images/technology/tech-b01597cba11e20f67638.png",
+    "description": "完成巡逻后营地金库获得的物资奖励增加10%。",
+    "category": "military",
+    "lane": "general",
+    "enabledForVoting": true,
+    "sortOrder": 38,
+    "uiLabel": "强化巡逻"
+  },
+  {
     "key": "tech-1ff3ea2799222d74a537",
     "name": "远星暴走族",
     "iconUrl": "/images/technology/tech-1ff3ea2799222d74a537.png",
@@ -427,7 +438,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 38,
+    "sortOrder": 39,
     "uiLabel": "远星暴走族"
   },
   {
@@ -438,7 +449,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 39,
+    "sortOrder": 40,
     "uiLabel": "护甲保险"
   },
   {
@@ -449,7 +460,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 40,
+    "sortOrder": 41,
     "uiLabel": "家园守卫"
   },
   {
@@ -460,7 +471,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 41,
+    "sortOrder": 42,
     "uiLabel": "移动守卫"
   },
   {
@@ -471,7 +482,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 42,
+    "sortOrder": 43,
     "uiLabel": "擂台之星"
   },
   {
@@ -482,7 +493,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 43,
+    "sortOrder": 44,
     "uiLabel": "致远星城"
   },
   {
@@ -493,7 +504,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 44,
+    "sortOrder": 45,
     "uiLabel": "强袭夏尔镇"
   },
   {
@@ -504,7 +515,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 45,
+    "sortOrder": 46,
     "uiLabel": "游走动荡之城"
   },
   {
@@ -515,7 +526,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 46,
+    "sortOrder": 47,
     "uiLabel": "快速装填"
   },
   {
@@ -526,7 +537,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 47,
+    "sortOrder": 48,
     "uiLabel": "红绿瓶子"
   },
   {
@@ -537,7 +548,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 48,
+    "sortOrder": 49,
     "uiLabel": "赤色瓶子"
   },
   {
@@ -548,7 +559,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 49,
+    "sortOrder": 50,
     "uiLabel": "弱化感染者"
   },
   {
@@ -559,7 +570,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 50,
+    "sortOrder": 51,
     "uiLabel": "危险巡逻员"
   },
   {
@@ -570,7 +581,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 51,
+    "sortOrder": 52,
     "uiLabel": "阻挡入侵"
   },
   {
@@ -581,7 +592,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 52,
+    "sortOrder": 53,
     "uiLabel": "不死士兵"
   },
   {
@@ -592,7 +603,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 53,
+    "sortOrder": 54,
     "uiLabel": "安全与繁荣"
   },
   {
@@ -603,7 +614,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 54,
+    "sortOrder": 55,
     "uiLabel": "大哥的视觉"
   },
   {
@@ -614,7 +625,7 @@ export const BUILT_IN_TECHNOLOGY_CATALOG: TechnologyDefinition[] = [
     "category": "military",
     "lane": "general",
     "enabledForVoting": true,
-    "sortOrder": 55,
+    "sortOrder": 56,
     "uiLabel": "恐怖宠物"
   }
 ];

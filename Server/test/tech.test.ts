@@ -370,13 +370,13 @@ describe("built-in technology catalog", () => {
       BUILT_IN_TECHNOLOGY_CATALOG.filter(
         (item) => item.category === category
       ).length;
-    expect(BUILT_IN_TECHNOLOGY_CATALOG).toHaveLength(56);
+    expect(BUILT_IN_TECHNOLOGY_CATALOG).toHaveLength(57);
     expect(count("agriculture")).toBe(22);
     expect(count("industry")).toBe(16);
     expect(count("military")).toBe(18);
     expect(
       new Set(BUILT_IN_TECHNOLOGY_CATALOG.map((item) => item.key)).size
-    ).toBe(56);
+    ).toBe(57);
     expect(
       BUILT_IN_TECHNOLOGY_CATALOG.every(
         (item) => item.iconUrl && item.description
@@ -397,7 +397,7 @@ describe("built-in technology catalog", () => {
       [...BUILT_IN_TECHNOLOGY_CATALOG]
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map((item) => item.sortOrder)
-    ).toEqual(Array.from({ length: 56 }, (_, index) => index));
+    ).toEqual(Array.from({ length: 57 }, (_, index) => index));
     expect(
       BUILT_IN_TECHNOLOGY_CATALOG.find(
         (item) => item.key === "tech-c44f0496491a0c867687"
