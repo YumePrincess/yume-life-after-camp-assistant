@@ -105,6 +105,7 @@ function setup(failDelete = false) {
   });
   const window = {
     MrzhI18n: { t: (value) => value },
+    MrzhFeedback: { notice: vi.fn(), begin: vi.fn(() => 1), end: vi.fn() },
     MrzhTimezone: { timestamp: (value) => value },
   };
   runInNewContext(source, {
@@ -169,8 +170,7 @@ describe("admin message deletion counters", () => {
     expect(
       state.requests.filter(([path]) => path.endsWith("/messages")),
     ).toHaveLength(1);
-    expect(state.byId("chat-admin-summary").children[0].textContent).toBe(
-      "Delete failed",
-    );
+    expect(state.window.MrzhFeedback.notice).toHaveBeenCalledWith("Delete failed");
+    expect(state.window.MrzhFeedback.end).toHaveBeenCalledWith(1);
   });
 });

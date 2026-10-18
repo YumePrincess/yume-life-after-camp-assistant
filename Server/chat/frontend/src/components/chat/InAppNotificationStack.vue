@@ -91,15 +91,15 @@ const { t } = useI18n();
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 44px;
 		overflow: hidden;
-		border: 1px solid #dfe1e5;
+		border: 1px solid var(--chat-line);
 		border-radius: 8px;
-		background: #ffffff;
+		background: var(--chat-paper);
 		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
 		pointer-events: auto;
 	}
 
 	.in-app-notification--attention {
-		border-left: 4px solid #3390ec;
+		border-left: 4px solid var(--chat-accent);
 	}
 
 	.in-app-notification__content {
@@ -111,18 +111,18 @@ const { t } = useI18n();
 		padding: 10px 0 10px 12px;
 		border: 0;
 		background: transparent;
-		color: #1c1d22;
+		color: var(--chat-ink);
 		text-align: left;
 		cursor: pointer;
 	}
 
 	.in-app-notification__content:hover {
-		background: #f4f4f5;
+		background: var(--chat-hover);
 	}
 
 	.in-app-notification__content:focus-visible,
 	.in-app-notification__dismiss:focus-visible {
-		outline: 2px solid #3390ec;
+		outline: 2px solid var(--chat-accent);
 		outline-offset: -2px;
 	}
 
@@ -152,7 +152,7 @@ const { t } = useI18n();
 	align-items: center;
 	gap: 4px;
 	min-width: 0;
-		color: #3390ec;
+		color: var(--chat-accent);
 	font-size: 12px;
 	line-height: 1.35;
 }
@@ -166,7 +166,7 @@ const { t } = useI18n();
 	.in-app-notification__preview {
 	display: -webkit-box;
 	overflow: hidden;
-		color: #707579;
+		color: var(--chat-muted);
 	font-size: 13px;
 	line-height: 1.4;
 	overflow-wrap: anywhere;
@@ -185,13 +185,13 @@ const { t } = useI18n();
 	border: 0;
 	border-radius: 50%;
 	background: transparent;
-		color: #8e9297;
+		color: var(--chat-subtle);
 	cursor: pointer;
 }
 
 	.in-app-notification__dismiss:hover {
-		background: #f4f4f5;
-		color: #1c1d22;
+		background: var(--chat-hover);
+		color: var(--chat-ink);
 }
 
 .in-app-notification-enter-active,

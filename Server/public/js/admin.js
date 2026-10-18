@@ -131,23 +131,9 @@
     return document.getElementById(id);
   }
 
-  let saveStateTimer = null;
-
-  function setSaveState(value) {
-    window.clearTimeout(saveStateTimer);
-    saveStateTimer = null;
-    const element = byId("save-state");
-    if (!element) return;
-    const message = value ?? "";
-    element.textContent = message;
-    element.title = message;
-    if (message) {
-      saveStateTimer = window.setTimeout(() => {
-        element.textContent = "";
-        element.removeAttribute("title");
-        saveStateTimer = null;
-      }, 30_000);
-    }
+  function setFeedback(value) {
+    if (!value) return;
+    void window.MrzhFeedback.notice(translateUi(value));
   }
 
   function translateUi(value) {
@@ -356,17 +342,23 @@
     if (options.method && !["GET", "HEAD"].includes(options.method)) {
       headers["X-CSRF-Token"] = state.csrfToken;
     }
-    const response = await fetch(path, { ...options, headers });
-    if (response.status === 401) {
-      location.href = `/login?returnTo=${encodeURIComponent("/admin")}`;
-      throw new Error("登录已失效");
+    const progress = options.method && !["GET", "HEAD"].includes(options.method.toUpperCase())
+      ? window.MrzhFeedback.begin() : null;
+    try {
+      const response = await fetch(path, { ...options, headers });
+      if (response.status === 401) {
+        location.href = `/login?returnTo=${encodeURIComponent("/admin")}`;
+        throw new Error("登录已失效");
+      }
+      const payload = await response.json();
+      if (!response.ok) {
+        const message = payload.error || `HTTP ${response.status}`;
+        throw new Error(window.MrzhI18n?.t ? window.MrzhI18n.t(message) : message);
+      }
+      return payload;
+    } finally {
+      if (progress !== null) window.MrzhFeedback.end(progress);
     }
-    const payload = await response.json();
-    if (!response.ok) {
-      const message = payload.error || `HTTP ${response.status}`;
-      throw new Error(window.MrzhI18n?.t ? window.MrzhI18n.t(message) : message);
-    }
-    return payload;
   }
 
   function taskName(value) {
@@ -893,20 +885,6 @@
     field.dataset.legacyValue = isMidnight ? "24:00" : "";
   }
 
-  function updateSaveState(fallback = "") {
-    if (!state.dirtySections.size) {
-      setSaveState(translateUi(fallback));
-      return;
-    }
-    setSaveState(
-      state.dirtySections.size === 1
-        ? formatUi("有 {count} 个分区未保存", { count: 1 })
-        : formatUi("有 {count} 个分区未保存", {
-            count: state.dirtySections.size
-          })
-    );
-  }
-
   function renderTaskActions() {
     const root = byId("task-actions");
     root.replaceChildren();
@@ -1030,7 +1008,7 @@
       });
       await refresh(false);
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
       button.disabled = false;
     }
   }
@@ -1139,13 +1117,13 @@
         `/api/admin/agents/${encodeURIComponent(item.agent_id)}/activate`,
         { method: "POST", body: "{}" }
       );
-      setSaveState(window.MrzhI18n.format(
+      setFeedback(window.MrzhI18n.format(
         "已启用设备 {name}",
         { name: item.display_name || item.agent_id }
       ));
       await refresh(false);
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     } finally {
       button.disabled = false;
     }
@@ -1162,13 +1140,13 @@
       await request(`/api/admin/agents/${encodeURIComponent(item.agent_id)}`, {
         method: "DELETE"
       });
-      setSaveState(window.MrzhI18n.format(
+      setFeedback(window.MrzhI18n.format(
         "已删除设备 {name}",
         { name }
       ));
       await refresh(false);
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     } finally {
       button.disabled = false;
     }
@@ -1298,13 +1276,6 @@
       }
       renderTechnologyEditor();
     }
-    for (const section of sections) {
-      const form = document.querySelector(
-        `.config-form[data-config-section="${section}"]`
-      );
-      const feedback = form?.querySelector("[data-save-feedback]");
-      if (feedback) feedback.textContent = translateUi("当前配置已同步");
-    }
   }
 
   const SCHEDULE_FIELDS = {
@@ -1381,11 +1352,10 @@
           .map((control) => Number(control.value));
         if (!values.length) {
           input.checked = true;
-          byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("至少选择一天");
+          setFeedback(window.MrzhI18n.t("至少选择一天"));
           return;
         }
         state.scheduleWeekdayDrafts[taskKey] = values;
-        byId("schedule-dialog-feedback").textContent = "";
       });
       label.append(input, create("span", "", scheduleWeekdayLabel(day)));
       list.append(label);
@@ -1500,7 +1470,6 @@
       byId("schedule-dialog-trading-city-target-weekday").value =
         String(getField("tradingCityTargetWeekday") || 1);
       updateTradingCityTimeBounds();
-      byId("schedule-dialog-feedback").textContent = "";
       if (typeof dialog.showModal === "function") dialog.showModal();
       else dialog.setAttribute("open", "");
       return;
@@ -1513,7 +1482,6 @@
       byId("schedule-dialog-share-interval").value = getField("shareInterval") || "";
       byId("schedule-dialog-chat-poll").value = getField("chatPollSeconds") || "";
     }
-    byId("schedule-dialog-feedback").textContent = "";
     renderScheduleWeekdayInputs();
     renderScheduleTimeInputs();
     if (typeof dialog.showModal === "function") dialog.showModal();
@@ -1554,22 +1522,22 @@
       const timeMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
       const minutes = timeMatch ? Number(timeMatch[1]) * 60 + Number(timeMatch[2]) : -1;
       if (![3, 4, 5].includes(executionWeekday)) {
-        byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t(
+        setFeedback(window.MrzhI18n.t(
           "请选择周三、周四或周五作为自动任务执行日。"
-        );
+        ));
         return;
       }
       if (!timeMatch || (executionWeekday === 3 && minutes < 180) ||
         (executionWeekday === 5 && minutes > 120)) {
-        byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t(
+        setFeedback(window.MrzhI18n.t(
           "执行时间必须在后台时区周三 03:00 至周五 02:00 之间。"
-        );
+        ));
         return;
       }
       if (!Number.isInteger(targetWeekday) || targetWeekday < 1 || targetWeekday > 7) {
-        byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t(
+        setFeedback(window.MrzhI18n.t(
           "请选择周一至周日中的一个报名目标日期。"
-        );
+        ));
         return;
       }
       setField("tradingCityEnabled", byId("schedule-dialog-enabled").checked);
@@ -1579,8 +1547,7 @@
       updateTradingCityTimeBounds();
       renderTradingCityScheduleSummary();
       state.dirtySections.add("tasks");
-      document.querySelector('.config-form[data-config-section="tasks"] [data-save-feedback]')?.replaceChildren(document.createTextNode(translateUi("有未保存修改")));
-      updateSaveState();
+
       closeScheduleDialog();
       return;
     }
@@ -1588,13 +1555,13 @@
       .map((control) => control.value.trim());
     const invalid = times.some((value) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(value));
     if (!times.length || invalid) {
-      byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("请为每次执行填写有效时间。");
+      setFeedback(window.MrzhI18n.t("请为每次执行填写有效时间。"));
       return;
     }
     const weekdays = [...byId("schedule-weekday-list").querySelectorAll("input[data-schedule-weekday]:checked")]
       .map((control) => Number(control.value));
     if (!weekdays.length) {
-      byId("schedule-dialog-feedback").textContent = window.MrzhI18n.t("至少选择一天");
+      setFeedback(window.MrzhI18n.t("至少选择一天"));
       return;
     }
     const normalized = taskKey === "tech_switch" || taskKey === "patrol" ? [times[0]] : times;
@@ -1611,8 +1578,7 @@
     }
     renderScheduleSummaries();
     state.dirtySections.add("tasks");
-    document.querySelector('.config-form[data-config-section="tasks"] [data-save-feedback]')?.replaceChildren(document.createTextNode(translateUi("有未保存修改")));
-    updateSaveState();
+
     closeScheduleDialog();
   }
 
@@ -1830,9 +1796,7 @@
       return;
     }
     state.technologyHistoryLoading = true;
-    byId("technology-history-status").textContent = window.MrzhI18n.t(
-      "正在读取历史记录…"
-    );
+    const progress = window.MrzhFeedback.begin();
     try {
       const params = new URLSearchParams({
         locale: window.MrzhI18n.language()
@@ -1841,12 +1805,10 @@
       const payload = await request(`/api/admin/technology-history?${params}`);
       renderTechnologyHistory(payload);
       state.technologyHistoryLoaded = true;
-      byId("technology-history-status").textContent = payload.history
-        ? window.MrzhI18n.t("已载入最终归档")
-        : window.MrzhI18n.t("暂无可查询记录");
     } catch (error) {
-      byId("technology-history-status").textContent = error.message;
+      setFeedback(error.message);
     } finally {
+      window.MrzhFeedback.end(progress);
       state.technologyHistoryLoading = false;
       state.technologyHistoryLoaded = true;
       renderTechnologyHistory(state.technologyHistory);
@@ -1879,14 +1841,14 @@
       const result = await request(`/api/admin/technology-history${suffix}`, {
         method: "DELETE"
       });
-      byId("technology-history-status").textContent = window.MrzhI18n.format(
+      setFeedback(window.MrzhI18n.format(
         "已删除 {count} 条历史结果。",
         { count: result.deleted || 0 }
-      );
+      ));
       state.technologyHistoryLoaded = false;
       await loadTechnologyHistory();
     } catch (error) {
-      byId("technology-history-status").textContent = error.message;
+      setFeedback(error.message);
     } finally {
       button.disabled = false;
     }
@@ -1936,7 +1898,6 @@
     const view = history
       ? {
           rootId: "daily-vote-history-admin-list",
-          statusId: "daily-vote-history-status",
           pageId: "daily-vote-history-page",
           prevId: "daily-vote-history-prev",
           nextId: "daily-vote-history-next",
@@ -1946,7 +1907,6 @@
         }
       : {
           rootId: "daily-vote-admin-list",
-          statusId: "daily-vote-status",
           pageId: "daily-vote-page",
           prevId: "daily-vote-prev",
           nextId: "daily-vote-next",
@@ -2147,7 +2107,7 @@
       return;
     }
     state.dailyVoteLoading = true;
-    setText(history ? "daily-vote-history-status" : "daily-vote-status", window.MrzhI18n.t("正在读取历史记录…"));
+    const progress = window.MrzhFeedback.begin();
     try {
       const requestedPage = Number(page);
       const params = new URLSearchParams({
@@ -2158,10 +2118,10 @@
       if (history && date) params.set("date", date);
       const payload = await request(`/api/admin/daily-vote?${params}`);
       renderDailyVoteAdmin(payload, mode);
-      setText(history ? "daily-vote-history-status" : "daily-vote-status", window.MrzhI18n.t("记录已载入"));
     } catch (error) {
-      setText(history ? "daily-vote-history-status" : "daily-vote-status", error.message);
+      setFeedback(error.message);
     } finally {
+      window.MrzhFeedback.end(progress);
       state.dailyVoteLoading = false;
       const queued = state.dailyVoteReloadRequest;
       state.dailyVoteReloadRequest = null;
@@ -2171,7 +2131,6 @@
 
   async function saveDailyVoteConfig(event) {
     event.preventDefault();
-    setText("daily-vote-config-feedback", "");
     try {
       const payload = await request("/api/admin/daily-vote/config", {
         method: "PUT",
@@ -2188,9 +2147,9 @@
       });
       state.dailyVoteConfig = payload.config || state.dailyVoteConfig;
       byId("daily-vote-max-wins-per-month").value = String(state.dailyVoteConfig.drawMaxWinsPerMonth);
-      setText("daily-vote-config-feedback", window.MrzhI18n.t("通用投票设置已保存"));
+      setFeedback(window.MrzhI18n.t("通用投票设置已保存"));
     } catch (error) {
-      setText("daily-vote-config-feedback", localizeDailyVoteError(error));
+      setFeedback(localizeDailyVoteError(error));
     }
   }
 
@@ -2217,7 +2176,6 @@
 
   function openDailyVoteEditor(item = null, kind = "poll") {
     state.dailyVoteEditorItem = item;
-    setText("daily-vote-editor-feedback", "");
     const source = item || {
       kind,
       startAt: "",
@@ -2253,12 +2211,10 @@
   function closeDailyVoteEditor() {
     state.dailyVoteEditorItem = null;
     byId("daily-vote-editor").hidden = true;
-    setText("daily-vote-editor-feedback", "");
   }
 
   async function saveDailyVoteFromEditor(event) {
     event.preventDefault();
-    setText("daily-vote-editor-feedback", "");
     const kind = byId("daily-vote-kind").value;
     const existing = state.dailyVoteEditorItem;
     const options = kind === "poll"
@@ -2298,7 +2254,7 @@
       closeDailyVoteEditor();
       await loadDailyVoteAdmin("", 1, "active");
     } catch (error) {
-      setText("daily-vote-editor-feedback", localizeDailyVoteError(error));
+      setFeedback(localizeDailyVoteError(error));
     }
   }
 
@@ -2315,10 +2271,7 @@
         refresh.mode || "active"
       );
     } catch (error) {
-      setText(
-        refresh.mode === "history" ? "daily-vote-history-status" : "daily-vote-status",
-        error.message
-      );
+      setFeedback(error.message);
     }
   }
 
@@ -2331,10 +2284,10 @@
     try {
       const suffix = date ? `?date=${encodeURIComponent(date)}` : "";
       const result = await request(`/api/admin/daily-vote${suffix}`, { method: "DELETE" });
-      setText("daily-vote-history-status", window.MrzhI18n.format("已清空 {count} 条记录。", { count: result.deleted || 0 }));
+      setFeedback(window.MrzhI18n.format("已清空 {count} 条记录。", { count: result.deleted || 0 }));
       await loadDailyVoteAdmin(date, 1, "history");
     } catch (error) {
-      setText("daily-vote-history-status", error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -2620,11 +2573,7 @@
 
   function markTechnologyDirty() {
     state.dirtySections.add("technology");
-    updateSaveState();
-    const feedback = document
-      .querySelector('[data-config-section="technology"]')
-      ?.querySelector("[data-save-feedback]");
-    if (feedback) feedback.textContent = translateUi("科技配置尚未保存");
+
   }
 
   function discardTechnologyDraft() {
@@ -2635,7 +2584,7 @@
     }
     fillConfig(bundle, ["technology"]);
     state.dirtySections.delete("technology");
-    updateSaveState();
+
   }
 
   function renderTechnologyPresetList() {
@@ -3187,7 +3136,6 @@
       "button-danger",
       !rateLimits
     );
-    byId("maintenance-feedback").textContent = "";
     byId("maintenance-dialog").showModal();
   }
 
@@ -3196,7 +3144,7 @@
     const action = state.maintenanceAction;
     const button = byId("maintenance-confirm");
     button.disabled = true;
-    byId("maintenance-feedback").textContent = window.MrzhI18n.t("正在清理…");
+
     try {
       const result = await request(
         `/api/admin/maintenance/${action}`,
@@ -3206,16 +3154,15 @@
         action === "rate-limits"
           ? result.deleted
           : result.totalDeleted;
-      byId("maintenance-feedback").textContent = window.MrzhI18n.format(
+      setFeedback(window.MrzhI18n.format(
         "清理完成：已删除 {count} 条记录。",
         { count: count ?? 0 }
-      );
+      ));
       if (action === "run-history") {
         await refresh(false);
       }
     } catch (error) {
-      byId("maintenance-feedback").textContent =
-        error.message || window.MrzhI18n.t("维护操作失败");
+      setFeedback(error.message || window.MrzhI18n.t("维护操作失败"));
     } finally {
       button.disabled = false;
     }
@@ -3597,7 +3544,7 @@
       state.temporaryKeys = await request(`/api/admin/temp-keys?${params}`);
       renderTemporaryKeys();
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -3779,7 +3726,6 @@
       }
       identitySelect.value = member.identity_code_id || "";
     }
-    setText("member-edit-feedback", "");
     const dialog = byId("member-edit-dialog");
     dialog.querySelector(".member-edit-help")?.removeAttribute("open");
     if (!dialog.open) dialog.showModal();
@@ -3817,7 +3763,7 @@
       weeklyActivityPoints: Number(form.elements.weeklyActivityPoints.value)
     };
     state.memberEditSaving = true;
-    setText("member-edit-feedback", "正在保存…");
+
     setModuleActionState();
     try {
       const result = await request(
@@ -3833,9 +3779,9 @@
       renderAdminMembers(state.bootstrap.members);
       renderMemberDetail(updated);
       byId("member-edit-dialog").close();
-      setText("save-state", "成员信息已保存");
+      setFeedback("成员信息已保存");
     } catch (error) {
-      setText("member-edit-feedback", error.message);
+      setFeedback(error.message);
     } finally {
       state.memberEditSaving = false;
       setModuleActionState();
@@ -3846,8 +3792,6 @@
     state.memberCorrectionValidatedDocument = "";
     state.memberCorrectionValidation = null;
     byId("member-task-result-document").value = "";
-    setText("member-bulk-correction-preview", "");
-    setText("member-bulk-correction-feedback", "");
     byId("member-bulk-correction-dialog").showModal();
     setModuleActionState();
   }
@@ -3861,8 +3805,7 @@
     const document = String(byId("member-task-result-document").value || "");
     state.memberCorrectionValidatedDocument = "";
     state.memberCorrectionValidation = null;
-    setText("member-bulk-correction-preview", "");
-    setText("member-bulk-correction-feedback", window.MrzhI18n.t("正在检查文档格式…"));
+
     state.memberCorrectionBusy = true;
     setModuleActionState();
     try {
@@ -3878,8 +3821,7 @@
       const staffDescription = result.staffCount
         ? window.MrzhI18n.format("，公职 {count} 项", { count: result.staffCount })
         : "";
-      setText(
-        "member-bulk-correction-preview",
+      setFeedback(
         window.MrzhI18n.format(
           "格式有效：{taskTitle}；成员数据 {memberCount} 行{staffDescription}；采集时间 {capturedAt}。确认后将按该任务规则匹配和校正。",
           {
@@ -3890,9 +3832,8 @@
           }
         )
       );
-      setText("member-bulk-correction-feedback", window.MrzhI18n.t("格式校验通过"));
     } catch (error) {
-      setText("member-bulk-correction-feedback", error.message);
+      setFeedback(error.message);
     } finally {
       state.memberCorrectionBusy = false;
       setModuleActionState();
@@ -3903,11 +3844,11 @@
     event.preventDefault();
     const document = String(byId("member-task-result-document").value || "");
     if (!state.memberCorrectionValidation || state.memberCorrectionValidatedDocument !== document) {
-      setText("member-bulk-correction-feedback", window.MrzhI18n.t("请先校验当前文档格式。"));
+      setFeedback(window.MrzhI18n.t("请先校验当前文档格式。"));
       return;
     }
     state.memberCorrectionBusy = true;
-    setText("member-bulk-correction-feedback", window.MrzhI18n.t("正在匹配并校正数据…"));
+
     setModuleActionState();
     try {
       const result = await request("/api/admin/members/bulk-correction/apply", {
@@ -3918,9 +3859,7 @@
         })
       });
       byId("member-bulk-correction-dialog").close();
-      setText(
-        "save-state",
-        window.MrzhI18n.format(
+      setFeedback(window.MrzhI18n.format(
           "{taskTitle}校正完成：收到 {received} 项，更新 {updated} 项，忽略 {ignored} 项{ambiguous}",
           {
             taskTitle: taskName(result.taskKey),
@@ -3931,13 +3870,12 @@
               ? window.MrzhI18n.format("，其中 {count} 项存在歧义", { count: result.ambiguous })
               : ""
           }
-        )
-      );
+        ));
       state.memberCorrectionValidatedDocument = "";
       state.memberCorrectionValidation = null;
       await refresh(true);
     } catch (error) {
-      setText("member-bulk-correction-feedback", error.message);
+      setFeedback(error.message);
     } finally {
       state.memberCorrectionBusy = false;
       setModuleActionState();
@@ -3970,7 +3908,7 @@
           );
       render(data, sections);
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     } finally {
       state.refreshing = false;
       window.MrzhLoading?.settle("data");
@@ -4109,7 +4047,6 @@
     byId("trading-city-manual-weekday").value = String(
       state.bootstrap?.configBundle?.automationConfig?.tasks?.trading_city_apply?.targetWeekday || 1
     );
-    byId("trading-city-manual-feedback").textContent = "";
     dialog.showModal();
   }
 
@@ -4117,7 +4054,6 @@
     byId("trading-city-manual-dialog")?.close();
     if (state.pendingTradingCityButton) state.pendingTradingCityButton.disabled = false;
     state.pendingTradingCityButton = null;
-    byId("trading-city-manual-feedback").textContent = "";
   }
 
   async function submitTradingCityManualTask(event) {
@@ -4126,22 +4062,21 @@
     if (!button) return;
     const targetWeekday = Number(byId("trading-city-manual-weekday").value);
     if (!Number.isInteger(targetWeekday) || targetWeekday < 1 || targetWeekday > 7) {
-      byId("trading-city-manual-feedback").textContent = window.MrzhI18n.t(
+      setFeedback(window.MrzhI18n.t(
         "请选择周一至周日中的一个报名目标日期"
-      );
+      ));
       return;
     }
     const queued = await runTask(
       "trading_city_apply",
       button,
       null,
-      targetWeekday,
-      byId("trading-city-manual-feedback")
+      targetWeekday
     );
     if (queued) closeTradingCityManualDialog();
   }
 
-  async function runTask(taskKey, button, routineId, targetWeekday, feedback) {
+  async function runTask(taskKey, button, routineId, targetWeekday) {
     button.disabled = true;
     try {
       const result = await request("/api/admin/run", {
@@ -4153,22 +4088,20 @@
           ...(routineId ? { routineId } : {})
         })
       });
-      setSaveState(result.queuedBehindActiveRun
+      setFeedback(result.queuedBehindActiveRun
         ? window.MrzhI18n.format(
             "当前 Agent 已有任务正在运行或排队；手工任务已入队，等待上一个任务结束后执行"
           )
         : window.MrzhI18n.format("{task}已入队", {
             task: taskName(taskKey)
           }));
-      if (feedback) feedback.textContent = "";
       // Once the server accepts the run, close any task-specific picker
       // immediately. Bootstrap refresh is best-effort UI synchronization and
       // must not make the user wait with the modal still open.
       void refresh(false);
       return true;
     } catch (error) {
-      if (feedback) feedback.textContent = error.message;
-      else setSaveState(error.message);
+      setFeedback(error.message);
       return false;
     } finally {
       if (state.pendingTradingCityButton !== button) button.disabled = false;
@@ -4182,12 +4115,12 @@
         method: "POST",
         body: JSON.stringify({ runId })
       });
-      setSaveState(
+      setFeedback(
         result.state === "interrupted" ? "排队任务已终止" : "终止指令已发送"
       );
       await refresh(false);
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     } finally {
       button.disabled = false;
     }
@@ -4574,13 +4507,12 @@
     if (state.saving) return;
     const form = event.currentTarget;
     const section = form.dataset.configSection;
-    const feedback = form.querySelector("[data-save-feedback]");
+
     const buttons = [
       ...document.querySelectorAll('.config-form button[type="submit"]')
     ];
     state.saving = true;
-    feedback.textContent = "正在保存…";
-    setSaveState("正在保存…");
+
     for (const button of buttons) button.disabled = true;
     try {
       const data = await request("/api/admin/config", {
@@ -4590,11 +4522,9 @@
       });
       state.dirtySections.delete(section);
       render(data, [section]);
-      feedback.textContent = "配置已保存";
-      updateSaveState("配置已保存");
+      setFeedback("配置已保存");
     } catch (error) {
-      feedback.textContent = error.message;
-      setSaveState(error.message);
+      setFeedback(error.message);
     } finally {
       state.saving = false;
       setConfigReadOnly();
@@ -4614,7 +4544,7 @@
       ...form.querySelectorAll('[name="keyPermission"]:checked')
     ].map((field) => field.value);
     if (!permissions.length) {
-      setSaveState(window.MrzhI18n.t(
+      setFeedback(window.MrzhI18n.t(
         "请输入至少一项权限；仅预览请勾选 Demo 权限"
       ));
       return;
@@ -4638,7 +4568,7 @@
       setDefaultKeyExpiry();
       await loadTemporaryKeys(1);
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -4651,7 +4581,7 @@
       });
       await loadTemporaryKeys();
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
       button.disabled = false;
     }
   }
@@ -4669,7 +4599,7 @@
       });
       await loadTemporaryKeys();
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
       button.disabled = false;
     }
   }
@@ -4678,7 +4608,6 @@
     state.editingTemporaryKeyId = item.id;
     byId("temporary-key-permissions-title").textContent =
       window.MrzhI18n.format("编辑权限 · {name}", { name: item.name });
-    byId("temporary-key-permissions-feedback").textContent = "";
     const selected = new Set(permissions);
     for (const field of document.querySelectorAll('[name="keyEditPermission"]')) {
       field.checked = selected.has(field.value);
@@ -4695,9 +4624,9 @@
       ...form.querySelectorAll('[name="keyEditPermission"]:checked')
     ].map((field) => field.value);
     if (!permissions.length) {
-      byId("temporary-key-permissions-feedback").textContent = window.MrzhI18n.t(
+      setFeedback(window.MrzhI18n.t(
         "请选择至少一项权限"
-      );
+      ));
       return;
     }
     const save = byId("temporary-key-permissions-save");
@@ -4707,12 +4636,11 @@
         method: "PATCH",
         body: JSON.stringify({ permissions })
       });
-      byId("temporary-key-permissions-feedback").textContent =
-        window.MrzhI18n.t("权限已更新；该 Key 的现有登录会话已失效。");
+      setFeedback(window.MrzhI18n.t("权限已更新；该 Key 的现有登录会话已失效。"));
       await loadTemporaryKeys();
       window.setTimeout(() => byId("temporary-key-permissions-dialog").close(), 500);
     } catch (error) {
-      byId("temporary-key-permissions-feedback").textContent = error.message;
+      setFeedback(error.message);
     } finally {
       save.disabled = false;
     }
@@ -4748,7 +4676,7 @@
       );
       renderIdentityApplications();
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -4831,10 +4759,6 @@
   }
 
   function setText(id, value) {
-    if (id === "save-state") {
-      setSaveState(value);
-      return;
-    }
     const element = byId(id);
     if (element) element.textContent = value ?? "";
   }
@@ -4947,7 +4871,6 @@
     byId("identity-eligibility-approved-votes").disabled = false;
     byId("identity-eligibility-approved-until").value = identityExpiryDate();
     byId("identity-eligibility-approved-until").disabled = true;
-    setText("identity-review-feedback", "");
     byId("identity-review-dialog").showModal();
   }
 
@@ -5014,7 +4937,6 @@
     byId("identity-eligibility-bypass").checked = item.vote_eligibility_bypass === 1;
     byId("identity-eligibility-approved-votes").disabled = mode !== "votes";
     byId("identity-eligibility-approved-until").disabled = mode !== "date";
-    setText("identity-review-feedback", "");
     byId("identity-review-dialog").showModal();
   }
 
@@ -5023,9 +4945,9 @@
     if (!item) return;
     const mode = document.querySelector('[name="eligibilityApprovalMode"]:checked')?.value;
     const button = byId("identity-eligibility-edit-save");
-    const feedback = byId("identity-review-feedback");
+
     button.disabled = true;
-    feedback.textContent = window.MrzhI18n.t("正在保存…");
+
     try {
       await request(`/api/admin/identity-codes/${encodeURIComponent(item.id)}/vote-eligibility`, {
         method: "PATCH",
@@ -5038,10 +4960,10 @@
         })
       });
       byId("identity-review-dialog").close();
-      setSaveState(window.MrzhI18n.t("投票资格已更新"));
+      setFeedback(window.MrzhI18n.t("投票资格已更新"));
       await loadIdentityCodes();
     } catch (error) {
-      feedback.textContent = error.message;
+      setFeedback(error.message);
     } finally {
       button.disabled = false;
     }
@@ -5063,11 +4985,11 @@
           ? undefined
           : JSON.stringify({ recordType: item.record_type || "application" })
       });
-      setSaveState(window.MrzhI18n.t("审批记录已删除"));
+      setFeedback(window.MrzhI18n.t("审批记录已删除"));
       await loadIdentityApplications();
       if (canView("identity-codes")) await loadIdentityCodes();
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -5076,7 +4998,7 @@
     if (!item) return;
     const isProfileChange = item.record_type === "profile_change";
     const isEligibilityApplication = item.record_type === "eligibility_override";
-    const feedback = byId("identity-review-feedback");
+
     let body;
     if (action === "approve") {
       body = isProfileChange
@@ -5118,14 +5040,14 @@
       );
       if (reason === null) return;
       if (!reason) {
-        feedback.textContent = window.MrzhI18n.t("请填写拒绝理由");
+        setFeedback(window.MrzhI18n.t("请填写拒绝理由"));
         return;
       }
       body = isEligibilityApplication
         ? { reason, recordType: "eligibility_override" }
         : { reason };
     }
-    feedback.textContent = "正在处理并发送邮件…";
+
     try {
       const endpoint = isProfileChange
         ? "/api/admin/identity-profile-change-requests"
@@ -5136,7 +5058,7 @@
       );
       byId("identity-review-dialog").close();
       if (isProfileChange) {
-        setSaveState(
+        setFeedback(
           result.emailSent
             ? action === "approve"
               ? "资料变更已批准并应用，邮件已发送"
@@ -5144,7 +5066,7 @@
             : `资料变更已处理，但邮件发送失败：${result.emailError}`
         );
       } else {
-        setSaveState(
+        setFeedback(
           result.emailSent
             ? action === "approve"
               ? "申请已通过并发送邮件"
@@ -5155,7 +5077,7 @@
       await loadIdentityApplications(1);
       if (canView("identity-codes")) await loadIdentityCodes();
     } catch (error) {
-      feedback.textContent = error.message;
+      setFeedback(error.message);
     }
   }
 
@@ -5170,7 +5092,7 @@
       state.identityCodes = await request(`/api/admin/identity-codes?${params}`);
       renderIdentityCodes();
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -5180,7 +5102,6 @@
       "identity-password-reset-detail",
       `将为 ${item.player_name || "未命名玩家"}（${item.code}）生成新密码，并发送到 ${item.email || "预留邮箱"}。`
     );
-    setText("identity-password-reset-feedback", "");
     byId("identity-password-reset-dialog").showModal();
   }
 
@@ -5192,19 +5113,19 @@
       { title: "二次确认密码重置", danger: true }
     ))) return;
     const button = byId("identity-password-reset-confirm");
-    const feedback = byId("identity-password-reset-feedback");
+
     button.disabled = true;
-    feedback.textContent = window.MrzhI18n.t("正在重置并发送邮件…");
+
     try {
       await request(
         `/api/admin/identity-codes/${encodeURIComponent(item.id)}/reset-password`,
         { method: "POST" }
       );
       byId("identity-password-reset-dialog").close();
-      setSaveState(window.MrzhI18n.t("新密码已生成并发送到预留邮箱"));
+      setFeedback(window.MrzhI18n.t("新密码已生成并发送到预留邮箱"));
       await loadIdentityCodes();
     } catch (error) {
-      feedback.textContent = error.message;
+      setFeedback(error.message);
     } finally {
       button.disabled = false;
     }
@@ -5308,7 +5229,7 @@
         body: JSON.stringify(values)
       });
       if (values.status === "disabled") {
-        setSaveState(result.emailSent
+        setFeedback(result.emailSent
           ? "识别码已取消，确认邮件已发送"
           : result.emailError
             ? `识别码已取消，但确认邮件发送失败：${result.emailError}`
@@ -5316,7 +5237,7 @@
       }
       await loadIdentityCodes();
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -5334,11 +5255,11 @@
       await request(`/api/admin/identity-codes/${encodeURIComponent(item.id)}`, {
         method: "DELETE"
       });
-      setSaveState(window.MrzhI18n.t("身份识别码记录及其投票历史已删除"));
+      setFeedback(window.MrzhI18n.t("身份识别码记录及其投票历史已删除"));
       await loadIdentityCodes();
       await loadIdentityApplications();
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -5372,7 +5293,6 @@
       : identityExpiryDate();
     byId("identity-information-expiry").disabled = permanent;
     byId("identity-information-expiry").required = !permanent;
-    setText("identity-information-feedback", "");
     byId("identity-information-dialog").showModal();
   }
 
@@ -5383,10 +5303,10 @@
     const button =
       event.submitter ||
       event.currentTarget.querySelector('button[type="submit"]');
-    const feedback = byId("identity-information-feedback");
+
     const permanent = byId("identity-information-permanent").checked;
     button.disabled = true;
-    feedback.textContent = window.MrzhI18n.t("正在保存…");
+
     try {
       await request(
         `/api/admin/identity-codes/${encodeURIComponent(item.id)}/information`,
@@ -5404,11 +5324,11 @@
         }
       );
       byId("identity-information-dialog").close();
-      setSaveState(window.MrzhI18n.t("识别码资料已修改"));
+      setFeedback(window.MrzhI18n.t("识别码资料已修改"));
       await loadIdentityCodes();
       await loadIdentityApplications();
     } catch (error) {
-      feedback.textContent = error.message;
+      setFeedback(error.message);
     } finally {
       button.disabled = false;
     }
@@ -5421,12 +5341,12 @@
         method: "POST",
         body: "{}"
       });
-      setSaveState(window.MrzhI18n.t(
+      setFeedback(window.MrzhI18n.t(
         "识别码信息邮件已重新发送"
       ));
       await loadIdentityCodes();
     } catch (error) {
-      setSaveState(error.message);
+      setFeedback(error.message);
       button.disabled = false;
     }
   }
@@ -5456,10 +5376,9 @@
           confirmLabel: "我已保存"
         }
       );
-      setText("manual-identity-feedback", "识别码已生成，请查看弹窗中的识别码和初始密码。");
       await loadIdentityCodes(1);
     } catch (error) {
-      setText("manual-identity-feedback", error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -5499,7 +5418,7 @@
       state.smtpConfigLoaded = true;
       state.smtpDirty = false;
     } catch (error) {
-      setText("smtp-feedback", error.message);
+      setFeedback(error.message);
     } finally {
       state.smtpConfigLoading = false;
     }
@@ -5528,9 +5447,9 @@
       input("smtpPassword").placeholder = "已配置；留空则保留现有密码";
       state.smtpConfigLoaded = true;
       state.smtpDirty = false;
-      setText("smtp-feedback", "SMTP 配置已保存");
+      setFeedback("SMTP 配置已保存");
     } catch (error) {
-      setText("smtp-feedback", error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -5542,9 +5461,9 @@
         method: "POST",
         body: JSON.stringify({ to: form.elements.smtpTestTo.value.trim() })
       });
-      setText("smtp-feedback", "测试邮件已发送");
+      setFeedback("测试邮件已发送");
     } catch (error) {
-      setText("smtp-feedback", error.message);
+      setFeedback(error.message);
     }
   }
 
@@ -5555,8 +5474,7 @@
       if (event.target.closest("[data-ui-only]")) return;
       const section = form.dataset.configSection;
       state.dirtySections.add(section);
-      form.querySelector("[data-save-feedback]").textContent = "有未保存修改";
-      updateSaveState();
+
     });
     form.addEventListener("submit", saveConfig);
   }
@@ -5635,8 +5553,6 @@
     if (!state.memberCorrectionValidation) return;
     state.memberCorrectionValidatedDocument = "";
     state.memberCorrectionValidation = null;
-    setText("member-bulk-correction-preview", window.MrzhI18n.t("文档内容已修改，请重新校验格式。"));
-    setText("member-bulk-correction-feedback", "");
     setModuleActionState();
   });
   byId("technology-search").addEventListener("input", (event) => {
@@ -5771,7 +5687,6 @@
   );
   byId("temporary-key-permissions-dialog").addEventListener("close", () => {
     state.editingTemporaryKeyId = null;
-    byId("temporary-key-permissions-feedback").textContent = "";
   });
   byId("temporary-key-search-form").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -5837,7 +5752,6 @@
   byId("maintenance-confirm").addEventListener("click", confirmMaintenance);
   byId("maintenance-dialog").addEventListener("close", () => {
     state.maintenanceAction = null;
-    byId("maintenance-feedback").textContent = "";
   });
   document.addEventListener("click", closeRunActionMenu);
   document.addEventListener("keydown", (event) => {
@@ -5847,7 +5761,7 @@
   window.addEventListener("scroll", positionRunActionMenu, true);
   byId("copy-temporary-key").addEventListener("click", async () => {
     await navigator.clipboard.writeText(byId("temporary-key-value").textContent);
-    setSaveState("临时 Key 已复制");
+    setFeedback("临时 Key 已复制");
   });
   byId("refresh-identity-applications").addEventListener("click", () =>
     loadIdentityApplications()
@@ -5927,13 +5841,12 @@
   byId("identity-password-reset-confirm").addEventListener("click", confirmIdentityPasswordReset);
   byId("identity-password-reset-dialog").addEventListener("close", () => {
     state.selectedIdentityPasswordResetCode = null;
-    setText("identity-password-reset-feedback", "");
   });
   byId("smtp-config-form").addEventListener("submit", saveSmtpConfig);
   byId("smtp-config-form").addEventListener("input", () => {
     state.smtpDraftRevision += 1;
     state.smtpDirty = true;
-    setText("smtp-feedback", "有未保存修改");
+
   });
   byId("smtp-test-form").addEventListener("submit", sendSmtpTest);
   input("identityPermanent").addEventListener("change", (event) => {

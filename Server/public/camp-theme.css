@@ -1,0 +1,89 @@
+/* Homepage and interaction center share these materials and theme colors. */
+:root {
+  --camp-panel: rgba(255, 255, 255, 0.3);
+  --camp-panel-strong: rgba(255, 255, 255, 0.52);
+  --camp-line: rgba(255, 255, 255, 0.44);
+  --camp-line-strong: rgba(27, 47, 77, 0.2);
+  --camp-accent: #9b4f34;
+  --camp-accent-strong: #a94f31;
+  --camp-red: #ad4038;
+  --camp-danger: #ad4038;
+  --camp-glass-card: rgba(255, 255, 255, 0.22);
+  --camp-glass-control: rgba(255, 255, 255, 0.26);
+  --camp-glass-sheet: rgba(255, 248, 241, 0.46);
+  --camp-glass-footer: rgba(255, 255, 255, 0.52);
+  --camp-glass-edge: rgba(255, 255, 255, 0.62);
+  --camp-glass-bottom-edge: rgba(255, 255, 255, 0.18);
+  --camp-glass-card-shadow: 0 10px 24px rgba(31, 41, 55, 0.06);
+  --camp-page-cover: linear-gradient(180deg, rgba(255, 248, 241, 0.08), rgba(243, 236, 229, 0.5));
+  --camp-modal-scrim: rgba(37, 31, 28, 0.28);
+  --camp-primary-fill: #a94f31;
+  --camp-primary-ink: #fff;
+  --camp-shadow: 0 16px 38px rgba(31, 41, 55, 0.13),
+    inset 0 1px 0 var(--camp-glass-edge),
+    inset 0 -1px 0 var(--camp-glass-bottom-edge);
+  --camp-bg: #f3ece5;
+  --camp-text: #1b2f4d;
+  --camp-muted: rgba(27, 47, 77, 0.7);
+  --camp-green: #75b99c;
+  --camp-font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --camp-background-image: url("https://www.yume.zone/assets/img/mini-program-bg.png");
+}
+
+:root[data-theme="dark"] {
+  --camp-panel: rgba(12, 17, 26, 0.56);
+  --camp-panel-strong: rgba(12, 21, 33, 0.64);
+  --camp-accent: #efb29a;
+  --camp-accent-strong: #f0b69b;
+  --camp-red: #ef9991;
+  --camp-danger: #ef9991;
+  --camp-glass-card: rgba(12, 21, 33, 0.32);
+  --camp-glass-control: rgba(255, 255, 255, 0.07);
+  --camp-glass-sheet: rgba(12, 17, 26, 0.62);
+  --camp-glass-footer: rgba(10, 14, 22, 0.58);
+  --camp-glass-edge: rgba(255, 255, 255, 0.18);
+  --camp-glass-bottom-edge: rgba(255, 255, 255, 0.05);
+  --camp-glass-card-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  --camp-page-cover: linear-gradient(180deg, rgba(4, 7, 12, 0.36), rgba(4, 7, 12, 0.76));
+  --camp-modal-scrim: rgba(0, 0, 0, 0.54);
+  --camp-primary-fill: #efb29a;
+  --camp-primary-ink: #2d1c16;
+  --camp-shadow: 0 16px 38px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 var(--camp-glass-edge),
+    inset 0 -1px 0 var(--camp-glass-bottom-edge);
+  --camp-bg: #05070b;
+  --camp-text: #f4f6fb;
+  --camp-muted: rgba(244, 246, 251, 0.7);
+  --camp-line: rgba(255, 255, 255, 0.13);
+  --camp-line-strong: rgba(255, 255, 255, 0.22);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --camp-panel: rgba(12, 17, 26, 0.56);
+    --camp-panel-strong: rgba(12, 21, 33, 0.64);
+    --camp-accent: #efb29a;
+    --camp-accent-strong: #f0b69b;
+    --camp-red: #ef9991;
+    --camp-danger: #ef9991;
+    --camp-glass-card: rgba(12, 21, 33, 0.32);
+    --camp-glass-control: rgba(255, 255, 255, 0.07);
+    --camp-glass-sheet: rgba(12, 17, 26, 0.62);
+    --camp-glass-footer: rgba(10, 14, 22, 0.58);
+    --camp-glass-edge: rgba(255, 255, 255, 0.18);
+    --camp-glass-bottom-edge: rgba(255, 255, 255, 0.05);
+    --camp-glass-card-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+    --camp-page-cover: linear-gradient(180deg, rgba(4, 7, 12, 0.36), rgba(4, 7, 12, 0.76));
+    --camp-modal-scrim: rgba(0, 0, 0, 0.54);
+    --camp-primary-fill: #efb29a;
+    --camp-primary-ink: #2d1c16;
+    --camp-shadow: 0 16px 38px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 var(--camp-glass-edge),
+    inset 0 -1px 0 var(--camp-glass-bottom-edge);
+    --camp-bg: #05070b;
+    --camp-text: #f4f6fb;
+    --camp-muted: rgba(244, 246, 251, 0.7);
+    --camp-line: rgba(255, 255, 255, 0.13);
+    --camp-line-strong: rgba(255, 255, 255, 0.22);
+  }
+}

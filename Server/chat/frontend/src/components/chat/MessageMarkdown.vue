@@ -77,8 +77,8 @@ function stopLinkGesture(event: Event) {
 /* biome-ignore lint/correctness/noUnknownPseudoClass: Vue deep selector */
 .message-markdown :deep(blockquote) {
 	padding: 0.15em 0 0.15em 0.75em;
-	border-left: 3px solid rgba(0, 128, 105, 0.42);
-	color: #54656f;
+	border-left: 3px solid var(--chat-accent);
+	color: var(--chat-muted);
 }
 
 /* biome-ignore lint/correctness/noUnknownPseudoClass: Vue deep selector */
@@ -88,7 +88,7 @@ function stopLinkGesture(event: Event) {
 	padding: 8px 10px;
 	overflow-x: auto;
 	border-radius: 5px;
-	background: rgba(11, 20, 26, 0.08);
+	background: var(--chat-hover);
 	white-space: pre;
 	-webkit-overflow-scrolling: touch;
 }
@@ -103,7 +103,7 @@ function stopLinkGesture(event: Event) {
 .message-markdown :deep(:not(pre) > code) {
 	padding: 0.08em 0.3em;
 	border-radius: 3px;
-	background: rgba(11, 20, 26, 0.08);
+	background: var(--chat-hover);
 }
 
 /* biome-ignore lint/correctness/noUnknownPseudoClass: Vue deep selector */
@@ -125,7 +125,7 @@ function stopLinkGesture(event: Event) {
 
 /* biome-ignore lint/correctness/noUnknownPseudoClass: Vue deep selector */
 .message-markdown :deep(.message-mention) {
-	color: #168758;
+	color: var(--chat-accent);
 	font-weight: 650;
 }
 
@@ -133,12 +133,12 @@ function stopLinkGesture(event: Event) {
 .message-markdown :deep(.message-mention--self) {
 	padding: 1px 3px;
 	border-radius: 4px;
-	background: rgba(22, 135, 88, 0.14);
+	background: var(--chat-selected);
 }
 
 /* biome-ignore lint/correctness/noUnknownPseudoClass: Vue deep selector */
 .message-markdown :deep(.message-link) {
-	color: #006aa6;
+	color: var(--chat-accent);
 	text-decoration: none;
 	overflow-wrap: anywhere;
 }

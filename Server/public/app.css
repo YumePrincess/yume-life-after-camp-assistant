@@ -107,7 +107,7 @@ body::before {
   inset: 0;
   z-index: -2;
   content: "";
-  background-image: url("https://www.yume.zone/assets/img/mini-program-bg.png");
+  background-image: var(--camp-background-image, url("https://www.yume.zone/assets/img/mini-program-bg.png"));
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;

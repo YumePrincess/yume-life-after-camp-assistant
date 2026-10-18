@@ -9,17 +9,17 @@
     <meta name="description" content="明日之后“愿”营地公共信息、科技投票与成员贡献" />
     <title>明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20261017-tech-card-spacing-color" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261017-vote-summary" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261018-chat-design" />
     <link rel="stylesheet" href="/loading.css?v=20261017-chat-loading" />
-    <link rel="stylesheet" href="/mrzh-mobile.css?v=20261017-vote-preview-spacing-v2" />
+    <link rel="stylesheet" href="/mrzh-mobile.css?v=20261018-stable-icons" />
     <script src="/js/loading.js?v=20261017-chat-loading" defer></script>
-    <script src="/js/preferences.js" defer></script>
+    <script src="/js/preferences.js?v=20261018-feedback-cards" defer></script>
     <script src="/js/timezone.js?v=20261017-identity-chat-v2" defer></script>
-    <script src="/js/i18n.js?v=20261018-history-limit" defer></script>
+    <script src="/js/i18n.js?v=20261018-feedback-cards" defer></script>
     <script src="/js/camp-group.js?v=20261016-configurable-source" defer></script>
     <script src="/js/vote-participation.js?v=20261016-participation-sync" defer></script>
-    <script src="/js/identity-avatar.js?v=20261017-identity-chat-v2" defer></script>
-    <script src="/js/public.js?v=20261018-history-limit" defer></script>
+    <script src="/js/identity-avatar.js?v=20261018-feedback-cards" defer></script>
+    <script src="/js/public.js?v=20261018-feedback-cards" defer></script>
   </head>
   <body class="public-page">
     <div id="page-loading" class="page-loading" role="status" aria-label="正在载入">
@@ -71,60 +71,97 @@
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="overview">
             <span class="feature-card-topline"><span class="feature-card-icon feature-icon-overview" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15M8 7h8M8 11h7"/></svg>
-            </span><span class="feature-card-kicker" aria-hidden="true">Notice</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
+  <path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14" />
+  <path d="M8 6v8" />
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Notice</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>营地公告</strong><small>查看营地公告与重要信息</small></span>
             <span class="feature-card-metric"><span class="feature-card-value" id="feature-overview-count">—</span><small>条</small></span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="group">
-            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M16 4a4 4 0 0 1 0 8m6 9v-2a5 5 0 0 0-3-4.6"/></svg></span><span class="feature-card-kicker" aria-hidden="true">Group</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M16 4a4 4 0 0 1 0 8m6 9v-2a5 5 0 0 0-3-4.6"/></svg><svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21a8 8 0 0 0-16 0" />
+  <circle cx="10" cy="8" r="5" />
+  <path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3" />
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Group</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>营地群资料</strong><small>查看营地群资料与加入方式</small></span>
             <span class="feature-card-action">查看营地群信息</span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-controls="feature-detail-dialog" aria-expanded="false" data-feature-target="identity">
-            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M5 16a3 3 0 0 1 6 0m3-7h5m-5 4h5m-5 4h3"/></svg></span><span class="feature-card-kicker" aria-hidden="true">Identity</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
-            <span class="feature-card-copy"><strong>身份识别码</strong><small>登录、申请与找回身份识别码</small></span><span class="feature-card-action" id="daily-identity-panel-state">—</span>
+            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M5 16a3 3 0 0 1 6 0m3-7h5m-5 4h5m-5 4h3"/></svg><svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="2" y="5" width="20" height="14" rx="2"/>
+  <circle cx="8" cy="10" r="2"/>
+  <path d="M5 16a3 3 0 0 1 6 0m3-7h5m-5 4h5m-5 4h3"/>
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Identity</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-copy"><strong>身份识别码</strong><small>登录、申请与找回身份识别码</small></span>
+            <span class="feature-card-action identity-card-status" id="daily-identity-panel-state" data-signed-in="false" role="status">
+              <span class="feature-card-value identity-card-status-icon" aria-hidden="true"><svg viewBox="1.75 1.75 20.5 20.5" focusable="false"><path class="identity-status-cross" d="m3 3 18 18M21 3 3 21"/><path class="identity-status-check" d="m3 12 6 9L21 3"/></svg></span>
+              <span class="identity-card-status-text" id="identity-card-status-text">未登录</span>
+            </span>
           </button>
           <button class="feature-card" type="button" id="open-chat">
-            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-5 5V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/><path d="M7 8h10M7 12h7"/></svg></span><span class="feature-card-kicker" aria-hidden="true">Chat</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-5 5V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/><path d="M7 8h10M7 12h7"/></svg><svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M21 15a2 2 0 0 1-2 2H7l-5 5V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/>
+  <path d="M7 8h10M7 12h7"/>
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Chat</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>互动中心</strong><small>成员群聊与私聊</small></span><span class="feature-card-action">进入聊天</span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="vote">
             <span class="feature-card-topline"><span class="feature-card-icon feature-icon-vote" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="m9 12 2 2 4-4"/><path d="M5 7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v12H5zM2 19h20"/></svg>
-            </span><span class="feature-card-kicker" aria-hidden="true">Vote</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4" />
+  <path d="M5 7c0-1.1.9-2 2-2h10a2 2 0 0 1 2 2v12H5V7Z" />
+  <path d="M22 19H2" />
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Vote</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>日常投票</strong><small>科技投票、日常投票与抽签</small></span>
             <span class="feature-card-metric"><span class="feature-card-value" id="feature-vote-count">—</span><small>项</small></span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="staff">
             <span class="feature-card-topline"><span class="feature-card-icon feature-icon-staff" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            </span><span class="feature-card-kicker" aria-hidden="true">Staff</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" />
+  <path d="m9 12 2 2 4-4" />
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Staff</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>营地公职</strong><small>查看当前营地工作人员</small></span>
             <span class="feature-card-metric"><span class="feature-card-value" id="feature-staff-count">—</span><small>人</small></span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="members">
             <span class="feature-card-topline"><span class="feature-card-icon feature-icon-members" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.4-2-6.5-4-8a5 5 0 0 0-.5-8.3"/></svg>
-            </span><span class="feature-card-kicker" aria-hidden="true">Members</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 21a8 8 0 0 1 13.292-6" />
+  <circle cx="10" cy="8" r="5" />
+  <path d="m16 19 2 2 4-4" />
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Members</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>成员信息与贡献</strong><small>查看贡献、职业、庄园与同居信息</small></span>
             <span class="feature-card-metric"><span class="feature-card-value" id="feature-members-count">—</span><small>人</small></span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="warnings">
             <span class="feature-card-topline"><span class="feature-card-icon feature-icon-warning" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="m10.3 3.3-8 14A2 2 0 0 0 4 20.3h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
-            </span><span class="feature-card-kicker" aria-hidden="true">Alert</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+  <path d="M12 9v4" />
+  <path d="M12 17h.01" />
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Alert</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>斩杀预警</strong><small>关注长时间未上线的成员</small></span>
             <span class="feature-card-metric"><span class="feature-card-value" id="feature-warning-count">—</span><small>人</small></span>
           </button>
           <button class="feature-card" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="feature-detail-dialog" data-feature-target="runs">
             <span class="feature-card-topline"><span class="feature-card-icon feature-icon-runs" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path d="M13 5h8M13 12h8M13 19h8"/><path d="m3 7 2 2 4-4M3 17l2 2 4-4"/></svg>
-            </span><span class="feature-card-kicker" aria-hidden="true">Tasks</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5h8" />
+  <path d="M13 12h8" />
+  <path d="M13 19h8" />
+  <path d="m3 17 2 2 4-4" />
+  <path d="m3 7 2 2 4-4" />
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Tasks</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>最近自动任务</strong><small>查看最近自动化执行状态</small></span>
             <span class="feature-card-metric"><span class="feature-card-value" id="feature-runs-count">—</span><small>条</small></span>
           </button>
           <a class="feature-card" href="/admin">
-            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></span><span class="feature-card-kicker" aria-hidden="true">Admin</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
+            <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 17H5" />
+  <path d="M19 7h-9" />
+  <circle cx="17" cy="17" r="3" />
+  <circle cx="7" cy="7" r="3" />
+</svg></span><span class="feature-card-kicker" aria-hidden="true">Admin</span><span class="feature-card-arrow" aria-hidden="true">›</span></span>
             <span class="feature-card-copy"><strong>管理后台</strong><small>管理排程、成员、科技与临时任务</small></span>
             <span class="feature-card-action">打开</span>
           </a>
@@ -222,9 +259,9 @@
               <div class="action-row identity-account-actions">
                 <button id="identity-eligibility-apply" class="button button-quiet" type="button" hidden>申请破格投票资格</button>
                 <button id="identity-update-name" class="button button-quiet" type="button">修改玩家名称</button>
+                <button id="identity-change-password" class="button button-quiet" type="button">修改密码</button>
                 <button id="identity-change-email" class="button button-quiet" type="button">绑定/修改邮箱</button>
                 <button id="identity-renew-logged-in" class="button button-quiet" type="button">申请延长有效期</button>
-                <button id="identity-change-password" class="button button-quiet" type="button">修改密码</button>
                 <button id="identity-cancel-logged-in" class="button button-quiet" type="button">申请注销身份识别码</button>
                 <button id="identity-logout" class="button button-quiet" type="button">退出身份识别码账号</button>
               </div>
@@ -234,15 +271,23 @@
       <article class="vote-panel feature-panel" id="vote" data-feature-panel="vote" hidden>
         <div id="daily-vote-panels" class="daily-vote-panel-list">
           <button class="daily-vote-panel-card" type="button" data-daily-panel="technology">
-            <span class="daily-vote-panel-icon" aria-hidden="true">✓</span>
+            <span class="daily-vote-panel-icon" aria-hidden="true">✓<svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4" />
+  <path d="M5 7c0-1.1.9-2 2-2h10a2 2 0 0 1 2 2v12H5V7Z" />
+  <path d="M22 19H2" />
+</svg></span>
             <span class="daily-vote-panel-copy">
               <strong>科技投票</strong>
               <small>选择并提交次日科技</small>
             </span>
-            <span class="daily-vote-panel-stat"><b id="daily-tech-panel-count">1</b><small>项</small><span aria-hidden="true">›</span></span>
+            <span class="daily-vote-panel-stat"><b id="daily-tech-panel-count">0</b><small>种</small><span aria-hidden="true">›</span></span>
           </button>
           <button class="daily-vote-panel-card" type="button" data-daily-panel="items">
-            <span class="daily-vote-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-5 5V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/><path d="M7 8h10M7 12h7"/></svg></span>
+            <span class="daily-vote-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-5 5V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/><path d="M7 8h10M7 12h7"/></svg><svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5h8" />
+  <path d="M13 12h8" />
+  <path d="M13 19h8" />
+  <path d="m3 17 2 2 4-4" />
+  <path d="m3 7 2 2 4-4" />
+</svg></span>
             <span class="daily-vote-panel-copy">
               <strong>投票事项与抽签</strong>
               <small>参与当前开放事项</small>
@@ -250,7 +295,10 @@
             <span class="daily-vote-panel-stat"><b id="daily-items-panel-count">0</b><small>项</small><span aria-hidden="true">›</span></span>
           </button>
           <button class="daily-vote-panel-card" type="button" data-daily-panel="history">
-            <span class="daily-vote-panel-icon" aria-hidden="true">◷</span>
+            <span class="daily-vote-panel-icon" aria-hidden="true">◷<svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" />
+  <path d="M3 4v5h5" />
+  <path d="M12 7v5l3 2" />
+</svg></span>
             <span class="daily-vote-panel-copy">
               <strong>历史投票结果</strong>
               <small>查看最近科技与事项结果</small>
@@ -406,18 +454,17 @@
 
 <dialog id="identity-password-change-dialog" class="app-dialog identity-password-change-dialog" aria-labelledby="identity-password-change-title">
       <div class="dialog-card">
-        <div class="section-heading"><div><p class="eyebrow">PASSWORD</p><h2 id="identity-password-change-title">修改密码</h2></div><button id="identity-password-change-close" class="button button-quiet" type="button">关闭</button></div>
-        <form id="identity-password-change-verify">
-          <label class="field"><span>旧密码</span><input id="identity-password-change-old" type="password" maxlength="32" autocomplete="current-password" required /></label>
-          <button class="button button-primary" type="submit">验证旧密码</button>
+        <div class="section-heading"><div><p class="eyebrow">PASSWORD</p><h2 id="identity-password-change-title">修改密码</h2></div><button id="identity-password-change-close" class="button button-quiet" type="button" autofocus>关闭</button></div>
+        <form id="identity-password-change-verify" novalidate>
+          <label class="field"><span>当前密码</span><input id="identity-password-change-old" type="password" maxlength="32" autocomplete="current-password" required /></label>
+          <button class="button button-primary" type="submit">下一步</button>
         </form>
-        <form id="identity-password-change-set" hidden>
+        <form id="identity-password-change-set" hidden novalidate>
           <label class="field"><span>新密码（6-32位）</span><input id="identity-password-change-new" type="password" minlength="6" maxlength="32" autocomplete="new-password" required /></label>
           <label class="field"><span>确认新密码</span><input id="identity-password-change-confirm" type="password" minlength="6" maxlength="32" autocomplete="new-password" required /></label>
           <p class="muted">修改成功后将退出所有设备的登录，请使用新密码重新登录。</p>
           <button class="button button-primary" type="submit">设置新密码</button>
         </form>
-        <p id="identity-password-change-feedback" class="feedback" role="status" aria-live="polite"></p>
       </div>
     </dialog>
 

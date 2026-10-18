@@ -80,7 +80,7 @@ useOverlayLifecycle({
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: rgba(11, 20, 26, 0.42);
+  background: var(--chat-scrim);
 }
 
 .mobile-navigation-drawer {
@@ -89,10 +89,14 @@ useOverlayLifecycle({
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: max(18px, env(safe-area-inset-top)) 12px max(18px, env(safe-area-inset-bottom));
-  background: var(--chat-paper, var(--surface, #ffffff));
+  background: var(--chat-glass);
   box-shadow: 12px 0 32px rgba(11, 20, 26, 0.2);
   outline: none;
   touch-action: pan-y;
+  border: 1px solid var(--chat-line);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
+  border-radius: 0 28px 28px 0;
 }
 
 .mobile-navigation-drawer__header {
@@ -101,7 +105,7 @@ useOverlayLifecycle({
   align-items: center;
   gap: 12px;
   padding: 4px 4px 18px;
-  border-bottom: 1px solid var(--chat-line, var(--line, #e9edef));
+  border-bottom: 1px solid var(--chat-line);
 }
 
 .mobile-navigation-drawer__identity {
@@ -118,12 +122,12 @@ useOverlayLifecycle({
 }
 
 .mobile-navigation-drawer__identity strong {
-  color: var(--chat-ink, var(--text, #111b21));
+  color: var(--chat-ink);
   font-size: 15px;
 }
 
 .mobile-navigation-drawer__identity span {
-  color: var(--chat-muted, var(--muted, #667781));
+  color: var(--chat-muted);
   font-size: 13px;
 }
 
@@ -134,10 +138,10 @@ useOverlayLifecycle({
   width: 44px;
   height: 44px;
   padding: 0;
-  border: 0;
+  border: 1px solid var(--chat-line);
   border-radius: 50%;
-  background: transparent;
-  color: var(--chat-muted, var(--muted, #54656f));
+  background: var(--chat-control-fill);
+  color: var(--chat-muted);
 }
 
 .mobile-navigation-drawer__actions {
@@ -155,9 +159,9 @@ useOverlayLifecycle({
   min-height: 52px;
   padding: 0 14px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 16px;
   background: transparent;
-  color: var(--chat-ink, var(--text, #111b21));
+  color: var(--chat-ink);
   text-align: left;
   text-decoration: none;
   touch-action: manipulation;
@@ -166,22 +170,22 @@ useOverlayLifecycle({
 .mobile-navigation-drawer__actions button:active,
 .mobile-navigation-drawer__actions a:active,
 .mobile-navigation-drawer__close:active {
-  background: var(--chat-hover, var(--surface-raised, #f0f2f5));
+  background: var(--chat-hover);
 }
 
 .mobile-navigation-drawer__actions button:disabled {
-  color: var(--chat-muted, var(--muted, #8696a0));
+  color: var(--chat-muted);
   cursor: not-allowed;
   opacity: 0.72;
 }
 
 .mobile-navigation-drawer__actions button[aria-current="page"] {
-  background: rgba(0, 128, 105, 0.1);
-  color: #008069;
+  background: var(--chat-selected);
+  color: var(--chat-accent);
 }
 
 .mobile-navigation-drawer__actions .mobile-navigation-drawer__danger {
-  color: #c62828;
+  color: var(--chat-danger);
 }
 
 .mobile-drawer-enter-active,
@@ -191,7 +195,7 @@ useOverlayLifecycle({
 
 .mobile-drawer-enter-active .mobile-navigation-drawer,
 .mobile-drawer-leave-active .mobile-navigation-drawer {
-  transition: transform 220ms ease;
+  transition: transform 220ms var(--chat-ease);
 }
 
 .mobile-drawer-enter-from,

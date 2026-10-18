@@ -105,7 +105,6 @@ watch(
             {{ t('common.back') }}
           </button>
 
-          <p v-if="error" class="add-conversation-dialog__error" role="alert">{{ error }}</p>
           <p v-if="!users.length" class="add-conversation-dialog__empty">
             {{ t('conversation.allUsersHaveDm') }}
           </p>
@@ -143,7 +142,7 @@ button:active:not(:disabled) { filter: brightness(0.94); }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 3px; }
 .room-dialog__input { color: var(--chat-ink); }
 .room-dialog__secondary { color: var(--chat-ink); }
-.room-dialog__primary { background: var(--chat-accent); color: var(--chat-paper); }
+.room-dialog__primary { background: var(--chat-primary-fill); color: var(--chat-primary-ink); }
 
 .add-conversation-overlay {
   position: fixed;
@@ -169,8 +168,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
   box-shadow: var(--chat-glass-shadow);
   border: 1px solid var(--chat-glass-rim);
   background: var(--chat-glass);
-  backdrop-filter: blur(20px) saturate(1.1);
   -webkit-backdrop-filter: blur(20px) saturate(1.1);
+  backdrop-filter: blur(20px) saturate(1.1);
 }
 
 .add-conversation-dialog__header {
@@ -201,9 +200,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
   width: 44px;
   height: 44px;
   margin: -10px -10px 0 0;
-  border: 0;
+  border: 1px solid var(--chat-line);
   border-radius: 50%;
-  background: transparent;
+  background: var(--chat-control-fill);
   color: var(--chat-muted);
   cursor: pointer;
   transition: background 150ms, color 150ms;
@@ -244,9 +243,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
 
 .add-conversation-choice:hover,
 .add-conversation-person:hover:not(:disabled) {
-  border-color: #b7d8d2;
+  border-color: var(--chat-line);
   background: var(--chat-hover);
-  box-shadow: 0 4px 14px rgba(0, 128, 105, 0.08);
+  box-shadow: 0 4px 14px var(--chat-selected);
 }
 
 .add-conversation-choice__icon {
@@ -278,7 +277,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
 }
 
 .add-conversation-choice__arrow {
-  color: #8696a0;
+  color: var(--chat-subtle);
 }
 
 .add-conversation-dialog__back {
@@ -348,17 +347,17 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
 }
 
 .add-conversation-dialog__empty {
-  background: #f5f7fa;
+  background: var(--chat-hover);
   color: var(--chat-muted);
 }
 
 .add-conversation-dialog__error {
-  background: #fef2f2;
+  background: var(--chat-danger-soft);
   color: var(--chat-danger);
 }
 
 .add-conversation-dialog button:focus-visible {
-  outline: 3px solid rgba(0, 128, 105, 0.24);
+  outline: 3px solid var(--chat-accent);
   outline-offset: 2px;
 }
 

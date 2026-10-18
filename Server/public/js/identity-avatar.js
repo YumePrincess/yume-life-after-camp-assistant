@@ -36,14 +36,14 @@
     zoom.value = "1";
     zoom.hidden = true;
     zoom.setAttribute("aria-label", t("缩放头像"));
-    const status = element("p", "muted");
-    status.setAttribute("role", "status");
+    const hint = element("p", "muted", "拖动图片调整位置，使用滑块缩放。");
+    hint.hidden = true;
     const actions = element("div", "action-row");
     const save = element("button", "button button-primary", "保存头像");
     save.type = "button";
     save.disabled = true;
     actions.append(save);
-    card.append(header, chooser, canvas, zoom, status, actions);
+    card.append(header, chooser, canvas, zoom, hint, actions);
     dialog.append(card);
     document.body.append(dialog);
     let image = null,
@@ -76,7 +76,7 @@
         file.size > 5 * 1024 * 1024 ||
         !["image/png", "image/jpeg", "image/webp"].includes(file.type)
       ) {
-        status.textContent = t("请选择5MB以内的PNG、JPEG或WebP图片");
+        window.MrzhFeedback.notice(t("请选择5MB以内的PNG、JPEG或WebP图片"));
         return;
       }
       save.disabled = true;
@@ -94,9 +94,9 @@
         canvas.hidden = zoom.hidden = false;
         draw();
         save.disabled = false;
-        status.textContent = t("拖动图片调整位置，使用滑块缩放。");
+        hint.hidden = false;
       } catch (error) {
-        status.textContent = error.message || t("无法读取图片");
+        window.MrzhFeedback.notice(t(error.message || "无法读取图片"));
       }
     };
     zoom.oninput = draw;
@@ -119,6 +119,8 @@
       save.disabled = true;
       chooser.disabled = zoom.disabled = true;
       close.disabled = true;
+      const progress = window.MrzhFeedback.begin();
+      let message = "";
       try {
         const blob = await new Promise((resolve) =>
           canvas.toBlob(resolve, "image/webp", 0.9),
@@ -126,12 +128,15 @@
         if (!blob) throw new Error(t("无法读取图片"));
         await onSave(blob);
         dialog.close();
+        message = "头像已更新。";
       } catch (error) {
-        status.textContent = t(error.message);
+        message = error.message || "无法读取图片";
         save.disabled = false;
       } finally {
         chooser.disabled = zoom.disabled = close.disabled = false;
+        window.MrzhFeedback.end(progress);
       }
+      if (message) window.MrzhFeedback.notice(t(message));
     };
     dialog.addEventListener(
       "close",

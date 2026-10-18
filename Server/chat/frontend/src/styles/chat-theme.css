@@ -1,101 +1,157 @@
-/* Shared visual language with yume-all-in-one-frontend/frontend/css/style.css:
- * warm canvas, navy ink, glass rims, 1.35/1.8rem surfaces and 0.85rem controls.
- * Chat uses denser materials to keep long-form text readable.
- */
+/* The homepage owns the shared palette. Chat adds denser surfaces for reading. */
 :root {
-  --chat-radius-surface: 1.35rem;
-  --chat-radius-dialog: 1.8rem;
-  --chat-radius-control: 0.85rem;
+  --chat-radius-surface: 24px;
+  --chat-radius-dialog: 28px;
+  --chat-radius-control: 999px;
   --chat-ease: cubic-bezier(0.23, 1, 0.32, 1);
-  --chat-glass: color-mix(in srgb, var(--chat-paper) 94%, transparent);
-  --chat-glass-rim: color-mix(in srgb, var(--chat-paper) 70%, transparent);
-  --chat-glass-shadow: 0 18px 36px rgb(5 7 11 / 18%), inset 1px 1px 0 var(--chat-glass-rim);
-  --chat-paper: #fffdfa;
-  --chat-canvas: #f3ece5;
-  --chat-rail: #ece5de;
-  --chat-hover: #f3f0ed;
-  --chat-selected: #e5edf7;
-  --chat-pressed: #d6e3f3;
-  --chat-outgoing: #e4edf8;
-  --chat-ink: #1b2f4d;
-  --chat-muted: #58667b;
-  --chat-subtle: #647185;
-  --chat-line: rgba(27, 47, 77, 0.12);
-  --chat-accent: #365d88;
-  --chat-accent-hover: #294a70;
-  --chat-accent-pressed: #1b3657;
-  --chat-danger: oklch(49% 0.17 27);
-  --chat-danger-soft: oklch(96% 0.02 27);
-  --chat-disabled: oklch(91% 0.016 155);
-  --chat-online: oklch(54% 0.12 155);
-  --chat-scrollbar: oklch(65% 0.02 155 / 0.45);
-  --chat-scrim: oklch(20% 0.025 165 / 0.36);
-  --chat-shadow: 0 1px 2px oklch(25% 0.025 165 / 0.08);
-  --chat-shadow-panel: 0 12px 36px oklch(25% 0.025 165 / 0.12);
-  /* 中英文均沿用系统无衬线字体，聊天正文不引入外部字体请求。 */
-  --chat-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif;
-  --chat-font-heading: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --chat-paper: color-mix(in srgb, var(--camp-bg) 90%, transparent);
+  --chat-canvas: var(--camp-bg);
+  --chat-glass: var(--camp-glass-sheet);
+  --chat-rail: var(--camp-panel);
+  --chat-card: var(--camp-glass-card);
+  --chat-control-fill: var(--camp-glass-control);
+  --chat-glass-rim: var(--camp-glass-edge);
+  --chat-glass-shadow: var(--camp-shadow);
+  --chat-hover: color-mix(in srgb, var(--camp-text) 6%, transparent);
+  --chat-selected: color-mix(in srgb, var(--camp-accent) 14%, var(--camp-glass-card));
+  --chat-pressed: color-mix(in srgb, var(--camp-text) 10%, transparent);
+  --chat-outgoing: color-mix(in srgb, var(--camp-accent) 15%, var(--chat-paper));
+  --chat-ink: var(--camp-text);
+  --chat-muted: var(--camp-muted);
+  --chat-subtle: var(--camp-muted);
+  --chat-line: var(--camp-line);
+  --chat-accent: var(--camp-accent);
+  --chat-accent-hover: var(--camp-accent-strong);
+  --chat-accent-pressed: var(--camp-accent-strong);
+  --chat-primary-fill: var(--camp-primary-fill);
+  --chat-primary-ink: var(--camp-primary-ink);
+  --chat-danger: var(--camp-danger);
+  --chat-danger-soft: color-mix(in srgb, var(--camp-danger) 12%, var(--chat-paper));
+  --chat-disabled: var(--camp-glass-control);
+  --chat-online: var(--camp-green);
+  --chat-scrollbar: color-mix(in srgb, var(--camp-text) 20%, transparent);
+  --chat-scrim: var(--camp-modal-scrim);
+  --chat-shadow: var(--camp-glass-card-shadow);
+  --chat-shadow-panel: var(--camp-shadow);
+  --chat-font: var(--camp-font);
+  --chat-font-heading: var(--camp-font);
   --chat-control: 44px;
-  --chat-radius: 12px;
+  --chat-radius: 14px;
   --chat-space-xs: 4px;
   --chat-space-sm: 8px;
   --chat-space-md: 12px;
   --chat-space-lg: 16px;
   --chat-space-xl: 24px;
+  /* Legacy shared controls also inherit the homepage palette. */
+  --text: var(--chat-ink);
+  --text-soft: var(--chat-muted);
+  --text-faint: var(--chat-subtle);
+  --page-bg: var(--chat-canvas);
+  --bg: var(--chat-canvas);
+  --font-sans: var(--chat-font);
+  --warm: var(--chat-accent);
+  --cool: var(--chat-accent);
+  --danger: var(--chat-danger);
 }
 
-html[data-theme="dark"] {
-  --chat-paper: #151b26;
-  --chat-canvas: #0b1019;
-  --chat-rail: #111620;
-  --chat-hover: #202938;
-  --chat-selected: #29394f;
-  --chat-pressed: #354963;
-  --chat-outgoing: #25384f;
-  --chat-ink: #f4f6fb;
-  --chat-muted: #b4bcc9;
-  --chat-subtle: #a1acbd;
-  --chat-line: rgba(255, 255, 255, 0.12);
-  --chat-accent: #a7c5ed;
-  --chat-accent-hover: #c0d6f3;
-  --chat-accent-pressed: #91b3df;
-  --chat-danger: oklch(74% 0.16 27);
-  --chat-danger-soft: oklch(30% 0.045 27);
-  --chat-disabled: oklch(31% 0.016 165);
-  --chat-online: oklch(73% 0.13 155);
-  --chat-scrollbar: oklch(74% 0.02 155 / 0.35);
-  --chat-scrim: oklch(8% 0.02 165 / 0.65);
-  --chat-shadow: 0 1px 2px oklch(5% 0.025 165 / 0.24);
-  --chat-shadow-panel: 0 12px 36px oklch(5% 0.025 165 / 0.3);
+/* Explicit and automatic themes must also override the legacy control aliases. */
+:root, :root[data-theme], :root:not([data-theme]) {
+  --text: var(--chat-ink);
+  --muted: var(--chat-muted);
+  --line: var(--chat-line);
+  --accent: var(--chat-accent);
+  --primary-fill: var(--chat-primary-fill);
+  --primary-ink: var(--chat-primary-ink);
+  --glass-sheet: var(--chat-glass);
+  --glass-control: var(--chat-control-fill);
+  --glass-edge: var(--chat-glass-rim);
+  --modal-scrim: var(--chat-scrim);
 }
 
-@media (prefers-color-scheme: dark) {
-  html:not([data-theme="light"]) {
-    --chat-paper: #151b26;
-    --chat-canvas: #0b1019;
-    --chat-rail: #111620;
-    --chat-hover: #202938;
-    --chat-selected: #29394f;
-    --chat-pressed: #354963;
-    --chat-outgoing: #25384f;
-    --chat-ink: #f4f6fb;
-    --chat-muted: #b4bcc9;
-    --chat-subtle: #a1acbd;
-    --chat-line: rgba(255, 255, 255, 0.12);
-    --chat-accent: #a7c5ed;
-    --chat-accent-hover: #c0d6f3;
-    --chat-accent-pressed: #91b3df;
-    --chat-danger: oklch(74% 0.16 27);
-    --chat-danger-soft: oklch(30% 0.045 27);
-    --chat-disabled: oklch(31% 0.016 165);
-    --chat-online: oklch(73% 0.13 155);
-    --chat-scrollbar: oklch(74% 0.02 155 / 0.35);
-    --chat-scrim: oklch(8% 0.02 165 / 0.65);
-    --chat-shadow: 0 1px 2px oklch(5% 0.025 165 / 0.24);
-    --chat-shadow-panel: 0 12px 36px oklch(5% 0.025 165 / 0.3);
+html, body, #app { background: transparent; }
+html { background: var(--chat-canvas); }
+body { font-family: var(--chat-font); color: var(--chat-ink); }
+a { color: var(--chat-accent); }
+
+/* Exactly the homepage background and cover, fixed behind the chat workspace. */
+body::before, body::after {
+  content: "";
+  z-index: 0;
+  display: block;
+  position: fixed;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  opacity: 1;
+  animation: none;
+  transform: none;
+  pointer-events: none;
+}
+body::before {
+  inset: -5%;
+  background: var(--camp-background-image) center / cover no-repeat;
+  filter: blur(8px) saturate(1.08);
+}
+body::after {
+  inset: 0;
+  background: var(--camp-page-cover);
+  filter: none;
+}
+
+/* UI primitives used inside the chat dialogs. */
+.ui-surface { border-color: var(--chat-line); background: var(--chat-card); border-radius: var(--chat-radius-surface); }
+.ui-button {
+  min-height: 44px;
+  border-radius: 999px;
+  background: var(--chat-primary-fill);
+  color: var(--chat-primary-ink);
+  border-color: transparent;
+  font-weight: 650;
+}
+.ui-button--secondary { background: var(--chat-control-fill); color: var(--chat-ink); border-color: var(--chat-line); }
+.ui-button--ghost { background: transparent; color: var(--chat-muted); }
+.ui-button--icon.ui-button--ghost { background: var(--chat-control-fill); border-color: var(--chat-line); }
+.ui-button--destructive { background: var(--chat-danger); color: var(--camp-bg); }
+.ui-button:active:not(:disabled) { transform: scale(0.98); }
+.ui-button:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 3px; }
+.ui-input, .ui-textarea, select.ui-input {
+  background: var(--chat-control-fill);
+  color: var(--chat-ink);
+  border-color: var(--chat-line);
+  border-radius: 14px;
+}
+.ui-input::placeholder, .ui-textarea::placeholder { color: var(--chat-subtle); }
+.ui-input:focus, .ui-textarea:focus, select.ui-input:focus {
+  border-color: var(--chat-accent);
+  background: var(--chat-control-fill);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--chat-accent) 15%, transparent);
+}
+.ui-avatar {
+  background: var(--chat-control-fill);
+  border-color: var(--camp-glass-edge);
+  color: var(--chat-ink);
+  box-shadow: inset 0 1px 0 var(--camp-glass-edge);
+}
+.profile-avatar-trigger:focus-visible { outline-color: var(--chat-accent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .ui-button:hover:not(:disabled) { background: var(--chat-accent-hover); color: var(--chat-primary-ink); }
+  .ui-button--secondary:hover:not(:disabled), .ui-button--ghost:hover:not(:disabled) {
+    background: var(--chat-hover); border-color: var(--chat-line); color: var(--chat-ink);
   }
+  .ui-button--destructive:hover:not(:disabled) { background: var(--chat-danger); }
 }
 
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  :root { --chat-glass: var(--chat-paper); }
+  :root {
+    --chat-glass: var(--camp-bg);
+    --chat-card: var(--camp-bg);
+    --chat-rail: var(--camp-bg);
+    --chat-paper: var(--camp-bg);
+    --chat-control-fill: color-mix(in srgb, var(--camp-text) 8%, var(--camp-bg));
+  }
 }

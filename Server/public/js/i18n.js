@@ -5,6 +5,7 @@
   const originalPlaceholder = new WeakMap();
   const originalAttributes = new WeakMap();
   const originalTitle = document.title;
+  let notifiedLanguage;
   const languageNames = {
     auto: "Auto",
     "zh-cn": "简体中文",
@@ -4968,12 +4969,12 @@
 });
   Object.assign(translations["zh-tw"], {
   "修改密码": "修改密碼",
-  "旧密码": "舊密碼",
-  "验证旧密码": "驗證舊密碼",
+  "旧密码": "目前密碼",
+  "验证旧密码": "驗證目前密碼",
   "确认新密码": "確認新密碼",
-  "旧密码错误，请重新输入。": "舊密碼錯誤，請重新輸入。",
-  "验证已失效，请重新验证旧密码。": "驗證已失效，請重新驗證舊密碼。",
-  "新密码不能与旧密码相同。": "新密碼不能與舊密碼相同。",
+  "旧密码错误，请重新输入。": "目前密碼錯誤，請重新輸入。",
+  "验证已失效，请重新验证旧密码。": "驗證已失效，請重新驗證目前密碼。",
+  "新密码不能与旧密码相同。": "新密碼不能與目前密碼相同。",
   "两次输入的新密码不一致。": "兩次輸入的新密碼不一致。",
   "密码修改成功，请重新登录。": "密碼修改成功，請重新登入。",
   "修改成功后将退出所有设备的登录，请使用新密码重新登录。": "修改成功後將登出所有裝置，請使用新密碼重新登入。",
@@ -5022,6 +5023,28 @@
   "保存后立即生效；保留天数的清理任务每10分钟执行。单文件最大支持25MB。": "儲存後立即生效；保留天數的清理工作每10分鐘執行。單檔最大支援25MB。",
   "互动中心管理（含私聊与全站文件）": "互動中心管理（含私聊與全站檔案）"
 });
+  for (const [language, nextStep] of [["en", "Next"], ["fr", "Suivant"], ["ja", "次へ"], ["zh-tw", "下一步"]]) {
+    translations[language]["当前密码"] = translations[language]["旧密码"];
+    translations[language]["下一步"] = nextStep;
+  }
+  for (const [language, prompt] of [
+    ["en", "Enter your current password."], ["fr", "Saisissez votre mot de passe actuel."],
+    ["ja", "現在のパスワードを入力してください。"], ["zh-tw", "請輸入目前密碼。"]
+  ]) translations[language]["请输入当前密码。"] = prompt;
+  for (const [language, unit] of [["en", "types"], ["fr", "types"], ["ja", "種類"], ["zh-tw", "種"]]) {
+    translations[language]["种"] = unit;
+  }
+  for (const [language, message] of [
+    ["en", "Avatar updated."], ["fr", "Avatar mis à jour."],
+    ["ja", "アバターを更新しました。"], ["zh-tw", "頭像已更新。"]
+  ]) translations[language]["头像已更新。"] = message;
+  // Keep translating existing API error messages while using current-password
+  // wording consistently in the user interface.
+  Object.assign(translations["zh-cn"], {
+    "旧密码错误，请重新输入。": "当前密码错误，请重新输入。",
+    "验证已失效，请重新验证旧密码。": "验证已失效，请重新验证当前密码。",
+    "新密码不能与旧密码相同。": "新密码不能与当前密码相同。"
+  });
   for (const [language, avatar, label, changed] of [
     ["en","Avatar","Avatar:","Your avatar changed or your session expired. Please try again."],
     ["fr","Avatar","Avatar :","Votre avatar a changé ou votre session a expiré. Réessayez."],
@@ -5112,16 +5135,17 @@
       const original = originalText.get(node);
       const trimmed = original.trim();
       if (!trimmed) continue;
-      node.nodeValue = original.replace(trimmed, translate(trimmed, language));
+      const translated = original.replace(trimmed, translate(trimmed, language));
+      if (node.nodeValue !== translated) node.nodeValue = translated;
     }
     for (const field of document.querySelectorAll("[placeholder]")) {
       if (!originalPlaceholder.has(field)) {
         originalPlaceholder.set(field, field.getAttribute("placeholder"));
       }
-      field.setAttribute(
-        "placeholder",
-        translate(originalPlaceholder.get(field), language)
-      );
+      const translated = translate(originalPlaceholder.get(field), language);
+      if (field.getAttribute("placeholder") !== translated) {
+        field.setAttribute("placeholder", translated);
+      }
     }
     for (const element of document.querySelectorAll("[aria-label], [title], [alt]")) {
       if (!originalAttributes.has(element)) originalAttributes.set(element, {});
@@ -5129,12 +5153,18 @@
       for (const attribute of ["aria-label", "title", "alt"]) {
         if (!element.hasAttribute(attribute)) continue;
         if (!(attribute in originals)) originals[attribute] = element.getAttribute(attribute);
-        element.setAttribute(attribute, translate(originals[attribute], language));
+        const translated = translate(originals[attribute], language);
+        if (element.getAttribute(attribute) !== translated) {
+          element.setAttribute(attribute, translated);
+        }
       }
     }
     updateSiteFooter(language);
     syncControls();
-    if (emitEvent) {
+    // Focus, shared-cookie polling and theme changes may all request a pass.
+    // Only an actual language change should reload locale-specific page data.
+    if (emitEvent && language !== notifiedLanguage) {
+      notifiedLanguage = language;
       document.dispatchEvent(
         new CustomEvent("mrzh:languagechange", { detail: { language } })
       );

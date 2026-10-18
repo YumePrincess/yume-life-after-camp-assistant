@@ -134,7 +134,7 @@ const emit = defineEmits(['close', 'update:inviteUserId', 'invite', 'remove-memb
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: #54656f;
+  color: var(--chat-muted);
   touch-action: manipulation;
 }
 
@@ -143,7 +143,7 @@ const emit = defineEmits(['close', 'update:inviteUserId', 'invite', 'remove-memb
   background: rgba(0, 0, 0, 0.06);
 }
 
-.chat-member-panel { display: flex; flex-direction: column; gap: 16px; min-height: 0; padding: 20px; background: var(--chat-paper); color: var(--chat-ink); border: 1px solid var(--chat-line); border-radius: 0; box-shadow: none; height: 100%; min-height: 0; border: 0; }
+.chat-member-panel { display: flex; flex-direction: column; gap: 16px; min-height: 0; padding: 20px; background: transparent; color: var(--chat-ink); border: 1px solid var(--chat-line); border-radius: 0; box-shadow: none; height: 100%; min-height: 0; border: 0; }
 .chat-member-panel__header { align-items: flex-start; }
 .window-heading h2 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
 .window-heading p { margin: 6px 0 0; color: var(--chat-muted); font-size: 13px; }

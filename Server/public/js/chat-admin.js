@@ -24,11 +24,7 @@
     return el;
   }
   function status(message = "", error = false) {
-    const el = byId("chat-admin-summary");
-    el.replaceChildren(
-      message ? node("span", "", message) : document.createTextNode(""),
-    );
-    el.classList.toggle("is-error", error);
+    if (message) void window.MrzhFeedback.notice(t(message));
   }
   const showError = (error) => status(error.message, true);
   function button(text, run, danger = false) {
@@ -51,13 +47,19 @@
     return el;
   }
   async function api(path = "", options = {}) {
-    const response = await fetch(`/api/admin/chat${path}`, {
-      ...options,
-      headers: { "X-CSRF-Token": csrf, ...options.headers },
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(t(data.error || "加载失败"));
-    return data;
+    const progress = options.method && !["GET", "HEAD"].includes(options.method.toUpperCase())
+      ? window.MrzhFeedback.begin() : null;
+    try {
+      const response = await fetch(`/api/admin/chat${path}`, {
+        ...options,
+        headers: { "X-CSRF-Token": csrf, ...options.headers },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(t(data.error || "加载失败"));
+      return data;
+    } finally {
+      if (progress !== null) window.MrzhFeedback.end(progress);
+    }
   }
   function timestamp(value) {
     return window.MrzhTimezone.timestamp(

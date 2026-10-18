@@ -25,7 +25,8 @@ export function useOverlayLifecycle({ open, onClose, focusTarget, container, res
 	const entry = {};
 	const resolveElement = (value) => typeof value === "function" ? value() : value?.value;
 	const dialog = () => resolveElement(container) || resolveElement(focusTarget)?.closest('[role="dialog"]');
-	const isTop = () => overlayStack.at(-1) === entry;
+	// Native feedback dialogs occupy the browser's top layer above Vue overlays.
+	const isTop = () => overlayStack.at(-1) === entry && !document.querySelector('dialog.site-feedback[open]');
 
 	function focusInside(event) {
 		const root = dialog();

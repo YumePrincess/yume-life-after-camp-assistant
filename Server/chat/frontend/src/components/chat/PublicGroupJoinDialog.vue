@@ -84,7 +84,7 @@ button:active:not(:disabled) { filter: brightness(0.94); }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent); outline-offset: 3px; }
 .room-dialog__input { color: var(--chat-ink); }
 .room-dialog__secondary { color: var(--chat-ink); }
-.room-dialog__primary { background: var(--chat-accent); color: var(--chat-paper); }
+.room-dialog__primary { background: var(--chat-primary-fill); color: var(--chat-primary-ink); }
 
 .public-group-overlay {
   position: fixed;
@@ -98,7 +98,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
     max(16px, env(safe-area-inset-right))
     max(16px, env(safe-area-inset-bottom))
     max(16px, env(safe-area-inset-left));
-  background: rgba(11, 20, 26, 0.42);
+  background: var(--chat-scrim);
 }
 
 .public-group-dialog {
@@ -110,7 +110,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
   overflow-y: auto;
   padding: 32px 28px 24px;
   border-radius: var(--chat-radius-dialog);
-  background: var(--chat-paper);
+  background: var(--chat-glass);
+  border: 1px solid var(--chat-line);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
   box-shadow: 0 20px 60px rgba(11, 20, 26, 0.18);
   text-align: center;
 }
@@ -125,9 +128,9 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
   width: 40px;
   height: 40px;
   padding: 0;
-  border: 0;
+  border: 1px solid var(--chat-line);
   border-radius: 50%;
-  background: transparent;
+  background: var(--chat-control-fill);
   color: var(--chat-muted);
   cursor: pointer;
 }
@@ -174,8 +177,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
   width: 100%;
   margin: 24px 0 0;
   padding: 16px 0;
-  border-top: 1px solid #eef1f3;
-  border-bottom: 1px solid #eef1f3;
+  border-top: 1px solid var(--chat-line);
+  border-bottom: 1px solid var(--chat-line);
 }
 
 .public-group-dialog__facts div {
@@ -185,11 +188,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
 }
 
 .public-group-dialog__facts div + div {
-  border-left: 1px solid #eef1f3;
+  border-left: 1px solid var(--chat-line);
 }
 
 .public-group-dialog__facts dt {
-  color: #8696a0;
+  color: var(--chat-subtle);
   font-size: 12px;
 }
 
@@ -224,15 +227,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
 }
 
 .public-group-dialog__secondary {
-  border: 1px solid #dce2e5;
+  border: 1px solid var(--chat-line);
   background: var(--chat-paper);
   color: var(--chat-ink);
 }
 
 .public-group-dialog__primary {
   border: 1px solid var(--chat-accent);
-  background: var(--chat-accent);
-  color: var(--chat-paper);
+  background: var(--chat-primary-fill);
+  color: var(--chat-primary-ink);
 }
 
 .public-group-dialog button:disabled {
@@ -241,7 +244,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--chat-accent
 }
 
 .public-group-dialog button:focus-visible {
-  outline: 3px solid rgba(0, 128, 105, 0.24);
+  outline: 3px solid var(--chat-accent);
   outline-offset: 2px;
 }
 

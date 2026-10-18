@@ -117,9 +117,11 @@ onBeforeUnmount(() => {
   z-index: 1000;
   width: 176px;
   padding: 8px;
-  border: 1px solid rgba(11, 20, 26, 0.08);
-  border-radius: 6px;
-  background: #ffffff;
+  border: 1px solid var(--chat-line);
+  border-radius: 18px;
+  background: var(--chat-paper);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  backdrop-filter: blur(20px) saturate(1.2);
   box-shadow: 0 2px 5px rgba(11, 20, 26, 0.16), 0 6px 18px rgba(11, 20, 26, 0.12);
 }
 
@@ -131,9 +133,9 @@ onBeforeUnmount(() => {
   min-height: 40px;
   padding: 0 10px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 12px;
   background: transparent;
-  color: #111b21;
+  color: var(--chat-ink);
   font: inherit;
   font-size: 14px;
   text-align: left;
@@ -141,16 +143,16 @@ onBeforeUnmount(() => {
 }
 
 .message-context-menu button.message-context-menu__danger {
-  color: #c62828;
+  color: var(--chat-danger);
 }
 
 .message-context-menu button:hover,
 .message-context-menu button:active {
-  background: #f5f6f6;
+  background: var(--chat-hover);
 }
 
 .message-context-menu button:focus-visible {
-  outline: 2px solid #008069;
+  outline: 2px solid var(--chat-accent);
   outline-offset: -2px;
 }
 

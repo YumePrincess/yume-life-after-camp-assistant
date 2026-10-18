@@ -1,4 +1,5 @@
 /* Mobile counterpart of pages/mrzh/mrzh.wxss (750 rpx design canvas). */
+.public-page .mobile-card-icon { display: none; }
 .member-last-active { display: none; }
 .vote-option-side, .daily-option-side { display: flex; align-self: start; justify-content: flex-end; white-space: nowrap; }
 html:has(dialog[open]) { overflow: hidden; }
@@ -25,18 +26,8 @@ html:has(dialog[open]) { overflow: hidden; }
   .public-page .feature-card:hover { background: var(--panel); border-color: var(--line); }
   .public-page .feature-card-topline { gap: 0; margin-bottom: calc(18 * var(--rpx)); }
   .public-page .feature-card-icon { width: calc(48 * var(--rpx)); height: calc(48 * var(--rpx)); flex-basis: calc(48 * var(--rpx)); margin-right: calc(12 * var(--rpx)); border-radius: calc(15 * var(--rpx)); }
-  .public-page .feature-card-icon svg { display: none; }
-  .public-page .feature-card-icon::before { content: ""; width: 80%; height: 80%; background: currentColor; mask: var(--mini-icon) center / contain no-repeat; -webkit-mask: var(--mini-icon) center / contain no-repeat; }
-  .feature-card[data-feature-target="overview"] { --mini-icon: url('/icons/mrzh/megaphone.svg'); }
-  .feature-card[data-feature-target="group"] { --mini-icon: url('/icons/mrzh/users-round.svg'); }
-  .feature-card[data-feature-target="identity"] { --mini-icon: url('/icons/mrzh/id-card.svg'); }
-  #open-chat { --mini-icon: url('/icons/mrzh/message-square.svg'); }
-  .feature-card[data-feature-target="vote"] { --mini-icon: url('/icons/mrzh/vote.svg'); }
-  .feature-card[data-feature-target="staff"] { --mini-icon: url('/icons/mrzh/badge-check.svg'); }
-  .feature-card[data-feature-target="members"] { --mini-icon: url('/icons/mrzh/user-round-check.svg'); }
-  .feature-card[data-feature-target="warnings"] { --mini-icon: url('/icons/mrzh/triangle-alert.svg'); }
-  .feature-card[data-feature-target="runs"] { --mini-icon: url('/icons/mrzh/list-checks.svg'); }
-  .feature-card[href="/admin"] { --mini-icon: url('/icons/mrzh/settings-2.svg'); }
+  .public-page .feature-card-icon svg:not(.mobile-card-icon) { display: none; }
+  .public-page .feature-card-icon svg.mobile-card-icon { display: block; width: 80%; height: 80%; stroke-width: 2; }
   .public-page .feature-card-kicker { display: block; flex: 1; font-size: calc(20 * var(--rpx)); letter-spacing: .14em; }
   .public-page .feature-card-arrow { font-size: calc(34 * var(--rpx)); }
   .public-page .feature-card-copy { gap: calc(9 * var(--rpx)); }
@@ -64,12 +55,8 @@ html:has(dialog[open]) { overflow: hidden; }
   .public-page .daily-vote-panel-card:hover { background: transparent; border-color: var(--line); }
   .public-page .daily-vote-panel-icon { width: calc(76 * var(--rpx)); height: calc(76 * var(--rpx)); flex-basis: calc(76 * var(--rpx)); border-radius: calc(24 * var(--rpx)); }
   .public-page .daily-vote-panel-icon { font-size: 0; }
-  .public-page .daily-vote-panel-icon svg { display: none; }
-  .public-page .daily-vote-panel-icon::before { content: ""; width: calc(58 * var(--rpx)); height: calc(58 * var(--rpx)); background: currentColor; mask: var(--mini-icon) center / contain no-repeat; -webkit-mask: var(--mini-icon) center / contain no-repeat; }
-  .daily-vote-panel-card[data-daily-panel="identity"] { --mini-icon: url('/icons/mrzh/badge-check.svg'); }
-  .daily-vote-panel-card[data-daily-panel="technology"] { --mini-icon: url('/icons/mrzh/vote.svg'); }
-  .daily-vote-panel-card[data-daily-panel="items"] { --mini-icon: url('/icons/mrzh/list-checks.svg'); }
-  .daily-vote-panel-card[data-daily-panel="history"] { --mini-icon: url('/icons/mrzh/history.svg'); }
+  .public-page .daily-vote-panel-icon svg:not(.mobile-card-icon) { display: none; }
+  .public-page .daily-vote-panel-icon svg.mobile-card-icon { display: block; width: calc(58 * var(--rpx)); height: calc(58 * var(--rpx)); stroke-width: 2; }
   .public-page .daily-vote-panel-copy strong { font-size: calc(30 * var(--rpx)); }
   .public-page .daily-vote-panel-copy small { margin-top: calc(8 * var(--rpx)); font-size: calc(23 * var(--rpx)); line-height: 1.45; }
   .public-page .daily-vote-panel-stat b { font-size: calc(36 * var(--rpx)); }

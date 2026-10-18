@@ -58,6 +58,8 @@
     "identity_login_failed"
   ]);
   let operationProgressSequence = 0;
+  let renderedTechnologyVote = "";
+  let renderedDailyVote = "";
   const activeOperationProgress = new Map();
 
   function isIdentitySessionInvalidError(error) {
@@ -82,7 +84,7 @@
   }
 
   function dailyVoteFeatureCount(payload) {
-    return (Array.isArray(payload?.items) ? payload.items.length : 0) + 2;
+    return (Array.isArray(payload?.items) ? payload.items.length : 0) + 1;
   }
 
   function loadIdentitySession() {
@@ -153,13 +155,15 @@
     setText("identity-account-state", session ? window.MrzhI18n.t("已登录") : window.MrzhI18n.t("未登录"));
     byId("identity-account-status").dataset.signedIn = String(Boolean(session));
     setText("identity-status-mark", session ? "✓" : "×");
-    setText("daily-identity-panel-state", window.MrzhI18n.t(session ? "已登录" : "未登录"));
+    setText("identity-card-status-text", window.MrzhI18n.t(session ? "已登录" : "未登录"));
     byId("daily-identity-panel-state").dataset.signedIn = String(Boolean(session));
     renderIdentityEligibility(session);
     const avatar = byId("identity-avatar");
     if (avatar) {
       avatar.hidden = !session?.avatarUrl;
-      if (session?.avatarUrl) avatar.src = session.avatarUrl;
+      if (session?.avatarUrl && avatar.getAttribute("src") !== session.avatarUrl) {
+        avatar.src = session.avatarUrl;
+      }
       const fallback = byId("identity-avatar-fallback");
       fallback.textContent = [...(session?.playerName || "?")][0];
       fallback.hidden = Boolean(session?.avatarUrl);
@@ -943,6 +947,13 @@
     renderOperationProgress();
   }
 
+  // Shared feature modules use the same processing/result dialogs as the page.
+  window.MrzhFeedback = Object.freeze({
+    notice: message => showOperationNotice(window.MrzhI18n.t(message)),
+    begin: () => showOperationProgress(),
+    end: hideOperationProgress
+  });
+
   async function request(path, options = {}) {
     const response = await fetch(path, {
       ...options,
@@ -1230,7 +1241,7 @@
           { kicker: "TECHNOLOGY VOTE" }
         );
       }
-      renderVote(summary);
+      syncTechnologySelection();
       return;
     }
     const required = requiredVoteKeys(summary, option.key);
@@ -1256,10 +1267,26 @@
         { kicker: "TECHNOLOGY VOTE" }
       );
     }
-    renderVote(summary);
+    syncTechnologySelection();
+  }
+
+  function syncTechnologySelection() {
+    for (const button of byId("vote-options").querySelectorAll(".vote-option")) {
+      const selected = String(state.selections.has(button.dataset.key));
+      button.dataset.selected = selected;
+      button.setAttribute("aria-pressed", selected);
+    }
   }
 
   function renderVote(summary) {
+    setText("daily-tech-panel-count", String(summary.options?.length || 0));
+    const alreadyParticipated = hasTechnologyParticipation(summary);
+    const signature = JSON.stringify([summary, window.MrzhI18n.language(), alreadyParticipated]);
+    if (signature === renderedTechnologyVote) {
+      syncTechnologySelection();
+      return;
+    }
+    renderedTechnologyVote = signature;
     const opensAt = splitTimezoneSuffix(
       formatVoteDateTime(summary.opensAt, summary.opensAtDisplay)
     );
@@ -1291,7 +1318,6 @@
     }
     const root = byId("vote-options");
     root.replaceChildren();
-    const alreadyParticipated = hasTechnologyParticipation(summary);
     renderVoteSelection(
       summary,
       byId("vote-selection-preview"),
@@ -1567,6 +1593,15 @@
     return Array.isArray(values) ? values : [];
   }
 
+  function syncDailySelection(options, itemId) {
+    const selected = new Set(dailySelections(itemId));
+    for (const button of options.querySelectorAll(".daily-vote-option")) {
+      const isSelected = selected.has(button.dataset.optionId);
+      button.classList.toggle("is-selected", isSelected);
+      button.setAttribute("aria-pressed", String(isSelected));
+    }
+  }
+
   function renderDailyItem(item) {
     const alreadyParticipated = hasDailyParticipation(item.id);
     const card = create("article", `daily-vote-item daily-vote-item-${item.kind}`);
@@ -1612,6 +1647,7 @@
       for (const option of item.options || []) {
         const button = create("button", `daily-vote-option${selected.has(option.id) ? " is-selected" : ""}${alreadyParticipated ? " is-participated" : ""}`);
         button.type = "button";
+        button.dataset.optionId = option.id;
         button.disabled = item.isOpen === false;
         button.setAttribute("aria-pressed", String(selected.has(option.id)));
         const content = create("div", "daily-vote-option-content");
@@ -1644,7 +1680,7 @@
             return;
           }
           state.dailySelections[item.id] = [...next];
-          renderDailyVote(state.data?.dailyVote || {});
+          syncDailySelection(options, item.id);
         });
         options.append(button);
       }
@@ -1830,17 +1866,31 @@
     const historyCount = (payload?.technologyHistory || []).length +
       (payload?.history?.polls || []).length +
       (payload?.history?.draws || []).length;
-    root.replaceChildren();
     renderIdentityAccount();
     setText("feature-vote-count", String(dailyVoteFeatureCount(payload)));
-    setText("daily-tech-panel-count", "1");
     setText("daily-items-panel-count", String(items.length));
     setText("daily-history-panel-count", String(historyCount));
-    if (!items.length) {
-      root.append(create("p", "empty-state", window.MrzhI18n.t("当前没有开放事项。")));
+    const signature = JSON.stringify([
+      payload, window.MrzhI18n.language(),
+      items.map(item => hasDailyParticipation(item.id))
+    ]);
+    // Selection and navigation keep the existing image nodes. Rebuild only
+    // when server data, participation permissions or the language changes.
+    if (signature !== renderedDailyVote) {
+      renderedDailyVote = signature;
+      root.replaceChildren();
+      if (!items.length) {
+        root.append(create("p", "empty-state", window.MrzhI18n.t("当前没有开放事项。")));
+      }
+      for (const item of items) root.append(renderDailyItem(item));
+      renderDailyHistory(payload || {});
     }
-    for (const item of items) root.append(renderDailyItem(item));
-    renderDailyHistory(payload || {});
+    syncDailyPanelVisibility();
+    setText("hero-vote-count", String(dailyVoteFeatureCount(payload)));
+    setText("feature-vote-count", String(dailyVoteFeatureCount(payload)));
+  }
+
+  function syncDailyPanelVisibility() {
     const panelList = byId("daily-vote-panels");
     const panelDetail = byId("daily-vote-panel-detail");
     if (panelList) panelList.hidden = Boolean(state.dailyPanel);
@@ -1849,8 +1899,6 @@
       panel.hidden = panel.dataset.dailyPanelContent !== state.dailyPanel;
     }
     if (state.activeFeature === "vote") syncFeatureDetailKicker();
-    setText("hero-vote-count", String(dailyVoteFeatureCount(payload)));
-    setText("feature-vote-count", String(dailyVoteFeatureCount(payload)));
   }
 
   function openDailyPanel(panel) {
@@ -1858,7 +1906,7 @@
     if (!["technology", "items", "history"].includes(panel)) return;
     if (state.activeFeature !== "vote") return;
     state.dailyPanel = panel;
-    renderDailyVote(state.data?.dailyVote || {});
+    syncDailyPanelVisibility();
     resetFeatureScroll();
     if (panel === "identity") void refreshIdentitySession();
     if (panel === "technology" || panel === "items") void refreshVoteParticipation({ force: true });
@@ -1866,7 +1914,7 @@
 
   function backDailyPanels() {
     state.dailyPanel = "";
-    renderDailyVote(state.data?.dailyVote || {});
+    syncDailyPanelVisibility();
     resetFeatureScroll();
   }
 
@@ -2802,6 +2850,12 @@
   }
   let passwordChangeProof = "", passwordChangeRevision = 0;
   const passwordChangeDialog = byId("identity-password-change-dialog");
+  function focusPasswordChangeStep(fieldId) {
+    // Focusing the close button keeps the mobile keyboard closed until a tap.
+    // The dialog's autofocus target also prevents native showModal input focus.
+    const mobile = window.matchMedia("(max-width: 700px), (pointer: coarse)").matches;
+    byId(mobile ? "identity-password-change-close" : fieldId).focus({ preventScroll: true });
+  }
   function resetPasswordChange() {
     passwordChangeRevision += 1;
     passwordChangeProof = "";
@@ -2809,47 +2863,78 @@
     byId("identity-password-change-set").reset();
     byId("identity-password-change-verify").hidden = false;
     byId("identity-password-change-set").hidden = true;
-    byId("identity-password-change-feedback").textContent = "";
   }
   byId("identity-change-password").addEventListener("click", () => {
     if (!requireIdentitySession()) return;
     resetPasswordChange(); passwordChangeDialog.showModal();
-    byId("identity-password-change-old").focus();
+    focusPasswordChangeStep("identity-password-change-old");
   });
   byId("identity-password-change-close").addEventListener("click",()=>passwordChangeDialog.close());
   passwordChangeDialog.addEventListener("close",resetPasswordChange);
-  byId("identity-password-change-verify").addEventListener("submit",async(event)=>{
+  byId("identity-password-change-verify").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const currentPassword = byId("identity-password-change-old").value;
+    if (!currentPassword) {
+      showOperationNotice(window.MrzhI18n.t("请输入当前密码。"), { kicker: "IDENTITY CODE" });
+      return;
+    }
     const submit = event.currentTarget.querySelector('[type="submit"]');
     const revision = ++passwordChangeRevision;
     submit.disabled = true;
-    byId("identity-password-change-feedback").textContent = "";
+    const progressToken = showOperationProgress("IDENTITY CODE");
+    let message = "";
+    let verified = false;
     try {
-      const result = await request("/api/public/identity-password-change",{method:"POST",body:JSON.stringify({action:"verify",oldPassword:byId("identity-password-change-old").value})});
+      const result = await request("/api/public/identity-password-change", {
+        method: "POST", body: JSON.stringify({ action: "verify", oldPassword: currentPassword })
+      });
       if (revision !== passwordChangeRevision || !passwordChangeDialog.open) return;
       passwordChangeProof = result.verificationToken;
       byId("identity-password-change-old").value = "";
       byId("identity-password-change-verify").hidden = true;
       byId("identity-password-change-set").hidden = false;
-      byId("identity-password-change-new").focus();
-    } catch(error) { if (revision === passwordChangeRevision) byId("identity-password-change-feedback").textContent = window.MrzhI18n.t(error.message); }
-    finally { submit.disabled = false; }
+      verified = true;
+      message = "验证通过，请设置新密码。";
+    } catch (error) {
+      if (revision === passwordChangeRevision) message = error.message;
+    } finally {
+      submit.disabled = false;
+      hideOperationProgress(progressToken);
+    }
+    if (verified) {
+      focusPasswordChangeStep("identity-password-change-new");
+    }
+    if (message) showOperationNotice(window.MrzhI18n.t(message), { kicker: "IDENTITY CODE" });
   });
-  byId("identity-password-change-set").addEventListener("submit",async(event)=>{
+  byId("identity-password-change-set").addEventListener("submit", async (event) => {
     event.preventDefault();
     const password = byId("identity-password-change-new").value;
-    const feedback = byId("identity-password-change-feedback");
-    if (password.length < 6 || password.length > 32) { feedback.textContent = window.MrzhI18n.t("密码必须为6至32位"); return; }
-    if (password !== byId("identity-password-change-confirm").value) { feedback.textContent = window.MrzhI18n.t("两次输入的新密码不一致。"); return; }
+    if (password.length < 6 || password.length > 32) {
+      showOperationNotice(window.MrzhI18n.t("密码必须为6至32位"), { kicker: "IDENTITY CODE" });
+      return;
+    }
+    if (password !== byId("identity-password-change-confirm").value) {
+      showOperationNotice(window.MrzhI18n.t("两次输入的新密码不一致。"), { kicker: "IDENTITY CODE" });
+      return;
+    }
     const submit = event.currentTarget.querySelector('[type="submit"]');
     submit.disabled = true;
+    const progressToken = showOperationProgress("IDENTITY CODE");
+    let message = "";
     try {
-      await request("/api/public/identity-password-change",{method:"POST",body:JSON.stringify({action:"set",verificationToken:passwordChangeProof,newPassword:password})});
+      await request("/api/public/identity-password-change", {
+        method: "POST", body: JSON.stringify({ action: "set", verificationToken: passwordChangeProof, newPassword: password })
+      });
       passwordChangeDialog.close();
       clearIdentitySession();
-      showOperationNotice(window.MrzhI18n.t("密码修改成功，请重新登录。"),{kicker:"IDENTITY CODE"});
-    } catch(error) { feedback.textContent = window.MrzhI18n.t(error.message); }
-    finally { submit.disabled = false; }
+      message = "密码修改成功，请重新登录。";
+    } catch (error) {
+      message = error.message;
+    } finally {
+      submit.disabled = false;
+      hideOperationProgress(progressToken);
+    }
+    if (message) showOperationNotice(window.MrzhI18n.t(message), { kicker: "IDENTITY CODE" });
   });
   byId("identity-logout").addEventListener("click", async () => {
     await request("/api/public/identity-session",{method:"DELETE"}).catch(()=>{});

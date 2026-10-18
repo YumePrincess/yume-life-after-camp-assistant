@@ -20,39 +20,44 @@
     oidc_session_expired: "Yume Account 登录状态已退出，请重新登录。"
   };
   const error = params.get("error");
-  const target = document.querySelector("#login-error");
-  if (target && error) {
+  const t = message => window.MrzhI18n?.t ? window.MrzhI18n.t(message) : message;
+  const notice = message => window.MrzhFeedback.notice(t(message));
+  if (error) {
     const message = messages[error] || "登录失败，请稍后重试。";
-    target.textContent = window.MrzhI18n?.t
-      ? window.MrzhI18n.t(message)
-      : message;
+    void notice(message);
   }
 
   document.querySelector("#key-login-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    target.textContent = window.MrzhI18n?.t
-      ? window.MrzhI18n.t("正在验证临时 Key…")
-      : "正在验证临时 Key…";
-    const response = await fetch("/auth/key", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        key: document.querySelector("#temporary-key").value,
-        returnTo
-      })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      target.textContent = window.MrzhI18n?.t
-        ? window.MrzhI18n.t(payload.error || "临时 Key 登录失败。")
-        : payload.error || "临时 Key 登录失败。";
-      return;
+    const submit = event.currentTarget.querySelector('[type="submit"]');
+    submit.disabled = true;
+    const progress = window.MrzhFeedback.begin();
+    let message = "";
+    try {
+      const response = await fetch("/auth/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: document.querySelector("#temporary-key").value,
+          returnTo
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "临时 Key 登录失败。");
+      }
+      location.replace(payload.returnTo || "/admin");
+    } catch (error) {
+      message = error.message || "临时 Key 登录失败。";
+    } finally {
+      submit.disabled = false;
+      window.MrzhFeedback.end(progress);
     }
-    location.replace(payload.returnTo || "/admin");
+    if (message) void notice(message);
   });
 
   void initializeAuth().catch(() => {
-    target.textContent = window.MrzhI18n.t("登录配置加载失败，请重新载入。");
+    void notice("登录配置加载失败，请重新载入。");
   }).finally(() => window.MrzhLoading?.settle("data"));
 
   async function initializeAuth() {

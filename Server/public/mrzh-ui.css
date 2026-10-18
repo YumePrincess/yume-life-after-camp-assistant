@@ -1,3 +1,5 @@
+@import url("./camp-theme.css?v=20261018-chat-design");
+
 /*
  * Shared mrzh design system rebuilt on v27.1.0-build.27142 features.
  * Reference: yume-all-in-one-weixin/pages/mrzh/mrzh.wxss, especially
@@ -6,80 +8,74 @@
  * shared materials, responsive page composition and component presentation.
  */
 :root {
-  --panel: rgba(255, 255, 255, 0.3);
-  --panel-strong: rgba(255, 255, 255, 0.52);
-  --line: rgba(255, 255, 255, 0.44);
-  --line-strong: rgba(27, 47, 77, 0.2);
-  --accent: #9b4f34;
-  --accent-strong: #a94f31;
-  --red: #ad4038;
-  --danger: #ad4038;
-  --glass-card: rgba(255, 255, 255, 0.22);
-  --glass-control: rgba(255, 255, 255, 0.26);
-  --glass-sheet: rgba(255, 248, 241, 0.46);
-  --glass-footer: rgba(255, 255, 255, 0.52);
-  --glass-edge: rgba(255, 255, 255, 0.62);
-  --glass-bottom-edge: rgba(255, 255, 255, 0.18);
-  --glass-card-shadow: 0 10px 24px rgba(31, 41, 55, 0.06);
-  --page-cover: linear-gradient(180deg, rgba(255, 248, 241, 0.08), rgba(243, 236, 229, 0.5));
-  --modal-scrim: rgba(37, 31, 28, 0.28);
-  --primary-fill: #a94f31;
-  --primary-ink: #fff;
-  --shadow:
-    0 16px 38px rgba(31, 41, 55, 0.13),
-    inset 0 1px 0 var(--glass-edge),
-    inset 0 -1px 0 var(--glass-bottom-edge);
+  --bg: var(--camp-bg);
+  --text: var(--camp-text);
+  --muted: var(--camp-muted);
+  --panel: var(--camp-panel);
+  --panel-strong: var(--camp-panel-strong);
+  --line: var(--camp-line);
+  --line-strong: var(--camp-line-strong);
+  --accent: var(--camp-accent);
+  --accent-strong: var(--camp-accent-strong);
+  --red: var(--camp-red);
+  --danger: var(--camp-danger);
+  --glass-card: var(--camp-glass-card);
+  --glass-control: var(--camp-glass-control);
+  --glass-sheet: var(--camp-glass-sheet);
+  --glass-footer: var(--camp-glass-footer);
+  --glass-edge: var(--camp-glass-edge);
+  --glass-bottom-edge: var(--camp-glass-bottom-edge);
+  --glass-card-shadow: var(--camp-glass-card-shadow);
+  --page-cover: var(--camp-page-cover);
+  --modal-scrim: var(--camp-modal-scrim);
+  --primary-fill: var(--camp-primary-fill);
+  --primary-ink: var(--camp-primary-ink);
+  --shadow: var(--camp-shadow);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   font-optical-sizing: auto;
 }
 
 :root[data-theme="dark"] {
-  --panel: rgba(12, 17, 26, 0.56);
-  --panel-strong: rgba(12, 21, 33, 0.64);
-  --accent: #efb29a;
-  --accent-strong: #f0b69b;
-  --red: #ef9991;
-  --danger: #ef9991;
-  --glass-card: rgba(12, 21, 33, 0.32);
-  --glass-control: rgba(255, 255, 255, 0.07);
-  --glass-sheet: rgba(12, 17, 26, 0.62);
-  --glass-footer: rgba(10, 14, 22, 0.58);
-  --glass-edge: rgba(255, 255, 255, 0.18);
-  --glass-bottom-edge: rgba(255, 255, 255, 0.05);
-  --glass-card-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
-  --page-cover: linear-gradient(180deg, rgba(4, 7, 12, 0.36), rgba(4, 7, 12, 0.76));
-  --modal-scrim: rgba(0, 0, 0, 0.54);
-  --primary-fill: #efb29a;
-  --primary-ink: #2d1c16;
-  --shadow:
-    0 16px 38px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 var(--glass-edge),
-    inset 0 -1px 0 var(--glass-bottom-edge);
+  --panel: var(--camp-panel);
+  --panel-strong: var(--camp-panel-strong);
+  --accent: var(--camp-accent);
+  --accent-strong: var(--camp-accent-strong);
+  --red: var(--camp-red);
+  --danger: var(--camp-danger);
+  --glass-card: var(--camp-glass-card);
+  --glass-control: var(--camp-glass-control);
+  --glass-sheet: var(--camp-glass-sheet);
+  --glass-footer: var(--camp-glass-footer);
+  --glass-edge: var(--camp-glass-edge);
+  --glass-bottom-edge: var(--camp-glass-bottom-edge);
+  --glass-card-shadow: var(--camp-glass-card-shadow);
+  --page-cover: var(--camp-page-cover);
+  --modal-scrim: var(--camp-modal-scrim);
+  --primary-fill: var(--camp-primary-fill);
+  --primary-ink: var(--camp-primary-ink);
+  --shadow: var(--camp-shadow);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --panel: rgba(12, 17, 26, 0.56);
-    --panel-strong: rgba(12, 21, 33, 0.64);
-    --accent: #efb29a;
-    --accent-strong: #f0b69b;
-    --red: #ef9991;
-    --danger: #ef9991;
-    --glass-card: rgba(12, 21, 33, 0.32);
-    --glass-control: rgba(255, 255, 255, 0.07);
-    --glass-sheet: rgba(12, 17, 26, 0.62);
-    --glass-footer: rgba(10, 14, 22, 0.58);
-    --glass-edge: rgba(255, 255, 255, 0.18);
-    --glass-bottom-edge: rgba(255, 255, 255, 0.05);
-    --glass-card-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
-    --page-cover: linear-gradient(180deg, rgba(4, 7, 12, 0.36), rgba(4, 7, 12, 0.76));
-    --modal-scrim: rgba(0, 0, 0, 0.54);
-    --primary-fill: #efb29a;
-    --primary-ink: #2d1c16;
-    --shadow:
-      0 16px 38px rgba(0, 0, 0, 0.12),
-      inset 0 1px 0 var(--glass-edge),
-      inset 0 -1px 0 var(--glass-bottom-edge);
+    --panel: var(--camp-panel);
+    --panel-strong: var(--camp-panel-strong);
+    --accent: var(--camp-accent);
+    --accent-strong: var(--camp-accent-strong);
+    --red: var(--camp-red);
+    --danger: var(--camp-danger);
+    --glass-card: var(--camp-glass-card);
+    --glass-control: var(--camp-glass-control);
+    --glass-sheet: var(--camp-glass-sheet);
+    --glass-footer: var(--camp-glass-footer);
+    --glass-edge: var(--camp-glass-edge);
+    --glass-bottom-edge: var(--camp-glass-bottom-edge);
+    --glass-card-shadow: var(--camp-glass-card-shadow);
+    --page-cover: var(--camp-page-cover);
+    --modal-scrim: var(--camp-modal-scrim);
+    --primary-fill: var(--camp-primary-fill);
+    --primary-ink: var(--camp-primary-ink);
+    --shadow: var(--camp-shadow);
   }
 }
 
@@ -934,7 +930,7 @@ dialog:not(.feature-detail-dialog):not(.app-modal):not(.image-preview-dialog) { 
 .public-page .feature-card-kicker { display: block; }
 .public-page .site-header { flex-wrap: nowrap; }
 .public-page .site-header .brand { flex: 1; }
-.feature-card-action { margin-top: auto; padding-top: 20px; color: var(--accent); font-size: 12px; font-weight: 600; }
+.feature-card-action { margin-top: auto; padding-top: 20px; color: var(--accent); font-size: 12px; font-weight: 600; line-height: 1.4; }
 .camp-group-content { color: var(--text); font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
 .camp-group-content h3 { margin: 0 0 20px; font-size: 18px; }
 .group-text { white-space: pre-wrap; }
@@ -1044,7 +1040,16 @@ dialog:not(.image-preview-dialog) {
 /* Numeric units sit at the bottom of their numbers, never as superscripts. */
 .feature-card-metric { align-items: flex-end; }
 .feature-card-value { align-self: auto; line-height: 1; }
-.feature-card-metric small { align-self: flex-end; padding-bottom: 2px; line-height: 1; }
+.feature-card-metric small { align-self: flex-end; padding-bottom: 2px; font-weight: 400; letter-spacing: normal; line-height: 1; }
+.identity-card-status { display: flex; align-items: flex-end; gap: 6px; color: var(--accent); }
+.identity-card-status[data-signed-in="true"] { color: var(--success); }
+.identity-card-status :is(.feature-card-value, .identity-card-status-text) { color: inherit; }
+.identity-card-status-icon { display: inline-flex; padding-bottom: 0.12em; }
+/* Match the painted glyph height of the neighboring numeric metric. */
+.identity-card-status-icon svg { width: 0.75em; height: 0.75em; width: 1cap; height: 1cap; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.identity-card-status .identity-status-check,
+.identity-card-status[data-signed-in="true"] .identity-status-cross { display: none; }
+.identity-card-status[data-signed-in="true"] .identity-status-check { display: initial; }
 .daily-vote-panel-stat { align-items: end; }
 .daily-vote-panel-stat b { align-self: end; line-height: 1; }
 .daily-vote-panel-stat small { align-self: end; padding-bottom: 2px; line-height: 1; }

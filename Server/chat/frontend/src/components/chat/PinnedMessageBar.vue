@@ -50,9 +50,9 @@ const preview = computed(() => {
   display: flex;
   align-items: stretch;
   min-height: 52px;
-  border-bottom: 1px solid #e9edef;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(11, 20, 26, 0.06);
+  border-bottom: 1px solid var(--chat-line);
+  background: var(--chat-paper);
+  box-shadow: 0 1px 2px var(--chat-hover);
 }
 
 .pinned-message-bar__content {
@@ -64,7 +64,7 @@ const preview = computed(() => {
   padding: 8px 16px;
   border: 0;
   background: transparent;
-  color: #008069;
+  color: var(--chat-accent);
   text-align: left;
   cursor: pointer;
   touch-action: manipulation;
@@ -74,7 +74,7 @@ const preview = computed(() => {
 .pinned-message-bar__content:active,
 .pinned-message-bar__unpin:hover,
 .pinned-message-bar__unpin:active {
-  background: #f5f7fa;
+  background: var(--chat-hover);
 }
 
 .pinned-message-bar__copy {
@@ -91,13 +91,13 @@ const preview = computed(() => {
 }
 
 .pinned-message-bar__copy strong {
-  color: #008069;
+  color: var(--chat-accent);
   font-size: 13px;
   font-weight: 600;
 }
 
 .pinned-message-bar__copy span {
-  color: #54656f;
+  color: var(--chat-muted);
   font-size: 12px;
 }
 
@@ -111,14 +111,14 @@ const preview = computed(() => {
   padding: 0;
   border: 0;
   background: transparent;
-  color: #54656f;
+  color: var(--chat-muted);
   cursor: pointer;
   touch-action: manipulation;
 }
 
 .pinned-message-bar__content:focus-visible,
 .pinned-message-bar__unpin:focus-visible {
-  outline: 2px solid #008069;
+  outline: 2px solid var(--chat-accent);
   outline-offset: -2px;
 }
 

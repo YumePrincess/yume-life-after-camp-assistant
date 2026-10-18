@@ -30,7 +30,7 @@ defineProps({
   padding-inline: 4px;
   border-radius: 4px;
   background: #229ed9;
-  color: #ffffff;
+  color: var(--chat-primary-ink);
   font-size: 9px;
   font-weight: 800;
   line-height: 1;

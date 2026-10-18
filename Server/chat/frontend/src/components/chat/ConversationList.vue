@@ -112,11 +112,12 @@ const emit = defineEmits(["select"]);
 	gap: 12px;
 	width: calc(100% - 24px);
 	min-height: 80px;
-	margin: 2px 12px;
+	margin: 0 12px 10px;
 	padding: 12px;
-	border: none;
-	border-radius: 12px;
-	background: transparent;
+	border: 1px solid var(--chat-line);
+	border-radius: 20px;
+	background: var(--chat-card);
+	box-shadow: inset 0 1px 0 var(--chat-glass-rim);
 	cursor: pointer;
 	text-align: left;
 	touch-action: manipulation;
@@ -128,13 +129,14 @@ const emit = defineEmits(["select"]);
 }
 
 .sidebar-item:active {
-	background: rgba(0, 0, 0, 0.08);
+	background: var(--chat-pressed);
 }
 
 .sidebar-item--active,
 .sidebar-item--active:hover {
 	background: var(--chat-selected);
-	box-shadow: inset 3px 0 var(--chat-accent);
+	box-shadow: inset 0 1px 0 var(--chat-glass-rim);
+	border-color: color-mix(in srgb, var(--chat-accent) 45%, var(--chat-line));
 }
 
 .sidebar-item:focus-visible {
@@ -167,7 +169,7 @@ const emit = defineEmits(["select"]);
 	overflow: hidden;
 	color: var(--chat-ink);
 	font-size: 15px;
-	font-weight: 500;
+	font-weight: 650;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
@@ -229,7 +231,7 @@ const emit = defineEmits(["select"]);
 	padding: 0 6px;
 	border-radius: 999px;
 	background: var(--chat-accent);
-	color: var(--chat-paper);
+	color: var(--chat-primary-ink);
 	font-size: 11px;
 	font-variant-numeric: tabular-nums;
 	font-weight: 700;
@@ -248,31 +250,8 @@ const emit = defineEmits(["select"]);
 }
 
 @media (max-width: 960px) {
-	.sidebar-list {
-		padding-bottom: max(8px, env(safe-area-inset-bottom));
-		scrollbar-gutter: auto;
-	}
-
-	.sidebar-item {
-		width: 100%;
-		min-height: 80px;
-		margin: 0;
-		padding: 11px max(16px, env(safe-area-inset-right)) 11px
-			max(16px, env(safe-area-inset-left));
-		border-radius: 0;
-	}
-
-	/* 分隔线从正文起笔，避免头像和内容被粗重的整行边框割开。 */
-	.sidebar-item { position: relative; }
-	.sidebar-item + .sidebar-item::before {
-		content: "";
-		position: absolute;
-		top: 0;
-		right: 16px;
-		left: 72px;
-		height: 1px;
-		background: var(--chat-line);
-	}
+  .sidebar-list { padding-bottom: max(8px, env(safe-area-inset-bottom)); scrollbar-gutter: auto; }
+  .sidebar-item { width: calc(100% - 24px); min-height: 84px; margin: 0 12px 10px; padding: 12px; border-radius: 20px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

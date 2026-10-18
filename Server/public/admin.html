@@ -8,15 +8,17 @@
     <meta name="theme-color" content="#f3ece5" />
     <title>管理后台 · 明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260925-identity-code-nowrap" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261017-chat-admin-v3" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261018-chat-design" />
     <link rel="stylesheet" href="/loading.css?v=20261017-chat-loading" />
     <link rel="stylesheet" href="/mrzh-mobile.css?v=20261017-identity-chat-v2" />
     <script src="/js/loading.js?v=20261017-chat-loading" defer></script>
-    <script src="/js/preferences.js" defer></script>
+    <script src="/js/preferences.js?v=20261018-feedback-cards" defer></script>
     <script src="/js/timezone.js?v=20261017-identity-chat-v2" defer></script>
-    <script src="/js/i18n.js?v=20261017-chat-admin-v3" defer></script>
-    <script src="/js/chat-admin.js?v=20261017-chat-admin-counts-v4" defer></script>
-    <script src="/js/admin.js?v=20261017-identity-chat-v2" defer></script>
+    <link rel="stylesheet" href="/operation-feedback.css?v=20261018-dialog-feedback" />
+    <script src="/js/operation-feedback.js?v=20261018-dialog-feedback" defer></script>
+    <script src="/js/i18n.js?v=20261018-feedback-cards" defer></script>
+    <script src="/js/chat-admin.js?v=20261018-dialog-feedback" defer></script>
+    <script src="/js/admin.js?v=20261018-dialog-feedback" defer></script>
   </head>
   <body class="admin-page">
     <div id="page-loading" class="page-loading" role="status" aria-label="正在载入">
@@ -42,7 +44,6 @@
               <small id="session-email">正在验证身份</small>
             </span>
           </a>
-          <span id="save-state" class="feedback" role="status" aria-live="polite" aria-atomic="true"></span>
         </div>
         <button id="logout" class="button button-quiet" type="button">退出登录</button>
       </div>
@@ -96,7 +97,6 @@
               <button id="chat-admin-files-tab" role="tab" aria-controls="chat-admin-workspace" aria-selected="false" tabindex="-1" type="button">聊天文件</button>
               <button id="chat-admin-policy-tab" role="tab" aria-controls="chat-admin-workspace" aria-selected="false" tabindex="-1" type="button">聊天运行参数</button>
             </div>
-            <p id="chat-admin-summary" class="chat-admin-feedback muted" role="status" aria-live="polite"></p>
             <div id="chat-admin-workspace" class="chat-admin-grid" role="tabpanel" aria-labelledby="chat-admin-rooms-tab" data-mode="rooms">
               <div id="chat-admin-rooms" class="chat-admin-list" aria-label="全部会话（含私聊）"></div>
               <div id="chat-admin-detail" class="chat-admin-messages"></div>
@@ -189,7 +189,6 @@
                 </div>
               </fieldset>
               <div class="section-savebar">
-                <span class="feedback" data-save-feedback>当前配置已同步</span>
                 <button class="button button-primary" type="submit">保存基础设置</button>
               </div>
             </section>
@@ -260,7 +259,6 @@
                 <label class="field field-checkbox"><input name="identityPermanent" type="checkbox" /><span>永久有效</span></label>
               </div>
               <button class="button button-primary" type="submit">人工生成识别码</button>
-              <span id="manual-identity-feedback" class="feedback"></span>
             </form>
             </details>
             <form id="identity-code-search-form" class="list-toolbar identity-search-toolbar">
@@ -320,7 +318,6 @@
                 </div>
               </fieldset>
               <div class="section-savebar">
-                <span id="smtp-feedback" class="feedback"></span>
                 <button class="button button-primary" type="submit">保存 SMTP 配置</button>
               </div>
             </form>
@@ -397,7 +394,6 @@
                   </div>
               </details>
               <div class="section-savebar">
-                <span class="feedback" data-save-feedback>当前配置已同步</span>
                 <button class="button button-primary" type="submit">保存任务计划</button>
               </div>
             </section>
@@ -448,7 +444,6 @@
                 <p>定时任务仍由后台调度器按配置时区入队；入队后会立即尝试唤醒在线 Agent。接取超时仅影响队列任务的超时处理。</p>
               </div>
               <div class="section-savebar">
-                <span class="feedback" data-save-feedback>当前配置已同步</span>
                 <button class="button button-primary" type="submit">保存执行策略</button>
               </div>
             </section>
@@ -489,7 +484,6 @@
                     </div>
                     <p class="field-help">投票资格在提交投票时校验；投票成功后，后续资料变化不会取消已记录的投票。</p>
                     <div class="section-savebar">
-                      <span id="daily-vote-config-feedback" class="feedback" role="status"></span>
                       <button class="button button-primary" type="submit">保存通用投票设置</button>
                     </div>
                   </form>
@@ -638,7 +632,6 @@
                 <div id="admin-vote-summary" class="vote-summary"></div>
               </section>
               <div class="section-savebar">
-                <span class="feedback" data-save-feedback>当前配置已同步</span>
                 <button class="button button-primary" type="submit">保存科技配置</button>
               </div>
             </section>
@@ -672,7 +665,6 @@
                           <button id="delete-daily-vote-history-date" class="button button-danger" type="button">清空当天历史</button>
                           <button id="delete-daily-vote-history-all" class="button button-danger button-danger-quiet" type="button">清空全部历史</button>
                         </div>
-                        <span id="daily-vote-history-status" class="muted" aria-live="polite"></span>
                       </div>
                     </div>
                     <div id="daily-vote-history-admin-list" class="daily-vote-admin-list"></div>
@@ -712,7 +704,6 @@
                   <input id="technology-history-date" type="date" />
                 </label>
                 <button id="refresh-technology-history" class="button button-quiet" type="button">按日期查询</button>
-                <span id="technology-history-status" class="muted" aria-live="polite"></span>
               </div>
             </div>
             <div id="technology-history-content" hidden>
@@ -784,7 +775,6 @@
               <label class="field"><span>事项描述（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-description-blocks" rows="5"></textarea></label>
               <label id="daily-vote-options-field" class="field"><span>投票选项（每个选项之间空一行；支持文本和 Markdown 图片）</span><textarea id="daily-vote-options" rows="8"></textarea></label>
               <div class="section-savebar">
-                <span id="daily-vote-editor-feedback" class="feedback" role="status"></span>
                 <button class="button button-primary" type="submit">保存事项</button>
               </div>
             </form>
@@ -993,7 +983,6 @@
           <button id="maintenance-confirm" class="button button-danger" type="button">
             确认清理
           </button>
-          <span id="maintenance-feedback" class="feedback" role="status"></span>
         </div>
       </form>
     </dialog>
@@ -1089,7 +1078,6 @@
           <button id="member-edit-save" class="button button-primary" type="submit">
             保存成员信息
           </button>
-          <span id="member-edit-feedback" class="feedback" role="status"></span>
         </div>
       </form>
     </dialog>
@@ -1109,7 +1097,6 @@
           <span>Agent 任务结果文档</span>
           <textarea id="member-task-result-document" rows="16" spellcheck="false" required></textarea>
         </label>
-        <p id="member-bulk-correction-preview" class="muted" role="status"></p>
         <div class="action-row member-bulk-correction-actions">
           <button id="member-bulk-correction-validate" class="button button-quiet" type="button">
             校验文档格式
@@ -1117,7 +1104,6 @@
           <button id="member-bulk-correction-apply" class="button button-danger" type="submit" disabled>
             确认并校正
           </button>
-          <span id="member-bulk-correction-feedback" class="feedback" role="status"></span>
         </div>
       </form>
     </dialog>
@@ -1150,7 +1136,6 @@
         </fieldset>
         <div class="action-row">
           <button id="temporary-key-permissions-save" class="button button-primary" type="submit">保存权限</button>
-          <span id="temporary-key-permissions-feedback" class="feedback" role="status"></span>
         </div>
       </form>
     </dialog>
@@ -1191,7 +1176,6 @@
           <button id="identity-review-approve" class="button button-primary" type="button">通过并发送邮件</button>
           <button id="identity-review-reject" class="button button-danger" type="button">拒绝并发送通知</button>
           <button id="identity-eligibility-edit-save" class="button button-primary" type="button" hidden>保存投票资格</button>
-          <span id="identity-review-feedback" class="feedback"></span>
         </div>
       </form>
     </dialog>
@@ -1239,7 +1223,6 @@
         </div>
         <div class="action-row identity-information-actions">
           <button class="button button-primary" type="submit">保存修改</button>
-          <span id="identity-information-feedback" class="feedback" role="status"></span>
         </div>
       </form>
     </dialog>
@@ -1253,7 +1236,6 @@
           <button id="identity-password-reset-cancel" class="button button-quiet" value="cancel">取消</button>
           <button id="identity-password-reset-confirm" class="button button-danger" type="button">确认重置并发送邮件</button>
         </div>
-        <span id="identity-password-reset-feedback" class="feedback" role="status"></span>
       </form>
     </dialog>
     <dialog id="schedule-dialog">
@@ -1306,7 +1288,6 @@
           <button id="schedule-add-time" class="button button-quiet" type="button">增加一次执行时间</button>
           <div class="action-row">
           <button class="button button-primary" type="submit">保存此任务计划</button>
-          <span id="schedule-dialog-feedback" class="feedback" role="status"></span>
           </div>
         </div>
       </form>
@@ -1331,7 +1312,6 @@
         </label>
         <div class="action-row">
           <button class="button button-primary" type="submit">启动手动任务</button>
-          <span id="trading-city-manual-feedback" class="feedback" role="status"></span>
         </div>
       </form>
     </dialog>

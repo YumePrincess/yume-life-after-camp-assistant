@@ -242,7 +242,7 @@ defineExpose({
 .composer-vditor.vditor {
 	border-color: #d8e0dd;
 	border-radius: 7px;
-	background: #ffffff;
+	background: var(--chat-paper);
 }
 
 /* biome-ignore lint/correctness/noUnknownPseudoClass: Vue deep selector */

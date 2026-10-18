@@ -1,5 +1,7 @@
 import { createApp, nextTick } from 'vue';
 import '../../../public/js/mobile-viewport.js';
+import '../../../public/js/operation-feedback.js';
+import '../../../public/operation-feedback.css';
 import App from './App.vue';
 import router from './router.js';
 import store from './store.js';
@@ -10,6 +12,7 @@ import './styles-liquid.css';
 import './styles/tokens.css';
 import './styles/layout.css';
 import './styles/ui.css';
+import '../../../public/camp-theme.css';
 import { initLiquidGlass } from './liquid-glass.js';
 import { initializeI18n } from './i18n.js';
 import { initializeTheme } from './theme.js';

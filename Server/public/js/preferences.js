@@ -101,8 +101,13 @@
 
   function applyTheme(value) {
     const theme = normalizeTheme(value) || "auto";
-    if (theme === "auto") document.documentElement.removeAttribute("data-theme");
-    else document.documentElement.dataset.theme = theme;
+    if (theme === "auto") {
+      if (document.documentElement.hasAttribute("data-theme")) {
+        document.documentElement.removeAttribute("data-theme");
+      }
+    } else if (document.documentElement.dataset.theme !== theme) {
+      document.documentElement.dataset.theme = theme;
+    }
     return theme;
   }
 

@@ -47,9 +47,9 @@ const previewText = computed(() => {
 	min-width: 0;
 	padding: 5px 8px;
 	border: 0;
-	border-left: 3px solid #008069;
+	border-left: 3px solid var(--chat-accent);
 	border-radius: 4px;
-	background: rgba(0, 128, 105, 0.08);
+	background: var(--chat-selected);
 	font: inherit;
 	text-align: left;
 }
@@ -60,7 +60,7 @@ const previewText = computed(() => {
 
 .message-reply-preview--clickable:hover,
 .message-reply-preview--clickable:focus-visible {
-	background: rgba(0, 128, 105, 0.14);
+	background: var(--chat-selected);
 }
 
 .message-reply-preview--clickable:focus-visible {
@@ -76,13 +76,13 @@ const previewText = computed(() => {
 }
 
 .message-reply-preview__sender {
-	color: #008069;
+	color: var(--chat-accent);
 	font-size: 12px;
 	font-weight: 700;
 }
 
 .message-reply-preview__text {
-	color: #54656f;
+	color: var(--chat-muted);
 	font-size: 12.5px;
 	line-height: 1.35;
 }

@@ -3,6 +3,7 @@ import { computed, ref, toRef } from "vue";
 import { X } from "@lucide/vue";
 import type { ProfileIdentity, UserProfile } from "../../../../shared/user-profile.ts";
 import { useOverlayLifecycle } from "../../composables/useOverlayLifecycle.js";
+import { useErrorNotice } from "../../composables/useOperationFeedback.js";
 import { t } from "../../i18n.js";
 import UiAvatar from "../ui/Avatar.vue";
 import UiButton from "../ui/Button.vue";
@@ -23,6 +24,7 @@ const panel = ref<HTMLElement | null>(null);
 const closeButton = ref<HTMLButtonElement | null>(null);
 const displayed = computed(() => props.profile || props.identity);
 const external = computed(() => props.identity?.kind === "external");
+useErrorNotice(() => props.error && !props.unavailable ? props.error : '');
 useOverlayLifecycle({
   open: toRef(props, "show"),
   onClose: () => emit("close"),
@@ -52,7 +54,6 @@ useOverlayLifecycle({
         <template v-else-if="external">
           <p class="user-profile-dialog__muted">{{ t('profile.externalHint') }}</p>
         </template>
-        <p v-if="error && !unavailable" role="alert" class="user-profile-dialog__error">{{ error }}</p>
         <div class="user-profile-dialog__actions">
           <UiButton v-if="!external && !profile && !loading && !unavailable" variant="secondary" @click="emit('retry')">{{ t('profile.retry') }}</UiButton>
           <UiButton v-if="profile && !unavailable && !isSelf" :disabled="submitting" @click="emit('send-message')">{{ submitting ? t('common.opening') : t('profile.sendMessage') }}</UiButton>
@@ -71,7 +72,7 @@ useOverlayLifecycle({
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(11, 20, 26, 0.42);
+  background: var(--chat-scrim);
 }
 .user-profile-dialog {
   width: min(100%, 400px);
@@ -80,15 +81,18 @@ useOverlayLifecycle({
   box-sizing: border-box;
   padding: 24px;
   border-radius: var(--chat-radius-dialog);
-  background: var(--chat-paper);
+  background: var(--chat-glass);
   color: var(--chat-ink);
   box-shadow: 0 20px 60px rgba(11, 20, 26, 0.2);
   overflow-wrap: anywhere;
+  border: 1px solid var(--chat-line);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
 }
 .user-profile-dialog__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .user-profile-dialog__header h2 { margin: 0; font-size: 18px; }
-.user-profile-dialog__close { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
-.user-profile-dialog__close:hover { background: rgba(11, 20, 26, 0.06); }
+.user-profile-dialog__close { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border: 1px solid var(--chat-line); border-radius: 50%; background: var(--chat-control-fill); color: inherit; cursor: pointer; }
+.user-profile-dialog__close:hover { background: var(--chat-hover); }
 .user-profile-dialog__identity { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 0 24px; text-align: center; }
 .user-profile-dialog__identity h3 { margin: 4px 0 0; font-size: 22px; }
 .user-profile-dialog__identity p { margin: 0; }

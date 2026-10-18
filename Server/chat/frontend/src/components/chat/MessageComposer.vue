@@ -4,6 +4,7 @@ import { computed, markRaw, nextTick, onBeforeUnmount, ref, shallowRef, watch } 
 import { isCapacitorAndroid, openNativeAppSettings, pickNativeFile } from "../../capacitor-platform.ts";
 import { getLocale, t } from "../../i18n.js";
 import { useVoiceRecorder } from "../../composables/useVoiceRecorder.ts";
+import { useErrorNotice, useProcessingDialog } from "../../composables/useOperationFeedback.js";
 import { formatVoiceDuration } from "../../voice-message.js";
 import UiTextarea from "../ui/Textarea.vue";
 import UiAvatar from "../ui/Avatar.vue";
@@ -73,6 +74,16 @@ const richEditorLoadError = ref("");
 let richEditorLoadGeneration = 0;
 let componentAlive = true;
 const { recording, starting, elapsedMs, liveWaveform, start, finish, cancel } = useVoiceRecorder();
+useErrorNotice(() => recordingError.value || pickerError.value, () => ({
+	actions: showPermissionSettings.value ? [{ label: t('voice.openSettings'), run: openMicrophoneSettings }] : []
+}));
+useErrorNotice(richEditorLoadError, () => ({ actions: [{ label: t('common.retry'), run: openRichEditor }] }));
+useProcessingDialog(starting, () => t('voice.requestingPermission'), cancelVoiceRecording);
+useProcessingDialog(
+	() => richEditorLoading.value || (richEditorOpen.value && !richEditorReady.value && !richEditorLoadError.value),
+	() => t('composer.richEditorLoading'),
+	() => { cancelRichEditorLoad(); if (richEditorOpen.value) collapseRichEditor({ restoreFocus: false }); }
+);
 const filteredMentions = computed(() => {
 	const query = mentionQuery.value.toLocaleLowerCase();
 	return props.mentionCandidates
@@ -356,16 +367,6 @@ onBeforeUnmount(() => {
 				@clear="emit('clear-attachment')"
 			/>
 		</div>
-			<div v-if="error || recordingError || pickerError" class="composer-error" role="alert">
-				<span>{{ error || recordingError || pickerError }}</span>
-				<button v-if="showPermissionSettings" type="button" class="composer-settings" @click="openMicrophoneSettings">{{ t('voice.openSettings') }}</button>
-			</div>
-			<div v-if="starting" class="composer-permission" role="status">
-				<span>{{ t('voice.requestingPermission') }}</span>
-				<button type="button" class="composer-btn" :aria-label="t('voice.cancel')" @click="cancelVoiceRecording">
-					<X :size="20" aria-hidden="true" />
-				</button>
-			</div>
 			<div v-if="mentionMenuOpen && !richEditorOpen" class="mention-menu" role="listbox">
 			<button
 				v-for="(member, index) in filteredMentions"
@@ -389,15 +390,6 @@ onBeforeUnmount(() => {
 				</span>
 			</button>
 		</div>
-			<div v-if="richEditorLoading" class="composer-editor-status" role="status">
-				<LoaderCircle :size="16" class="composer-spinner" aria-hidden="true" />
-				<span>{{ t('composer.richEditorLoading') }}</span>
-				<button type="button" @click="cancelRichEditorLoad">{{ t('common.cancel') }}</button>
-			</div>
-			<div v-else-if="richEditorLoadError" class="composer-editor-status composer-editor-status--error" role="alert">
-				<span>{{ richEditorLoadError }}</span>
-				<button type="button" @click="openRichEditor">{{ t('common.retry') }}</button>
-			</div>
 			<input
 				ref="fileInput"
 				type="file"
@@ -435,10 +427,6 @@ onBeforeUnmount(() => {
 					@initialization-error="handleRichEditorInitializationError"
 					@send="requestSend"
 				/>
-				<div v-if="!richEditorReady" class="composer-editor-initializing" role="status">
-					<LoaderCircle :size="17" class="composer-spinner" aria-hidden="true" />
-					{{ t('composer.richEditorInitializing') }}
-				</div>
 				<div class="composer-rich-editor__actions">
 					<button
 						type="button"
@@ -561,7 +549,7 @@ onBeforeUnmount(() => {
 	padding: 16px 24px 20px;
 	border-top: 1px solid var(--chat-line);
 	border-radius: 0;
-	background: var(--chat-canvas);
+	background: transparent;
 }
 
 .composer-attachment {
@@ -593,7 +581,7 @@ onBeforeUnmount(() => {
 
 .composer-reply__cancel:hover,
 .composer-reply__cancel:focus-visible {
-	background: rgba(0, 0, 0, 0.08);
+	background: var(--chat-pressed);
 }
 
 .composer-error {
@@ -623,7 +611,7 @@ onBeforeUnmount(() => {
 	padding: 2px 8px;
 	border: 0;
 	border-radius: 4px;
-	background: rgba(0, 128, 105, 0.1);
+	background: var(--chat-selected);
 	color: var(--chat-accent);
 	font: inherit;
 	font-weight: 600;
@@ -684,7 +672,7 @@ onBeforeUnmount(() => {
 
 .mention-option:hover,
 .mention-option--active {
-	background: #edf8f2;
+	background: var(--chat-selected);
 }
 
 .mention-option__label {
@@ -718,8 +706,8 @@ onBeforeUnmount(() => {
 	padding: 8px;
 	border: 1px solid var(--chat-line);
 	border-radius: 24px;
-	background: var(--chat-paper);
-	box-shadow: var(--chat-shadow);
+	background: var(--chat-control-fill);
+	box-shadow: inset 0 1px 0 var(--chat-glass-rim);
 }
 
 /* 整体焦点边框让输入位置清楚可见，不改变面板大小。 */
@@ -861,12 +849,12 @@ onBeforeUnmount(() => {
 }
 
 .composer-btn--active {
-	background: rgba(0, 128, 105, 0.1);
+	background: var(--chat-selected);
 	color: var(--chat-accent);
 }
 
 .composer-btn:hover:not(:disabled) {
-	background: rgba(0, 0, 0, 0.05);
+	background: var(--chat-hover);
 	color: var(--chat-ink);
 }
 
@@ -876,8 +864,8 @@ onBeforeUnmount(() => {
 	gap: 6px;
 	padding: 0 12px;
 	border-radius: 22px;
-	background: var(--chat-accent);
-	color: var(--chat-paper);
+	background: var(--chat-primary-fill);
+	color: var(--chat-primary-ink);
 	font: inherit;
 	font-size: 14px;
 	font-weight: 600;
@@ -890,7 +878,7 @@ onBeforeUnmount(() => {
 }
 
 .composer-btn:active:not(:disabled) {
-	background: rgba(0, 0, 0, 0.08);
+	background: var(--chat-pressed);
 }
 
 .composer-send:active:not(:disabled) {
@@ -931,7 +919,7 @@ onBeforeUnmount(() => {
 	padding: 11px 4px;
 	border: none;
 	border-radius: 8px;
-	background: var(--chat-paper);
+	background: transparent;
 	box-shadow: none;
 	color: var(--chat-ink);
 	font-size: 16px;
