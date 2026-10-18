@@ -365,7 +365,7 @@ describe("buildTechnologyPlan", () => {
 });
 
 describe("built-in technology catalog", () => {
-  it("contains the verified 22 agriculture, 16 industry and 18 military items", () => {
+  it("contains the verified 22 agriculture, 16 industry and 19 military items", () => {
     const count = (category: string) =>
       BUILT_IN_TECHNOLOGY_CATALOG.filter(
         (item) => item.category === category
@@ -373,7 +373,7 @@ describe("built-in technology catalog", () => {
     expect(BUILT_IN_TECHNOLOGY_CATALOG).toHaveLength(57);
     expect(count("agriculture")).toBe(22);
     expect(count("industry")).toBe(16);
-    expect(count("military")).toBe(18);
+    expect(count("military")).toBe(19);
     expect(
       new Set(BUILT_IN_TECHNOLOGY_CATALOG.map((item) => item.key)).size
     ).toBe(57);
