@@ -1,3 +1,4 @@
+import { handlePublicGeneralAvatar } from "../src/chat-general-avatar";
 import { attachConversationPreviews } from "../chat/worker/src/data/conversation-previews.js";
 import { ensureDmChannel } from "../chat/worker/src/data/dm-provisioning.js";
 import {
@@ -646,6 +647,48 @@ describe("R2 avatars and backend-owned defaults", () => {
     ).toBe(400);
     expect(objects.size).toBe(0);
   });
+  it("lets only system chat administrators upload the general avatar and shares R2 images with members", async () => {
+    const bytes = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]);
+    const upload = async (session = admin) => {
+      const form = new FormData(); form.append("file", new File([bytes], "avatar.png", {type:"image/png"}));
+      return handleChatAdmin(req("/api/admin/chat/general/avatar", { method:"POST", body:form }), env, session);
+    };
+    expect((await upload({...admin, permissions_json:'[]'})).status).toBe(403);
+    expect((await upload({...admin, auth_method:'identity'})).status).toBe(403);
+    const response = await upload(); expect(response.status).toBe(200);
+    const {avatarUrl} = await response.json();
+    expect(avatarUrl).toContain("/api/admin/chat/general/avatar?v=");
+    expect([...objects.keys()]).toHaveLength(1);
+    expect([...objects.keys()][0]).toMatch(/^lifeafter\/avatars\/general\//);
+    const image = await handleChatAdmin(req(avatarUrl), env, admin);
+    expect(image.headers.get("Content-Type")).toBe("image/png");
+    expect(new Uint8Array(await image.arrayBuffer())).toEqual(bytes);
+    const rooms = await (await handleChatAdmin(req("/api/admin/chat"), env, admin)).json();
+    expect(rooms.generalAvatar.avatarUrl).toBe(avatarUrl);
+    const data = await (await bootstrap()).json();
+    const general = data.channels.find(room=>room.isGeneral);
+    const members = await (await chatApp.request(req(`/api/channels/${general.id}/members`, {headers:{cookie}}),undefined,env)).json();
+    expect(members.room.avatarUrl).toBe(general.avatarUrl);
+    const memberImage = await handlePublicGeneralAvatar(req(general.avatarUrl, {headers:{cookie}}), env);
+    expect(memberImage.status).toBe(200);
+    expect(new Uint8Array(await memberImage.arrayBuffer())).toEqual(bytes);
+    expect((await handlePublicGeneralAvatar(req(general.avatarUrl),env)).status).toBe(401);
+    const oldKey = [...objects.keys()][0];
+    await upload(); expect(objects.has(oldKey)).toBe(false); expect(objects.size).toBe(1);
+    expect(sqlite.prepare("SELECT count(*) n FROM users WHERE is_admin=1").get().n).toBe(0);
+  });
+  it("rejects invalid or oversized general avatars and cleans up a losing concurrent upload", async () => {
+    const form = new FormData(); form.append("file",new File(["<svg>unsafe</svg>"],"image.png",{type:"image/png"}));
+    const result = await handleChatAdmin(req("/api/admin/chat/general/avatar",{method:"POST",body:form}),env,admin);
+    expect(result.status).toBe(400); expect(objects.size).toBe(0);
+    expect((await handleChatAdmin(req("/api/admin/chat/general/avatar",{method:"POST",headers:{"Content-Length":"99999999"}}),env,admin)).status).toBe(413);
+    const put=env.FILES.put;
+    env.FILES.put=async (...args)=>{await put(...args);sqlite.prepare("INSERT INTO settings(key,value,updated_at) VALUES('chat_general_avatar','competing-avatar',CURRENT_TIMESTAMP)").run();};
+    const safe = new FormData(); safe.append("file",new File([new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0])],"a.png",{type:"image/png"}));
+    const conflict=await handleChatAdmin(req("/api/admin/chat/general/avatar",{method:"POST",body:safe}),env,admin);
+    expect(conflict.status).toBe(409); expect(objects.size).toBe(0);
+    expect(sqlite.prepare("SELECT value FROM settings WHERE key='chat_general_avatar'").get().value).toBe('competing-avatar');
+  });
   it("persists policy in backend settings, overriding no Wrangler defaults", async () => {
     const defaults = await getChatPolicy(env);
     expect(defaults.MESSAGE_RETENTION_DAYS).toBe(7);
@@ -867,6 +910,7 @@ describe("live identity directory and presence", () => {
       "/api/public/identity-password-change",
       "/api/public/identity-session",
       "/chat/api/channels/1/members",
+      "/api/admin/chat/general/avatar",
     ]) {
       expect(
         chatDirectoryMutation(

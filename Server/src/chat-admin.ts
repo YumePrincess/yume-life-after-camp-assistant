@@ -1,4 +1,5 @@
 import { boundedBody, BodyTooLarge } from "./request-limits";
+import { adminGeneralAvatarUrl, handleGeneralAvatar, generalAvatarKey } from "./chat-general-avatar";
 import {
   getChatPolicy,
   validateChatPolicy,
@@ -28,6 +29,7 @@ export async function handleChatAdmin(
     return problem("没有聊天管理权限", 403, "permission_denied");
   const url = new URL(request.url);
   const path = url.pathname.slice("/api/admin/chat".length);
+  if (path === "/general/avatar") return handleGeneralAvatar(request, env);
   if (path === "/policy" && request.method === "GET")
     return json({
       policy: await getChatPolicy(env),
@@ -56,7 +58,7 @@ export async function handleChatAdmin(
     }
   }
   if (path === "" && request.method === "GET") {
-    const [rooms, totals] = await Promise.all([
+    const [rooms, totals, general] = await Promise.all([
       env.DB.prepare(`SELECT c.id,c.name,c.kind,c.created_at,c.deleted_at,
         (SELECT count(*) FROM messages m WHERE m.channel_id=c.id AND m.deleted_at IS NULL) AS message_count,
         (SELECT group_concat(u.display_name, '、') FROM channel_members cm JOIN users u ON u.id=cm.user_id WHERE cm.channel_id=c.id) AS members
@@ -67,8 +69,9 @@ export async function handleChatAdmin(
         (SELECT count(*) FROM messages WHERE deleted_at IS NULL) AS messages,
         (SELECT count(*) FROM uploaded_files) AS files,
         (SELECT coalesce(sum(size),0) FROM uploaded_files) AS file_bytes`).first(),
+      generalAvatarKey(env),
     ]);
-    return json({ rooms: rooms.results, totals });
+    return json({ rooms: rooms.results, totals, generalAvatar: { avatarUrl: adminGeneralAvatarUrl(general) } });
   }
   const roomMatch = /^\/rooms\/(\d+)$/.exec(path);
   if (roomMatch && request.method === "DELETE") {

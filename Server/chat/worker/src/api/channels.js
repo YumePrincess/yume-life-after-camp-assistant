@@ -1,3 +1,4 @@
+import { generalAvatarUrl, GENERAL_AVATAR_SETTING } from "../../../shared/general-avatar.ts";
 import { attachConversationPreviews } from '../data/conversation-previews.js';
 import { syncIdentityChatUsers } from '../session.js';
 import {
@@ -177,13 +178,15 @@ export function registerChannelRoutes(app) {
     const membership = await getChannelMembership(c.env.DB, channelId, session.userId);
     await syncIdentityChatUsers(c.env);
     const members = await listChannelMembers(c.env.DB, channelId);
+    const systemAvatar = isGeneralChannel(channel)
+      ? await c.env.DB.prepare('SELECT value FROM settings WHERE key=?').bind(GENERAL_AVATAR_SETTING).first() : null;
     return c.json({
       room: {
         id: Number(channel.id),
         name: channel.name,
         description: channel.description,
         avatarKey: channel.avatar_key || '',
-        avatarUrl: channel.avatar_key ? publicFileUrl(channel.avatar_key) : '',
+        avatarUrl: generalAvatarUrl(systemAvatar?.value) || (channel.avatar_key ? publicFileUrl(channel.avatar_key) : ''),
         kind: channel.kind,
         isGeneral: isGeneralChannel(channel),
         myRole: membership?.role || '',

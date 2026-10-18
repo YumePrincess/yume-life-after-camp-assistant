@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import { getNativeNotificationBridge } from "../capacitor-platform.ts";
 import { t } from "../i18n.js";
+import { notificationRoomName } from "../notification-room.ts";
 import { messageMarkdownToPlainText } from "../message-markdown.ts";
 
 const STORAGE_KEY_PREFIX = "edgechat:browser-notifications";
@@ -171,10 +172,10 @@ export function useBrowserNotifications(options = {}) {
 		}
 
 		const title = event?.replyToMe
-			? t("notifications.repliedTitle", { room: (room.isGeneral ? t("chat.generalGroup") : room.name) || t("camp.center") })
+			? t("notifications.repliedTitle", { room: notificationRoomName(room, t) })
 			: event?.mentionsMe
-				? t("notifications.mentionedTitle", { room: (room.isGeneral ? t("chat.generalGroup") : room.name) || t("camp.center") })
-				: (room.isGeneral ? t("chat.generalGroup") : room.name) || t("camp.center");
+				? t("notifications.mentionedTitle", { room: notificationRoomName(room, t) })
+				: notificationRoomName(room, t);
 		const senderName =
 			event?.sender?.displayName || event?.sender?.username || "";
 			const attentionBody = [

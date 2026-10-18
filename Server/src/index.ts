@@ -1,3 +1,4 @@
+import { handlePublicGeneralAvatar } from "./chat-general-avatar";
 import { handleIdentityPasswordChange } from "./identity-password-change";
 import { chatDirectoryMutation, notifyChatDirectory } from "./chat-directory";
 import { chatRuntimeEnv } from "./chat-policy";
@@ -385,6 +386,7 @@ async function routeRequest(request: Request, env: Env): Promise<Response> {
       cookieSession: true
     }, 200, { "Cache-Control": "no-store" });
   }
+  if (path === "/api/public/chat-general-avatar") return handlePublicGeneralAvatar(request, env);
   if (path === "/api/public/identity-avatar" || path.startsWith("/api/public/identity-avatar/")) return handleIdentityAvatar(request,env);
 
   if (method === "OPTIONS" && path.startsWith("/api/public/")) {

@@ -191,6 +191,14 @@
         button("更早的消息", () => messages(room, payload.messages[0].id)),
       );
   }
+  function renderGeneralAvatar(avatar) {
+    const image = byId("chat-admin-general-avatar-image");
+    const fallback = byId("chat-admin-general-avatar-fallback");
+    image.hidden = !avatar?.avatarUrl;
+    fallback.hidden = Boolean(avatar?.avatarUrl);
+    if (avatar?.avatarUrl) image.src = avatar.avatarUrl;
+    else image.removeAttribute("src");
+  }
   function renderTotals(totals) {
     for (const key of ["rooms", "messages", "files"])
       byId(`chat-admin-total-${key}`).textContent = totals[key] ?? 0;
@@ -201,6 +209,7 @@
     const payload = await api(before ? `?before=${before}` : "");
     if (revision !== generation) return;
     renderTotals(payload.totals);
+    renderGeneralAvatar(payload.generalAvatar);
     const list = byId("chat-admin-rooms");
     list.replaceChildren();
     byId("chat-admin-detail").replaceChildren(empty("选择会话查看消息"));
@@ -348,6 +357,11 @@
   }
   const refresh = () => ({ rooms, files, policy })[mode]();
   document.addEventListener("DOMContentLoaded", () => {
+    byId("chat-admin-general-avatar-edit").onclick = () => window.MrzhAvatar.open(async file => {
+      const form = new FormData();
+      form.append("file", file, "general-avatar.webp");
+      renderGeneralAvatar(await api("/general/avatar", { method: "POST", body: form }));
+    });
     byId("chat-admin-refresh").onclick = async () => {
       const button = byId("chat-admin-refresh");
       button.disabled = true;

@@ -706,7 +706,7 @@ onBeforeUnmount(() => {
 	padding: 8px;
 	border: 1px solid var(--chat-line);
 	border-radius: 24px;
-	background: var(--chat-control-fill);
+	background: var(--chat-composer-fill);
 	box-shadow: inset 0 1px 0 var(--chat-glass-rim);
 }
 
@@ -722,7 +722,7 @@ onBeforeUnmount(() => {
 	padding: 8px;
 	border: 1px solid var(--chat-line);
 	border-radius: 16px;
-	background: var(--chat-paper);
+	background: var(--chat-composer-fill);
 }
 
 .composer-editor-initializing {

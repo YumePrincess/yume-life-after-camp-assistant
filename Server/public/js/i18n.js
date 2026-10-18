@@ -5051,6 +5051,12 @@
     ["ja","アバター","アバター：","アバターが更新されたかログインが失効しました。もう一度お試しください。"],
     ["zh-tw","頭像","頭像：","頭像已更新或登入已失效，請重試"]
   ]) Object.assign(translations[language], {"头像":avatar,"头像：":label,"头像已更新或登录已失效，请重试":changed});
+  for (const [language, avatar, retry] of [
+    ["en", "All members group avatar", "The avatar changed. Please try again."],
+    ["fr", "Avatar du groupe de tous les membres", "L’avatar a été modifié. Réessayez."],
+    ["ja", "全メンバーグループのアバター", "アバターが更新されました。もう一度お試しください。"],
+    ["zh-tw", "全體成員群頭像", "頭像已更新，請重試。"]
+  ]) Object.assign(translations[language], { "全体成员群头像": avatar, "头像已更新，请重试。": retry });
   function translate(source, language = currentLanguage()) {
     return translations[language]?.[source] || source;
   }

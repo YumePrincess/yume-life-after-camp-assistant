@@ -1,3 +1,4 @@
+import { generalAvatarUrl } from "../../../shared/general-avatar.ts";
 import { publicFileUrl } from "../utils.js";
 import { activeUserSql, isUserDisabled } from "../user-status.js";
 
@@ -7,7 +8,7 @@ function mapVisibleChannel(row) {
 		name: row.name,
 		description: row.description,
 		avatarKey: row.avatar_key || "",
-		avatarUrl: row.avatar_url || (row.avatar_key ? publicFileUrl(row.avatar_key) : ""),
+		avatarUrl: (Number(row.is_general) ? generalAvatarUrl(row.general_avatar_key) : "") || row.avatar_url || (row.avatar_key ? publicFileUrl(row.avatar_key) : ""),
 		kind: row.kind,
 		isGeneral: Boolean(Number(row.is_general)),
 		ownerDisplayName: row.owner_display_name || "",
@@ -35,7 +36,7 @@ function mapAdminChannel(row, includeAvatar) {
 	};
 	if (includeAvatar) {
 		channel.avatarKey = row.avatar_key || "";
-		channel.avatarUrl = row.avatar_url || (row.avatar_key ? publicFileUrl(row.avatar_key) : "");
+		channel.avatarUrl = (Number(row.is_general) ? generalAvatarUrl(row.general_avatar_key) : "") || row.avatar_url || (row.avatar_key ? publicFileUrl(row.avatar_key) : "");
 	}
 	return channel;
 }
@@ -47,6 +48,7 @@ export async function listVisibleChannels(db, userId) {
 				`SELECT
 				   c.id, c.name, c.description, c.avatar_key, c.kind,
 				   CASE WHEN c.name = 'general' THEN 1 ELSE 0 END AS is_general,
+           (SELECT value FROM settings WHERE key='chat_general_avatar') AS general_avatar_key,
 			   owner.display_name AS owner_display_name,
 			   EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ?) AS is_member,
 			   COALESCE((SELECT cm.role FROM channel_members cm WHERE cm.channel_id = c.id AND cm.user_id = ? LIMIT 1), '') AS my_role,
@@ -106,6 +108,7 @@ export async function listAdminChannels(db, { includeAvatar = true } = {}) {
 				`SELECT
 				   c.id, c.name, c.description, c.avatar_key, c.kind, c.created_at,
 				   CASE WHEN c.name = 'general' THEN 1 ELSE 0 END AS is_general,
+           (SELECT value FROM settings WHERE key='chat_general_avatar') AS general_avatar_key,
 			   owner.display_name AS owner_display_name,
 			   (SELECT COUNT(*) FROM channel_members cm JOIN users active_member ON active_member.id=cm.user_id WHERE cm.channel_id = c.id AND active_member.deleted_at IS NULL AND ${activeUserSql("active_member")}) AS member_count,
 			   (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL) AS message_count

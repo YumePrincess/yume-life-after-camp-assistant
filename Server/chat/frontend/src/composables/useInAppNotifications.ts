@@ -2,11 +2,8 @@ import { ref } from "vue";
 import { t } from "../i18n.js";
 import { messageMarkdownToPlainText } from "../message-markdown.ts";
 
-export type NotificationRoom = {
-	id: number | string;
-	kind: string;
-	name?: string;
-};
+import { notificationRoomName, type NotificationRoom } from "../notification-room";
+export type { NotificationRoom } from "../notification-room";
 
 export type InAppNotificationEvent = {
 	room: NotificationRoom;
@@ -59,7 +56,7 @@ export function useInAppNotifications(options: {
 	function showNotification(event: InAppNotificationEvent) {
 		const id = nextId++;
 		const senderName = event.sender?.displayName || event.sender?.username || translate("camp.center");
-		const roomName = event.room.name || translate("camp.center");
+		const roomName = notificationRoomName(event.room, translate);
 			const preview =
 				messageMarkdownToPlainText(event.contentPreview || "") ||
 			(event.room.kind === "dm"

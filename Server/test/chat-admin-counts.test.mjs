@@ -41,6 +41,7 @@ class Element {
   setAttribute(key, value) {
     this[key] = value;
   }
+  removeAttribute(key) { delete this[key]; }
   all() {
     return this.children.flatMap((child) => [child, ...child.all()]);
   }
@@ -56,7 +57,7 @@ class Element {
   }
 }
 function setup(failDelete = false) {
-  const nodes = new Map();
+  const nodes = new Map(), listeners = {};
   const byId = (id) => {
     if (!nodes.has(id)) nodes.set(id, new Element());
     return nodes.get(id);
@@ -84,7 +85,8 @@ function setup(failDelete = false) {
         return { ok: false, json: async () => ({ error: "Delete failed" }) };
       messages = messages.filter((message) => message.id !== 11);
       payload = { ok: true };
-    } else if (path.endsWith("/messages"))
+    } else if (path.endsWith("/general/avatar")) payload = { avatarUrl: "/api/admin/chat/general/avatar?v=test" };
+    else if (path.endsWith("/messages"))
       payload = {
         room: {
           id: 1,
@@ -107,6 +109,7 @@ function setup(failDelete = false) {
     MrzhI18n: { t: (value) => value },
     MrzhFeedback: { notice: vi.fn(), begin: vi.fn(() => 1), end: vi.fn() },
     MrzhTimezone: { timestamp: (value) => value },
+    MrzhAvatar: { open: vi.fn() },
   };
   runInNewContext(source, {
     window,
@@ -115,13 +118,14 @@ function setup(failDelete = false) {
       createElement: (tag) => new Element(tag),
       createTextNode: (text) =>
         Object.assign(new Element("text"), { textContent: text }),
-      addEventListener: () => {},
+      addEventListener: (type, listener) => { listeners[type] = listener; },
       documentElement: { dataset: {} },
     },
     fetch,
+    FormData,
     console,
   });
-  return { window, byId, fetch, requests };
+  return { window, byId, fetch, requests, listeners };
 }
 
 describe("admin message deletion counters", () => {
@@ -172,5 +176,23 @@ describe("admin message deletion counters", () => {
     ).toHaveLength(1);
     expect(state.window.MrzhFeedback.notice).toHaveBeenCalledWith("Delete failed");
     expect(state.window.MrzhFeedback.end).toHaveBeenCalledWith(1);
+  });
+});
+
+
+describe("admin general group avatar", () => {
+  it("uses the shared crop dialog and sends a CSRF-protected multipart upload before updating the preview", async () => {
+    const ui = setup(); ui.listeners.DOMContentLoaded();
+    await ui.window.MrzhChatAdmin.load("csrf");
+    ui.byId("chat-admin-general-avatar-edit").onclick();
+    expect(ui.window.MrzhAvatar.open).toHaveBeenCalledOnce();
+    await ui.window.MrzhAvatar.open.mock.lastCall[0](new Blob(["webp"],{type:"image/webp"}));
+    const [, options] = ui.requests.find(([path])=>path.endsWith("/general/avatar"));
+    expect(options.method).toBe("POST");
+    expect(options.headers["X-CSRF-Token"]).toBe("csrf");
+    expect(options.body.get("file").type).toBe("image/webp");
+    expect(ui.byId("chat-admin-general-avatar-image").src).toBe("/api/admin/chat/general/avatar?v=test");
+    expect(ui.byId("chat-admin-general-avatar-image").hidden).toBe(false);
+    expect(ui.byId("chat-admin-general-avatar-fallback").hidden).toBe(true);
   });
 });

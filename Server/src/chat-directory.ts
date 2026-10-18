@@ -12,7 +12,8 @@ export function chatDirectoryMutation(
   const path = new URL(request.url).pathname;
   return (
     /^\/api\/(admin|public)\/identity(?:-|\/)/.test(path) ||
-    /^\/chat\/api\/channels(?:\/|$)/.test(path)
+    /^\/chat\/api\/channels(?:\/|$)/.test(path) ||
+    path === "/api/admin/chat/general/avatar"
   );
 }
 

@@ -15,7 +15,10 @@
   --chat-hover: color-mix(in srgb, var(--camp-text) 6%, transparent);
   --chat-selected: color-mix(in srgb, var(--camp-accent) 14%, var(--camp-glass-card));
   --chat-pressed: color-mix(in srgb, var(--camp-text) 10%, transparent);
-  --chat-outgoing: color-mix(in srgb, var(--camp-accent) 15%, var(--chat-paper));
+  --chat-message-incoming: rgba(248, 250, 255, 0.92);
+  --chat-composer-fill: var(--chat-control-fill);
+  --chat-message-line: rgba(41, 63, 100, 0.14);
+  --chat-outgoing: rgba(220, 231, 248, 0.94);
   --chat-ink: var(--camp-text);
   --chat-muted: var(--camp-muted);
   --chat-subtle: var(--camp-muted);
@@ -52,6 +55,22 @@
   --warm: var(--chat-accent);
   --cool: var(--chat-accent);
   --danger: var(--chat-danger);
+}
+
+:root[data-theme="dark"] {
+  --chat-message-incoming: rgba(22, 31, 49, 0.88);
+  --chat-outgoing: rgba(47, 61, 87, 0.92);
+  --chat-composer-fill: rgba(18, 27, 43, 0.72);
+  --chat-message-line: rgba(215, 226, 255, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --chat-message-incoming: rgba(22, 31, 49, 0.88);
+    --chat-outgoing: rgba(47, 61, 87, 0.92);
+    --chat-composer-fill: rgba(18, 27, 43, 0.72);
+    --chat-message-line: rgba(215, 226, 255, 0.12);
+  }
 }
 
 /* Explicit and automatic themes must also override the legacy control aliases. */
@@ -147,11 +166,14 @@ body::after {
 }
 
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  :root {
+  :root, :root[data-theme], :root:not([data-theme]) {
     --chat-glass: var(--camp-bg);
     --chat-card: var(--camp-bg);
     --chat-rail: var(--camp-bg);
     --chat-paper: var(--camp-bg);
+    --chat-message-incoming: color-mix(in srgb, var(--camp-bg) 94%, var(--camp-text));
+    --chat-outgoing: color-mix(in srgb, var(--camp-bg) 86%, var(--camp-text));
+    --chat-composer-fill: color-mix(in srgb, var(--camp-bg) 94%, var(--camp-text));
     --chat-control-fill: color-mix(in srgb, var(--camp-text) 8%, var(--camp-bg));
   }
 }

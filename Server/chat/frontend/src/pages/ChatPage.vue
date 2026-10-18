@@ -483,7 +483,12 @@ async function refreshDirectory() {
         if (updated) room.otherUser = updated.otherUser;
       } else if (room) {
         const updated = channels.value.find(item=>Number(item.id)===Number(room.id));
-        if (updated) { room.memberCount = updated.memberCount; room.name = updated.name; }
+        if (updated) {
+          room.memberCount = updated.memberCount;
+          room.name = updated.name;
+          room.avatarUrl = updated.avatarUrl || '';
+          room.avatarKey = updated.avatarKey || '';
+        }
         if (showMemberPanel.value) await memberManagement.load(true);
       }
     } while (directoryRefreshPending);
@@ -1476,8 +1481,8 @@ watch(
   max-width: min(76%, 620px);
   padding: 12px 14px 10px;
   border-radius: 20px 20px 20px 6px;
-  background: var(--chat-paper);
-  border: 1px solid var(--chat-line);
+  background: var(--chat-message-incoming);
+  border: 1px solid var(--chat-message-line);
   position: relative;
   word-break: break-word;
   box-shadow: var(--chat-shadow);
