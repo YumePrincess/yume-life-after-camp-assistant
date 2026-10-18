@@ -1282,6 +1282,10 @@
   }
 
   function renderVote(summary) {
+    return window.MrzhViewState.preserve(() => renderVoteContent(summary));
+  }
+
+  function renderVoteContent(summary) {
     setText("daily-tech-panel-count", String(summary.options?.length || 0));
     const alreadyParticipated = hasTechnologyParticipation(summary);
     const signature = JSON.stringify([summary, window.MrzhI18n.language(), alreadyParticipated]);
@@ -1356,6 +1360,7 @@
         button.type = "button";
         button.disabled = summary.isOpen === false || alreadyParticipated;
         button.dataset.key = option.key;
+        button.dataset.refreshKey = `technology-option:${option.key}`;
         button.dataset.selected = String(state.selections.has(option.key));
         button.setAttribute("aria-pressed", String(state.selections.has(option.key)));
         if (option.iconUrl) {
@@ -1493,6 +1498,7 @@
 
   function renderHighlights(items) {
     const root = byId("highlights");
+    if (!window.MrzhViewState.changed(root, items)) return;
     root.replaceChildren();
     const entries = (items || []).map((item) =>
       typeof item === "string"
@@ -1651,6 +1657,7 @@
         const button = create("button", `daily-vote-option${selected.has(option.id) ? " is-selected" : ""}${alreadyParticipated ? " is-participated" : ""}`);
         button.type = "button";
         button.dataset.optionId = option.id;
+        button.dataset.refreshKey = `daily-option:${item.id}:${option.id}`;
         button.disabled = item.isOpen === false;
         button.setAttribute("aria-pressed", String(selected.has(option.id)));
         const content = create("div", "daily-vote-option-content");
@@ -1863,6 +1870,10 @@
   }
 
   function renderDailyVote(payload) {
+    return window.MrzhViewState.preserve(() => renderDailyVoteContent(payload));
+  }
+
+  function renderDailyVoteContent(payload) {
     const root = byId("daily-vote-items");
     if (!root) return;
     const items = Array.isArray(payload?.items) ? payload.items : [];
@@ -2001,6 +2012,7 @@
 
   function renderStaff(items) {
     const root = byId("staff-list");
+    if (!window.MrzhViewState.changed(root, items)) return;
     root.replaceChildren();
     if (!items?.length) {
       root.append(create("p", "empty-state", "公职数据等待同步。"));
@@ -2028,6 +2040,7 @@
   function renderMembers(items) {
     const filtered = items || [];
     const root = byId("member-table");
+    if (!window.MrzhViewState.changed(root, items)) return;
     const cardsRoot = byId("member-cards");
     root.replaceChildren();
     cardsRoot?.replaceChildren();
@@ -2099,6 +2112,7 @@
     );
     byId("warning-empty").hidden = items.length > 0;
     const root = byId("warning-list");
+    if (!window.MrzhViewState.changed(root, [items, thresholdDays])) return;
     root.replaceChildren();
     for (const item of items) {
       const card = create("article", "warning-card");
@@ -2115,6 +2129,7 @@
 
   function renderRuns(items) {
     const root = byId("run-list");
+    if (!window.MrzhViewState.changed(root, items)) return;
     root.replaceChildren();
     if (!items?.length) {
       root.append(create("p", "empty-state", "暂无自动任务记录。"));
@@ -2177,6 +2192,10 @@
   }
 
   function render(data) {
+    return window.MrzhViewState.preserve(() => renderContent(data));
+  }
+
+  function renderContent(data) {
     const sourceUrl = window.MrzhCampGroup.sourceUrl(data.campConfig?.campGroupDataUrl);
     if (state.data && window.MrzhCampGroup.sourceUrl(state.data.campConfig?.campGroupDataUrl) !== sourceUrl) {
       // A changed source needs the CSP issued with the latest page response.
@@ -2241,10 +2260,10 @@
       const activeCard = document.querySelector(
         `.feature-card[data-feature-target="${state.activeFeature}"]`
       );
-      if (activeCard && !activeCard.hidden) {
-        showFeature(state.activeFeature, { updateHash: false });
-      } else {
+      if (!activeCard || activeCard.hidden) {
         byId("feature-detail-dialog")?.close();
+      } else {
+        syncFeatureDetailKicker();
       }
     }
   }

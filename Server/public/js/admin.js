@@ -43,6 +43,8 @@
     bootstrap: null,
     csrfToken: "",
     dirtySections: new Set(),
+    dailyVoteConfigDirty: false,
+    dailyVoteConfigRevision: 0,
     refreshing: false,
     saving: false,
     memberEditSaving: false,
@@ -100,7 +102,6 @@
     runActionMenu: null,
     identityApplications: { page: 1, total: 0, items: [] },
     identityCodes: { page: 1, total: 0, items: [] },
-    identityListRefreshQueued: false,
     temporaryKeys: { page: 1, total: 0, items: [] },
     identityApplicationSearch: "",
     identityApplicationStatus: "",
@@ -129,6 +130,14 @@
 
   function byId(id) {
     return document.getElementById(id);
+  }
+
+  function syncPageJump(id, page, pages) {
+    const control = byId(id);
+    control.max = String(pages);
+    const value = String(page);
+    if (control.dataset.currentPage !== value) control.value = value;
+    control.dataset.currentPage = value;
   }
 
   function setFeedback(value) {
@@ -887,6 +896,7 @@
 
   function renderTaskActions() {
     const root = byId("task-actions");
+    if (!window.MrzhViewState.changed(root, [state.bootstrap?.plugins, state.bootstrap?.session?.permissions])) return;
     root.replaceChildren();
     const tasks = (state.bootstrap?.plugins || [])
       .filter((plugin) => plugin.enabled)
@@ -918,6 +928,8 @@
     ]) {
       const root = byId(rootId);
       if (!root) continue;
+      if (!window.MrzhViewState.changed(root, catalog)) continue;
+      const checked = new Set([...root.querySelectorAll("input:checked")].map(control => control.value));
       root.replaceChildren();
       for (const permission of catalog.filter((item) =>
         item.key === "system:admin" || item.key === "demo:preview" || item.key.startsWith("admin:") || item.key.startsWith("plugin:") || item.key === "technology-history:manage"
@@ -927,6 +939,8 @@
         checkbox.type = "checkbox";
         checkbox.name = name;
         checkbox.value = permission.key;
+        checkbox.id = `${name}-${permission.key}`;
+        checkbox.checked = checked.has(permission.key);
         checkbox.addEventListener("change", () => {
           const siblings = [...root.querySelectorAll(`input[name="${name}"]`)];
           if (checkbox.checked && checkbox.value === "system:admin") {
@@ -967,6 +981,7 @@
   function renderWorkerPlugins() {
     const root = byId("worker-plugin-list");
     if (!root) return;
+    if (!window.MrzhViewState.changed(root, [state.bootstrap?.plugins, state.bootstrap?.session?.permissions])) return;
     root.replaceChildren();
     for (const plugin of state.bootstrap?.plugins || []) {
       const card = create("article", "agent-card");
@@ -1681,6 +1696,10 @@
   }
 
   function renderTechnologyHistory(payload) {
+    return window.MrzhViewState.preserve(() => renderTechnologyHistoryContent(payload));
+  }
+
+  function renderTechnologyHistoryContent(payload) {
     state.technologyHistory = payload || { dates: [], history: null, voteBallots: [] };
     const dates = state.technologyHistory.dates || [];
     const history = state.technologyHistory.history;
@@ -1788,15 +1807,18 @@
     refreshOpenVoteDetails("history");
   }
 
-  async function loadTechnologyHistory(date = "") {
+  async function loadTechnologyHistory(date = "", background = false) {
     if (!canView("technology-history")) return;
     if (state.technologyHistoryLoading) {
+      if (background && state.technologyHistoryReloadQueued && !state.technologyHistoryReloadBackground) return;
       state.technologyHistoryReloadQueued = true;
-      state.technologyHistoryReloadDate = date;
+      state.technologyHistoryReloadDate = background ? state.technologyHistoryRequestDate : date;
+      state.technologyHistoryReloadBackground = background;
       return;
     }
     state.technologyHistoryLoading = true;
-    const progress = window.MrzhFeedback.begin();
+    state.technologyHistoryRequestDate = date;
+    const progress = background ? null : window.MrzhFeedback.begin();
     try {
       const params = new URLSearchParams({
         locale: window.MrzhI18n.language()
@@ -1808,7 +1830,7 @@
     } catch (error) {
       setFeedback(error.message);
     } finally {
-      window.MrzhFeedback.end(progress);
+      if (progress !== null) window.MrzhFeedback.end(progress);
       state.technologyHistoryLoading = false;
       state.technologyHistoryLoaded = true;
       renderTechnologyHistory(state.technologyHistory);
@@ -1816,7 +1838,7 @@
         const queuedDate = state.technologyHistoryReloadDate;
         state.technologyHistoryReloadQueued = false;
         state.technologyHistoryReloadDate = "";
-        void loadTechnologyHistory(queuedDate);
+        void loadTechnologyHistory(queuedDate, state.technologyHistoryReloadBackground);
       }
     }
   }
@@ -1894,6 +1916,10 @@
   }
 
   function renderDailyVoteAdmin(payload, mode = "active") {
+    return window.MrzhViewState.preserve(() => renderDailyVoteAdminContent(payload, mode));
+  }
+
+  function renderDailyVoteAdminContent(payload, mode = "active") {
     const history = mode === "history";
     const view = history
       ? {
@@ -1920,10 +1946,10 @@
     state[view.pageKey] = Number(payload?.page) || 1;
     state[view.totalKey] = Number(payload?.total) || 0;
     const maxWinsInput = byId("daily-vote-max-wins-per-month");
-    if (!history && maxWinsInput && document.activeElement !== maxWinsInput) {
+    if (!history && !state.dailyVoteConfigDirty && maxWinsInput && document.activeElement !== maxWinsInput) {
       maxWinsInput.value = String(state.dailyVoteConfig.drawMaxWinsPerMonth ?? 4);
     }
-    if (!history) {
+    if (!history && !state.dailyVoteConfigDirty) {
       const eligibility = state.dailyVoteConfig.voteEligibility || {};
       const enabled = byId("vote-eligibility-enabled");
       if (enabled && document.activeElement !== enabled) {
@@ -2094,20 +2120,24 @@
     setText(view.pageId, `${page} / ${pages}`);
     byId(view.prevId).disabled = page <= 1;
     byId(view.nextId).disabled = page >= pages;
-    byId(view.jumpId).max = String(pages);
-    byId(view.jumpId).value = String(page);
+    syncPageJump(view.jumpId, page, pages);
     refreshOpenDailyVoteDetails(mode);
   }
 
-  async function loadDailyVoteAdmin(date = "", page = state.dailyVotePage, mode = "active") {
+  async function loadDailyVoteAdmin(date = "", page = state.dailyVotePage, mode = "active", background = false) {
     const history = mode === "history";
     if (!canView("daily-vote")) return;
     if (state.dailyVoteLoading) {
-      state.dailyVoteReloadRequest = { date, page, mode };
+      if (!background || !state.dailyVoteReloadRequest) {
+        state.dailyVoteReloadRequest = background
+          ? { ...state.dailyVoteRequest, background: true }
+          : { date, page, mode, background };
+      }
       return;
     }
     state.dailyVoteLoading = true;
-    const progress = window.MrzhFeedback.begin();
+    state.dailyVoteRequest = { date, page, mode, background };
+    const progress = background ? null : window.MrzhFeedback.begin();
     try {
       const requestedPage = Number(page);
       const params = new URLSearchParams({
@@ -2121,16 +2151,17 @@
     } catch (error) {
       setFeedback(error.message);
     } finally {
-      window.MrzhFeedback.end(progress);
+      if (progress !== null) window.MrzhFeedback.end(progress);
       state.dailyVoteLoading = false;
       const queued = state.dailyVoteReloadRequest;
       state.dailyVoteReloadRequest = null;
-      if (queued) void loadDailyVoteAdmin(queued.date, queued.page, queued.mode);
+      if (queued) void loadDailyVoteAdmin(queued.date, queued.page, queued.mode, queued.background);
     }
   }
 
   async function saveDailyVoteConfig(event) {
     event.preventDefault();
+    const revision = state.dailyVoteConfigRevision;
     try {
       const payload = await request("/api/admin/daily-vote/config", {
         method: "PUT",
@@ -2146,7 +2177,10 @@
         })
       });
       state.dailyVoteConfig = payload.config || state.dailyVoteConfig;
-      byId("daily-vote-max-wins-per-month").value = String(state.dailyVoteConfig.drawMaxWinsPerMonth);
+      if (revision === state.dailyVoteConfigRevision) {
+        state.dailyVoteConfigDirty = false;
+        byId("daily-vote-max-wins-per-month").value = String(state.dailyVoteConfig.drawMaxWinsPerMonth);
+      }
       setFeedback(window.MrzhI18n.t("通用投票设置已保存"));
     } catch (error) {
       setFeedback(localizeDailyVoteError(error));
@@ -2336,6 +2370,10 @@
   }
 
   function renderVoteDetails(title, summary, entries) {
+    return window.MrzhViewState.preserve(() => renderVoteDetailsContent(title, summary, entries));
+  }
+
+  function renderVoteDetailsContent(title, summary, entries) {
     byId("vote-detail-title").textContent = window.MrzhI18n.t(title);
     byId("vote-detail-summary").textContent = summary;
     const root = byId("vote-detail-list");
@@ -3082,11 +3120,15 @@
   }
 
   function renderRuns(runs) {
+    const result = window.MrzhViewState.preserve(() => renderRunsContent(runs));
+    positionRunActionMenu();
+    return result;
+  }
+
+  function renderRunsContent(runs) {
     const root = byId("run-table");
-    const activeTrigger = state.runActionMenu?.trigger;
-    const replacingActiveTrigger = Boolean(activeTrigger && root.contains(activeTrigger));
+    if (!window.MrzhViewState.changed(root, [runs, state.bootstrap?.session?.permissions])) return;
     root.replaceChildren();
-    if (replacingActiveTrigger) closeRunActionMenu();
     for (const run of runs || []) {
       const row = document.createElement("tr");
       row.append(
@@ -3100,17 +3142,8 @@
         create("td", "", run.message || "—")
       );
       const actions = create("td", "run-actions");
-      const operation = createRunActionButton(
-        "操作",
-        "button-quiet run-action-trigger",
-        "operation"
-      );
-      operation.setAttribute("aria-haspopup", "menu");
-      operation.setAttribute("aria-expanded", "false");
-      operation.addEventListener("click", (event) => {
-        event.stopPropagation();
-        toggleRunActionMenu(run, operation);
-      });
+      const operation = actionMenuTrigger(`run:${run.id}`, (trigger, refresh) =>
+        toggleRunActionMenu(run, trigger, refresh));
       actions.append(operation);
       row.append(actions);
       root.append(row);
@@ -3174,14 +3207,23 @@
     active.trigger?.setAttribute("aria-expanded", "false");
     active.menu.remove();
     state.runActionMenu = null;
-    if (state.identityListRefreshQueued) {
-      state.identityListRefreshQueued = false;
-      if (state.activeView === "identity-applications") {
-        void loadIdentityApplications();
-      } else if (state.activeView === "identity-codes") {
-        void loadIdentityCodes();
-      }
-    }
+  }
+
+  function actionMenuTrigger(key, openMenu, disabled = false) {
+    const active = state.runActionMenu;
+    const operation = active?.trigger?.dataset.refreshKey === key
+      ? active.trigger
+      : createRunActionButton("操作", "button-quiet run-action-trigger", "operation");
+    operation.dataset.refreshKey = key;
+    operation.setAttribute("aria-haspopup", "menu");
+    operation.setAttribute("aria-expanded", String(active?.trigger === operation));
+    operation.disabled = disabled;
+    operation.onclick = event => {
+      event.stopPropagation();
+      openMenu(operation, false);
+    };
+    if (active?.trigger === operation) openMenu(operation, true);
+    return operation;
   }
 
   function positionRunActionMenu() {
@@ -3217,7 +3259,7 @@
     menu.style.visibility = "visible";
   }
 
-  function toggleRunActionMenu(run, trigger) {
+  function toggleRunActionMenu(run, trigger, refresh = false) {
     const cancellationPending = run.state === "cancelling";
     toggleActionMenu(trigger, [
       {
@@ -3235,31 +3277,41 @@
           !hasPermission("task:interrupt"),
         onSelect: (button) => interruptRun(run.id, button)
       }
-    ]);
+    ], { refresh });
   }
 
-  function toggleActionMenu(trigger, entries) {
-    if (state.runActionMenu?.trigger === trigger) {
-      closeRunActionMenu();
-      return;
-    }
-    closeRunActionMenu();
-    const menu = create("div", "run-action-menu");
-    menu.setAttribute("role", "menu");
-    for (const entry of entries) {
-      const button = createRunActionButton(
+  function syncActionMenu(menu, trigger, entries) {
+    const current = new Map([...menu.children].map(button => [button.dataset.refreshKey, button]));
+    const buttons = entries.map(entry => {
+      const key = `${trigger.dataset.refreshKey}:menu:${entry.label}`;
+      const button = current.get(key) || createRunActionButton(
         entry.label,
         `${entry.danger ? "button-danger" : "button-quiet"} run-action-menu-item`,
         entry.icon || "events"
       );
+      button.dataset.refreshKey = key;
       button.setAttribute("role", "menuitem");
-      button.disabled = Boolean(entry.disabled);
-      button.addEventListener("click", () => {
+      button.disabled = Boolean(entry.disabled) || trigger.disabled;
+      button.onclick = () => {
         closeRunActionMenu();
         entry.onSelect(button);
-      });
-      menu.append(button);
+      };
+      return button;
+    });
+    menu.replaceChildren(...buttons);
+  }
+
+  function toggleActionMenu(trigger, entries, { refresh = false } = {}) {
+    if (state.runActionMenu?.trigger === trigger) {
+      if (refresh) syncActionMenu(state.runActionMenu.menu, trigger, entries);
+      else closeRunActionMenu();
+      return;
     }
+    if (refresh) return;
+    closeRunActionMenu();
+    const menu = create("div", "run-action-menu");
+    menu.setAttribute("role", "menu");
+    syncActionMenu(menu, trigger, entries);
     menu.addEventListener("click", (event) => event.stopPropagation());
     menu.style.visibility = "hidden";
     document.body.append(menu);
@@ -3268,7 +3320,7 @@
     positionRunActionMenu();
   }
 
-  function activateView(view) {
+  function activateView(view, { reload = true } = {}) {
     const availableViews = new Set(
       [...document.querySelectorAll("[data-admin-view]")].map(
         (element) => element.dataset.adminView
@@ -3300,6 +3352,7 @@
       if (active) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
     }
+    if (!viewChanged && !reload) return;
     const preserveOpenIdentityMenu =
       !viewChanged &&
       state.runActionMenu?.trigger?.isConnected &&
@@ -3401,14 +3454,18 @@
   }
 
   function render(data, fillSections = []) {
+    return window.MrzhViewState.preserve(() => renderContent(data, fillSections));
+  }
+
+  function renderContent(data, fillSections = []) {
     mountVoteAdminCards();
+    const initialLoad = !state.bootstrap;
     state.bootstrap = data;
     document.documentElement.dataset.timezone =
       data.configBundle?.campConfig?.timezone || "UTC+08:00";
-    if (adminCalendar.nodes?.open) renderAdminCalendar();
-    if (!input("keyExpiresAt")?.value) setDefaultKeyExpiry();
+    if (initialLoad && !input("keyExpiresAt")?.value) setDefaultKeyExpiry();
     const identityExpiryInput = input("identityExpiresAt");
-    if (identityExpiryInput && !identityExpiryInput.value) {
+    if (initialLoad && identityExpiryInput && !identityExpiryInput.value) {
       identityExpiryInput.value = identityExpiryDate();
     }
     state.csrfToken = data.session.csrfToken;
@@ -3462,7 +3519,7 @@
     setConfigReadOnly();
     setModuleActionState();
     const requestedView = location.hash.slice(1) || state.activeView;
-    activateView(requestedView);
+    activateView(requestedView, { reload: false });
   }
 
   function setConfigReadOnly() {
@@ -3533,15 +3590,21 @@
     }
   }
 
-  async function loadTemporaryKeys(page = state.temporaryKeys.page) {
+  async function loadTemporaryKeys(page = state.temporaryKeys.page, background = false) {
+    if (background) page = state.temporaryKeysRequestedPage ?? page;
     if (!canView("access")) return;
+    const revision = state.temporaryKeysRevision = (state.temporaryKeysRevision || 0) + 1;
+    state.temporaryKeysRequestedPage = page;
     const params = new URLSearchParams({
       page: String(Math.max(1, page)),
       search: state.temporaryKeySearch,
       status: state.temporaryKeyStatus
     });
     try {
-      state.temporaryKeys = await request(`/api/admin/temp-keys?${params}`);
+      const payload = await request(`/api/admin/temp-keys?${params}`);
+      if (revision !== state.temporaryKeysRevision) return;
+      state.temporaryKeys = payload;
+      state.temporaryKeysRequestedPage = payload.page;
       renderTemporaryKeys();
     } catch (error) {
       setFeedback(error.message);
@@ -3549,6 +3612,10 @@
   }
 
   function renderTemporaryKeys() {
+    return window.MrzhViewState.preserve(() => renderTemporaryKeysContent());
+  }
+
+  function renderTemporaryKeysContent() {
     const root = byId("temporary-key-list");
     if (!root) return;
     root.replaceChildren();
@@ -3632,8 +3699,7 @@
     setText("temporary-key-page", `${payload.page || 1} / ${pages}`);
     byId("temporary-key-prev").disabled = (payload.page || 1) <= 1;
     byId("temporary-key-next").disabled = (payload.page || 1) >= pages;
-    byId("temporary-key-jump").max = String(pages);
-    byId("temporary-key-jump").value = String(payload.page || 1);
+    syncPageJump("temporary-key-jump", payload.page || 1, pages);
   }
 
   function renderAdminMembers(items) {
@@ -3873,7 +3939,7 @@
         ));
       state.memberCorrectionValidatedDocument = "";
       state.memberCorrectionValidation = null;
-      await refresh(true);
+      await refresh(false);
     } catch (error) {
       setFeedback(error.message);
     } finally {
@@ -3904,9 +3970,14 @@
         : CONFIG_SECTIONS.filter(
             (section) =>
               !state.dirtySections.has(section) &&
-              !(section === "technology" && preserveTechnologyEditor)
+              !(section === "technology" && preserveTechnologyEditor) &&
+              !(section === "tasks" && state.scheduleDialogTaskKey) &&
+              JSON.stringify(configSectionValue(state.bootstrap?.configBundle, section)) !==
+                JSON.stringify(configSectionValue(data.configBundle, section))
           );
+      const hadBootstrap = Boolean(state.bootstrap);
       render(data, sections);
+      if (hadBootstrap) refreshOpenAdminViews();
     } catch (error) {
       setFeedback(error.message);
     } finally {
@@ -3915,6 +3986,19 @@
       if (!state.bootstrap) window.MrzhLoading?.settle("plugins");
       flushLiveRefresh();
     }
+  }
+
+  function configSectionValue(bundle, section) {
+    if (!bundle) return null;
+    const camp = bundle.campConfig || {}, automation = bundle.automationConfig || {};
+    const pick = (source, keys) => keys.map(key => source[key]);
+    if (section === "general") return [
+      pick(camp, ["campName", "campGroupDataUrl", "serverName", "publicSiteName", "gameResetTime", "specialDailyRefreshTime", "publicMembersEnabled", "inactivityWarningDays"]),
+      bundle.publicOverview, bundle.authConfig, automation.timezone
+    ];
+    if (section === "tasks") return [automation.tasks, automation.scheduledRetryCount, automation.manualRetryCount];
+    if (section === "agent") return [automation.agent, automation.gameWatchdog];
+    return [bundle.technologyConfig, pick(camp, ["voteWindowStart", "voteWindowEnd", "currentCampType"])];
   }
 
   function flushLiveRefresh() {
@@ -3929,14 +4013,11 @@
   }
 
   function refreshOpenAdminViews() {
-    const preserveIdentityMenu = state.runActionMenu?.trigger?.isConnected &&
-      (state.activeView === "identity-applications" || state.activeView === "identity-codes");
-    if (preserveIdentityMenu) {
-      state.identityListRefreshQueued = true;
-    } else if (state.activeView === "identity-applications") {
-      void loadIdentityApplications();
+    if (state.activeView === "access") void loadTemporaryKeys(undefined, true);
+    if (state.activeView === "identity-applications") {
+      void loadIdentityApplications(undefined, true);
     } else if (state.activeView === "identity-codes") {
-      void loadIdentityCodes();
+      void loadIdentityCodes(undefined, true);
     }
 
     const technologyHistoryCard = document.querySelector(
@@ -3944,7 +4025,7 @@
     );
     if (technologyHistoryCard?.open && state.activeView === "technology-history") {
       state.technologyHistoryLoaded = false;
-      void loadTechnologyHistory(byId("technology-history-date")?.value || "");
+      void loadTechnologyHistory(byId("technology-history-date")?.value || "", true);
     }
     const dailyHistoryCard = document.querySelector(
       '[data-vote-history-card="daily-vote"]'
@@ -3953,7 +4034,7 @@
       void loadDailyVoteAdmin(
         byId("daily-vote-history-date")?.value || "",
         state.dailyVoteHistoryPage,
-        "history"
+        "history", true
       );
     }
 
@@ -3961,13 +4042,13 @@
       '[data-vote-management-card="general"]'
     );
     if (generalVoteCard?.open && state.activeView === "technology") {
-      void loadDailyVoteAdmin("", state.dailyVotePage, "active");
+      void loadDailyVoteAdmin("", state.dailyVotePage, "active", true);
     }
     const dailyVoteCard = document.querySelector(
       '[data-vote-management-card="daily-vote"]'
     );
     if (dailyVoteCard?.open && state.activeView === "technology") {
-      void loadDailyVoteAdmin("", 1, "active");
+      void loadDailyVoteAdmin("", state.dailyVotePage, "active", true);
     }
   }
 
@@ -4025,7 +4106,6 @@
           // The open event timeline was refreshed above. Avoid an unrelated
           // bootstrap round trip for every log batch.
           void refresh(false);
-          refreshOpenAdminViews();
         }
       }
     });
@@ -4202,6 +4282,8 @@
       const signature = `${events.length}:${tail?.id || ""}:${tail?.created_at || ""}:${tail?.message || ""}`;
       if (signature === state.eventSignature) return;
       state.eventSignature = signature;
+      const previousScrollTop = root.scrollTop;
+      const followTail = root.scrollHeight - root.clientHeight - previousScrollTop <= 32;
       if (initialLoad) root.replaceChildren();
       if (!events.length && initialLoad) {
         root.append(create("p", "empty-state", "暂无步骤事件。"));
@@ -4220,10 +4302,8 @@
         );
         root.append(row);
       }
-      // Events are rendered oldest-first so the run can be read as a timeline,
-      // but the useful state is always at the tail. Keep the newest event in
-      // view after the initial load and every WebSocket-triggered refresh.
-      root.scrollTop = root.scrollHeight;
+      // Follow new events only while the reader is already at the tail.
+      root.scrollTop = initialLoad || followTail ? root.scrollHeight : previousScrollTop;
     } catch (error) {
       if (state.activeEventRunId === runId) {
         root.replaceChildren(create("p", "error-text", error.message));
@@ -4663,17 +4743,23 @@
     return `${parts.year}-${parts.month}-${parts.day}`;
   }
 
-  async function loadIdentityApplications(page = state.identityApplications.page) {
+  async function loadIdentityApplications(page = state.identityApplications.page, background = false) {
+    if (background) page = state.identityApplicationsRequestedPage ?? page;
     if (!canView("identity-applications")) return;
+    const revision = state.identityApplicationsRevision = (state.identityApplicationsRevision || 0) + 1;
+    state.identityApplicationsRequestedPage = page;
     const params = new URLSearchParams({
       page: String(Math.max(1, page)),
       search: state.identityApplicationSearch,
       status: state.identityApplicationStatus
     });
     try {
-      state.identityApplications = await request(
+      const payload = await request(
         `/api/admin/identity-applications?${params}`
       );
+      if (revision !== state.identityApplicationsRevision) return;
+      state.identityApplications = payload;
+      state.identityApplicationsRequestedPage = payload.page;
       renderIdentityApplications();
     } catch (error) {
       setFeedback(error.message);
@@ -4681,13 +4767,16 @@
   }
 
   function renderIdentityApplications() {
+    const result = window.MrzhViewState.preserve(() => renderIdentityApplicationsContent());
+    positionRunActionMenu();
+    return result;
+  }
+
+  function renderIdentityApplicationsContent() {
     const payload = state.identityApplications;
     const pages = Math.max(1, Math.ceil(payload.total / 10));
     const root = byId("identity-application-table");
-    const activeTrigger = state.runActionMenu?.trigger;
-    const replacingActiveTrigger = Boolean(activeTrigger && root.contains(activeTrigger));
     root.replaceChildren();
-    if (replacingActiveTrigger) closeRunActionMenu();
     for (const item of payload.items) {
       const row = document.createElement("tr");
       for (const value of [
@@ -4714,16 +4803,7 @@
         row.append(create("td", "", value));
       }
       const actionCell = create("td", "run-actions");
-      const operation = createRunActionButton(
-        "操作",
-        "button-quiet run-action-trigger",
-        "operation"
-      );
-      operation.setAttribute("aria-haspopup", "menu");
-      operation.setAttribute("aria-expanded", "false");
-      operation.disabled = !hasPermission("identity:review");
-      operation.addEventListener("click", (event) => {
-        event.stopPropagation();
+      const operation = actionMenuTrigger(`application:${item.record_type || "application"}:${item.id}`, (operation, refresh) => {
         const menuItems = [];
         if (item.status === "pending") {
           menuItems.push({
@@ -4738,8 +4818,8 @@
           danger: true,
           onSelect: () => deleteIdentityApplicationRecord(item)
         });
-        toggleActionMenu(operation, menuItems);
-      });
+        toggleActionMenu(operation, menuItems, { refresh });
+      }, !hasPermission("identity:review"));
       actionCell.append(operation);
       row.append(actionCell);
       root.append(row);
@@ -4754,8 +4834,7 @@
     setText("identity-app-page", `${payload.page} / ${pages}`);
     byId("identity-app-prev").disabled = payload.page <= 1;
     byId("identity-app-next").disabled = payload.page >= pages;
-    byId("identity-app-jump").max = String(pages);
-    byId("identity-app-jump").value = String(payload.page);
+    syncPageJump("identity-app-jump", payload.page, pages);
   }
 
   function setText(id, value) {
@@ -5081,15 +5160,21 @@
     }
   }
 
-  async function loadIdentityCodes(page = state.identityCodes.page) {
+  async function loadIdentityCodes(page = state.identityCodes.page, background = false) {
+    if (background) page = state.identityCodesRequestedPage ?? page;
     if (!canView("identity-codes")) return;
+    const revision = state.identityCodesRevision = (state.identityCodesRevision || 0) + 1;
+    state.identityCodesRequestedPage = page;
     const params = new URLSearchParams({
       page: String(Math.max(1, page)),
       search: state.identityCodeSearch,
       status: state.identityCodeStatus
     });
     try {
-      state.identityCodes = await request(`/api/admin/identity-codes?${params}`);
+      const payload = await request(`/api/admin/identity-codes?${params}`);
+      if (revision !== state.identityCodesRevision) return;
+      state.identityCodes = payload;
+      state.identityCodesRequestedPage = payload.page;
       renderIdentityCodes();
     } catch (error) {
       setFeedback(error.message);
@@ -5132,13 +5217,16 @@
   }
 
   function renderIdentityCodes() {
+    const result = window.MrzhViewState.preserve(() => renderIdentityCodesContent());
+    positionRunActionMenu();
+    return result;
+  }
+
+  function renderIdentityCodesContent() {
     const payload = state.identityCodes;
     const pages = Math.max(1, Math.ceil(payload.total / 10));
     const root = byId("identity-code-table");
-    const activeTrigger = state.runActionMenu?.trigger;
-    const replacingActiveTrigger = Boolean(activeTrigger && root.contains(activeTrigger));
     root.replaceChildren();
-    if (replacingActiveTrigger) closeRunActionMenu();
     for (const item of payload.items) {
       const row = document.createElement("tr");
       const expired =
@@ -5157,16 +5245,7 @@
         row.append(create("td", "", value));
       }
       const actions = create("td", "run-actions");
-      const operation = createRunActionButton(
-        "操作",
-        "button-quiet run-action-trigger",
-        "operation"
-      );
-      operation.setAttribute("aria-haspopup", "menu");
-      operation.setAttribute("aria-expanded", "false");
-      operation.disabled = !hasPermission("identity:manage");
-      operation.addEventListener("click", (event) => {
-        event.stopPropagation();
+      const operation = actionMenuTrigger(`identity:${item.id}`, (operation, refresh) => {
         toggleActionMenu(operation, [
           {
             label: item.status === "active" ? "取消识别码" : "恢复",
@@ -5209,8 +5288,8 @@
             danger: true,
             onSelect: () => deleteIdentityCodeItem(item)
           }
-        ]);
-      });
+        ], { refresh });
+      }, !hasPermission("identity:manage"));
       actions.append(operation);
       row.append(actions);
       root.append(row);
@@ -5218,8 +5297,7 @@
     setText("identity-code-page", `${payload.page} / ${pages}`);
     byId("identity-code-prev").disabled = payload.page <= 1;
     byId("identity-code-next").disabled = payload.page >= pages;
-    byId("identity-code-jump").max = String(pages);
-    byId("identity-code-jump").value = String(payload.page);
+    syncPageJump("identity-code-jump", payload.page, pages);
   }
 
   async function updateIdentityCodeItem(item, values) {
@@ -5630,6 +5708,12 @@
   byId("daily-vote-kind")?.addEventListener("change", toggleDailyVoteEditorFields);
   byId("daily-vote-editor")?.addEventListener("submit", saveDailyVoteFromEditor);
   byId("daily-vote-config-form")?.addEventListener("submit", saveDailyVoteConfig);
+  for (const eventName of ["input", "change"]) {
+    byId("daily-vote-config-form")?.addEventListener(eventName, () => {
+      state.dailyVoteConfigDirty = true;
+      state.dailyVoteConfigRevision += 1;
+    });
+  }
   byId("refresh-daily-vote")?.addEventListener("click", () =>
     loadDailyVoteAdmin("", 1, "active")
   );

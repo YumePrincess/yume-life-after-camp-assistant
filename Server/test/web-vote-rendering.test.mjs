@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
+const viewStateSource = readFileSync(new URL("../public/js/view-state.js", import.meta.url), "utf8");
 const source = readFileSync(new URL("../public/js/public.js", import.meta.url), "utf8");
 const technologyCode = source.slice(source.indexOf("  function optionMap("), source.indexOf("  function renderHighlights("));
 const dailyCode = source.slice(source.indexOf("  function dailySelections("), source.indexOf("  function renderDailyHistory(")) +
@@ -52,7 +53,8 @@ function setup(code) {
         if (tag === "img") images.push(node);
         return node;
       },
-      querySelectorAll: () => panels
+      documentElement: { dataset: {} },
+      querySelectorAll: selector => selector === "*" ? [...Object.values(nodes), ...panels] : panels
     },
     window: { MrzhI18n: {
       language: () => environment.language, t: value => value,
@@ -75,6 +77,7 @@ function setup(code) {
       }
     }
   };
+  runInNewContext(viewStateSource, context);
   const api = runInNewContext(`let renderedTechnologyVote = ""; let renderedDailyVote = ""; ${code}\n` +
     (code === technologyCode ? "({renderVote, toggleVote})" : "({renderDailyVote, openDailyPanel, backDailyPanels})"), context);
   return { ...api, state, nodes, panels, images, environment, notice, history, participants, setText: context.setText };
@@ -123,10 +126,15 @@ describe("vote clicks preserve loaded icons and card nodes", () => {
     const button = ui.nodes["vote-options"].querySelectorAll(".vote-option")[0];
     ui.renderVote(structuredClone(summary));
     expect(ui.nodes["vote-options"].querySelectorAll(".vote-option")[0]).toBe(button);
+    button.click();
+    ui.state.dailyPanel = "technology";
     const changed = structuredClone(summary);
     changed.options[0].votes = 1;
     ui.renderVote(changed);
     expect(ui.nodes["vote-options"].querySelectorAll(".vote-count")[0].textContent).toBe("1 票");
+    expect([...ui.state.selections]).toEqual(["a"]);
+    expect(ui.state.dailyPanel).toBe("technology");
+    expect(ui.nodes["vote-options"].querySelectorAll(".vote-option")[0].attributes["aria-pressed"]).toBe("true");
     const updated = ui.nodes["vote-options"].children[0];
     ui.environment.language = "ja";
     ui.renderVote(changed);
@@ -167,16 +175,21 @@ describe("vote clicks preserve loaded icons and card nodes", () => {
   it("still updates daily totals and participant-list permissions when data changes", () => {
     const ui = setup(dailyCode);
     ui.renderDailyVote(payload);
+    ui.nodes["daily-vote-items"].querySelectorAll(".daily-vote-option")[0].click();
+    ui.state.dailyPanel = "items";
     const changed = structuredClone(payload);
     changed.items[0].options[0].votes = 3;
     ui.renderDailyVote(changed);
     expect(ui.nodes["daily-vote-items"].querySelectorAll(".daily-vote-option-count")[0].textContent).toBe("3 票");
+    expect(ui.state.dailySelections.one).toEqual(["one-a"]);
+    expect(ui.state.dailyPanel).toBe("items");
+    expect(ui.nodes["daily-vote-items"].querySelectorAll(".daily-vote-option")[0].attributes["aria-pressed"]).toBe("true");
     ui.environment.dailyParticipated.add("one");
     ui.renderDailyVote(changed);
     const button = ui.nodes["daily-vote-items"].querySelectorAll(".daily-vote-option")[0];
     button.click();
     expect(ui.participants).toHaveBeenCalledWith(expect.objectContaining({ itemId: "one", optionId: "one-a", requiresIdentity: true }));
-    expect(ui.state.dailySelections.one).toBeUndefined();
+    expect(ui.state.dailySelections.one).toEqual(["one-a"]);
   });
 });
 
