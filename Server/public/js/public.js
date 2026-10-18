@@ -112,6 +112,7 @@
       // Private browsing or an embedded webview may deny localStorage access.
     }
     renderIdentityAccount();
+    document.dispatchEvent(new CustomEvent("mrzh:identitychange", { detail: { identityCode: session?.identityCode || "" } }));
   }
 
   function identitySession() {
@@ -843,9 +844,11 @@
       closeFeatureDialog();
     });
     byId("feature-detail-dialog").addEventListener("close", () => {
-      resetFeatureSelection({ restoreFocus: true });
+      resetFeatureSelection({ clearHash: window.location.hash !== "#chat", restoreFocus: window.location.hash !== "#chat" });
     });
-    resetFeatureSelection();
+    resetFeatureSelection({ clearHash: false });
+    const initialFeature = window.location.hash.slice(1);
+    if (FEATURE_IDS.includes(initialFeature)) showFeature(initialFeature, { updateHash: false });
   }
 
   function setText(id, value) {
@@ -2834,10 +2837,7 @@
   byId("identity-eligibility-application-close")?.addEventListener("click", () => {
     byId("identity-eligibility-application-dialog").close();
   });
-  byId("open-chat").addEventListener("click", async () => {
-    try { await request("/api/public/identity-session"); window.location.assign("/chat/"); }
-    catch { showOperationNotice(window.MrzhI18n.t("请先登录身份识别码后进入互动中心。"), {kicker:"IDENTITY CODE"}); }
-  });
+  byId("open-chat").addEventListener("click", () => chatNavigation.open());
   byId("identity-avatar-edit").addEventListener("click", () => window.MrzhAvatar.open(async (file) => {
     const form = new FormData(); form.append("file",file,"avatar.webp");
     const response = await fetch("/api/public/identity-avatar",{method:"POST",body:form});
@@ -2966,6 +2966,26 @@
     byId("identity-application-dialog").close();
   });
   initFeatureNavigation();
+  const chatNavigation = window.MrzhChatNavigation.create({
+    async validateSession() {
+      try {
+        const account = await request("/api/public/identity-session");
+        persistIdentitySession(account);
+        return account;
+      } catch (error) {
+        if (isIdentitySessionInvalidError(error)) return null;
+        throw error;
+      }
+    },
+    beforeOpen() { byId("feature-detail-dialog").close(); },
+    onIdentityRequired() {
+      clearIdentitySession();
+      showFeature("identity");
+      showOperationNotice(window.MrzhI18n.t("请先登录身份识别码后进入互动中心。"), { kicker: "IDENTITY CODE" });
+    },
+    onError(error) { showOperationNotice(window.MrzhI18n.t(error.message)); },
+    translate: value => window.MrzhI18n.t(value)
+  });
   byId("retry-camp-group")?.addEventListener("click", () => void loadCampGroup());
   document.addEventListener("mrzh:languagechange", () => {
     renderCampGroup();

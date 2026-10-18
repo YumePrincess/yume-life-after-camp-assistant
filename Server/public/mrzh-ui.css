@@ -1392,3 +1392,17 @@ body .feedback-dialog .app-modal-actions .button { min-width: 96px; min-height: 
 .identity-password-change-dialog .muted { margin:0; font-size:12px; line-height:1.7; }
 .identity-password-change-dialog .feedback { margin:14px 0 0; font-size:13px; color:var(--danger); line-height:1.6; }
 .identity-password-change-dialog .feedback:empty { display:none; }
+
+/* Keep the chat application mounted across #chat/home switches. */
+#chat-workspace {
+  position: fixed;
+  z-index: 100;
+  inset: var(--chat-host-top, 0px) 0 auto;
+  width: 100%;
+  height: var(--chat-host-height, 100dvh);
+  overflow: hidden;
+  background: var(--bg);
+}
+#chat-frame { display: block; width: 100%; height: 100%; border: 0; }
+body.chat-workspace-open { position: fixed; inset: 0; width: 100%; overflow: hidden; }
+.chat-workspace-open :is(#main-content, .site-footer, .skip-link) { visibility: hidden; pointer-events: none; }

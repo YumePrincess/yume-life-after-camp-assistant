@@ -73,6 +73,10 @@ export async function fetchAsset(env: Env, request: Request, pathname: string): 
   if (pathname.endsWith(".html")) {
     const headers = new Headers(response.headers);
     headers.set("Cache-Control", "no-store");
+    if (pathname === "/index.html") {
+      // The homepage hosts the same-origin chat recorder; other pages keep microphone disabled.
+      headers.set("Permissions-Policy", "camera=(), microphone=(self), geolocation=(), payment=()");
+    }
     return new Response(response.body, { status: response.status, headers });
   }
   return response;

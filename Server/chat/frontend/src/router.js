@@ -1,6 +1,6 @@
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createMemoryHistory } from "vue-router";
 const router = createRouter({
-  history: createWebHistory("/chat/"),
+  history: createMemoryHistory(),
   routes: [
     {
       path: "/",

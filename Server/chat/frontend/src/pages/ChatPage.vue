@@ -554,7 +554,7 @@ watch(
     <aside class="right-sidebar">
       <div class="right-sidebar-inner">
         <div class="right-sidebar-section right-sidebar-actions">
-          <a href="/" class="right-sidebar-action right-sidebar-action--labeled tooltip" :aria-label="t('camp.home')" :data-tooltip="t('camp.home')"><House :size="22" aria-hidden="true"/><span class="right-sidebar-action__label">{{t('camp.home')}}</span></a>
+          <a data-camp-home href="/" class="right-sidebar-action right-sidebar-action--labeled tooltip" :aria-label="t('camp.home')" :data-tooltip="t('camp.home')"><House :size="22" aria-hidden="true"/><span class="right-sidebar-action__label">{{t('camp.home')}}</span></a>
           <button
             type="button"
             class="right-sidebar-action right-sidebar-action--labeled tooltip"
@@ -613,7 +613,7 @@ watch(
             <Menu :size="22" aria-hidden="true" />
           </button>
           <h1 class="brand-title">{{t("camp.center")}}</h1>
-          <div class="sidebar-header-actions"><a class="header-action mobile-menu-action" href="/" :aria-label="t('camp.home')"><House :size="22" aria-hidden="true"/></a>
+          <div class="sidebar-header-actions"><a class="header-action mobile-menu-action" data-camp-home href="/" :aria-label="t('camp.home')"><House :size="22" aria-hidden="true"/></a>
             <button
               type="button"
               class="header-action header-action--primary"
@@ -1594,9 +1594,9 @@ watch(
 .empty-logo { display: grid; place-items: center; width: 72px; height: 72px; border: 1px solid var(--chat-line); border-radius: 24px; background: var(--chat-control-fill); box-shadow: inset 0 1px 0 var(--chat-glass-rim); }
 
 .room-management-layer {
-  /* 成员面板覆盖聊天区而非挤压它，打开面板不会改变消息与输入栏的宽度。 */
+  /* Cover the entire workspace, including every header, without resizing the chat columns. */
   position: absolute;
-  inset: 76px 0 0;
+  inset: 0;
   z-index: 30;
   display: flex;
   justify-content: flex-end;

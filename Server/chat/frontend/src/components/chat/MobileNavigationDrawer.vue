@@ -48,7 +48,7 @@ useOverlayLifecycle({
           </header>
 
           <nav class="mobile-navigation-drawer__actions" :aria-label="t('mobile.appNavigation')">
-            <a href="/" class="mobile-navigation-home"><House :size="21" aria-hidden="true"/><span>{{t('camp.home')}}</span></a>
+            <a data-camp-home href="/" class="mobile-navigation-home" @click="emit('close')"><House :size="21" aria-hidden="true"/><span>{{t('camp.home')}}</span></a>
             <button type="button" :aria-current="activeView === 'chat' ? 'page' : undefined" @click="emit('chat')">
               <MessageCircle :size="21" aria-hidden="true" />
               <span>{{ t('nav.chats') }}</span>

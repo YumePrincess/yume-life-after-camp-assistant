@@ -9,17 +9,18 @@
     <meta name="description" content="明日之后“愿”营地公共信息、科技投票与成员贡献" />
     <title>明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20261017-tech-card-spacing-color" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261018-chat-design" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261018-hash-chat" />
     <link rel="stylesheet" href="/loading.css?v=20261017-chat-loading" />
     <link rel="stylesheet" href="/mrzh-mobile.css?v=20261018-stable-icons" />
-    <script src="/js/loading.js?v=20261017-chat-loading" defer></script>
+    <script src="/js/loading.js?v=20261018-hash-chat" defer></script>
     <script src="/js/preferences.js?v=20261018-feedback-cards" defer></script>
     <script src="/js/timezone.js?v=20261017-identity-chat-v2" defer></script>
     <script src="/js/i18n.js?v=20261018-feedback-cards" defer></script>
     <script src="/js/camp-group.js?v=20261016-configurable-source" defer></script>
     <script src="/js/vote-participation.js?v=20261016-participation-sync" defer></script>
     <script src="/js/identity-avatar.js?v=20261018-feedback-cards" defer></script>
-    <script src="/js/public.js?v=20261018-feedback-cards" defer></script>
+    <script src="/js/chat-navigation.js?v=20261018-hash-chat" defer></script>
+    <script src="/js/public.js?v=20261018-hash-chat" defer></script>
   </head>
   <body class="public-page">
     <div id="page-loading" class="page-loading" role="status" aria-label="正在载入">
@@ -98,7 +99,7 @@
               <span class="identity-card-status-text" id="identity-card-status-text">未登录</span>
             </span>
           </button>
-          <button class="feature-card" type="button" id="open-chat">
+          <button class="feature-card" type="button" id="open-chat" aria-controls="chat-workspace" aria-expanded="false">
             <span class="feature-card-topline"><span class="feature-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-5 5V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/><path d="M7 8h10M7 12h7"/></svg><svg class="mobile-card-icon" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
   <path d="M21 15a2 2 0 0 1-2 2H7l-5 5V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/>
   <path d="M7 8h10M7 12h7"/>
@@ -646,6 +647,8 @@
         <img id="image-preview" alt="营地公告图片" />
       </form>
     </dialog>
+
+    <section id="chat-workspace" aria-label="互动中心" hidden></section>
 
     <footer class="site-footer">
       <div class="power" data-footer-copy>

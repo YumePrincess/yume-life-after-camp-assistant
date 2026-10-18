@@ -321,7 +321,6 @@ describe("identity cookie and permanent identity number", () => {
 describe("protected integrated chat", () => {
   it("protects documents, bundles, APIs and files, ignoring forged bearer tokens", async () => {
     for (const path of [
-      "/chat/",
       "/chat/assets/app.js",
       "/chat/api/bootstrap",
       "/chat/files/test",
@@ -333,8 +332,33 @@ describe("protected integrated chat", () => {
       expect([302, 401]).toContain(response.status);
     }
     expect(
-      (await handleChat(req("/chat/", { headers: { cookie } }), env)).status,
+      (await handleChat(req("/chat/?embedded=1", { headers: { cookie } }), env)).status,
     ).toBe(200);
+  });
+  it("serves chat only inside the hash workspace, with no legacy document routes", async () => {
+    for (const path of ["/chat", "/chat/", "/chat/contacts"]) {
+      const response = await handleChat(req(path, { headers: { cookie } }), env);
+      expect(response.status).toBe(404);
+      expect(response.headers.get("Location")).toBeNull();
+    }
+    const top = await handleChat(req("/chat/?embedded=1", { headers: { cookie, "Sec-Fetch-Dest": "document" } }), env);
+    expect(top.status).toBe(404);
+    const embedded = await handleChat(req("/chat/?embedded=1", { headers: { cookie } }), env);
+    expect(embedded.status).toBe(200);
+    expect(embedded.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
+    expect(embedded.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
+    expect(embedded.headers.get("Cache-Control")).toContain("no-store");
+  });
+  it("reports a session expiring before frame startup without exposing chat or nesting the homepage", async () => {
+    const response = await handleChat(req("/chat/?embedded=1"), env);
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Location")).toBeNull();
+    expect(html).toContain("data-chat-session-required");
+    expect(html).toContain("/js/chat-frame-navigation.js");
+    expect(html).not.toContain("id=\"app\"");
+    const api = await handleChat(req("/chat/api/bootstrap"), env);
+    expect(api.status).toBe(401);
   });
   it("keeps identity accounts ordinary and requires a separate OIDC or Key admin session", async () => {
     await bootstrap();

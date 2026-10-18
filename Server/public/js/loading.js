@@ -70,7 +70,7 @@
     finished = true;
     window.clearTimeout(watchdog);
     document.documentElement.classList.remove("is-page-loading");
-    content.forEach((element, index) => { element.inert = wasInert[index]; });
+    content.forEach((element, index) => { element.inert = wasInert[index] || (!chatPage && document.body.classList.contains("chat-workspace-open")); });
     if (chatPage) document.getElementById("app")?.removeAttribute("inert");
     if (overlay.contains(document.activeElement)) document.querySelector("main")?.focus({ preventScroll: true });
     overlay.setAttribute("aria-hidden", "true");

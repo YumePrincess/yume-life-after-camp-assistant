@@ -1,5 +1,6 @@
 import { reactive } from "vue";
 import api from "./api.js";
+import { requireHostIdentity } from "./host-navigation.js";
 import { addAuthInvalidListener } from "./auth-storage.js";
 const state = reactive({
   ready: false,
@@ -7,7 +8,8 @@ const state = reactive({
   site: { siteName: "互动中心", siteIconUrl: "" },
 });
 function returnToIdentity() {
-  window.location.replace("/?identityLoginRequired=1#identity");
+  state.session = null;
+  requireHostIdentity();
 }
 async function initialize() {
   try {

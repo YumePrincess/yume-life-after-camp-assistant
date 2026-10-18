@@ -14,8 +14,10 @@ import './styles/layout.css';
 import './styles/ui.css';
 import '../../../public/camp-theme.css';
 import { initLiquidGlass } from './liquid-glass.js';
-import { initializeI18n } from './i18n.js';
-import { initializeTheme } from './theme.js';
+import { initializeI18n, setLocale } from './i18n.js';
+import { initializeTheme, applyTheme } from './theme.js';
+import { getLanguageChoice, getThemeChoice } from './preferences.js';
+import { initializeHostNavigation } from './host-navigation.js';
 import { installChunkLoadRecovery } from './chunk-load.ts';
 installChunkLoadRecovery(window);
 initializeTheme();
@@ -25,10 +27,20 @@ async function startChat() {
     await store.initialize();
     if (!store.session) return;
     window.MrzhLoading?.settle('identity');
+    await router.replace('/');
     createApp(App).use(router).mount('#app');
     await router.isReady();
     await nextTick();
     initLiquidGlass();
+    initializeHostNavigation({
+      async activate() {
+        applyTheme(getThemeChoice());
+        await setLocale(getLanguageChoice(), { persist: false });
+        await store.initialize();
+        window.dispatchEvent(new Event('resize'));
+      },
+      deactivate() { document.activeElement?.blur?.(); }
+    });
     window.MrzhLoading?.settle('view');
   } catch (error) {
     console.error('Chat startup failed', error);
