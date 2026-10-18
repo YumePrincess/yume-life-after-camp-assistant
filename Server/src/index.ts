@@ -183,6 +183,7 @@ import {
 } from "./plugin-system";
 import {
   buildPublicDailyVote,
+  PUBLIC_VOTE_HISTORY_LIMIT,
   deleteDailyVoteItem,
   deleteDailyVoteHistory,
   getDailyVoteConfig,
@@ -3025,7 +3026,7 @@ async function buildPublicDailyVotePayload(
   let technologyHistory: TechnologyVoteHistory[] = [];
   if (await isWorkerPluginEnabled(env, "technology")) {
     await ensureTechnologyVoteHistory(env, bundle);
-    const dates = (await listTechnologyVoteHistory(env)).slice(0, 7);
+    const dates = await listTechnologyVoteHistory(env, PUBLIC_VOTE_HISTORY_LIMIT);
     technologyHistory = (
       await Promise.all(
         dates.map((entry) => getTechnologyVoteHistory(env, entry.pollDate))

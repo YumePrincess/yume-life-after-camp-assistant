@@ -593,14 +593,15 @@ function parseTechnologyVoteHistory(
 }
 
 export async function listTechnologyVoteHistory(
-  env: Env
+  env: Env,
+  limit?: number
 ): Promise<Array<Pick<TechnologyVoteHistory, "pollDate" | "finalizedAt" | "ballotCount">>> {
   const result = await env.DB.prepare(
     `SELECT poll_date, finalized_at, ballot_count
      FROM technology_vote_history
      WHERE deleted_at IS NULL
-     ORDER BY poll_date DESC`
-  ).all<Pick<TechnologyVoteHistoryRow, "poll_date" | "finalized_at" | "ballot_count">>();
+     ORDER BY poll_date DESC${limit === undefined ? "" : " LIMIT ?"}`
+  ).bind(...(limit === undefined ? [] : [limit])).all<Pick<TechnologyVoteHistoryRow, "poll_date" | "finalized_at" | "ballot_count">>();
   return result.results.map((row) => ({
     pollDate: row.poll_date,
     finalizedAt: row.finalized_at,

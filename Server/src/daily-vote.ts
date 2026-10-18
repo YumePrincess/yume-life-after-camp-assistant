@@ -9,6 +9,7 @@ import {
 } from "./vote-eligibility";
 
 export type DailyVoteKind = "poll" | "draw";
+export const PUBLIC_VOTE_HISTORY_LIMIT = 10;
 
 export type DailyVoteBlock =
   | { type: "text"; text: string }
@@ -828,17 +829,25 @@ export async function buildPublicDailyVote(
   locale: unknown,
   now = new Date()
 ): Promise<{ items: PublicDailyVoteItem[]; history: { polls: PublicDailyVoteHistoryItem[]; draws: PublicDailyVoteHistoryItem[] } }> {
-  const all = await listItems(env);
+  const historyItemsFor = async (kind: DailyVoteKind) => {
+    const rows = await env.DB.prepare(
+      `SELECT * FROM daily_vote_items
+       WHERE kind = ? AND end_at <= ?
+       ORDER BY end_at DESC, created_at DESC, id DESC LIMIT ?`
+    ).bind(kind, now.toISOString(), PUBLIC_VOTE_HISTORY_LIMIT).all<DailyVoteRow>();
+    return rows.results.map(itemFromRow);
+  };
+  const [all, polls, draws] = await Promise.all([
+    listItems(env, "WHERE end_at > ?", [now.toISOString()]),
+    historyItemsFor("poll"),
+    historyItemsFor("draw")
+  ]);
   const active = all.filter((item) => {
     const end = new Date(item.endAt).getTime();
     const reveal = new Date(item.startAt).getTime() - item.revealBeforeSeconds * 1000;
     return end > now.getTime() && reveal <= now.getTime();
   });
-  const historyStart = now.getTime() - 14 * 24 * 60 * 60 * 1000;
-  const historyItems = all.filter((item) => {
-    const end = new Date(item.endAt).getTime();
-    return end <= now.getTime() && end >= historyStart;
-  });
+  const historyItems = [...polls, ...draws];
   const history = await Promise.all(historyItems.map((item) => publicItem(env, item, locale, now, true)));
   return {
     items: await Promise.all(active.map((item) => publicItem(env, item, locale, now, false))),

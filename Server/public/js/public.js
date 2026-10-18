@@ -1691,7 +1691,7 @@
       create(
         "h4",
         "daily-history-group-title",
-        window.MrzhI18n.t("科技投票 · 最近 7 天")
+        window.MrzhI18n.t("科技投票 · 最近 10 条")
       )
     );
     if (!technology.length) {
@@ -1741,7 +1741,7 @@
           "h4",
           "daily-history-group-title",
           window.MrzhI18n.t(
-            kind === "poll" ? "投票事项 · 最近 14 天" : "抽签事项 · 最近 14 天"
+            kind === "poll" ? "投票事项 · 最近 10 条" : "抽签事项 · 最近 10 条"
           )
         )
       );
