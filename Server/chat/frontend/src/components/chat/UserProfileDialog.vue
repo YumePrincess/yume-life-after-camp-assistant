@@ -46,7 +46,6 @@ useOverlayLifecycle({
           <UiAvatar :src="displayed?.avatarUrl" :fallback="displayed?.displayName" size="lg" />
           <h3>{{ displayed?.displayName }}</h3>
           <p v-if="!external && displayed && 'username' in displayed && displayed.username">@{{ displayed.username }}</p>
-          <span class="user-profile-dialog__source">{{ external ? (identity?.kind === 'external' && identity.source === 'telegram' ? 'Telegram' : t('profile.external')) : t('profile.local') }}</span>
         </div>
         <p v-if="loading" role="status">{{ t('common.loading') }}</p>
         <p v-else-if="unavailable" role="status">{{ t('profile.unavailable') }}</p>
@@ -93,8 +92,7 @@ useOverlayLifecycle({
 .user-profile-dialog__identity { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 0 24px; text-align: center; }
 .user-profile-dialog__identity h3 { margin: 4px 0 0; font-size: 22px; }
 .user-profile-dialog__identity p { margin: 0; }
-.user-profile-dialog__source, .user-profile-dialog__muted { color: var(--chat-muted); }
-.user-profile-dialog__source { font-size: 12px; }
+.user-profile-dialog__muted { color: var(--chat-muted); }
 .user-profile-dialog h4 { margin: 0 0 8px; font-size: 14px; }
 .user-profile-dialog__bio { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; margin: 0; }
 .user-profile-dialog__error { color: var(--chat-danger); }

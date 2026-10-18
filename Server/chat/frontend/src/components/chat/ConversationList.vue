@@ -82,6 +82,7 @@ const emit = defineEmits(["select"]);
 	min-height: 0;
 	overflow-y: auto;
 	overflow-x: hidden;
+	overscroll-behavior: none;
 	padding: 0 0 8px;
 	scrollbar-gutter: stable;
 	touch-action: pan-y;
@@ -249,7 +250,6 @@ const emit = defineEmits(["select"]);
 @media (max-width: 960px) {
 	.sidebar-list {
 		padding-bottom: max(8px, env(safe-area-inset-bottom));
-		overscroll-behavior: contain;
 		scrollbar-gutter: auto;
 	}
 

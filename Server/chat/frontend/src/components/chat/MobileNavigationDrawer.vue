@@ -4,7 +4,6 @@ import { ref, toRef } from 'vue';
 import { useOverlayLifecycle } from '../../composables/useOverlayLifecycle.js';
 import { t } from '../../i18n.js';
 import UiAvatar from '../ui/Avatar.vue';
-import PreferenceControls from '../ui/PreferenceControls.vue';
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -43,7 +42,6 @@ useOverlayLifecycle({
               <strong>{{ session?.displayName || t('mobile.edgechatUser') }}</strong>
               <span v-if="session?.username">@{{ session.username }}</span>
             </div>
-            <PreferenceControls />
             <button type="button" class="mobile-navigation-drawer__close" :aria-label="t('mobile.closeNavigation')" @click="emit('close')">
               <X :size="22" aria-hidden="true" />
             </button>
@@ -99,7 +97,7 @@ useOverlayLifecycle({
 
 .mobile-navigation-drawer__header {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto 44px;
+  grid-template-columns: 48px minmax(0, 1fr) 44px;
   align-items: center;
   gap: 12px;
   padding: 4px 4px 18px;

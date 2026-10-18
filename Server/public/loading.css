@@ -40,6 +40,74 @@ html.is-page-loading { overflow: hidden; }
 .page-loading-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; }
 .page-loading-actions[hidden] { display: none; }
 .page-loading.is-stalled .page-loading-rings > span { animation-play-state: paused; }
+/* Chat uses the home screen's materials before its application bundle loads. */
+.page-loading--chat {
+  --bg: #f3ece5;
+  --text: #1b2f4d;
+  --muted: rgba(27, 47, 77, 0.7);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --duration-ui: 180ms;
+  --loading-cover: linear-gradient(180deg, rgba(255, 248, 241, 0.08), rgba(243, 236, 229, 0.5));
+  isolation: isolate;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+.page-loading--chat::before {
+  content: "";
+  position: absolute;
+  inset: -5%;
+  z-index: -2;
+  background: url("https://www.yume.zone/assets/img/mini-program-bg.png") center / cover no-repeat;
+  filter: blur(8px) saturate(1.08);
+}
+.page-loading--chat::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--loading-cover), var(--loading-overlay);
+  backdrop-filter: blur(20px) saturate(1.08);
+  -webkit-backdrop-filter: blur(20px) saturate(1.08);
+}
+:root[data-theme="dark"] .page-loading--chat {
+  --bg: #05070b;
+  --text: #f4f6fb;
+  --muted: rgba(244, 246, 251, 0.7);
+  --loading-cover: linear-gradient(180deg, rgba(4, 7, 12, 0.36), rgba(4, 7, 12, 0.76));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .page-loading--chat {
+    --bg: #05070b;
+    --text: #f4f6fb;
+    --muted: rgba(244, 246, 251, 0.7);
+    --loading-cover: linear-gradient(180deg, rgba(4, 7, 12, 0.36), rgba(4, 7, 12, 0.76));
+  }
+}
+.page-loading--chat .page-loading-actions :is(button, a) {
+  min-height: 40px;
+  padding: 10px 17px;
+  border: 1px solid var(--loading-track);
+  border-radius: 999px;
+  background: var(--loading-track);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+@media (max-width: 700px) {
+  .page-loading { --rpx: calc(100vw / 750); padding: 0; }
+  .page-loading-content { position: relative; display: block; width: 100%; height: 100%; }
+  .page-loading-rings { position: absolute; top: calc(50% - 240 * var(--rpx)); left: calc(50% - 64 * var(--rpx)); width: calc(128 * var(--rpx)); height: calc(128 * var(--rpx)); margin: 0; }
+  .page-loading .page-loading-rings > span { border-width: calc(6 * var(--rpx)); }
+  .page-loading-title { position: absolute; top: calc(50% - 48 * var(--rpx)); left: 50%; transform: translateX(-50%); width: calc(560 * var(--rpx)); font-size: calc(34 * var(--rpx)); line-height: calc(60 * var(--rpx)); }
+  .page-loading-progress { position: absolute; top: calc(50% + 52 * var(--rpx)); left: 50%; transform: translateX(-50%); width: calc(560 * var(--rpx)); height: calc(40 * var(--rpx)); }
+  .page-loading-percent, .page-loading-percent-contrast { font-size: calc(26 * var(--rpx)); }
+  .page-loading-message { position: absolute; top: calc(50% + 132 * var(--rpx)); left: 50%; transform: translateX(-50%); width: calc(560 * var(--rpx)); font-size: calc(28 * var(--rpx)); }
+  .page-loading-actions { position: absolute; top: calc(50% + 270 * var(--rpx)); left: 10%; width: 80%; }
+}
 @keyframes page-loading-one { from { transform: rotateX(35deg) rotateY(-45deg) rotateZ(0deg); } to { transform: rotateX(35deg) rotateY(-45deg) rotateZ(360deg); } }
 @keyframes page-loading-two { from { transform: rotateX(50deg) rotateY(10deg) rotateZ(0deg); } to { transform: rotateX(50deg) rotateY(10deg) rotateZ(360deg); } }
 @keyframes page-loading-three { from { transform: rotateX(35deg) rotateY(55deg) rotateZ(0deg); } to { transform: rotateX(35deg) rotateY(55deg) rotateZ(360deg); } }

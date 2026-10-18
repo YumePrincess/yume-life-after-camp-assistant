@@ -20,7 +20,6 @@ import SenderSourceBadge from '../components/chat/SenderSourceBadge.vue';
 import SenderTitleBadge from '../components/chat/SenderTitleBadge.vue';
 import PublicGroupDiscovery from '../components/chat/PublicGroupDiscovery.vue';
 import UiAvatar from '../components/ui/Avatar.vue';
-import PreferenceControls from '../components/ui/PreferenceControls.vue';
 import { useActiveRoom } from '../composables/useActiveRoom.js';
 import { useBrowserNotifications } from '../composables/useBrowserNotifications.js';
 import { useChatRoom } from '../composables/useChatRoom.js';
@@ -383,8 +382,10 @@ async function bootstrap() {
       const general = conversationItems.value.find((item) => item.isGeneral);
       if (general) await selectConversation(general);
     }
+    await nextTick();
+    window.MrzhLoading?.settle('data');
   }
-  catch (e) { error.value = e.message; }
+  catch (e) { error.value = e.message; window.MrzhLoading?.fail(); }
 }
 
 watch(activeRoomKey, async (k) => {
@@ -626,7 +627,6 @@ watch(
                 <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
               </svg>
             </button>
-            <PreferenceControls class="mobile-language-switch" />
           </div>
         </div>
 
@@ -746,7 +746,6 @@ watch(
               <Settings :size="19" aria-hidden="true" />
               <span>{{ t('chat.groupSettings') }}</span>
             </button>
-            <PreferenceControls class="chat-header__language-switch" />
           </div>
         </header>
 
@@ -852,7 +851,6 @@ watch(
       </template>
 
       <div v-else class="chat-empty">
-        <PreferenceControls class="chat-empty__language-switch" />
         <div class="empty-content">
           <div class="empty-brand">
             <img class="empty-logo" src="https://www.yume.zone/img/logo.png" alt="" />
@@ -976,7 +974,7 @@ watch(
   display: flex;
   width: 100%;
   height: var(--chat-viewport-height, 100dvh);
-  min-height: 100dvh;
+  min-height: 0;
   overflow: hidden;
   background: var(--chat-canvas);
   color: var(--chat-ink);
@@ -1038,10 +1036,6 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.mobile-language-switch {
-  display: none;
 }
 
 .header-action {
@@ -1288,19 +1282,6 @@ watch(
   flex-shrink: 0;
 }
 
-.chat-header__language-switch {
-  width: var(--chat-control);
-  min-width: var(--chat-control);
-  height: var(--chat-control);
-}
-
-.chat-header__language-switch .preference-switch__trigger {
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  box-shadow: none;
-}
-
 .chat-header__button {
   display: inline-flex;
   align-items: center;
@@ -1391,7 +1372,7 @@ watch(
   overflow-y: auto;
   /* 超宽屏保持对话集中，避免左右气泡相距过远；窄屏沿用安全区留白。 */
   padding: 24px max(28px, calc((100% - 960px) / 2));
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   scrollbar-gutter: stable;
   touch-action: pan-y;
 }
@@ -1524,12 +1505,6 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.chat-empty__language-switch {
-  position: absolute;
-  top: 10px;
-  right: 16px;
 }
 
 .empty-content {
@@ -1677,10 +1652,6 @@ watch(
     gap: 4px;
   }
 
-  .mobile-language-switch {
-    display: inline-grid;
-  }
-
   .chat-header {
     min-height: 64px;
     gap: 8px;
@@ -1739,18 +1710,6 @@ watch(
 
   .chat-header__actions {
     gap: 0;
-  }
-
-  .chat-header__language-switch {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-  }
-
-  .chat-header__language-switch .preference-switch__trigger {
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
   }
 
   .chat-messages {

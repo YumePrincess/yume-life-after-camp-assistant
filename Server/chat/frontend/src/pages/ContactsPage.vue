@@ -126,7 +126,7 @@ onBeforeUnmount(dispose);
   overflow-x:hidden;
   scrollbar-width:none;
   -ms-overflow-style:none;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   padding: 8px 24px calc(24px + env(safe-area-inset-bottom));
 }
 

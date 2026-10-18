@@ -4,15 +4,6 @@
 html:has(dialog[open]) { overflow: hidden; }
 @media (max-width: 700px) {
   :root { --rpx: calc(100vw / 750); }
-  .page-loading { padding: 0; }
-  .page-loading-content { position: relative; display: block; width: 100%; height: 100%; }
-  .page-loading-rings { position: absolute; top: calc(50% - 240 * var(--rpx)); left: calc(50% - 64 * var(--rpx)); width: calc(128 * var(--rpx)); height: calc(128 * var(--rpx)); margin: 0; }
-  .page-loading .page-loading-rings > span { border-width: calc(6 * var(--rpx)); }
-  .page-loading-title { position: absolute; top: calc(50% - 48 * var(--rpx)); left: 50%; transform: translateX(-50%); width: calc(560 * var(--rpx)); font-size: calc(34 * var(--rpx)); line-height: calc(60 * var(--rpx)); }
-  .page-loading-progress { position: absolute; top: calc(50% + 52 * var(--rpx)); left: 50%; transform: translateX(-50%); width: calc(560 * var(--rpx)); height: calc(40 * var(--rpx)); }
-  .page-loading-percent, .page-loading-percent-contrast { font-size: calc(26 * var(--rpx)); }
-  .page-loading-message { position: absolute; top: calc(50% + 132 * var(--rpx)); left: 50%; transform: translateX(-50%); width: calc(560 * var(--rpx)); font-size: calc(28 * var(--rpx)); }
-  .page-loading-actions { position: absolute; top: calc(50% + 270 * var(--rpx)); left: 10%; width: 80%; }
   .public-page > main.shell { width: auto; margin: 0; padding: calc(28 * var(--rpx)); }
   .public-page .hero { margin: 0 0 calc(20 * var(--rpx)); padding: calc(32 * var(--rpx)); border-radius: calc(34 * var(--rpx)); }
   .public-page .hero .eyebrow { margin: 0; font-size: calc(20 * var(--rpx)); letter-spacing: .14em; }
