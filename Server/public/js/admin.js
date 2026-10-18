@@ -203,6 +203,7 @@
       closeAppModal(options.mode === "prompt" ? null : false);
     }
     const mode = options.mode || "confirm";
+    root.classList.toggle("is-editing-help", options.editingHelp === true);
     const inputField = byId("app-modal-input-field");
     const input = byId("app-modal-input");
     const textarea = byId("app-modal-textarea");
@@ -1882,8 +1883,8 @@
 
   function dailyBlocksToText(blocks) {
     return (blocks || [])
-      .map((block) => block.type === "image"
-        ? `![${block.alt || ""}](${block.url})`
+      .map((block) => block.type === "image" || block.type === "video"
+        ? `${block.type === "video" ? "@" : "!"}[${block.alt || ""}](${block.url})`
         : String(block.text || ""))
       .join("\n");
   }
@@ -1903,9 +1904,9 @@
       .map((block) => block.text)
       .join(" ")
       .trim();
-    return text || (option?.blocks || []).some((block) => block.type === "image")
-      ? text || window.MrzhI18n.t("图片选项")
-      : window.MrzhI18n.t("未命名选项");
+    if (text) return text;
+    if ((option?.blocks || []).some(block => block.type === "video")) return window.MrzhI18n.t("视频选项");
+    return window.MrzhI18n.t((option?.blocks || []).some(block => block.type === "image") ? "图片选项" : "未命名选项");
   }
 
   function dailyContentForAdmin(item) {
@@ -2816,9 +2817,13 @@
         weekdayField.append(weekdayChoices);
         fields.append(weekdayField);
       } else {
-        const intervalField = create("label", "field technology-interval-field");
-        intervalField.append(create("span", "", "每隔几个科技日开放"));
+        const intervalField = create("div", "field technology-interval-field");
+        const intervalHeading = create("div", "field-label-with-help");
+        const intervalLabel = create("label", "", "每隔几个科技日开放");
+        intervalLabel.setAttribute("for", "technology-rule-interval-days");
+        intervalHeading.append(intervalLabel, window.MrzhEditingHelp.createButton("interval"));
         const intervalInput = document.createElement("input");
+        intervalInput.id = "technology-rule-interval-days";
         intervalInput.type = "number";
         intervalInput.min = "0";
         intervalInput.max = "3650";
@@ -2831,7 +2836,7 @@
           markTechnologyDirty();
           renderTechnologyEditor();
         });
-        intervalField.append(intervalInput, create("small", "field-hint", "填 1 时按 6 月 1 日、3 日、5 日……生效"));
+        intervalField.append(intervalHeading, intervalInput);
         fields.append(intervalField);
       }
     }
@@ -4501,7 +4506,7 @@
       (block) =>
         block &&
         typeof block === "object" &&
-        (block.type === "text" || block.type === "image")
+        (block.type === "text" || block.type === "image" || block.type === "video")
     );
   }
 
@@ -4510,10 +4515,10 @@
       .map((item) =>
         publicHighlightBlocks(item)
           .map((block) =>
-            block.type === "image"
+            block.type === "image" || block.type === "video"
               ? block.alt
-                ? `![${block.alt}](${block.url})`
-                : `![](${block.url})`
+                ? `${block.type === "video" ? "@" : "!"}[${block.alt}](${block.url})`
+                : `${block.type === "video" ? "@" : "!"}[](${block.url})`
               : String(block.text || "")
           )
           .filter(Boolean)
@@ -4523,18 +4528,16 @@
       .join("\n\n");
   }
 
-  function parsePublicImageLine(line) {
-    const source = String(line || "");
-    const markdown = String(line || "").match(
-      /^\s*!\[([^\]]*)\]\((https:\/\/[^)\s]+)\)\s*$/i
+  function parsePublicMediaLine(line) {
+    const source = String(line || "").trim();
+    const markdown = source.match(
+      /^([!@])\[([^\]]*)\]\((https:\/\/[^)\s]+)\)$/i
     );
-    return markdown
-      ? {
-          type: "image",
-          url: markdown[2],
-          ...(markdown[1].trim() ? { alt: markdown[1].trim() } : {})
-        }
-      : null;
+    const direct = /^https:\/\/\S+\.(?:mp4|webm|m4v|mov|ogv)(?:[?#]\S*)?$/i.test(source);
+    if (!markdown && !direct) return null;
+    const url = markdown ? markdown[3] : source;
+    const video = markdown?.[1] === "@" || /\.(?:mp4|webm|m4v|mov|ogv)(?:[?#].*)?$/i.test(url);
+    return { type: video ? "video" : "image", url, ...(markdown?.[2].trim() ? { alt: markdown[2].trim() } : {}) };
   }
 
   function parsePublicHighlights(value) {
@@ -4549,10 +4552,10 @@
           textLines = [];
         };
         for (const line of entry.split("\n")) {
-          const image = parsePublicImageLine(line);
-          if (image) {
+          const media = parsePublicMediaLine(line);
+          if (media) {
             flushText();
-            blocks.push(image);
+            blocks.push(media);
           } else {
             textLines.push(line);
           }
@@ -5964,6 +5967,7 @@
       }
     }
   });
+  window.MrzhEditingHelp.install(showAppAlert);
   initializeUtcTimezoneOptions();
   initializeAdminDatePickers();
   refresh(true);

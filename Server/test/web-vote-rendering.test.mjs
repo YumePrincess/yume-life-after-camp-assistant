@@ -23,6 +23,7 @@ class Element {
   setAttribute(name, value) { this.attributes[name] = value; }
   addEventListener(name, handler) { this.listeners[name] = handler; }
   click() { if (!this.disabled) this.listeners.click?.(); }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   querySelectorAll(selector) {
     return this.children.flatMap(child => [
       ...(child.className.split(" ").includes(selector.slice(1)) ? [child] : []),
@@ -56,7 +57,7 @@ function setup(code) {
       documentElement: { dataset: {} },
       querySelectorAll: selector => selector === "*" ? [...Object.values(nodes), ...panels] : panels
     },
-    window: { MrzhI18n: {
+    window: { MrzhContentMedia: { card: () => new Element("button", "rich-video-card") }, MrzhI18n: {
       language: () => environment.language, t: value => value,
       format: (value, args) => value.replace(/\{(\w+)\}/g, (_, key) => String(args[key]))
     } },
@@ -72,7 +73,7 @@ function setup(code) {
     submitDailyVote: vi.fn(), showFeature: vi.fn(),
     renderRichBlocks: (root, blocks = []) => {
       for (const block of blocks) {
-        const node = context.document.createElement(block.type === "image" ? "img" : "span");
+        const node = block.type === "video" ? context.window.MrzhContentMedia.card(block) : context.document.createElement(block.type === "image" ? "img" : "span");
         node.src = block.url; root.append(node);
       }
     }
@@ -190,6 +191,27 @@ describe("vote clicks preserve loaded icons and card nodes", () => {
     button.click();
     expect(ui.participants).toHaveBeenCalledWith(expect.objectContaining({ itemId: "one", optionId: "one-a", requiresIdentity: true }));
     expect(ui.state.dailySelections.one).toEqual(["one-a"]);
+  });
+
+  it("separates video preview from selection and allows previews after a poll closes", () => {
+    const ui = setup(dailyCode);
+    const media = structuredClone(payload);
+    media.items[0].options[0].blocks.push({ type: "video", url: "https://example.com/clip.mp4" });
+    ui.renderDailyVote(media);
+    const option = ui.nodes["daily-vote-items"].querySelector(".daily-vote-option");
+    expect(option.tagName).toBe("div");
+    const action = option.querySelector(".daily-vote-option-select");
+    const preview = option.querySelector(".rich-video-card");
+    preview.click();
+    expect(ui.state.dailySelections.one || []).toEqual([]);
+    action.click();
+    expect(ui.state.dailySelections.one).toEqual(["one-a"]);
+    expect(action.attributes["aria-pressed"]).toBe("true");
+    media.items[0].isOpen = false;
+    ui.renderDailyVote(media);
+    const closed = ui.nodes["daily-vote-items"].querySelector(".daily-vote-option");
+    expect(closed.querySelector(".daily-vote-option-select").disabled).toBe(true);
+    expect(closed.querySelector(".rich-video-card").disabled).not.toBe(true);
   });
 });
 

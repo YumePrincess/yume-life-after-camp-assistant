@@ -8,21 +8,23 @@
     <meta name="theme-color" content="#f3ece5" />
     <title>管理后台 · 明日之后“愿”营地助手</title>
     <link rel="stylesheet" href="/app.css?v=20260925-identity-code-nowrap" />
-    <link rel="stylesheet" href="/mrzh-ui.css?v=20261018-general-avatar" />
+    <link rel="stylesheet" href="/mrzh-ui.css?v=20261018-media-aspect" />
     <link rel="stylesheet" href="/loading.css?v=20261017-chat-loading" />
     <link rel="stylesheet" href="/mrzh-mobile.css?v=20261017-identity-chat-v2" />
     <link rel="stylesheet" href="/dialog-viewport.css?v=20261018-dialog-viewport" />
+    <link rel="stylesheet" href="/content-media.css?v=20261018-media-aspect" />
     <script src="/js/dialog-viewport.js?v=20261018-dialog-viewport" defer></script>
     <script src="/js/loading.js?v=20261017-chat-loading" defer></script>
     <script src="/js/preferences.js?v=20261018-feedback-cards" defer></script>
     <script src="/js/timezone.js?v=20261017-identity-chat-v2" defer></script>
     <link rel="stylesheet" href="/operation-feedback.css?v=20261018-dialog-feedback" />
     <script src="/js/operation-feedback.js?v=20261018-dialog-feedback" defer></script>
-    <script src="/js/i18n.js?v=20261018-general-avatar" defer></script>
+    <script src="/js/i18n.js?v=20261018-media-aspect" defer></script>
     <script src="/js/identity-avatar.js?v=20261018-feedback-cards" defer></script>
     <script src="/js/chat-admin.js?v=20261018-general-avatar" defer></script>
     <script src="/js/view-state.js?v=20261018-live-view-state" defer></script>
-    <script src="/js/admin.js?v=20261018-live-view-state" defer></script>
+    <script src="/js/editing-help.js?v=20261018-media-aspect" defer></script>
+    <script src="/js/admin.js?v=20261018-media-aspect" defer></script>
   </head>
   <body class="admin-page">
     <div id="page-loading" class="page-loading" role="status" aria-label="正在载入">
@@ -159,7 +161,7 @@
                   <label class="field"><span>服务器名称</span><input name="serverName" required /></label>
                   <label class="field"><span>站点名称</span><input name="publicSiteName" required /></label>
                 </div>
-                <label class="field"><span>营地群资料 URL</span><input name="campGroupDataUrl" type="url" maxlength="2000" placeholder="https://oss.yume.zone/mini-program/library/data.json" /><small class="field-help">填写支持跨域读取的 HTTPS data.json 地址；留空使用默认地址，内容格式与小程序一致。</small></label>
+                <div class="field"><div class="field-label-with-help"><label for="camp-group-url">营地群资料 URL</label><button class="editor-help-button" type="button" data-editing-help="group" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div><input id="camp-group-url" name="campGroupDataUrl" type="url" maxlength="2000" placeholder="https://oss.yume.zone/mini-program/library/data.json" /></div>
               </fieldset>
               <fieldset class="settings-group"><legend>时间与公共访问</legend>
                 <div class="form-grid">
@@ -189,15 +191,8 @@
                   <option value="ja">日本語</option>
                 </select>
               </label>
-                  <label class="field">
-                <span>公共公告</span>
-                <textarea name="announcement" rows="3"></textarea>
-              </label>
-                  <label class="field">
-                <span>营地公告列表（公告之间空一行；公告内可换行）</span>
-                <small class="field-help">图片单独占一行，使用标准 Markdown 格式：![说明](https://...)；只有完整图片语法会识别为图片，普通引用和链接不会识别。</small>
-                <textarea name="highlights" rows="8" wrap="soft"></textarea>
-              </label>
+                  <div class="field"><div class="field-label-with-help"><label for="public-announcement">公共公告</label><button class="editor-help-button" type="button" data-editing-help="announcement" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div><textarea id="public-announcement" name="announcement" rows="3"></textarea></div>
+                  <div class="field"><div class="field-label-with-help"><label for="public-highlights">营地公告列表</label><button class="editor-help-button" type="button" data-editing-help="highlights" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div><textarea id="public-highlights" name="highlights" rows="8" wrap="soft"></textarea></div>
                 </div>
               </fieldset>
               <div class="section-savebar">
@@ -468,15 +463,14 @@
                 <div id="vote-management-general-host" class="vote-admin-card-body">
                   <form id="daily-vote-config-form" class="daily-vote-config-form">
                     <div class="form-grid">
-                      <label class="field">
-                        <span>每月同一识别码最多中签次数</span>
-                        <input id="daily-vote-max-wins-per-month" type="number" min="0" max="10000" step="1" value="4" required />
-                        <small class="field-hint">按抽签截止（结算）日所在月份统计，从当月1日计算至下月1日（后台时区）。</small>
-                      </label>
-                      <label class="field field-checkbox">
-                        <input id="vote-eligibility-enabled" type="checkbox" checked />
-                        <span>投票资格校验</span>
-                      </label>
+                      <div class="field"><div class="field-label-with-help"><label for="daily-vote-max-wins-per-month">每月同一识别码最多中签次数</label><button class="editor-help-button" type="button" data-editing-help="monthly" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div><input id="daily-vote-max-wins-per-month" type="number" min="0" max="10000" step="1" value="4" required /></div>
+                      <div class="field-label-with-help">
+                        <label class="field field-checkbox">
+                          <input id="vote-eligibility-enabled" type="checkbox" checked />
+                          <span>投票资格校验</span>
+                        </label>
+                        <button class="editor-help-button" type="button" data-editing-help="eligibility" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button>
+                      </div>
                       <label class="field">
                         <span>本周贡献最低值</span>
                         <input id="vote-eligibility-min-contribution" type="number" min="0" max="1000000000" step="1" value="1500" required />
@@ -494,7 +488,7 @@
                         <input id="vote-eligibility-min-weekly-activity" type="number" min="0" max="1000000000" step="1" value="25" required />
                       </label>
                     </div>
-                    <p class="field-help">投票资格在提交投票时校验；投票成功后，后续资料变化不会取消已记录的投票。</p>
+
                     <div class="section-savebar">
                       <button class="button button-primary" type="submit">保存通用投票设置</button>
                     </div>
@@ -565,7 +559,7 @@
                     </div>
                     <button id="technology-add-preset" class="button button-primary button-small" type="button">新建规则</button>
                   </div>
-                  <p class="technology-help">指定日期适合临时安排；按星期和按间隔适合长期计划。规则可叠加，命中同一天时指定日期优先。</p>
+                  <div class="field-label-with-help"><span>编辑说明</span><button class="editor-help-button" type="button" data-editing-help="technology" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div>
                   <div id="technology-preset-list" class="technology-preset-list" aria-live="polite"></div>
                 </section>
                 <section class="technology-rule-editor" aria-labelledby="technology-rule-title">
@@ -779,13 +773,13 @@
                 <label class="field"><span>提前显示单位</span><select id="daily-vote-reveal-unit"><option value="60">分钟</option><option value="3600">小时</option><option value="86400">天</option></select></label>
                 <label id="daily-vote-max-field" class="field"><span>每人可选票数</span><input id="daily-vote-max" type="number" min="1" value="1" /></label>
                 <label id="daily-vote-draw-field" class="field" hidden><span>抽取人数</span><input id="daily-vote-draw-count" type="number" min="1" value="1" /></label>
-                <label id="daily-vote-draw-batch-field" class="field" hidden><span>批次号</span><input id="daily-vote-draw-batch" type="text" inputmode="numeric" maxlength="8" pattern="[0-9]{1,8}" value="0" /><small class="field-hint">1-8 位数字；填写 0 时不限制重复中签</small></label>
+                <div class="field" id="daily-vote-draw-batch-field" hidden><div class="field-label-with-help"><label for="daily-vote-draw-batch">批次号</label><button class="editor-help-button" type="button" data-editing-help="batch" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div><input id="daily-vote-draw-batch" type="text" inputmode="numeric" maxlength="8" pattern="[0-9]{1,8}" value="0" /></div>
                 <label id="daily-vote-draw-limit-field" class="field field-checkbox" hidden><input id="daily-vote-draw-limit-enabled" type="checkbox" checked /><span>受中签限额限制</span></label>
                 <label class="field field-checkbox"><input id="daily-vote-eligibility-enabled" type="checkbox" checked /><span>该事项校验投票资格</span></label>
               </div>
-              <label class="field"><span>事项名称（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-title-blocks" rows="3" required></textarea></label>
-              <label class="field"><span>事项描述（支持文本和 Markdown 图片，每行一块）</span><textarea id="daily-vote-description-blocks" rows="5"></textarea></label>
-              <label id="daily-vote-options-field" class="field"><span>投票选项（每个选项之间空一行；支持文本和 Markdown 图片）</span><textarea id="daily-vote-options" rows="8"></textarea></label>
+              <div class="field"><div class="field-label-with-help"><label for="daily-vote-title-blocks">事项名称</label><button class="editor-help-button" type="button" data-editing-help="rich" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div><textarea id="daily-vote-title-blocks" rows="3" required></textarea></div>
+              <div class="field"><div class="field-label-with-help"><label for="daily-vote-description-blocks">事项描述</label><button class="editor-help-button" type="button" data-editing-help="rich" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div><textarea id="daily-vote-description-blocks" rows="5"></textarea></div>
+              <div class="field" id="daily-vote-options-field"><div class="field-label-with-help"><label for="daily-vote-options">投票选项</label><button class="editor-help-button" type="button" data-editing-help="options" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div><textarea id="daily-vote-options" rows="8"></textarea></div>
               <div class="section-savebar">
                 <button class="button button-primary" type="submit">保存事项</button>
               </div>
@@ -1027,18 +1021,7 @@
           <div class="field member-name-field">
             <div class="member-edit-field-heading">
               <label for="member-edit-name">成员名称</label>
-              <details class="member-edit-help">
-                <summary aria-label="查看成员编辑说明" title="查看成员编辑说明">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <circle cx="12" cy="12" r="9"></circle>
-                    <path d="M12 11v5m0-8h.01"></path>
-                  </svg>
-                </summary>
-                <div class="member-edit-help-card" role="note">
-                  <p>名称和手动修改的资料会在对应成员下次同步时以同步数据覆盖；资料采集时间由系统维护。</p>
-                  <p>留空时按有效识别码玩家名称自动匹配；绑定仅用于当前成员记录，成员下次同步不存在时会按新数据更新。</p>
-                </div>
-              </details>
+              <button class="editor-help-button" type="button" data-editing-help="member" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button>
             </div>
             <input id="member-edit-name" name="memberName" type="text" maxlength="80" required />
           </div>
@@ -1104,11 +1087,7 @@
             关闭
           </button>
         </div>
-        <p class="section-intro">粘贴 Agent「任务结果」中的完整文档。校验通过并确认后，Workers 才会按文档任务类型校正对应数据。</p>
-        <label class="field">
-          <span>Agent 任务结果文档</span>
-          <textarea id="member-task-result-document" rows="16" spellcheck="false" required></textarea>
-        </label>
+        <div class="field"><div class="field-label-with-help"><label for="member-task-result-document">Agent 任务结果文档</label><button class="editor-help-button" type="button" data-editing-help="result" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div><textarea id="member-task-result-document" rows="16" spellcheck="false" required></textarea></div>
         <div class="action-row member-bulk-correction-actions">
           <button id="member-bulk-correction-validate" class="button button-quiet" type="button">
             校验文档格式
@@ -1163,7 +1142,7 @@
           <label class="field field-checkbox"><input id="identity-review-permanent" type="checkbox" /><span>永久有效</span></label>
         </div>
         <div id="identity-eligibility-approval-fields" hidden>
-          <p class="field-help">破格投票次数与破格有效日期只能选择一种批准方式。</p>
+          <button class="editor-help-button" type="button" data-editing-help="approval" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button>
           <label id="identity-eligibility-no-mode-label" class="field field-checkbox" hidden><input id="identity-eligibility-no-mode" name="eligibilityApprovalMode" type="radio" value="none" /><span>清除破格资格</span></label>
           <div class="identity-eligibility-mode-rows">
             <div class="identity-eligibility-mode-row">
@@ -1176,12 +1155,10 @@
             </div>
           </div>
           <div id="identity-eligibility-bypass-field" class="eligibility-prohibition-field" hidden>
-            <label class="field field-checkbox"><input id="identity-eligibility-bypass" type="checkbox" /><span>豁免投票资格校验</span></label>
-            <p class="field-help">开启后，无论四项贡献活跃值是否达标，用户卡片均显示已达标且无需申请破格资格；禁投状态仍优先生效。</p>
+            <div class="field-label-with-help"><label class="field field-checkbox"><input id="identity-eligibility-bypass" type="checkbox" /><span>豁免投票资格校验</span></label><button class="editor-help-button" type="button" data-editing-help="bypass" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div>
           </div>
           <div id="identity-eligibility-prohibition-field" class="eligibility-prohibition-field" hidden>
-            <label class="field field-checkbox"><input id="identity-eligibility-prohibit-voting" type="checkbox" /><span>禁止该识别码投票</span></label>
-            <p class="field-help">禁止期间无法投票或申请破格资格；贡献达标、破格资格和关闭资格校验均不会解除，只有管理员可以解除。</p>
+            <div class="field-label-with-help"><label class="field field-checkbox"><input id="identity-eligibility-prohibit-voting" type="checkbox" /><span>禁止该识别码投票</span></label><button class="editor-help-button" type="button" data-editing-help="prohibition" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div>
           </div>
         </div>
         <div class="action-row">
@@ -1260,9 +1237,8 @@
         <p id="schedule-dialog-note" class="section-intro"></p>
         <div id="schedule-dialog-standard-fields">
           <div class="schedule-weekday-picker">
-            <span class="field-label">执行日期</span>
+            <div class="field-label-with-help"><span class="field-label">执行日期</span><button class="editor-help-button" type="button" data-editing-help="schedule" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div>
             <div id="schedule-weekday-list" class="schedule-weekday-list" role="group" aria-label="执行日期"></div>
-            <p class="field-hint">默认每天执行；可选择一个或多个星期。</p>
           </div>
           <div id="schedule-time-list" class="schedule-time-list"></div>
           <div id="schedule-patrol-fields" class="schedule-patrol-fields" hidden>
@@ -1294,7 +1270,7 @@
               </select>
             </label>
           </div>
-          <p class="field-hint">自动任务每周执行一次；执行时间只能设在后台时区的周三 03:00 至周五 02:00。</p>
+          <button class="editor-help-button" type="button" data-editing-help="citySchedule" aria-label="编辑说明" title="编辑说明" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button>
         </div>
         <div class="schedule-dialog-actions">
           <button id="schedule-add-time" class="button button-quiet" type="button">增加一次执行时间</button>

@@ -54,7 +54,7 @@ export interface PublicOverview {
 
 export type PublicOverviewBlock =
   | { type: "text"; text: string }
-  | { type: "image"; url: string; alt?: string };
+  | { type: "image" | "video"; url: string; alt?: string };
 
 export interface PublicOverviewItem {
   blocks: PublicOverviewBlock[];

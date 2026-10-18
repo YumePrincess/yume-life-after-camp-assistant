@@ -1516,7 +1516,10 @@
       bullet.setAttribute("aria-hidden", "true");
       card.append(bullet);
       for (const block of blocks) {
-        if (block?.type === "image" && /^https:\/\//i.test(String(block.url || ""))) {
+        if (block?.type === "video") {
+          const video = window.MrzhContentMedia.card(block);
+          if (video) card.append(video);
+        } else if (block?.type === "image" && /^https:\/\//i.test(String(block.url || ""))) {
           const figure = document.createElement("figure");
           figure.className = "highlight-image";
           const image = document.createElement("img");
@@ -1553,7 +1556,10 @@
 
   function renderRichBlocks(root, blocks, emptyText = "") {
     for (const block of Array.isArray(blocks) ? blocks : []) {
-      if (block?.type === "image" && /^https:\/\//i.test(String(block.url || ""))) {
+      if (block?.type === "video") {
+        const video = window.MrzhContentMedia.card(block);
+        if (video) root.append(video);
+      } else if (block?.type === "image" && /^https:\/\//i.test(String(block.url || ""))) {
         const figure = document.createElement("figure");
         figure.className = "highlight-image daily-rich-image";
         const image = document.createElement("img");
@@ -1594,7 +1600,7 @@
       .map((block) => String(block.text || "").trim())
       .filter(Boolean)
       .join(" ");
-    return text || window.MrzhI18n.t("图片选项");
+    return text || window.MrzhI18n.t((option?.blocks || []).some(block => block.type === "video") ? "视频选项" : "图片选项");
   }
 
   function dailySelections(itemId) {
@@ -1607,7 +1613,7 @@
     for (const button of options.querySelectorAll(".daily-vote-option")) {
       const isSelected = selected.has(button.dataset.optionId);
       button.classList.toggle("is-selected", isSelected);
-      button.setAttribute("aria-pressed", String(isSelected));
+      (button.querySelector(".daily-vote-option-select") || button).setAttribute("aria-pressed", String(isSelected));
     }
   }
 
@@ -1654,12 +1660,21 @@
       const selected = new Set(dailySelections(item.id));
       const options = create("div", "daily-vote-options");
       for (const option of item.options || []) {
-        const button = create("button", `daily-vote-option${selected.has(option.id) ? " is-selected" : ""}${alreadyParticipated ? " is-participated" : ""}`);
-        button.type = "button";
+        const hasVideo = (option.blocks || []).some(block => block.type === "video");
+        const button = create(hasVideo ? "div" : "button", `daily-vote-option${hasVideo ? " daily-vote-option--media" : ""}${selected.has(option.id) ? " is-selected" : ""}${alreadyParticipated ? " is-participated" : ""}`);
+        const actionButton = hasVideo ? create("button", "daily-vote-option-select") : button;
+        if (hasVideo) {
+          button.setAttribute("role", "group");
+          button.setAttribute("aria-label", dailyOptionLabel(option));
+          actionButton.setAttribute("aria-label", dailyOptionLabel(option));
+          button.append(actionButton);
+        }
+        actionButton.type = "button";
         button.dataset.optionId = option.id;
         button.dataset.refreshKey = `daily-option:${item.id}:${option.id}`;
-        button.disabled = item.isOpen === false;
-        button.setAttribute("aria-pressed", String(selected.has(option.id)));
+        actionButton.dataset.refreshKey = `daily-option-action:${item.id}:${option.id}`;
+        actionButton.disabled = item.isOpen === false;
+        actionButton.setAttribute("aria-pressed", String(selected.has(option.id)));
         const content = create("div", "daily-vote-option-content");
         renderRichBlocks(content, option.blocks, window.MrzhI18n.t("未命名选项"));
         const side = create("span", "daily-option-side");
@@ -1667,7 +1682,7 @@
           count: option.votes || 0
         })));
         button.append(content, side);
-        button.addEventListener("click", () => {
+        actionButton.addEventListener("click", () => {
           if (alreadyParticipated && item.isOpen) {
             void openVoteParticipants({
               kind: "daily-poll",
@@ -1847,6 +1862,11 @@
               optionId: option.id
             }));
             result.append(optionText);
+            for (const block of option.blocks || []) {
+              if (block.type !== "video") continue;
+              const video = window.MrzhContentMedia.card(block);
+              if (video) result.append(video);
+            }
           }
           card.append(result);
         } else {

@@ -13,7 +13,7 @@ export const PUBLIC_VOTE_HISTORY_LIMIT = 10;
 
 export type DailyVoteBlock =
   | { type: "text"; text: string }
-  | { type: "image"; url: string; alt?: string };
+  | { type: "image" | "video"; url: string; alt?: string };
 
 export interface DailyVoteOptionContent {
   id: string;
@@ -220,17 +220,18 @@ function blocks(value: unknown, field: string, required: boolean): DailyVoteBloc
     if (source.type === "text") {
       return { type: "text", text: text(source.text, `${field}[${index}].text`, 2_000) };
     }
-    if (source.type === "image") {
+    if (source.type === "image" || source.type === "video") {
       const url = text(source.url, `${field}[${index}].url`, 2_000);
       try {
-        if (new URL(url).protocol !== "https:") throw new Error();
+        const parsed = new URL(url);
+        if (parsed.protocol !== "https:" || (source.type === "video" && (parsed.username || parsed.password))) throw new Error();
       } catch {
         throw new Error(`${field}[${index}].url must be an HTTPS URL`);
       }
       const alt = optionalText(source.alt, `${field}[${index}].alt`, 160);
-      return { type: "image", url, ...(alt ? { alt } : {}) };
+      return { type: source.type, url, ...(alt ? { alt } : {}) };
     }
-    throw new Error(`${field}[${index}].type must be text or image`);
+    throw new Error(`${field}[${index}].type must be text, image or video`);
   });
 }
 

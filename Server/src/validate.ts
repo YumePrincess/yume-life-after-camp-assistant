@@ -139,11 +139,11 @@ function assetUrl(value: unknown, field: string): string {
   }
 }
 
-function publicImageUrl(value: unknown, field: string): string {
+function publicImageUrl(value: unknown, field: string, rejectCredentials = false): string {
   const result = text(value, field, { max: 2000 });
   try {
     const url = new URL(result);
-    if (url.protocol !== "https:") throw new Error();
+    if (url.protocol !== "https:" || (rejectCredentials && (url.username || url.password))) throw new Error();
     return url.toString();
   } catch {
     throw new Error(`${field} must be an HTTPS URL`);
@@ -161,17 +161,17 @@ function validatePublicOverviewBlock(
       text: text(source.text, `${field}.text`, { max: 1000 })
     };
   }
-  if (source.type === "image") {
+  if (source.type === "image" || source.type === "video") {
     const alt = source.alt === undefined
       ? undefined
       : text(source.alt, `${field}.alt`, { max: 160, allowEmpty: true });
     return {
-      type: "image",
-      url: publicImageUrl(source.url, `${field}.url`),
+      type: source.type,
+      url: publicImageUrl(source.url, `${field}.url`, source.type === "video"),
       ...(alt ? { alt } : {})
     };
   }
-  throw new Error(`${field}.type must be text or image`);
+  throw new Error(`${field}.type must be text, image or video`);
 }
 
 function validatePublicOverviewItems(

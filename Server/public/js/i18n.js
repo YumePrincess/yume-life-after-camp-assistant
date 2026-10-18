@@ -5057,6 +5057,90 @@
     ["ja", "全メンバーグループのアバター", "アバターが更新されました。もう一度お試しください。"],
     ["zh-tw", "全體成員群頭像", "頭像已更新，請重試。"]
   ]) Object.assign(translations[language], { "全体成员群头像": avatar, "头像已更新，请重试。": retry });
+  // Rich-content labels and the shared editing help dialog.
+  Object.assign(translations["en"], {
+    "编辑说明": "Editing help",
+    "播放视频": "Play video",
+    "视频预览": "Video preview",
+    "视频选项": "Video option",
+    "视频无法播放，请检查链接或视频格式。": "Unable to play this video. Check the link or video format.",
+    "营地公告列表": "Camp announcements",
+    "事项名称": "Item name",
+    "事项描述": "Item description",
+    "投票选项": "Poll options",
+    "支持文本、图片和视频；媒体链接需单独占一行。": "Text, images and videos are supported. Put each media link on its own line.",
+    "图片：![说明](https://example.com/image.jpg)": "Image: ![Description](https://example.com/image.jpg)",
+    "视频：@[说明](https://example.com/video.mp4)": "Video: @[Description](https://example.com/video.mp4)",
+    "也可单独填写 MP4、WebM、M4V、MOV、OGV 视频直链。只支持 HTTPS 直链，不支持视频平台页面链接。": "You can also put a direct MP4, WebM, M4V, MOV or OGV video URL on its own line. Only direct HTTPS links are supported; video platform page links are not supported.",
+    "预览卡片使用 16:10 画框，图片和视频按原比例完整显示；点击后按原比例适配窗口。": "Preview cards use a 16:10 frame and show the entire image or video at its original proportions. Click to fit the full media to the window.",
+    "公告之间空一行；同一公告内可以换行。": "Separate announcements with a blank line. Line breaks are allowed within an announcement.",
+    "每个选项之间空一行；同一选项内可以混排文本、图片和视频。": "Separate options with a blank line. Each option can mix text, images and videos.",
+    "此处仅填写首页的文字简介；图片和视频请添加到营地公告列表。": "Enter the homepage text introduction here. Add images and videos to the camp announcements list."
+});
+  Object.assign(translations["fr"], {
+    "编辑说明": "Aide à la rédaction",
+    "播放视频": "Lire la vidéo",
+    "视频预览": "Aperçu vidéo",
+    "视频选项": "Option vidéo",
+    "视频无法播放，请检查链接或视频格式。": "Lecture impossible. Vérifiez le lien ou le format de la vidéo.",
+    "营地公告列表": "Annonces du camp",
+    "事项名称": "Nom du sujet",
+    "事项描述": "Description du sujet",
+    "投票选项": "Options du vote",
+    "支持文本、图片和视频；媒体链接需单独占一行。": "Le texte, les images et les vidéos sont pris en charge. Placez chaque lien média sur une ligne distincte.",
+    "图片：![说明](https://example.com/image.jpg)": "Image : ![Description](https://example.com/image.jpg)",
+    "视频：@[说明](https://example.com/video.mp4)": "Vidéo : @[Description](https://example.com/video.mp4)",
+    "也可单独填写 MP4、WebM、M4V、MOV、OGV 视频直链。只支持 HTTPS 直链，不支持视频平台页面链接。": "Vous pouvez aussi saisir un lien direct MP4, WebM, M4V, MOV ou OGV sur une ligne distincte. Seuls les liens HTTPS directs sont acceptés, sans lien vers une page de plateforme vidéo.",
+    "预览卡片使用 16:10 画框，图片和视频按原比例完整显示；点击后按原比例适配窗口。": "Les aperçus utilisent un cadre 16:10 et affichent l’image ou la vidéo entière sans déformation. Cliquez pour adapter le média à la fenêtre en conservant ses proportions.",
+    "公告之间空一行；同一公告内可以换行。": "Séparez les annonces par une ligne vide. Les retours à la ligne sont autorisés dans une annonce.",
+    "每个选项之间空一行；同一选项内可以混排文本、图片和视频。": "Séparez les options par une ligne vide. Chaque option peut combiner texte, images et vidéos.",
+    "此处仅填写首页的文字简介；图片和视频请添加到营地公告列表。": "Saisissez ici le texte de présentation de la page d’accueil. Ajoutez les images et vidéos à la liste des annonces du camp."
+});
+  Object.assign(translations["ja"], {
+    "编辑说明": "編集ガイド",
+    "播放视频": "動画を再生",
+    "视频预览": "動画プレビュー",
+    "视频选项": "動画の選択肢",
+    "视频无法播放，请检查链接或视频格式。": "動画を再生できません。リンクまたは動画形式を確認してください。",
+    "营地公告列表": "野営地のお知らせ一覧",
+    "事项名称": "項目名",
+    "事项描述": "項目の説明",
+    "投票选项": "投票の選択肢",
+    "支持文本、图片和视频；媒体链接需单独占一行。": "テキスト・画像・動画に対応しています。メディアのリンクはそれぞれ単独の行に入力してください。",
+    "图片：![说明](https://example.com/image.jpg)": "画像：![説明](https://example.com/image.jpg)",
+    "视频：@[说明](https://example.com/video.mp4)": "動画：@[説明](https://example.com/video.mp4)",
+    "也可单独填写 MP4、WebM、M4V、MOV、OGV 视频直链。只支持 HTTPS 直链，不支持视频平台页面链接。": "MP4・WebM・M4V・MOV・OGV の動画直リンクも単独の行に入力できます。HTTPS の直リンクのみ対応し、動画サイトのページリンクには対応していません。",
+    "预览卡片使用 16:10 画框，图片和视频按原比例完整显示；点击后按原比例适配窗口。": "プレビューは 16:10 の枠内に元の縦横比で全体を表示します。クリックすると、元の縦横比を保ったままウィンドウに合わせて表示されます。",
+    "公告之间空一行；同一公告内可以换行。": "お知らせ同士は空行で区切ってください。同じお知らせ内では改行できます。",
+    "每个选项之间空一行；同一选项内可以混排文本、图片和视频。": "選択肢同士は空行で区切ってください。同じ選択肢内にテキスト・画像・動画を組み合わせられます。",
+    "此处仅填写首页的文字简介；图片和视频请添加到营地公告列表。": "ここにはホームの紹介文のみ入力してください。画像と動画は野営地のお知らせ一覧に追加してください。"
+});
+  Object.assign(translations["zh-tw"], {
+    "编辑说明": "編輯說明",
+    "播放视频": "播放影片",
+    "视频预览": "影片預覽",
+    "视频选项": "影片選項",
+    "视频无法播放，请检查链接或视频格式。": "無法播放影片，請檢查連結或影片格式。",
+    "营地公告列表": "營地公告列表",
+    "事项名称": "事項名稱",
+    "事项描述": "事項描述",
+    "投票选项": "投票選項",
+    "支持文本、图片和视频；媒体链接需单独占一行。": "支援文字、圖片和影片；媒體連結需單獨占一行。",
+    "图片：![说明](https://example.com/image.jpg)": "圖片：![說明](https://example.com/image.jpg)",
+    "视频：@[说明](https://example.com/video.mp4)": "影片：@[說明](https://example.com/video.mp4)",
+    "也可单独填写 MP4、WebM、M4V、MOV、OGV 视频直链。只支持 HTTPS 直链，不支持视频平台页面链接。": "也可單獨填寫 MP4、WebM、M4V、MOV、OGV 影片直連。僅支援 HTTPS 直連，不支援影片平台頁面連結。",
+    "预览卡片使用 16:10 画框，图片和视频按原比例完整显示；点击后按原比例适配窗口。": "預覽卡片使用 16:10 畫框，圖片和影片按原比例完整顯示；點擊後依原比例適應視窗。",
+    "公告之间空一行；同一公告内可以换行。": "公告之間空一行；同一公告內可以換行。",
+    "每个选项之间空一行；同一选项内可以混排文本、图片和视频。": "每個選項之間空一行；同一選項內可以混排文字、圖片和影片。",
+    "此处仅填写首页的文字简介；图片和视频请添加到营地公告列表。": "此處僅填寫首頁的文字簡介；圖片和影片請新增至營地公告列表。"
+});
+  Object.assign(translations["fr"], {"填 1 时按 6 月 1 日、3 日、5 日……生效": "Avec 1, la règle s’applique le 1er, le 3, le 5 juin, etc.", "指定日期适合临时安排；按星期和按间隔适合长期计划。规则可叠加，命中同一天时指定日期优先。": "Les dates précises conviennent aux besoins ponctuels ; les jours de la semaine et les intervalles aux plans durables. Les règles peuvent se cumuler. En cas de conflit le même jour, la date précise est prioritaire."});
+  Object.assign(translations["ja"], {"填 1 时按 6 月 1 日、3 日、5 日……生效": "1 を入力すると、6 月 1 日・3 日・5 日…のように適用されます。", "指定日期适合临时安排；按星期和按间隔适合长期计划。规则可叠加，命中同一天时指定日期优先。": "日付指定は一時的な予定に、曜日指定と間隔指定は長期の予定に適しています。ルールは併用でき、同じ日に重なった場合は日付指定が優先されます。"});
+  Object.assign(translations["zh-tw"], {"填 1 时按 6 月 1 日、3 日、5 日……生效": "填 1 時按 6 月 1 日、3 日、5 日……生效", "指定日期适合临时安排；按星期和按间隔适合长期计划。规则可叠加，命中同一天时指定日期优先。": "指定日期適合臨時安排；按星期和按間隔適合長期計畫。規則可疊加，命中同一天時指定日期優先。"});
+  Object.assign(translations["en"], {"图片和视频语法必须完整；普通引用和网页链接会作为文本显示。": "Use the complete image or video syntax. Ordinary references and webpage links remain plain text."});
+  Object.assign(translations["fr"], {"图片和视频语法必须完整；普通引用和网页链接会作为文本显示。": "Utilisez la syntaxe complète pour les images et vidéos. Les références ordinaires et les liens de pages web restent du texte."});
+  Object.assign(translations["ja"], {"图片和视频语法必须完整；普通引用和网页链接会作为文本显示。": "画像・動画の書式は省略せずに入力してください。通常の引用やウェブページのリンクはテキストとして表示されます。"});
+  Object.assign(translations["zh-tw"], {"图片和视频语法必须完整；普通引用和网页链接会作为文本显示。": "圖片和影片語法必須完整；一般引用和網頁連結會以文字顯示。"});
   function translate(source, language = currentLanguage()) {
     return translations[language]?.[source] || source;
   }
