@@ -11,11 +11,15 @@ function setup(request = vi.fn().mockResolvedValue({ names: [] })) {
   const events = [];
   const dialog = {
     open: false,
+    scrollTop: 0,
+    scrollLeft: 0,
     showModal() { this.open = true; events.push("participants:open"); },
     close() { this.open = false; }
   };
   const list = {
     hidden: false,
+    scrollTop: 0,
+    scrollLeft: 0,
     children: [],
     replaceChildren() { this.children = []; },
     append(child) { this.children.push(child); }
@@ -93,5 +97,25 @@ describe("public vote participant dialogs", () => {
     expect(ui.subtitle.textContent).toBe("选项乙");
     expect(ui.text["vote-participants-status"]).toBe("暂无参与人。");
     expect(ui.notice).not.toHaveBeenCalled();
+  });
+
+  it.each(["technology", "daily-poll", "draw"])("starts a reopened %s list at the top after scrolling another long list", async kind => {
+    const names = Array.from({ length: 14 }, (_, index) => `成员${index + 1}`);
+    const nextNames = Array.from({ length: 12 }, (_, index) => `另一名单${index + 1}`);
+    const request = vi.fn().mockResolvedValueOnce({ names }).mockResolvedValueOnce({ names: nextNames });
+    const ui = setup(request);
+    await ui.open({ kind: "draw", itemId: "previous" });
+    ui.list.scrollTop = 180;
+    ui.list.scrollLeft = 20;
+    ui.dialog.scrollTop = 90;
+    ui.dialog.scrollLeft = 10;
+    ui.dialog.close();
+    await ui.open({ kind, itemId: "next" });
+    expect(ui.list.children).toEqual(nextNames);
+    expect(ui.list.scrollTop).toBe(0);
+    expect(ui.list.scrollLeft).toBe(0);
+    expect(ui.dialog.scrollTop).toBe(0);
+    expect(ui.dialog.scrollLeft).toBe(0);
+    expect(ui.dialog.open).toBe(true);
   });
 });

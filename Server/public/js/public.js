@@ -1101,8 +1101,14 @@
     }
     if (errorMessage) {
       showOperationNotice(errorMessage, { kicker: "DAILY VOTING" });
-    } else if (!dialog.open) {
-      dialog.showModal();
+    } else {
+      if (!dialog.open) dialog.showModal();
+      // Reset after showing: reused dialogs can restore their previous scroll
+      // position when layout becomes visible, even after replacing the names.
+      list.scrollTop = 0;
+      list.scrollLeft = 0;
+      dialog.scrollTop = 0;
+      dialog.scrollLeft = 0;
     }
   }
 
