@@ -3,7 +3,7 @@ import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync(new URL("../public/js/mobile-viewport.js", import.meta.url), "utf8");
-function setup({ fixed = true, supportsOverscroll = false } = {}) {
+function setup({ fixed = true, modal = false, supportsOverscroll = false } = {}) {
   const listeners = new Map();
   class Element {
     constructor(options = {}) {
@@ -18,7 +18,7 @@ function setup({ fixed = true, supportsOverscroll = false } = {}) {
   vm.runInNewContext(source, {
     document: {
       documentElement: root,
-      body: { hasAttribute: () => fixed },
+      body: { hasAttribute: () => fixed, classList: { contains: () => modal } },
       addEventListener(name, callback) {
         listeners.set(name, [...(listeners.get(name) || []), callback]);
       },
@@ -73,6 +73,15 @@ describe("mobile zoom and fixed chat scrolling", () => {
     const parent = new h.Element({ scrollHeight: 900, scrollTop: 100, style: { overflowY: "auto" } });
     const child = new h.Element({ parentElement: parent });
     expect(h.drag(child).prevented).toBe(false);
+  });
+
+  it("locks modal backdrops on older iOS WebViews while preserving scrolling inside the card", () => {
+    const h = setup({ fixed: false, modal: true });
+    expect(h.drag(new h.Element()).prevented).toBe(true);
+    const body = new h.Element({ scrollHeight: 900, scrollTop: 100, style: { overflowY: "auto" } });
+    expect(h.drag(body).prevented).toBe(false);
+    body.scrollTop = 700;
+    expect(h.drag(body).prevented).toBe(true);
   });
 
   it("preserves horizontal code/table scrolling and custom drag controls", () => {

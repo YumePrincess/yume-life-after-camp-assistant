@@ -22,7 +22,8 @@
       : null;
   }, { passive: true });
   document.addEventListener("touchmove", (event) => {
-    if (!document.body?.hasAttribute("data-fixed-viewport")) return;
+    if (!document.body?.hasAttribute("data-fixed-viewport") &&
+        !document.body?.classList.contains("dialog-viewport-open")) return;
     if (event.touches.length !== 1 || !previousTouch) return;
     const touch = event.touches[0];
     const dx = touch.clientX - previousTouch.x;

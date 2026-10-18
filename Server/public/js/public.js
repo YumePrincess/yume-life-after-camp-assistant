@@ -2996,7 +2996,10 @@
         throw error;
       }
     },
-    beforeOpen() { byId("feature-detail-dialog").close(); },
+    beforeOpen() {
+      byId("feature-detail-dialog").close();
+      window.MrzhDialogViewport?.sync();
+    },
     onIdentityRequired() {
       clearIdentitySession();
       showFeature("identity");

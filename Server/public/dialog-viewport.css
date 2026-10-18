@@ -1,0 +1,64 @@
+:root {
+  --dialog-visible-height: 100dvh;
+  --dialog-visible-top: 0px;
+  --dialog-gap-top: 32px;
+  --dialog-gap-bottom: 32px;
+  --dialog-max-height: calc(var(--dialog-visible-height) - var(--dialog-gap-top) - var(--dialog-gap-bottom));
+}
+
+html.dialog-viewport-open { overflow: hidden; overscroll-behavior: none; }
+body.dialog-viewport-open {
+  position: fixed;
+  top: var(--dialog-page-top, 0px);
+  left: var(--dialog-page-left, 0px);
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* The fixed positioning region follows the visual viewport, including browser
+   chrome and the keyboard, rather than the document behind the dialog. */
+html.dialog-viewport-open body > dialog[open]:not(.feature-detail-dialog):not(.app-modal),
+html.dialog-viewport-open #feature-detail-dialog {
+  position: fixed;
+  top: calc(var(--dialog-visible-top) + var(--dialog-gap-top));
+  bottom: calc(100% - var(--dialog-visible-top) - var(--dialog-visible-height) + var(--dialog-gap-bottom));
+  margin: auto;
+  max-height: var(--dialog-max-height);
+  box-sizing: border-box;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+html.dialog-viewport-open #feature-detail-dialog {
+  height: min(820px, var(--dialog-max-height));
+  max-height: var(--dialog-max-height);
+  overflow: hidden;
+}
+html.dialog-viewport-open #feature-detail-dialog .feature-detail-card {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+html.dialog-viewport-open body > dialog.app-modal[open] {
+  top: var(--dialog-visible-top);
+  bottom: auto;
+  height: var(--dialog-visible-height);
+  max-height: var(--dialog-visible-height);
+  margin: 0;
+}
+html.dialog-viewport-open body > dialog .app-modal-card,
+html.dialog-viewport-open body > dialog.feedback-dialog > .dialog-card {
+  max-height: calc(var(--dialog-max-height) - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 700px) {
+  :root {
+    --dialog-gap-top: max(12px, env(safe-area-inset-top));
+    --dialog-gap-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  html.dialog-viewport-open #feature-detail-dialog { height: var(--dialog-max-height); }
+}
