@@ -693,6 +693,8 @@ table td { padding-block: 16px; font-size: 13px; }
 }
 .vote-window-meta, .daily-vote-meta { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; font-size: 12px; line-height: 1.5; }
 .vote-window-meta p { margin: 0; }
+.vote-participation-summary { white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
+.vote-participation-summary::-webkit-scrollbar { display: none; }
 .vote-limit-description, .vote-window-state { font-size: 12px; line-height: 1.5; }
 .daily-vote-meta-item { min-width: 0; width: 100%; white-space: normal; }
 .vote-selection-slot { position: relative; }

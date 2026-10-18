@@ -1268,15 +1268,12 @@
         timezone: formatTimezoneLabel(opensAt.timezone || closesAt.timezone || summary.timezone || configuredTimezone())
       })
     );
-    setText("vote-participant-count", window.MrzhI18n.format("共 {count} 人投票", {
-      count: summary.ballotCount || 0
-    }));
     const voteLimit = configuredVoteLimit(summary);
     setText(
-      "vote-limit-description",
+      "vote-participant-count",
       window.MrzhI18n.format(
-        "每人最多选择 {limit} 项科技；每个开放投票期只能提交一次，提交后不可修改或撤回。",
-        { limit: voteLimit }
+        "{count} 人投票，每人最多可选 {limit} 项科技。",
+        { count: summary.ballotCount || 0, limit: voteLimit }
       )
     );
     const voteWindowState = byId("vote-window-state");

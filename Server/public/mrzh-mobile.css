@@ -75,7 +75,8 @@ html:has(dialog[open]) { overflow: hidden; }
   .public-page .daily-vote-panel-stat b { font-size: calc(36 * var(--rpx)); }
   .public-page .daily-vote-panel-stat small { font-size: calc(20 * var(--rpx)); }
   .public-page .vote-window { padding: 0 0 calc(18 * var(--rpx)); font-size: calc(23 * var(--rpx)); border-bottom: 1px solid var(--line-strong); }
-  .public-page .vote-selection-preview { display: block; width: 100%; margin: calc(20 * var(--rpx)) 0; padding: calc(8 * var(--rpx)) calc(4 * var(--rpx)) calc(20 * var(--rpx)); border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; }
+  .public-page .vote-selection-preview { display: block; width: 100%; margin: calc(12 * var(--rpx)) 0 calc(20 * var(--rpx)); padding: 0 calc(4 * var(--rpx)); border: 0; border-radius: 0; }
+  .public-page #vote-options { margin-top: calc(20 * var(--rpx)); }
   .public-page .vote-selection-row { display: block; width: 100%; }
   .public-page .vote-selection-row + .vote-selection-row { margin-top: calc(14 * var(--rpx)); }
   .public-page .vote-selection-slots { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: calc(8 * var(--rpx)); margin-top: calc(8 * var(--rpx)); }
