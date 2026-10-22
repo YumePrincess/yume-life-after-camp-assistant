@@ -1,5 +1,9 @@
 
 export default {
+"messages.recall":"Recall message",
+"messages.recalled":"This message was recalled",
+"messages.recallExpired":"Messages can only be recalled within 120 seconds.",
+"messages.recallForbidden":"You can only recall your own messages.",
 "language.auto":"Automatic (browser language)",
 "presence.online":"Online",
 "presence.offline":"Offline",

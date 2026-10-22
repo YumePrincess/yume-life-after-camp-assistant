@@ -1,3 +1,9 @@
+// @ts-expect-error Vendored JavaScript module.
+import { syncIdentityChatUsers } from "../chat/worker/src/session.js";
+// @ts-expect-error Vendored JavaScript module.
+import { activeUserSql } from "../chat/worker/src/user-status.js";
+// @ts-expect-error Vendored JavaScript module.
+import { notifyRoomDeletion } from "../chat/worker/src/room-change.js";
 import { boundedBody, BodyTooLarge } from "./request-limits";
 import { adminGeneralAvatarUrl, handleGeneralAvatar, generalAvatarKey } from "./chat-general-avatar";
 import {
@@ -58,10 +64,11 @@ export async function handleChatAdmin(
     }
   }
   if (path === "" && request.method === "GET") {
+    await syncIdentityChatUsers(env);
     const [rooms, totals, general] = await Promise.all([
       env.DB.prepare(`SELECT c.id,c.name,c.kind,c.created_at,c.deleted_at,
         (SELECT count(*) FROM messages m WHERE m.channel_id=c.id AND m.deleted_at IS NULL) AS message_count,
-        (SELECT group_concat(u.display_name, '、') FROM channel_members cm JOIN users u ON u.id=cm.user_id WHERE cm.channel_id=c.id) AS members
+        (SELECT group_concat(u.display_name, '、') FROM channel_members cm JOIN users u ON u.id=cm.user_id WHERE cm.channel_id=c.id AND u.deleted_at IS NULL AND ${activeUserSql('u')}) AS members
         FROM channels c WHERE c.deleted_at IS NULL AND c.id < ? ORDER BY c.id DESC LIMIT 100`)
         .bind(Number(url.searchParams.get("before")) || Number.MAX_SAFE_INTEGER)
         .all(),
@@ -89,8 +96,10 @@ export async function handleChatAdmin(
   const messagesMatch = /^\/rooms\/(\d+)\/messages$/.exec(path);
   if (messagesMatch && request.method === "GET") {
     const id = Number(messagesMatch[1]);
+    await syncIdentityChatUsers(env);
     const room = await env.DB.prepare(
       `SELECT id,name,kind,
+       (SELECT group_concat(u.display_name, '、') FROM channel_members cm JOIN users u ON u.id=cm.user_id WHERE cm.channel_id=channels.id AND u.deleted_at IS NULL AND ${activeUserSql('u')}) AS members,
        (SELECT count(*) FROM messages WHERE channel_id=channels.id AND deleted_at IS NULL) AS messageCount,
        (SELECT count(*) FROM messages WHERE deleted_at IS NULL) AS totalMessageCount
        FROM channels WHERE id=? AND deleted_at IS NULL`,
@@ -100,7 +109,7 @@ export async function handleChatAdmin(
     if (!room) return problem("会话不存在", 404);
 
     const before = Number(url.searchParams.get("before")) || null;
-    const messages = await chatMessages.listMessages(env, id, before, 50);
+    const messages = await chatMessages.listMessages(env, id, before, 50, {includeRecalledContent:true});
     return json({ room, messages });
   }
   const messageMatch = /^\/rooms\/(\d+)\/messages\/(\d+)$/.exec(path);
@@ -116,9 +125,13 @@ export async function handleChatAdmin(
     const room = await env.DB.prepare("SELECT kind FROM channels WHERE id=?")
       .bind(roomId)
       .first<{ kind: string }>();
+    if (room && env.USER_INBOX) {
+      try { await notifyRoomDeletion(env, {id:roomId,kind:room.kind}, messageId); }
+      catch { console.warn('Admin deletion inbox delivery failed'); }
+    }
     if (room && env.CHANNEL_ROOM) {
       try {
-        await env.CHANNEL_ROOM.getByName(`${room.kind}:${roomId}`).fetch(
+        const delivered = await env.CHANNEL_ROOM.get(env.CHANNEL_ROOM.idFromName(`${room.kind}:${roomId}`)).fetch(
           "https://cfchat.internal/moderation-event",
           {
             method: "POST",
@@ -129,6 +142,7 @@ export async function handleChatAdmin(
             body: JSON.stringify({ type: "message_deleted", messageId }),
           },
         );
+        if (!delivered.ok) throw new Error(`Moderation delivery failed: ${delivered.status}`);
       } catch (error) {
         console.error(
           JSON.stringify({

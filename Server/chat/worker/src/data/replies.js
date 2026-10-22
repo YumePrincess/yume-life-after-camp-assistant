@@ -27,7 +27,7 @@ export async function resolveMessageReply(db, { channelId, replyMessageId }) {
 		.prepare(
 			`SELECT id, sender_id
 			 FROM messages
-			 WHERE id = ? AND channel_id = ? AND deleted_at IS NULL
+			 WHERE id = ? AND channel_id = ? AND deleted_at IS NULL AND recalled_at IS NULL
 			 LIMIT 1`,
 		)
 		.bind(messageId, Number(channelId))
@@ -48,7 +48,7 @@ export async function findMessageReplyBySource(db, {
 		.prepare(
 			`SELECT id, sender_id
 			 FROM messages
-			 WHERE channel_id = ? AND source = ? AND source_message_id = ? AND deleted_at IS NULL
+			 WHERE channel_id = ? AND source = ? AND source_message_id = ? AND deleted_at IS NULL AND recalled_at IS NULL
 			 LIMIT 1`,
 		)
 		.bind(Number(channelId), String(source), String(sourceMessageId))
@@ -63,7 +63,7 @@ export async function getMessageSourceReference(db, { channelId, messageId }) {
 		.prepare(
 			`SELECT source, source_message_id
 			 FROM messages
-			 WHERE id = ? AND channel_id = ? AND deleted_at IS NULL
+			 WHERE id = ? AND channel_id = ? AND deleted_at IS NULL AND recalled_at IS NULL
 			 LIMIT 1`,
 		)
 		.bind(normalizedMessageId, Number(channelId))

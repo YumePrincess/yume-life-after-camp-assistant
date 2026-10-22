@@ -32,6 +32,10 @@ export function useChatRoom({
 	const sending = ref(false);
 	const messagesEl = ref(null);
 	let messageLoadGeneration = 0;
+  let syncCursor = null, syncTask = null, syncRevision = 0;
+  let suppressAutoScroll = false;
+  const deletedMessageIds = new Set();
+  const recalledMessages = new Map();
 	let highlightTimer = null;
 
 	function roomKey(room = activeRoom.value) {
@@ -141,6 +145,7 @@ export function useChatRoom({
 		},
 		onStatus(event) {
 			wsStatus.value = event.status === "reconnecting" ? "connecting" : event.status;
+      if (event.status === 'open') void syncMessages();
 		},
 		onClose: handleSocketClose,
 		onMessage(payload, connection) {
@@ -155,20 +160,9 @@ export function useChatRoom({
 				applyActiveRoomActivity(payload.message);
 				nextTick().then(scrollToBottom);
 			}
-			if (payload.type === "message_deleted") {
-				const messageId = Number(payload.messageId);
-				messages.value = messages.value
-					.filter((message) => Number(message.id) !== messageId)
-					.map((message) =>
-						Number(message.replyToMessageId) === messageId
-							? { ...message, replyTo: { id: messageId, deleted: true } }
-							: message,
-					);
-        onRoomMessageDeleted(messageId);
-				if (Number(pinnedMessage.value?.id) === messageId) {
-					pinnedMessage.value = null;
-				}
-			}
+            if (payload.type === 'message_deleted') applyMessageDeletion(payload.messageId);
+            if (payload.type === 'message_recalled') applyRecalledMessage(payload.message);
+
 			if (payload.type === "message_pinned" && payload.message) {
 				pinnedMessage.value = payload.message;
 			}
@@ -184,7 +178,63 @@ export function useChatRoom({
 		},
 	});
 
-	async function loadMessages(before = null, append = false) {
+  function applyMessageDeletion(id) {
+    const messageId = Number(id);
+    if (!Number.isSafeInteger(messageId) || messageId < 1) return;
+    const first = !deletedMessageIds.has(messageId);
+    deletedMessageIds.add(messageId);
+    messages.value = messages.value.filter(message=>Number(message.id)!==messageId)
+      .map(message=>Number(message.replyToMessageId)===messageId ? {...message,replyTo:{id:messageId,deleted:true}} : message);
+    if (Number(pinnedMessage.value?.id)===messageId) pinnedMessage.value=null;
+    if (first) onRoomMessageDeleted(messageId);
+  }
+  function applyRecalledMessage(message) {
+    if (!message?.recalledAt || deletedMessageIds.has(Number(message.id))) return;
+    const id=Number(message.id), first=!recalledMessages.has(id);
+    const safe={...message,content:'',attachment:null,replyTo:null};
+    recalledMessages.set(id,safe);
+    messages.value=withoutDeleted(mergeMessages(messages.value,[safe]));
+    if (Number(pinnedMessage.value?.id)===id) pinnedMessage.value=null;
+    if (first) onRoomMessageDeleted(id);
+  }
+  function withoutDeleted(collection) {
+    return (collection || []).filter(message=>!deletedMessageIds.has(Number(message.id)))
+      .map(message=>recalledMessages.get(Number(message.id)) || message)
+      .map(message=>deletedMessageIds.has(Number(message.replyToMessageId)) || recalledMessages.has(Number(message.replyToMessageId)) ? {...message,replyTo:{id:message.replyToMessageId,deleted:true}} : message);
+  }
+  function syncMessages() {
+    if (syncTask) return syncTask;
+    if (syncCursor === null || !activeRoom.value || !roomApi.syncMessages) return Promise.resolve();
+    const room = {...activeRoom.value}, key = roomKey(), revision=syncRevision;
+    const task = (async()=>{
+      let more = true;
+      while (more && revision===syncRevision && roomKey()===key) {
+        const payload = await roomApi.syncMessages(room.kind,room.id,syncCursor);
+        if (revision!==syncRevision || roomKey()!==key) return;
+        suppressAutoScroll = true;
+        try {
+          for (const event of payload.events || []) {
+            if (event.type==='message_deleted') applyMessageDeletion(event.messageId);
+            else if (event.type==='message' && event.message && !deletedMessageIds.has(Number(event.message.id))) {
+              if (event.message.recalledAt) applyRecalledMessage(event.message);
+              else messages.value=mergeMessages(messages.value,[event.message]);
+            }
+          }
+          syncCursor = Number(payload.nextCursor);
+          more = payload.hasMore === true;
+          await nextTick();
+        } finally { suppressAutoScroll = false; }
+      }
+    })().catch(async cause=>{
+      if (revision!==syncRevision || roomKey()!==key) return;
+      if (cause.status===409) await loadMessages(null,false,true);
+      else if (cause.status===403) handleRoomAccessRevoked();
+      else console.warn('Message replay failed',cause);
+    }).finally(()=>{if(syncTask===task) syncTask=null;});
+    syncTask=task; return task;
+  }
+
+	async function loadMessages(before = null, append = false, preserveScroll = false) {
 		const room = activeRoom.value;
 		const key = roomKey(room);
 		if (!key) {
@@ -199,14 +249,15 @@ export function useChatRoom({
 			if (generation !== messageLoadGeneration || roomKey() !== key) {
 				return false;
 			}
-			messages.value = append
-				? mergeMessages(payload.messages, messages.value)
-				: payload.messages;
-			pinnedMessage.value = payload.pinnedMessage || null;
+      const scrollTop = messagesEl.value?.scrollTop;
+      if (preserveScroll) suppressAutoScroll = true;
+      messages.value = withoutDeleted(append || !preserveScroll ? mergeMessages(payload.messages,messages.value) : mergeMessages(payload.messages));
+      pinnedMessage.value = deletedMessageIds.has(Number(payload.pinnedMessage?.id)) || recalledMessages.has(Number(payload.pinnedMessage?.id)) ? null : payload.pinnedMessage || null;
+      if (!append && Number.isSafeInteger(payload.syncCursor)) syncCursor=payload.syncCursor;
 			await nextTick();
-			if (!append) {
-				scrollToBottom();
-			}
+      if (preserveScroll) { if (messagesEl.value && scrollTop !== undefined) messagesEl.value.scrollTop=scrollTop; suppressAutoScroll=false; }
+      else if (!append) scrollToBottom();
+      if (!append && !preserveScroll) void syncMessages();
 			return true;
 		} catch (currentError) {
 			if (generation === messageLoadGeneration && roomKey() === key) {
@@ -214,13 +265,16 @@ export function useChatRoom({
 			}
 			return false;
 		} finally {
+      if (preserveScroll) suppressAutoScroll=false;
 			if (generation === messageLoadGeneration) {
 				loading.value = false;
 			}
 		}
 	}
 
+  function resetSync() { syncRevision+=1; syncCursor=null; syncTask=null; deletedMessageIds.clear(); recalledMessages.clear(); }
 	async function activateRoom() {
+    resetSync();
 		messageLoadGeneration += 1;
 		messages.value = [];
 		pinnedMessage.value = null;
@@ -231,6 +285,7 @@ export function useChatRoom({
 	}
 
 	function deactivateRoom() {
+    resetSync();
 		messageLoadGeneration += 1;
 		messages.value = [];
 		pinnedMessage.value = null;
@@ -393,8 +448,9 @@ export function useChatRoom({
 			if (roomKey() !== key) {
 				return false;
 			}
-			pinnedMessage.value = payload.pinnedMessage || pinnedMessage.value;
-			messages.value = mergeMessages(payload.messages, messages.value);
+			const pin = payload.pinnedMessage || pinnedMessage.value;
+      pinnedMessage.value = deletedMessageIds.has(Number(pin?.id)) || recalledMessages.has(Number(pin?.id)) ? null : pin;
+			messages.value = withoutDeleted(mergeMessages(payload.messages, messages.value));
 			await nextTick();
 			return highlightMessage(targetId);
 		} catch (currentError) {
@@ -440,7 +496,7 @@ export function useChatRoom({
 			const receivedNewLastMessage =
 				current.length > previous.length &&
 				current.at(-1)?.id !== previous.at(-1)?.id;
-			if (receivedNewLastMessage) {
+			if (receivedNewLastMessage && !suppressAutoScroll) {
 				nextTick().then(scrollToBottom);
 			}
 		},
@@ -459,6 +515,9 @@ export function useChatRoom({
 		messagesEl,
 		isOwnMessage,
 		loadMessages,
+    syncMessages,
+    applyMessageDeletion,
+    applyRecalledMessage,
 		activateRoom,
 		deactivateRoom,
 		pauseRoom,

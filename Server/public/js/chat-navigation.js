@@ -8,7 +8,7 @@
     let frame = null, frameIdentity = "", active = false, revision = 0;
     let pendingRoom = null, frameReady = false;
     const seenNotifications = new Set();
-    const target = new URL(window.location.href).searchParams.get('chatRoom')?.match(/^(dm|channel):([1-9][0-9]*)$/);
+    const target = new URL(window.location.href).searchParams.get('chatRoom')?.match(/^(public|private|dm):([1-9][0-9]*)$/);
     if (target && Number.isSafeInteger(Number(target[2]))) pendingRoom = {kind:target[1],id:Number(target[2])};
     function sendRoom() {
       if (!pendingRoom || !active || !frameReady) return;
@@ -32,7 +32,7 @@
     function showNotification(notification) {
       if (active || document.hidden || !getAccount()) return;
       const {roomKind,roomId,messageId} = notification?.data || {};
-      if (!['dm','channel'].includes(roomKind) || !Number.isSafeInteger(roomId) || roomId < 1) return;
+      if (!['public','private','dm'].includes(roomKind) || !Number.isSafeInteger(roomId) || roomId < 1) return;
       const key = `${roomKind}:${roomId}:${messageId}`;
       if (seenNotifications.has(key)) return;
       seenNotifications.add(key);
@@ -138,7 +138,7 @@
         identityRequired();
       } else if (event.data?.type === 'camp-chat:open-room') {
         const room = event.data.room;
-        if (['dm','channel'].includes(room?.kind) && Number.isSafeInteger(room.id) && room.id > 0) { pendingRoom = room; open(); }
+        if (['public','private','dm'].includes(room?.kind) && Number.isSafeInteger(room.id) && room.id > 0) { pendingRoom = room; open(); }
       } else if (event.data?.type === 'camp-chat:notification') showNotification(event.data.notification);
       else if (event.data?.type === "camp-chat:ready") { frameReady = true; send(active); sendRoom(); }
     }
@@ -172,7 +172,7 @@
       if (event.data?.type === 'camp-chat:notification') showNotification(event.data.notification);
       if (event.data?.type !== 'camp-chat:open-room') return;
       const room = event.data.room;
-      if (!['dm','channel'].includes(room?.kind) || !Number.isSafeInteger(room.id) || room.id < 1) return;
+      if (!['public','private','dm'].includes(room?.kind) || !Number.isSafeInteger(room.id) || room.id < 1) return;
       pendingRoom = room; open();
     });
     void sync();

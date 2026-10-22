@@ -147,7 +147,7 @@ export async function canAccessFile(db, key, userId = null) {
 			   SELECT 1 FROM messages m
 			   JOIN channels c ON c.id = m.channel_id
 			   WHERE m.attachment_key = ?
-			     AND m.deleted_at IS NULL AND c.deleted_at IS NULL
+			     AND m.deleted_at IS NULL AND m.recalled_at IS NULL AND c.deleted_at IS NULL
 			     AND (c.kind = 'public' OR EXISTS (
 			       SELECT 1 FROM channel_members cm
 			       WHERE cm.channel_id = c.id AND cm.user_id = ?

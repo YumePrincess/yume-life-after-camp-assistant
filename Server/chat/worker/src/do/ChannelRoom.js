@@ -1,3 +1,5 @@
+import { getMessageById } from '../data/messages.js';
+import { notifyRoomDeletion } from '../room-change.js';
 import { chatRuntimeEnv } from '../../../../src/chat-policy';
 import {
   MessageSubmissionError,
@@ -232,6 +234,7 @@ export class ChannelRoom {
       if (action?.type === 'delete_message') {
         const result = await deleteRoomMessage(this.env, meta, action);
         await this.broadcast(result.packet);
+        this.state.waitUntil(notifyRoomDeletion(this.env, meta.room, result.messageId));
         this.runAttachmentCleanup(result);
         return Response.json({ ok: true, messageId: result.messageId });
       }
@@ -286,8 +289,12 @@ export class ChannelRoom {
     if (url.pathname === '/moderation-event' && request.method === 'POST') {
       if (!isVerifiedInternalRequest(request)) return new Response('Unauthorized',{status:401});
       const event = await request.json();
-      if (event.type !== 'message_deleted' || !Number.isInteger(event.messageId)) return new Response('Invalid event',{status:400});
-      await this.broadcast(JSON.stringify({protocolVersion:1,type:'message_deleted',messageId:event.messageId}));
+      if (!['message_deleted','message_recalled'].includes(event.type) || !Number.isInteger(event.messageId)) return new Response('Invalid event',{status:400});
+      if (event.type === 'message_recalled') {
+        const message = await getMessageById(this.env,event.messageId);
+        if (!message?.recalledAt) return new Response('Message not recalled',{status:409});
+        await this.broadcast(JSON.stringify({protocolVersion:1,type:'message_recalled',message}));
+      } else await this.broadcast(JSON.stringify({protocolVersion:1,type:'message_deleted',messageId:event.messageId}));
       return Response.json({ok:true});
     }
 
@@ -380,6 +387,7 @@ export class ChannelRoom {
       if (payload.type === 'delete_message') {
         const result = await deleteRoomMessage(this.env, currentMeta, payload);
         await this.broadcast(result.packet);
+        this.state.waitUntil(notifyRoomDeletion(this.env, currentMeta.room, result.messageId));
         this.runAttachmentCleanup(result);
         return;
       }

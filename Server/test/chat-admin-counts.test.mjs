@@ -196,3 +196,21 @@ describe("admin general group avatar", () => {
     expect(ui.byId("chat-admin-general-avatar-fallback").hidden).toBe(true);
   });
 });
+
+
+describe("background member refresh", () => {
+  it("patches members without replacing message cards, selection or scroll", async () => {
+    const ui = setup();
+    await ui.window.MrzhChatAdmin.load("csrf");
+    const room = ui.byId("chat-admin-rooms").children[0];
+    await room.onclick();
+    const detail = ui.byId("chat-admin-detail");
+    const children = [...detail.children]; detail.scrollTop = 143;
+    ui.fetch.mockResolvedValueOnce({ok:true,json:async()=>({rooms:[{id:1,name:"general",kind:"public",message_count:2,members:"Alice, Renamed Bob"}],totals:{rooms:2,messages:3,files:0}})});
+    await ui.window.MrzhChatAdmin.refreshBackground();
+    expect(detail.querySelector(".chat-admin-members").textContent).toBe("Alice, Renamed Bob");
+    expect(detail.children).toEqual(children);expect(detail.scrollTop).toBe(143);
+    expect(room["aria-current"]).toBe("true");
+    expect(ui.requests.filter(([path])=>path.endsWith("/messages"))).toHaveLength(1);
+  });
+});

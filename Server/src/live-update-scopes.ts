@@ -30,6 +30,8 @@ export function liveUpdateScopes(
     return ["public", "admin"];
   }
 
+  if (pathname.startsWith("/chat/api/channels")) return ["admin"];
+
   if (pathname.startsWith("/api/admin/")) {
     // Sending a test message has no shared application state to refresh.
     if (pathname === "/api/admin/smtp-config/test") return [];

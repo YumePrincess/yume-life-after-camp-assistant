@@ -1,5 +1,5 @@
 <script setup>
-import { Copy, Pin, PinOff, Reply, Trash2 } from '@lucide/vue';
+import { Copy, Pin, PinOff, Reply, Trash2, Undo2 } from '@lucide/vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { t } from '../../i18n.js';
 
@@ -7,16 +7,18 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   x: { type: Number, default: 0 },
   y: { type: Number, default: 0 },
+  canRecall: {type:Boolean,default:false},
+  canReply: {type:Boolean,default:true},
   canPin: { type: Boolean, default: false },
   canDelete: { type: Boolean, default: false },
   canCopy: { type: Boolean, default: false },
   pinned: { type: Boolean, default: false }
 });
-const emit = defineEmits(['close', 'copy', 'reply', 'pin', 'unpin', 'delete']);
+const emit = defineEmits(['close', 'copy', 'reply', 'pin', 'unpin', 'delete', 'recall']);
 
 const menuEl = ref(null);
 const menuHeight = computed(() =>
-  16 + (1 + Number(props.canCopy) + Number(props.canPin) + Number(props.canDelete)) * 40
+  16 + (Number(props.canReply) + Number(props.canRecall) + Number(props.canCopy) + Number(props.canPin) + Number(props.canDelete)) * 40
 );
 const menuStyle = computed(() => ({
   left: `${Math.max(8, Math.min(props.x, window.innerWidth - 184))}px`,
@@ -70,7 +72,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="message-menu">
       <div
-        v-if="open"
+        v-if="open && menuHeight > 16"
         ref="menuEl"
         class="message-context-menu"
         :style="menuStyle"
@@ -78,7 +80,7 @@ onBeforeUnmount(() => {
         :aria-label="t('messages.actions')"
         @contextmenu.prevent
       >
-		<button type="button" role="menuitem" @click="emit('reply')">
+		<button v-if="canReply" type="button" role="menuitem" @click="emit('reply')">
 		  <Reply :size="18" :stroke-width="1.8" aria-hidden="true" />
 		  {{ t('messages.reply') }}
 		</button>
@@ -95,6 +97,10 @@ onBeforeUnmount(() => {
           <PinOff v-if="pinned" :size="18" :stroke-width="1.8" aria-hidden="true" />
           <Pin v-else :size="18" :stroke-width="1.8" aria-hidden="true" />
           {{ pinned ? t('messages.unpin') : t('messages.pin') }}
+        </button>
+        <button v-if="canRecall" type="button" role="menuitem" @click="emit('recall')">
+          <Undo2 :size="18" :stroke-width="1.8" aria-hidden="true" />
+          {{ t('messages.recall') }}
         </button>
         <button
 		  v-if="canDelete"

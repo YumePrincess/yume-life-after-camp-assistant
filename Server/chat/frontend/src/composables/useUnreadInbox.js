@@ -11,6 +11,7 @@ export function useUnreadInbox({
   openInboxConnection = connectInboxSocket,
   notifyInApp = () => {},
   notifySystem = () => {},
+  onRoomEvent = () => {},
   isPageActive = () =>
     globalThis.document?.visibilityState === "visible" &&
     globalThis.document.hasFocus(),
@@ -28,6 +29,8 @@ export function useUnreadInbox({
     presenceTimer = null; presenceSocket = null;
     hostDocument?.removeEventListener('visibilitychange',sendPresence);
     globalThis.window?.top?.removeEventListener('pageshow',sendPresence);
+    globalThis.window?.top?.removeEventListener('focus',sendPresence);
+    globalThis.window?.top?.removeEventListener('blur',sendPresence);
     globalThis.window?.top?.removeEventListener('pagehide',hidePresence);
   }
   function hidePresence() {
@@ -50,6 +53,8 @@ export function useUnreadInbox({
         stopPresence(); presenceSocket = event.socket; sendPresence();
         hostDocument?.addEventListener('visibilitychange',sendPresence);
         globalThis.window?.top?.addEventListener('pageshow',sendPresence);
+        globalThis.window?.top?.addEventListener('focus',sendPresence);
+        globalThis.window?.top?.addEventListener('blur',sendPresence);
         globalThis.window?.top?.addEventListener('pagehide',hidePresence);
         if (hostDocument) presenceTimer = setInterval(sendPresence,15000);
       } else if (event.status === 'closed') stopPresence();
@@ -59,6 +64,11 @@ export function useUnreadInbox({
         );
     },
     onMessage(payload) {
+      if (['message_deleted','message_recalled'].includes(payload.type) && payload.room) {
+        onRoomEvent(payload);
+        void Promise.resolve(refreshConversations()).catch(()=>{});
+        return;
+      }
       if (payload.type !== "room_message" || !payload.room) {
         return;
       }

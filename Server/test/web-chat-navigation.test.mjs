@@ -45,12 +45,12 @@ describe('persistent #chat workspace', () => {
   });
   it('shows foreground homepage notifications from its own frame and opens their room',async()=>{
     const ui=setup('',{getAccount:()=>({identityCode:'12345678'})});
-    ui.message('camp-chat:notification',{data:{type:'camp-chat:notification',notification:{title:'全体成员群',body:'新消息',data:{roomKind:'channel',roomId:2,messageId:10}}}});
+    ui.message('camp-chat:notification',{data:{type:'camp-chat:notification',notification:{title:'全体成员群',body:'新消息',data:{roomKind:'public',roomId:2,messageId:10}}}});
     const toast=ui.body.children[0];expect(toast.children[0].textContent).toBe('全体成员群');
     toast.listeners.click();await ui.navigate('#chat');
     expect(ui.frames[0].contentWindow.postMessage.mock.calls.some(([packet])=>packet.type==='camp-chat:open-room')).toBe(false);
     ui.message('camp-chat:ready');
-    expect(ui.frames[0].contentWindow.postMessage).toHaveBeenLastCalledWith({type:'camp-chat:open-room',room:{kind:'channel',id:2}},ui.location.origin);
+    expect(ui.frames[0].contentWindow.postMessage).toHaveBeenLastCalledWith({type:'camp-chat:open-room',room:{kind:'public',id:2}},ui.location.origin);
   });
   it('loads one chat frame and keeps it while switching home, Back and Forward', async () => {
     const ui = setup();

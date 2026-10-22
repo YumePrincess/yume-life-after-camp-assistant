@@ -442,8 +442,11 @@ final class AppModel: ObservableObject {
         return text("ADB not detected")
     }
 
+    private var bootstrapStarted = false
+
     func bootstrap() async {
-        guard isAppleSilicon else { return }
+        guard isAppleSilicon, !bootstrapStarted else { return }
+        bootstrapStarted = true
         do {
             let runtimeWasUpdated = try await runtime.installBundledRuntimeIfNeeded()
             nodeInfo = await runtime.nodeStatus()

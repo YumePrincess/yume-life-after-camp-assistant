@@ -4024,6 +4024,7 @@
   }
 
   function refreshOpenAdminViews() {
+    if (state.activeView === "chat") void window.MrzhChatAdmin.refreshBackground();
     if (state.activeView === "access") void loadTemporaryKeys(undefined, true);
     if (state.activeView === "identity-applications") {
       void loadIdentityApplications(undefined, true);

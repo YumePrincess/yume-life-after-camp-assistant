@@ -135,7 +135,7 @@ export async function externalSenderExists(db, source, senderId) {
 	return Boolean(results[0]);
 }
 
-async function mapDecryptedMessage(env, row) {
+async function mapDecryptedMessage(env, row, {includeRecalledContent=false} = {}) {
 	const content = await decryptMessageContent(env, row.content, {
 		channelId: row.channel_id,
 		senderId: row.sender_id ?? 0,
@@ -145,7 +145,7 @@ async function mapDecryptedMessage(env, row) {
 	let replyTo = null;
 	if (row.reply_to_message_id) {
 		const replyId = Number(row.reply_to_message_id);
-		if (!row.reply_message_id || row.reply_deleted_at) {
+		if (!row.reply_message_id || row.reply_deleted_at || row.reply_recalled_at) {
 			replyTo = { id: replyId, deleted: true };
 		} else {
 			const replyContent = await decryptMessageContent(env, row.reply_content, {
@@ -165,7 +165,12 @@ async function mapDecryptedMessage(env, row) {
 			};
 		}
 	}
-	return mapMessage(row, content, replyTo);
+  const message = mapMessage(row,content,replyTo);
+  if (row.recalled_at) {
+    message.recalledAt=row.recalled_at;
+    if (!includeRecalledContent) { message.content=''; message.attachment=null; message.replyTo=null; message.mentions=[]; message.mentionUserIds=[]; }
+  }
+  return message;
 }
 
 const MESSAGE_SELECT = `SELECT
@@ -174,13 +179,13 @@ const MESSAGE_SELECT = `SELECT
 		  m.sender_kind, m.external_sender_id, m.external_sender_name,
 		  m.external_sender_avatar_url, m.source, m.source_message_id,
 		  m.source_attachment_id, m.source_attachment_unique_id, m.client_message_id,
-			  m.mention_user_ids, m.reply_to_message_id, m.reply_to_sender_id, m.created_at,
+			  m.mention_user_ids, m.reply_to_message_id, m.reply_to_sender_id, m.created_at, m.recalled_at,
 		  u.id AS sender_id, u.username AS sender_username,
 		  u.display_name AS sender_display_name, u.avatar_url AS sender_avatar_url, u.avatar_key AS sender_avatar_key,
 		  u.is_admin AS sender_is_admin, u.is_disabled AS sender_is_disabled,
 		  u.disabled_until AS sender_disabled_until,
 		  reply.id AS reply_message_id, reply.content AS reply_content,
-		  reply.deleted_at AS reply_deleted_at,
+		  reply.deleted_at AS reply_deleted_at, reply.recalled_at AS reply_recalled_at,
 		  reply.attachment_key AS reply_attachment_key,
 		  reply.attachment_name AS reply_attachment_name,
 		  reply.attachment_type AS reply_attachment_type,
@@ -226,7 +231,7 @@ export async function getMessageDeletionTarget(db, messageId) {
 	return results[0] || null;
 }
 
-export async function listMessages(env, roomId, before = null, limit = 30) {
+export async function listMessages(env, roomId, before = null, limit = 30, options = {}) {
 	const filters = ["m.channel_id = ?", "m.deleted_at IS NULL"];
 	const binds = [Number(roomId)];
 	if (before) {
@@ -237,7 +242,7 @@ export async function listMessages(env, roomId, before = null, limit = 30) {
 		.prepare(`${MESSAGE_SELECT} WHERE ${filters.join(" AND ")} ORDER BY m.id DESC LIMIT ?`)
 		.bind(...binds, Number(limit))
 		.all();
-	return (await Promise.all(results.map((row) => mapDecryptedMessage(env, row)))).reverse();
+	return (await Promise.all(results.map((row) => mapDecryptedMessage(env, row, options)))).reverse();
 }
 
 export async function getMessageById(env, messageId) {

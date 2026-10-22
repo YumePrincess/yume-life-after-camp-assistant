@@ -43,5 +43,5 @@
     "model:uninstall": "./scripts/local-model.sh uninstall",
     "plugins": "node src/plugin-manager.mjs list"
   },
-  "build": 27170
+  "build": 27171
 }

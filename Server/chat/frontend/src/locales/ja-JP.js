@@ -156,5 +156,9 @@ const messages = {
   'auth.providerGeneric': 'アカウントプロバイダー'
 };
 
-export default { ...english, ...messages };
+export default {
+"messages.recall":"送信を取り消す",
+"messages.recalled":"このメッセージは取り消されました",
+"messages.recallExpired":"送信後120秒以内のメッセージのみ取り消せます。",
+"messages.recallForbidden":"自分が送信したメッセージのみ取り消せます。", ...english, ...messages };
 export { localizeServerError } from './server-errors/en-US.js';

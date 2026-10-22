@@ -61,7 +61,7 @@ export class UserInbox {
         if (!validSubscription(value.subscription)) return new Response('Invalid subscription',{status:400});
         devices[value.deviceId] = {subscription:{endpoint:value.subscription.endpoint,expirationTime:null,keys:{p256dh:value.subscription.keys.p256dh,auth:value.subscription.keys.auth}}, token:auth.session.token, userId,
           language:String(value.language || 'en').slice(0,20),
-          mutedRooms:Array.isArray(value.mutedRooms) ? value.mutedRooms.filter(x => /^(dm|channel):[1-9][0-9]*$/.test(x)).slice(0,200) : [],
+          mutedRooms:Array.isArray(value.mutedRooms) ? value.mutedRooms.filter(x => /^(public|private|dm):[1-9][0-9]*$/.test(x)).slice(0,200) : [],
           updated:Date.now(), subject:url.origin};
         const ids = Object.keys(devices).sort((a,b)=>devices[b].updated-devices[a].updated);
         ids.slice(10).forEach(id=>delete devices[id]);

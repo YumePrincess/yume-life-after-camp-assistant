@@ -1421,3 +1421,5 @@ body.chat-workspace-open { position: fixed; inset: 0; width: 100%; overflow: hid
   .chat-admin-general-avatar { flex-wrap: wrap; }
   .chat-admin-general-avatar .button { width: 100%; }
 }
+
+.chat-admin-recalled {padding:3px 9px;border:1px solid var(--camp-line-strong);border-radius:999px;color:var(--camp-accent);font-size:12px;}

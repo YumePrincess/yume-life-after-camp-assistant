@@ -21,7 +21,7 @@ export async function pinMessage(db, { channelId, messageId, pinnedBy }) {
 			 FROM messages m
 			 WHERE m.id = ?
 			   AND m.channel_id = ?
-			   AND m.deleted_at IS NULL
+			   AND m.deleted_at IS NULL AND m.recalled_at IS NULL
 			 ON CONFLICT(channel_id) DO UPDATE SET
 			   message_id = excluded.message_id,
 			   pinned_by = excluded.pinned_by,

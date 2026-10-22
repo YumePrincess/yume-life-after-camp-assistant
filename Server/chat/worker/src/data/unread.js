@@ -33,7 +33,7 @@ export async function countUnreadMessages(db, { channelId, userId }) {
 	const { results } = await db
 		.prepare(
 				`SELECT COUNT(*) AS unread_count FROM messages m
-				 WHERE m.channel_id = ? AND m.deleted_at IS NULL
+				 WHERE m.channel_id = ? AND m.deleted_at IS NULL AND m.recalled_at IS NULL
 				   AND (m.sender_id IS NULL OR m.sender_id != ?)
 			   AND m.id > COALESCE((SELECT mr.last_read_message_id FROM message_reads mr
 			                            WHERE mr.channel_id = ? AND mr.user_id = ?), 0)`,
@@ -49,7 +49,7 @@ export async function countUnreadAttention(db, { channelId, userId }) {
 				`SELECT COUNT(*) AS unread_count
 				 FROM messages m
 				 WHERE m.channel_id = ?
-				   AND m.deleted_at IS NULL
+				   AND m.deleted_at IS NULL AND m.recalled_at IS NULL
 				   AND m.id > COALESCE((SELECT mr.last_read_message_id
 				                            FROM message_reads mr
 				                            WHERE mr.channel_id = ? AND mr.user_id = ?), 0)

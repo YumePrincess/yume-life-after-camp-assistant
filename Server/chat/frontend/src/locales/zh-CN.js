@@ -1,5 +1,9 @@
 
 export default {
+"messages.recall":"撤回消息",
+"messages.recalled":"该消息已撤回",
+"messages.recallExpired":"只能在发送后120秒内撤回消息。",
+"messages.recallForbidden":"只能撤回本人发送的消息。",
 "language.auto":"自动（浏览器语言）",
 "presence.online":"在线",
 "presence.offline":"离线",

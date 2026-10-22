@@ -1,4 +1,8 @@
 export default {
+"messages.recall":"收回訊息",
+"messages.recalled":"此訊息已收回",
+"messages.recallExpired":"只能在傳送後120秒內收回訊息。",
+"messages.recallForbidden":"只能收回自己傳送的訊息。",
 "language.auto":"自動（瀏覽器語言）",
 "presence.online":"在線",
 "presence.offline":"離線",

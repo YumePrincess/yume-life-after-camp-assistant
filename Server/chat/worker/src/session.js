@@ -4,10 +4,12 @@ import {
 } from "../../../src/identity-session.ts";
 
 export async function syncIdentityChatUsers(env) {
-  await env.DB.prepare(`INSERT OR IGNORE INTO users(identity_code_id,username,display_name,password_hash,password_salt,avatar_url)
+  await env.DB.prepare(`INSERT INTO users(identity_code_id,username,display_name,password_hash,password_salt,avatar_url)
     SELECT id,COALESCE(NULLIF(player_name,''),'未命名成员'),COALESCE(NULLIF(player_name,''),'未命名成员'),'','',
       CASE WHEN avatar_key IS NOT NULL THEN '/api/public/identity-avatar/' || id || '?v=' || hex(avatar_key) ELSE '' END
-    FROM identity_codes WHERE status = 'active' AND (expires_at IS NULL OR datetime(expires_at) > CURRENT_TIMESTAMP)`).run();
+    FROM identity_codes WHERE status = 'active' AND (expires_at IS NULL OR datetime(expires_at) > CURRENT_TIMESTAMP)
+    ON CONFLICT(identity_code_id) DO UPDATE SET username=excluded.username,display_name=excluded.display_name,avatar_url=excluded.avatar_url
+    WHERE users.deleted_at IS NULL AND (users.username != excluded.username OR users.display_name != excluded.display_name OR users.avatar_url != excluded.avatar_url)`).run();
 }
 
 export async function validateSession(env, token) {

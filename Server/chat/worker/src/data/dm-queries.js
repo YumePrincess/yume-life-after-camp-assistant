@@ -39,13 +39,13 @@ export async function listUserDms(db, userId) {
 			   other.display_name AS other_display_name,
 			   other.avatar_url AS other_avatar_url, other.avatar_key AS other_avatar_key,
 			   EXISTS(SELECT 1 FROM user_blocks ub WHERE ub.blocker_id = ? AND ub.blocked_id = other.id) AS blocked_by_me,
-			   (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL) AS last_message_at,
+			   (SELECT MAX(m.created_at) FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL AND m.recalled_at IS NULL) AS last_message_at,
 				   (SELECT COUNT(*) FROM messages m
-				    WHERE m.channel_id = c.id AND m.deleted_at IS NULL
+				    WHERE m.channel_id = c.id AND m.deleted_at IS NULL AND m.recalled_at IS NULL
 				      AND (m.sender_id IS NULL OR m.sender_id != ?)
 					      AND m.id > COALESCE((SELECT mr.last_read_message_id FROM message_reads mr WHERE mr.channel_id = c.id AND mr.user_id = ?), 0)) AS unread_count,
 					   (SELECT COUNT(*) FROM messages m
-					    WHERE m.channel_id = c.id AND m.deleted_at IS NULL
+					    WHERE m.channel_id = c.id AND m.deleted_at IS NULL AND m.recalled_at IS NULL
 					      AND (m.sender_id IS NULL OR m.sender_id != ?)
 					      AND m.id > COALESCE((SELECT mr.last_read_message_id FROM message_reads mr WHERE mr.channel_id = c.id AND mr.user_id = ?), 0)
 					      AND m.reply_to_sender_id = ?) AS attention_unread_count
@@ -80,7 +80,7 @@ export async function listAdminDms(db) {
 			          FROM channel_members cm JOIN users u ON u.id = cm.user_id
 			          WHERE cm.channel_id = c.id AND u.deleted_at IS NULL
 			          ORDER BY u.id ASC)) AS participants,
-			   (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL) AS message_count
+			   (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id AND m.deleted_at IS NULL AND m.recalled_at IS NULL) AS message_count
 			 FROM channels c
 			 WHERE c.kind = 'dm' AND c.deleted_at IS NULL
 			 ORDER BY c.created_at DESC`,

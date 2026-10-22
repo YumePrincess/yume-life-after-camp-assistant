@@ -1,8 +1,8 @@
 import api from './api.js';
 
 export function pageIsForeground() {
-  try { return window.top.document.visibilityState === 'visible'; }
-  catch { return document.visibilityState === 'visible'; }
+  try { const page=window.top.document; return page.visibilityState === 'visible' && page.hasFocus(); }
+  catch { return document.visibilityState === 'visible' && document.hasFocus(); }
 }
 function decodeKey(value) {
   return Uint8Array.from(atob(value.replaceAll('-','+').replaceAll('_','/')), character => character.charCodeAt(0));

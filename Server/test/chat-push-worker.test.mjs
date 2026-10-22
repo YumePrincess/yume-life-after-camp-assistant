@@ -11,8 +11,8 @@ function setup(windows=[]) {
 describe('notification Service Worker',()=>{
  it('always displays received pushes, including foreground Safari, without silent delivery',async()=>{
   const ui=setup([{url:'https://camp.example/',visibilityState:'visible'}]);
-  await ui.run('push',{data:{json:()=>({title:'Chat',body:'New message',tag:'room',data:{roomKind:'channel',roomId:2,messageId:3}})}});
-  expect(ui.self.registration.showNotification).toHaveBeenCalledWith('Chat',expect.objectContaining({data:{roomKind:'channel',roomId:2,messageId:3}}));
+  await ui.run('push',{data:{json:()=>({title:'Chat',body:'New message',tag:'room',data:{roomKind:'public',roomId:2,messageId:3}})}});
+  expect(ui.self.registration.showNotification).toHaveBeenCalledWith('Chat',expect.objectContaining({data:{roomKind:'public',roomId:2,messageId:3}}));
  });
  it('focuses an existing homepage and opens the target room without navigation',async()=>{
   const client={url:'https://camp.example/#vote',focus:vi.fn(async()=>{}),postMessage:vi.fn()};const ui=setup([client]);
@@ -20,9 +20,9 @@ describe('notification Service Worker',()=>{
   expect(close).toHaveBeenCalledOnce();expect(client.focus).toHaveBeenCalledOnce();expect(client.postMessage).toHaveBeenCalledWith({type:'camp-chat:open-room',room:{kind:'dm',id:9}});expect(ui.self.clients.openWindow).not.toHaveBeenCalled();
  });
  it('opens a closed application at the homepage hash route and rejects malformed targets',async()=>{
-  const ui=setup();await ui.run('notificationclick',{notification:{close(){},data:{roomKind:'channel',roomId:7}}});
-  expect(ui.self.clients.openWindow).toHaveBeenCalledWith('https://camp.example/?chatRoom=channel%3A7#chat');
-  await ui.run('push',{data:{json:()=>({title:'bad',data:{roomKind:'channel',roomId:'https://evil.example'}})}});
+  const ui=setup();await ui.run('notificationclick',{notification:{close(){},data:{roomKind:'public',roomId:7}}});
+  expect(ui.self.clients.openWindow).toHaveBeenCalledWith('https://camp.example/?chatRoom=public%3A7#chat');
+  await ui.run('push',{data:{json:()=>({title:'bad',data:{roomKind:'public',roomId:'https://evil.example'}})}});
   expect(ui.self.registration.showNotification).not.toHaveBeenCalled();
  });
 });

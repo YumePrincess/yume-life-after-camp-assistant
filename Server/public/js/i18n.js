@@ -1514,6 +1514,10 @@
     }
   };
 
+  Object.assign(translations.en, {'已撤回':'Recalled'});
+  Object.assign(translations['zh-tw'], {'已撤回':'已收回'});
+  Object.assign(translations.fr, {'已撤回':'Retiré'});
+  Object.assign(translations.ja, {'已撤回':'取り消し済み'});
   const memberCorrectionTranslations = {
     "zh-cn": {},
     "zh-tw": {

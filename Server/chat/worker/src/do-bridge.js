@@ -5,7 +5,7 @@ import {
 
 const INTERNAL_ORIGIN = "https://cfchat.internal";
 
-function getChannelRoomStub(env, kind, roomId) {
+export function getChannelRoomStub(env, kind, roomId) {
 	const name = `${kind}:${Number(roomId)}`;
 	return env.CHANNEL_ROOM.get(env.CHANNEL_ROOM.idFromName(name));
 }

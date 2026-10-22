@@ -1,4 +1,6 @@
 <script setup>
+import { canRecallMessage } from '../recall.js';
+import { useMessageRecall } from '../composables/useMessageRecall.js';
 import { embeddedChat, hostChatVisible } from '../host-navigation.js';
 import { pageIsForeground } from '../web-push.js';
 import { notificationRoomName } from '../notification-room.ts';
@@ -135,7 +137,7 @@ function notifyInAppRoom(event) {
   if (embeddedChat && !hostChatVisible.value) {
     if (!notificationsEnabled.value) return false;
     window.parent.postMessage({type:'camp-chat:notification', notification:{
-      title:notificationRoomName(event.room,t), body:t('notifications.groupMessage'),
+      title:notificationRoomName(event.room,t), body:t(event.room.kind === 'dm' ? 'notifications.directMessage' : 'notifications.groupMessage'),
       data:{roomKind:event.room.kind,roomId:Number(event.room.id),messageId:event.messageId}
     }},window.location.origin);
     return true;
@@ -179,7 +181,7 @@ function handleRoomAccessRevoked(room) {
 const {
   messages, pinnedMessage, highlightedMessageId, loading, wsStatus, composerText, pendingAttachment, sending,
   messagesEl, isOwnMessage,
-	  loadMessages, activateRoom, deactivateRoom, pauseRoom, disconnectSocket, sendMessage, sendVoiceMessage, deleteMessage,
+	  loadMessages, syncMessages, applyMessageDeletion, applyRecalledMessage, activateRoom, deactivateRoom, pauseRoom, connectSocket, disconnectSocket, sendMessage, sendVoiceMessage, deleteMessage,
 	  pinMessage, unpinMessage, revealPinnedMessage,
 	  revealMessage,
   uploadAttachment, clearAttachment, loadOlder
@@ -189,7 +191,11 @@ const {
   error,
   roomVisible: computed(() => !isContactsView.value && hostChatVisible.value),
   onRoomActivity: handleRoomActivity,
-  onRoomMessageDeleted:()=>{void refreshSidebar(true).catch(()=>{});},
+  onRoomMessageDeleted:id=>{
+    if (Number(messageMenu.value.message?.id)===Number(id)) closeMessageMenu();
+    if (Number(replyingTo.value?.id)===Number(id)) replyingTo.value=null;
+    void refreshSidebar(true).catch(()=>{});
+  },
   onRoomAccessRevoked: handleRoomAccessRevoked
 });
 
@@ -200,6 +206,12 @@ const { connectUnreadInbox, disconnectUnreadInbox } = useUnreadInbox({
   refreshConversations:()=>refreshSidebar(true),
   applyConversationActivity,
   notifyInApp: notifyInAppRoom,
+  onRoomEvent: event => {
+    if (activeRoom.value?.kind === event.room.kind && Number(activeRoom.value.id) === Number(event.room.id)) {
+      if (event.type==='message_recalled') applyRecalledMessage(event.message);
+      else applyMessageDeletion(event.messageId);
+    }
+  },
   notifySystem: notifyRoom
 });
 
@@ -383,7 +395,7 @@ let pendingHostRoom = null;
 function hostRoomMessage(event) {
   if (!embeddedChat || event.source !== window.parent || event.origin !== window.location.origin || event.data?.type !== 'camp-chat:open-room') return;
   const room = event.data.room;
-  if (!['dm','channel'].includes(room?.kind) || !Number.isSafeInteger(room.id) || room.id < 1) return;
+  if (!['public','private','dm'].includes(room?.kind) || !Number.isSafeInteger(room.id) || room.id < 1) return;
   if (nativeRoomNavigationReady) void openRoomFromNotification(room);
   else pendingHostRoom = room;
 }
@@ -469,6 +481,25 @@ function confirmDeleteMessage() {
   deleteMessage(message.id);
 }
 
+const selectedMessageCanRecall = useMessageRecall(
+  computed(() => messageMenu.value.message),
+  computed(() => session.value?.userId)
+);
+async function recallSelectedMessage() {
+  const message=messageMenu.value.message, room=activeRoom.value;
+  closeMessageMenu();
+  if (!room || !canRecallMessage(message,session.value?.userId)) return;
+  const progress=window.MrzhFeedback.begin();
+  error.value='';
+  try {
+    const result=await api.recallMessage(room.kind,room.id,Number(message.id));
+    if (activeRoom.value?.kind===room.kind && Number(activeRoom.value?.id)===Number(room.id)) applyRecalledMessage(result.message);
+    void window.MrzhFeedback.notice(t('messages.recalled'));
+  } catch (cause) {
+    error.value=cause.status===409 ? t('messages.recallExpired') : cause.status===403 ? t('messages.recallForbidden') : cause.message;
+  } finally { window.MrzhFeedback.end(progress); }
+}
+
 function pinSelectedMessage() {
   const message = messageMenu.value.message;
   closeMessageMenu();
@@ -528,7 +559,16 @@ async function refreshDirectory() {
 }
 const directoryConnection = createDirectoryConnection();
 const stopDirectoryRefresh = onDirectoryChange(() => { void refreshDirectory(); });
+function resumeMessages() {
+  if (document.visibilityState === 'hidden' || !hostChatVisible.value) return;
+  connectSocket();
+  void syncMessages();
+}
+watch(hostChatVisible,visible=>{if(visible) resumeMessages();});
 onMounted(() => {
+  document.addEventListener('visibilitychange',resumeMessages);
+  window.addEventListener('online',resumeMessages);
+  window.addEventListener('pageshow',resumeMessages);
   startViewportSync();
   window.addEventListener('message',hostRoomMessage);
   window.addEventListener('focus', syncNotificationPermission);
@@ -546,6 +586,9 @@ function formatBubbleTime(value) {
 }
 
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange',resumeMessages);
+  window.removeEventListener('online',resumeMessages);
+  window.removeEventListener('pageshow',resumeMessages);
   window.removeEventListener('message',hostRoomMessage);
   closeUserProfile();
   cancelMessageLongPress();
@@ -845,13 +888,14 @@ watch(
 				:clickable="!msg.replyTo.deleted"
 				@reveal="revealMessage(msg.replyToMessageId)"
 			  />
+              <p v-if="msg.recalledAt" class="message-recalled-hint">{{ t('messages.recalled') }}</p>
 			  <MessageMarkdown
-				v-if="msg.content"
+				v-if="!msg.recalledAt && msg.content"
 				:content="msg.content"
 				:mentions="msg.mentions"
 				:current-user-id="session?.userId"
 			  />
-              <MessageAttachment v-if="msg.attachment" :attachment="msg.attachment" />
+              <MessageAttachment v-if="!msg.recalledAt && msg.attachment" :attachment="msg.attachment" />
               <span class="message-time">{{ formatBubbleTime(msg.createdAt) }}</span>
             </div>
           </article>
@@ -861,9 +905,11 @@ watch(
           :open="Boolean(messageMenu.message)"
           :x="messageMenu.x"
           :y="messageMenu.y"
-		  :can-pin="canPinMessages"
+		  :can-pin="canPinMessages && !messageMenu.message?.recalledAt"
 			  :can-delete="canModerateMessages"
-			  :can-copy="Boolean(messageMenu.message?.content)"
+			  :can-copy="Boolean(messageMenu.message?.content) && !messageMenu.message?.recalledAt"
+          :can-recall="selectedMessageCanRecall"
+          :can-reply="!messageMenu.message?.recalledAt"
 			  :pinned="selectedMessageIsPinned"
 			  @close="closeMessageMenu"
 			  @copy="copySelectedMessage"
@@ -871,6 +917,7 @@ watch(
           @pin="pinSelectedMessage"
           @unpin="unpinSelectedMessage"
           @delete="confirmDeleteMessage"
+          @recall="recallSelectedMessage"
         />
 
 		<MessageComposer
@@ -1844,4 +1891,8 @@ watch(
     transition: none;
   }
 }
+</style>
+
+<style scoped>
+.message-recalled-hint {color:var(--chat-muted);font-size:13px;font-style:italic;margin:0;}
 </style>

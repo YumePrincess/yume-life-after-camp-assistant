@@ -27,9 +27,10 @@ export async function attachConversationPreviews(env, rooms, userId) {
       });
       latest.set(Number(row.channel_id), {
         id: Number(row.id),
-        content: String(content || "").slice(0, 512),
+        content: row.recalled_at ? "" : String(content || "").slice(0, 512),
+        recalledAt:row.recalled_at || null,
         createdAt: row.created_at,
-        attachment: row.attachment_key
+        attachment: !row.recalled_at && row.attachment_key
           ? {
               name: row.attachment_name || "",
               type: row.attachment_type || "",

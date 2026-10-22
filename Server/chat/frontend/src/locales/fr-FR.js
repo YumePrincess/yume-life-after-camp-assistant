@@ -156,5 +156,9 @@ const messages = {
   'auth.providerGeneric': 'le fournisseur de compte'
 };
 
-export default { ...english, ...messages };
+export default {
+"messages.recall":"Retirer le message",
+"messages.recalled":"Ce message a été retiré",
+"messages.recallExpired":"Les messages peuvent être retirés pendant 120 secondes.",
+"messages.recallForbidden":"Vous ne pouvez retirer que vos propres messages.", ...english, ...messages };
 export { localizeServerError } from './server-errors/en-US.js';

@@ -119,6 +119,12 @@ export default {
       body: payload
     });
   },
+  recallMessage(kind, roomId, messageId) {
+    return request('/messages/recall',{method:'POST',headers:{'Content-Type':'application/json'},body:{kind,roomId,messageId}});
+  },
+  syncMessages(kind, roomId, after) {
+    return request(`/messages/sync?${new URLSearchParams({kind,roomId:String(roomId),after:String(after)})}`);
+  },
   getMessages(kind, roomId, before) {
     const query = new URLSearchParams({ kind, roomId: String(roomId) });
     if (before) {

@@ -151,28 +151,7 @@ actor RuntimeService {
     }
 
     private func runtimeCodeMatches(bundled: URL, installed: URL) -> Bool {
-        let roots = ["src", "scripts", "plugins"]
-        var relativeFiles = ["config.example.json", "package.json", "package-lock.json"]
-        for root in roots {
-            let rootURL = bundled.appending(path: root, directoryHint: .isDirectory)
-            guard let enumerator = fileManager.enumerator(
-                at: rootURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            ) else { return false }
-            for case let file as URL in enumerator {
-                let values = try? file.resourceValues(forKeys: [.isRegularFileKey])
-                guard values?.isRegularFile == true else { continue }
-                let relative = file.path.replacingOccurrences(of: bundled.path + "/", with: "")
-                relativeFiles.append(relative)
-            }
-        }
-        return relativeFiles.allSatisfy { relative in
-            let source = bundled.appending(path: relative)
-            let target = installed.appending(path: relative)
-            return fileManager.fileExists(atPath: target.path) &&
-                fileManager.contentsEqual(atPath: source.path, andPath: target.path)
-        }
+        RuntimePayload.matches(bundled: bundled, installed: installed)
     }
 
     /// Creates a secret-free first-launch configuration. Existing settings are

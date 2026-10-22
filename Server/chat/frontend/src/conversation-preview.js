@@ -2,6 +2,7 @@ import { messageMarkdownToPlainText } from "./message-markdown.ts";
 import { t } from "./i18n.js";
 
 export function conversationPreview(message) {
+  if (message?.recalledAt) return t("messages.recalled");
   const content = messageMarkdownToPlainText(message?.content || "")
     .replace(/\s+/g, " ")
     .trim();

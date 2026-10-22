@@ -4,6 +4,7 @@
     generation = 0,
     mode = "rooms",
     selectedRoom = null;
+  let roomListBefore = "", refreshing = null;
   let confirmAction = async () => false;
   const byId = (id) => document.getElementById(id);
   const t = (value) => window.MrzhI18n.t(value);
@@ -128,6 +129,7 @@
       `/rooms/${room.id}/messages${before ? `?before=${before}` : ""}`,
     );
     if (revision !== generation) return;
+    Object.assign(room, payload.room);
     syncMessageCounts(room, payload.room);
     const head = node("div", "chat-admin-detail-heading");
     head.append(
@@ -135,8 +137,7 @@
         ? node("h2", "", "全体成员群")
         : raw("h2", "", roomName(room)),
     );
-    if (room.kind !== "dm" && room.members)
-      head.append(raw("p", "muted", room.members));
+    if (room.kind !== "dm") head.append(raw("p", "chat-admin-members muted", room.members || ""));
     root.replaceChildren(head);
     if (room.name !== "general" && room.kind !== "dm")
       head.append(
@@ -160,6 +161,7 @@
         raw("strong", "", message.sender.displayName),
         raw("time", "muted", timestamp(message.createdAt)),
       );
+      if (message.recalledAt) header.append(node('span','chat-admin-recalled','已撤回'));
       card.append(header, raw("p", "chat-admin-message-body", message.content));
       const actions = node("div", "chat-admin-message-actions");
       if (message.attachment) {
@@ -204,6 +206,7 @@
       byId(`chat-admin-total-${key}`).textContent = totals[key] ?? 0;
   }
   async function rooms(before = "") {
+    roomListBefore = before;
     setMode("rooms");
     const revision = ++generation;
     const payload = await api(before ? `?before=${before}` : "");
@@ -220,8 +223,8 @@
       el.setAttribute("aria-current", "false");
       el.append(
         room.name === "general"
-          ? node("strong", "", "全体成员群")
-          : raw("strong", "", roomName(room)),
+          ? node("strong", "chat-admin-room-title", "全体成员群")
+          : raw("strong", "chat-admin-room-title", roomName(room)),
       );
       const meta = node("small", "muted");
       meta.append(
@@ -244,6 +247,33 @@
       payload.rooms.some((room) => room.id === selectedRoom.id)
     )
       await messages(payload.rooms.find((room) => room.id === selectedRoom.id));
+  }
+  function refreshBackground() {
+    if (mode !== 'rooms' || document.hidden || byId('chat-admin')?.hidden) return Promise.resolve();
+    if (refreshing) return refreshing;
+    const revision = generation, before = roomListBefore;
+    const task = (async()=>{
+      const payload = await api(before ? `?before=${before}` : '');
+      if (revision !== generation || mode !== 'rooms') return;
+      renderTotals(payload.totals);
+      const updated = new Map(payload.rooms.map(room=>[String(room.id),room]));
+      for (const el of byId('chat-admin-rooms').querySelectorAll('[data-room-id]')) {
+        const room = updated.get(el.dataset.roomId);
+        if (!room) continue;
+        const title=el.querySelector('.chat-admin-room-title');
+        if (title) title.textContent=roomName(room);
+        el.querySelector('.chat-admin-room-count').textContent=String(room.message_count);
+      }
+      if (selectedRoom) {
+        const room=updated.get(String(selectedRoom.id));
+        if (room) {
+          Object.assign(selectedRoom,room);
+          const members=byId('chat-admin-detail').querySelector('.chat-admin-members');
+          if (members) members.textContent=room.members || '';
+        }
+      }
+    })().catch(error=>console.warn('Admin chat background refresh failed',error)).finally(()=>{if(refreshing===task) refreshing=null;});
+    refreshing=task; return task;
   }
   async function files(before = "") {
     setMode("files");
@@ -357,6 +387,8 @@
   }
   const refresh = () => ({ rooms, files, policy })[mode]();
   document.addEventListener("DOMContentLoaded", () => {
+    window.setInterval?.(refreshBackground, 15000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden) void refreshBackground();});
     byId("chat-admin-general-avatar-edit").onclick = () => window.MrzhAvatar.open(async file => {
       const form = new FormData();
       form.append("file", file, "general-avatar.webp");
@@ -398,6 +430,7 @@
       el.textContent = t(el.dataset.chatI18n);
   });
   window.MrzhChatAdmin = {
+    refreshBackground,
     load: (token, confirmation) => {
       csrf = token;
       if (confirmation) confirmAction = confirmation;

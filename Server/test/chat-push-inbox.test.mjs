@@ -10,7 +10,7 @@ function setup(){
  const inbox=new UserInbox({storage,getWebSockets:()=>[],blockConcurrencyWhile:fn=>fn()},{});
  return {inbox,data,devices};
 }
-const event={type:'room_message',room:{kind:'channel',id:1,name:'general'},messageId:50};
+const event={type:'room_message',room:{kind:'public',id:1,name:'general'},messageId:50};
 beforeEach(()=>{mocks.auth.mockReset().mockResolvedValue({ok:true,session:{userId:1}});mocks.send.mockReset().mockResolvedValue(201);});
 describe('per-device background chat delivery',()=>{
  it('delivers while offline and preserves subscriptions on transient failures',async()=>{
@@ -28,7 +28,7 @@ describe('per-device background chat delivery',()=>{
   await inbox.push(event);expect(mocks.send).toHaveBeenCalledOnce();
  });
  it('honors room mute, with mention and reply exceptions',async()=>{
-  const {inbox,data}=setup();data.get('web-push:v1:devices').phone.mutedRooms=['channel:1'];
+  const {inbox,data}=setup();data.get('web-push:v1:devices').phone.mutedRooms=['public:1'];
   await inbox.push(event);expect(mocks.send).not.toHaveBeenCalled();
   await inbox.push({...event,mentionsMe:true});await inbox.push({...event,replyToMe:true});expect(mocks.send).toHaveBeenCalledTimes(2);
  });
