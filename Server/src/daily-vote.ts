@@ -40,6 +40,7 @@ export interface DailyVoteItem {
   maxSelections: number | null;
   drawCount: number | null;
   batchNumber: string;
+  drawTypeCode: string;
   drawLimitEnabled: boolean;
   eligibilityCheckEnabled: boolean;
   createdAt: string;
@@ -171,6 +172,18 @@ function batchNumberValue(value: unknown): string {
   return result;
 }
 
+function drawTypeCodeValue(value: unknown): string {
+  const result = typeof value === "string"
+    ? value.trim()
+    : Number.isInteger(value) && Number(value) >= 0
+      ? String(value)
+      : "";
+  if (!/^\d{1,8}$/.test(result)) {
+    throw new Error("drawTypeCode must contain 1 to 8 digits");
+  }
+  return result;
+}
+
 export function normalizeDailyVoteConfig(value: unknown): DailyVoteConfig {
   const source = value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -296,6 +309,7 @@ export function normalizeDailyVoteInput(
   maxSelections: number | null;
   drawCount: number | null;
   batchNumber: string;
+  drawTypeCode: string;
   drawLimitEnabled: boolean;
   eligibilityCheckEnabled: boolean;
 } {
@@ -332,6 +346,9 @@ export function normalizeDailyVoteInput(
   const batchNumber = kind === "draw"
     ? batchNumberValue(source.batchNumber)
     : "0";
+  const drawTypeCode = kind === "draw"
+    ? drawTypeCodeValue(source.drawTypeCode ?? existing?.drawTypeCode ?? "0")
+    : "0";
   const drawLimitEnabled = kind === "draw"
     ? booleanValue(source.drawLimitEnabled, "drawLimitEnabled", existing?.drawLimitEnabled ?? true)
     : false;
@@ -354,6 +371,7 @@ export function normalizeDailyVoteInput(
     maxSelections,
     drawCount,
     batchNumber,
+    drawTypeCode,
     drawLimitEnabled,
     eligibilityCheckEnabled
   };
@@ -369,6 +387,7 @@ interface DailyVoteRow {
   max_selections: number | null;
   draw_count: number | null;
   batch_number: string;
+  draw_type_code: string;
   draw_limit_enabled: number;
   eligibility_check_enabled: number;
   created_at: string;
@@ -421,6 +440,7 @@ function itemFromRow(row: DailyVoteRow): DailyVoteItem {
     maxSelections: row.max_selections === null ? null : Number(row.max_selections),
     drawCount: row.draw_count === null ? null : Number(row.draw_count),
     batchNumber: row.batch_number || "0",
+    drawTypeCode: row.draw_type_code || "0",
     drawLimitEnabled: Number(row.draw_limit_enabled) === 1,
     eligibilityCheckEnabled: Number(row.eligibility_check_enabled) !== 0,
     createdAt: row.created_at,
@@ -507,12 +527,13 @@ export async function saveDailyVoteItem(
   await env.DB.prepare(
     `INSERT INTO daily_vote_items(
        id, kind, content_json, start_at, end_at, reveal_before_seconds,
-       max_selections, draw_count, batch_number, draw_limit_enabled,
+       max_selections, draw_count, batch_number, draw_type_code, draw_limit_enabled,
        eligibility_check_enabled, created_at, updated_at
-     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, input.kind, JSON.stringify(input.localizedContent), input.startAt, input.endAt,
     input.revealBeforeSeconds, input.maxSelections, input.drawCount, input.batchNumber,
+    input.drawTypeCode,
     input.drawLimitEnabled ? 1 : 0, input.eligibilityCheckEnabled ? 1 : 0, now, now
   ).run();
   return {
@@ -525,6 +546,7 @@ export async function saveDailyVoteItem(
     maxSelections: input.maxSelections,
     drawCount: input.drawCount,
     batchNumber: input.batchNumber,
+    drawTypeCode: input.drawTypeCode,
     drawLimitEnabled: input.drawLimitEnabled,
     eligibilityCheckEnabled: input.eligibilityCheckEnabled,
     createdAt: now,
@@ -547,15 +569,25 @@ export async function updateDailyVoteItem(
       throw new Error("已产生中签结果的抽签事项不能修改批次号");
     }
   }
+  if (existing.kind === "draw" && existing.drawTypeCode !== input.drawTypeCode) {
+    const winnerCount = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM daily_draw_winners WHERE item_id = ?"
+    ).bind(id).first<{ count: number }>();
+    if (Number(winnerCount?.count ?? 0) > 0) {
+      throw new Error("已产生中签结果的抽签事项不能修改事项类型编码");
+    }
+  }
   const now = new Date().toISOString();
   await env.DB.prepare(
     `UPDATE daily_vote_items SET kind = ?, content_json = ?, start_at = ?, end_at = ?,
        reveal_before_seconds = ?, max_selections = ?, draw_count = ?, batch_number = ?,
+       draw_type_code = ?,
        draw_limit_enabled = ?, eligibility_check_enabled = ?, updated_at = ?
      WHERE id = ?`
   ).bind(
     input.kind, JSON.stringify(input.localizedContent), input.startAt, input.endAt,
     input.revealBeforeSeconds, input.maxSelections, input.drawCount, input.batchNumber,
+    input.drawTypeCode,
     input.drawLimitEnabled ? 1 : 0, input.eligibilityCheckEnabled ? 1 : 0, now, id
   ).run();
   return { ...existing, ...input, updatedAt: now };
@@ -655,6 +687,33 @@ async function finalizeDrawItem(
     const current = await winnerIdentityRows(env, item.id);
     if (current.length >= target) return insertedTotal;
     const usedIdentityIds = new Set(current.map((winner) => winner.identityCodeId));
+    if (item.drawTypeCode !== "0") {
+      const previousTypeWinners = await env.DB.prepare(
+        `SELECT identity_code_id
+         FROM daily_draw_winners
+         WHERE item_id = (
+           SELECT previous.id
+           FROM daily_vote_items previous
+           WHERE previous.kind = 'draw'
+             AND previous.draw_type_code = ?
+             AND (previous.end_at, previous.start_at, previous.created_at, previous.id)
+               < (?, ?, ?, ?)
+             AND EXISTS (
+               SELECT 1
+               FROM daily_draw_winners prior_winner
+               WHERE prior_winner.item_id = previous.id
+             )
+           ORDER BY previous.end_at DESC, previous.start_at DESC,
+                    previous.created_at DESC, previous.id DESC
+           LIMIT 1
+         )`
+      ).bind(
+        item.drawTypeCode, item.endAt, item.startAt, item.createdAt, item.id
+      ).all<{ identity_code_id: string }>();
+      for (const winner of previousTypeWinners.results) {
+        usedIdentityIds.add(winner.identity_code_id);
+      }
+    }
     if (item.batchNumber !== "0") {
       const batchWinners = await env.DB.prepare(
         `SELECT identity_code_id

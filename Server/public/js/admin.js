@@ -2031,12 +2031,13 @@
         "daily-vote-admin-meta",
         window.MrzhI18n.format(
           item.kind === "draw"
-            ? "开放 {start} - {end} · 批次号 {batchNumber}"
+            ? "开放 {start} - {end} · 批次号 {batchNumber} · 事项类型编码 {drawTypeCode}"
             : "开放 {start} - {end}",
           {
             start: startAt.value,
             end: `${endAt.value} (${formatTimezoneLabel(endAt.timezone || startAt.timezone || configuredTimezone())})`,
-            batchNumber: item.batchNumber || "0"
+            batchNumber: item.batchNumber || "0",
+            drawTypeCode: item.drawTypeCode || "0"
           }
         )
       ));
@@ -2193,10 +2194,12 @@
     byId("daily-vote-max-field").hidden = isDraw;
     byId("daily-vote-draw-field").hidden = !isDraw;
     byId("daily-vote-draw-batch-field").hidden = !isDraw;
+    byId("daily-vote-draw-type-code-field").hidden = !isDraw;
     byId("daily-vote-draw-limit-field").hidden = !isDraw;
     byId("daily-vote-options-field").hidden = isDraw;
     byId("daily-vote-options").required = !isDraw;
     byId("daily-vote-draw-batch").required = isDraw;
+    byId("daily-vote-draw-type-code").required = isDraw;
   }
 
   function localizeDailyVoteError(error) {
@@ -2219,6 +2222,7 @@
       maxSelections: 1,
       drawCount: 1,
       batchNumber: "0",
+      drawTypeCode: "0",
       drawLimitEnabled: true,
       localizedContent: { "zh-cn": { titleBlocks: [], descriptionBlocks: [], options: [] } }
     };
@@ -2232,6 +2236,7 @@
     byId("daily-vote-max").value = source.maxSelections || 1;
     byId("daily-vote-draw-count").value = source.drawCount || 1;
     byId("daily-vote-draw-batch").value = source.batchNumber ?? "0";
+    byId("daily-vote-draw-type-code").value = source.drawTypeCode ?? "0";
     byId("daily-vote-draw-limit-enabled").checked = source.drawLimitEnabled !== false;
     byId("daily-vote-eligibility-enabled").checked = source.eligibilityCheckEnabled !== false;
     byId("daily-vote-title-blocks").value = dailyBlocksToText(content.titleBlocks);
@@ -2275,6 +2280,7 @@
       endAtLocal: byId("daily-vote-end").value,
       revealBeforeSeconds: Number(byId("daily-vote-reveal-value").value || 0) * Number(byId("daily-vote-reveal-unit").value || 60),
       batchNumber: byId("daily-vote-draw-batch").value.trim(),
+      drawTypeCode: byId("daily-vote-draw-type-code").value.trim(),
       drawLimitEnabled: byId("daily-vote-draw-limit-enabled").checked,
       eligibilityCheckEnabled: byId("daily-vote-eligibility-enabled").checked,
       ...(kind === "poll"
