@@ -16,6 +16,7 @@ import { isDemoMode } from '../runtime.js';
 import ConversationList from '../components/chat/ConversationList.vue';
 import InAppNotificationStack from '../components/chat/InAppNotificationStack.vue';
 import MessageAttachment from '../components/chat/MessageAttachment.vue';
+import MessageTimestamp from '../components/chat/MessageTimestamp.vue';
 import MessageComposer from '../components/chat/MessageComposer.vue';
 import MessageMarkdown from '../components/chat/MessageMarkdown.vue';
 import MessageContextMenu from '../components/chat/MessageContextMenu.vue';
@@ -60,7 +61,7 @@ const ContactsPage = defineAsyncComponent(() => import('./ContactsPage.vue'));
 
 const router = useRouter();
 const route = useRoute();
-const { formatTime: formatLocaleTime, t, locale } = useI18n();
+const { t, locale } = useI18n();
 const error = ref('');
 useErrorNotice(error);
 const activeRoom = ref(null);
@@ -588,9 +589,6 @@ onMounted(() => {
     if (pendingHostRoom) { void openRoomFromNotification(pendingHostRoom); pendingHostRoom = null; }
   });
 });
-function formatBubbleTime(value) {
-  return value ? formatLocaleTime(value) : '';
-}
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange',resumeMessages);
@@ -905,7 +903,7 @@ watch(
 				:current-user-id="session?.userId"
 			  />
               <MessageAttachment v-if="!msg.recalledAt && msg.attachment" :attachment="msg.attachment" />
-              <span class="message-time">{{ formatBubbleTime(msg.createdAt) }}</span>
+              <MessageTimestamp :value="msg.createdAt" />
             </div>
           </article>
         </section>
@@ -1598,17 +1596,6 @@ watch(
   margin-bottom: 4px;
   overflow-wrap: anywhere;
   min-width: 0;
-}
-
-.message-time {
-  display: block;
-  margin-top: 6px;
-  text-align: right;
-  font-size: 11px;
-  line-height: 1;
-  color: var(--chat-muted);
-  white-space: nowrap;
-  user-select: none;
 }
 
 .message-bubble__reply {

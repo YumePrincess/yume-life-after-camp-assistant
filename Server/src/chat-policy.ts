@@ -1,3 +1,10 @@
+import { normalizeUtcTimezone } from './time';
+
+export async function getChatTimezone(env: Pick<Env, 'DB'>): Promise<string> {
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key='camp_config'").first<{value: string}>();
+  return normalizeUtcTimezone(row ? JSON.parse(row.value).timezone || 'UTC+08:00' : 'UTC+08:00');
+}
+
 export interface ChatPolicy {
   MESSAGE_RETENTION_DAYS: number;
   SOFT_DELETE_RETENTION_DAYS: number;

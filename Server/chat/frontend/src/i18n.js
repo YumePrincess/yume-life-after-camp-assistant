@@ -1,5 +1,6 @@
 import { computed, readonly, ref } from 'vue';
 import { getLanguageChoice, normalizeLanguageChoice, resolveLanguageChoice, setLanguageChoice } from './preferences.js';
+import { formatSiteDate } from './site-timezone.js';
 
 export const SIMPLIFIED_CHINESE_LOCALE = 'zh-CN';
 export const TRADITIONAL_CHINESE_LOCALE = 'zh-TW';
@@ -106,7 +107,7 @@ const SQLITE_UTC_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\
 
 export function parseDateValue(value) {
   if (value instanceof Date) return value;
-  // D1 的 CURRENT_TIMESTAMP 是 UTC，但返回值没有时区标记；补成 ISO UTC 后才能按浏览器时区正确展示。
+  // D1 timestamps without an offset represent UTC instants, not browser wall time.
   const normalizedValue =
     typeof value === 'string' && SQLITE_UTC_DATE_TIME_PATTERN.test(value)
       ? `${value.replace(' ', 'T')}Z`
@@ -116,17 +117,17 @@ export function parseDateValue(value) {
 
 export function formatDateTime(value, options = { dateStyle: 'medium', timeStyle: 'short' }) {
   const date = parseDateValue(value);
-  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat(locale.value, options).format(date);
+  return Number.isNaN(date.getTime()) ? '' : formatSiteDate(date, locale.value, options);
 }
 
 export function formatDate(value, options = { dateStyle: 'medium' }) {
   const date = parseDateValue(value);
-  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat(locale.value, options).format(date);
+  return Number.isNaN(date.getTime()) ? '' : formatSiteDate(date, locale.value, options);
 }
 
 export function formatTime(value, options = { hour: '2-digit', minute: '2-digit' }) {
   const date = parseDateValue(value);
-  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat(locale.value, options).format(date);
+  return Number.isNaN(date.getTime()) ? '' : formatSiteDate(date, locale.value, options);
 }
 
 export function compareLocalized(left, right) {

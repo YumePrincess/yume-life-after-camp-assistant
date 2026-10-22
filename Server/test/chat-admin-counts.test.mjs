@@ -58,6 +58,7 @@ class Element {
 }
 function setup(failDelete = false) {
   const nodes = new Map(), listeners = {};
+  const root = {dataset:{}}, observers = [];
   const byId = (id) => {
     if (!nodes.has(id)) nodes.set(id, new Element());
     return nodes.get(id);
@@ -119,14 +120,35 @@ function setup(failDelete = false) {
       createTextNode: (text) =>
         Object.assign(new Element("text"), { textContent: text }),
       addEventListener: (type, listener) => { listeners[type] = listener; },
-      documentElement: { dataset: {} },
+      documentElement: root,
+      querySelectorAll: selector => [...new Set([...nodes.values()].flatMap(node=>node.all()))].filter(node =>
+        selector.includes('data-chat-timestamp') ? node.dataset.chatTimestamp !== undefined : node.dataset.chatI18n !== undefined),
     },
+    MutationObserver: class { constructor(callback){observers.push(callback);} observe(){} },
     fetch,
     FormData,
     console,
   });
-  return { window, byId, fetch, requests, listeners };
+  return { window, byId, fetch, requests, listeners, root, timezoneChanged(value){root.dataset.timezone=value;for(const callback of observers)callback();} };
 }
+
+describe('admin chat configured timezone',()=>{
+  it('converts SQL UTC timestamps once and updates existing nodes without replacing cards or resetting scroll',async()=>{
+    const ui=setup();
+    runInNewContext(readFileSync(new URL('../public/js/timezone.js',import.meta.url),'utf8'),{window:ui.window});
+    await ui.window.MrzhChatAdmin.load('csrf');
+    ui.fetch.mockResolvedValueOnce({ok:true,json:async()=>({timezone:'UTC+08:00',room:{id:1,name:'general',kind:'public',messageCount:1},messages:[{id:1,sender:{displayName:'Alice'},content:'body',createdAt:'2026-10-21 23:38:06'}]})});
+    await ui.byId('chat-admin-rooms').children[0].onclick();
+    const detail=ui.byId('chat-admin-detail'),cards=[...detail.children];detail.scrollTop=143;
+    const time=detail.all().find(node=>node.tag==='time');
+    expect(time.textContent).toBe('2026/10/22 07:38:06 (UTC+8)');
+    ui.fetch.mockResolvedValueOnce({ok:true,json:async()=>({timezone:'UTC-05:30',rooms:[{id:1,name:'general',kind:'public',message_count:1}],totals:{rooms:1,messages:1,files:0}})});
+    await ui.window.MrzhChatAdmin.refreshBackground();
+    expect(time.textContent).toBe('2026/10/21 18:08:06 (UTC-05:30)');
+    expect(detail.children).toEqual(cards);expect(detail.scrollTop).toBe(143);
+    ui.timezoneChanged('UTC+09:00');expect(time.textContent).toBe('2026/10/22 08:38:06 (UTC+9)');
+  });
+});
 
 describe("admin message deletion counters", () => {
   it("updates the selected room and overall total after deleting, preserving the other room and selection", async () => {

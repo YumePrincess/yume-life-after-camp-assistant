@@ -16,6 +16,7 @@ import { registerUserBlockRoutes } from './api/user-blocks.ts';
 import { forwardVerifiedRequest, getUserInboxStub, forwardRoomConnection, forwardInboxConnection, forwardDirectoryConnection } from './do-bridge.js';
 import { syncIdentityChatUsers } from './session.js';
 import { ApiError } from './errors.js';
+import { getChatTimezone } from '../../../src/chat-policy.ts';
 
 const app = new Hono();
 app.use('/api/admin/*', (c)=>c.json({error:'接口不存在'},404));
@@ -24,10 +25,10 @@ app.use('/api/*', (c,next)=>bodyLimit({maxSize:c.req.path==='/api/upload'
  ? Math.min(Number(c.env.MAX_FILE_SIZE || 20971520),LEGACY_UPLOAD_LIMIT)+1048576
  : /^\/api\/uploads\/[^/]+\/parts\/[^/]+$/.test(c.req.path) ? UPLOAD_CHUNK_SIZE : 65536,
  onError:(c)=>c.json({error:'请求体过大'},413)})(c,next));
-app.get('/api/site', (c) => c.json({ site: { siteName: '互动中心', siteIconUrl: '' } }));
-app.get('/api/auth/session', (c) => {
+app.get('/api/site', async (c) => c.json({ site: { siteName: '互动中心', siteIconUrl: '', timezone: await getChatTimezone(c.env) } }));
+app.get('/api/auth/session', async (c) => {
  const { token, ...session } = c.get('session');
- return c.json({ session });
+ return c.json({ session, timezone: await getChatTimezone(c.env) });
 });
 app.get('/api/users', async (c) => c.json({ users: await listActiveUsers(c.env.DB,c.get('session').userId) }));
 app.get('/api/users/:id/profile', async (c) => {
@@ -38,11 +39,11 @@ app.get('/api/bootstrap', async (c) => {
  const session = c.get('session');
  await syncIdentityChatUsers(c.env);
  await ensureGeneralChannelMembership(c.env.DB,session.userId);
- const [users,channels,dms] = await Promise.all([
-  listActiveUsers(c.env.DB,session.userId),listVisibleChannels(c.env.DB,session.userId),listUserDms(c.env.DB,session.userId)
+ const [users,channels,dms,timezone] = await Promise.all([
+  listActiveUsers(c.env.DB,session.userId),listVisibleChannels(c.env.DB,session.userId),listUserDms(c.env.DB,session.userId),getChatTimezone(c.env)
  ]);
  const [previewChannels,previewDms] = await Promise.all([attachConversationPreviews(c.env,channels,session.userId),attachConversationPreviews(c.env,dms,session.userId)]);
- return c.json({users,channels:previewChannels,dms:previewDms});
+ return c.json({users,channels:previewChannels,dms:previewDms,timezone});
 });
 registerMessageRoutes(app);
 registerContactRoutes(app);

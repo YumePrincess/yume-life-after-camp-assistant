@@ -57,17 +57,36 @@
       });
       const data = await response.json();
       if (!response.ok) throw new Error(t(data.error || "加载失败"));
+      if (typeof data.timezone === 'string') {
+        document.documentElement.dataset.timezone = data.timezone;
+        refreshTimestamps();
+      }
       return data;
     } finally {
       if (progress !== null) window.MrzhFeedback.end(progress);
     }
   }
   function timestamp(value) {
+    // D1 CURRENT_TIMESTAMP is UTC even though its SQL spelling has no Z suffix.
+    const instant = typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+      ? value.replace(' ', 'T') + 'Z' : value;
     return window.MrzhTimezone.timestamp(
-      value,
+      instant,
       document.documentElement.dataset.timezone || "UTC+08:00",
+      '', {seconds: true},
     );
   }
+  function timestampNode(value) {
+    const el = raw('time', 'muted', timestamp(value));
+    el.dataset.chatTimestamp = value;
+    return el;
+  }
+  function refreshTimestamps() {
+    for (const el of document.querySelectorAll('#chat-admin [data-chat-timestamp]'))
+      el.textContent = timestamp(el.dataset.chatTimestamp);
+  }
+  if (typeof MutationObserver === 'function') new MutationObserver(refreshTimestamps)
+    .observe(document.documentElement, {attributes:true, attributeFilter:['data-timezone']});
   function setMode(next) {
     mode = next;
     status();
@@ -159,7 +178,7 @@
       const header = node("header");
       header.append(
         raw("strong", "", message.sender.displayName),
-        raw("time", "muted", timestamp(message.createdAt)),
+        timestampNode(message.createdAt),
       );
       if (message.recalledAt) header.append(node('span','chat-admin-recalled','已撤回'));
       card.append(header, raw("p", "chat-admin-message-body", message.content));
@@ -287,13 +306,11 @@
     for (const file of payload.files) {
       const row = node("article", "chat-admin-file");
       const info = node("div", "chat-admin-file-info");
+      const meta = raw('small', 'muted', `${file.display_name || "—"} · ${Math.ceil(file.size / 1024)} KB · `);
+      meta.append(timestampNode(file.created_at));
       info.append(
         raw("strong", "", file.filename),
-        raw(
-          "small",
-          "muted",
-          `${file.display_name || "—"} · ${Math.ceil(file.size / 1024)} KB · ${timestamp(file.created_at)}`,
-        ),
+        meta,
       );
       const link = node("a", "button button-quiet", "下载");
       link.href = `/api/admin/chat/file?key=${encodeURIComponent(file.object_key)}`;
@@ -426,6 +443,7 @@
   document.addEventListener("mrzh:languagechange", () => {
     for (const el of document.querySelectorAll("#chat-admin [data-chat-i18n]"))
       el.textContent = t(el.dataset.chatI18n);
+    refreshTimestamps();
   });
   window.MrzhChatAdmin = {
     refreshBackground,

@@ -6,6 +6,7 @@ import { getRuntimeFileUrl, isDemoMode, requestRuntime } from './runtime.js';
 import { apiPrefix, isGatewayMode } from './gateway.ts';
 import { uploadChatFile } from './file-upload.js';
 import { uploadWithProgress } from './upload-transport.js';
+import { setSiteTimezone } from './site-timezone.js';
 
 function buildHeaders(extra = {}) {
   const headers = { ...extra };
@@ -57,6 +58,7 @@ async function request(path, options = {}) {
     throw error;
   }
 
+  setSiteTimezone(payload?.timezone || payload?.site?.timezone);
   return payload;
 }
 

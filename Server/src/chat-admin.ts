@@ -8,6 +8,7 @@ import { boundedBody, BodyTooLarge } from "./request-limits";
 import { adminGeneralAvatarUrl, handleGeneralAvatar, generalAvatarKey } from "./chat-general-avatar";
 import {
   getChatPolicy,
+  getChatTimezone,
   validateChatPolicy,
   CHAT_POLICY_DEFAULTS,
 } from "./chat-policy";
@@ -40,6 +41,7 @@ export async function handleChatAdmin(
     return json({
       policy: await getChatPolicy(env),
       defaults: CHAT_POLICY_DEFAULTS,
+      timezone: await getChatTimezone(env),
     });
   if (path === "/policy" && request.method === "PUT") {
     if (Number(request.headers.get("content-length")) > 8000)
@@ -78,7 +80,7 @@ export async function handleChatAdmin(
         (SELECT coalesce(sum(size),0) FROM uploaded_files) AS file_bytes`).first(),
       generalAvatarKey(env),
     ]);
-    return json({ rooms: rooms.results, totals, generalAvatar: { avatarUrl: adminGeneralAvatarUrl(general) } });
+    return json({ rooms: rooms.results, totals, generalAvatar: { avatarUrl: adminGeneralAvatarUrl(general) }, timezone: await getChatTimezone(env) });
   }
   const roomMatch = /^\/rooms\/(\d+)$/.exec(path);
   if (roomMatch && request.method === "DELETE") {
@@ -110,7 +112,7 @@ export async function handleChatAdmin(
 
     const before = Number(url.searchParams.get("before")) || null;
     const messages = await chatMessages.listMessages(env, id, before, 50, {includeRecalledContent:true});
-    return json({ room, messages });
+    return json({ room, messages, timezone: await getChatTimezone(env) });
   }
   const messageMatch = /^\/rooms\/(\d+)\/messages\/(\d+)$/.exec(path);
   if (messageMatch && request.method === "DELETE") {
@@ -164,7 +166,7 @@ export async function handleChatAdmin(
       FROM uploaded_files f LEFT JOIN users u ON u.id=f.owner_user_id WHERE f.rowid < ? ORDER BY f.rowid DESC LIMIT 50`)
         .bind(before)
         .all();
-    return json({ files: files.results });
+    return json({ files: files.results, timezone: await getChatTimezone(env) });
   }
   if (path === "/file" && request.method === "GET") {
     const key = url.searchParams.get("key") || "";

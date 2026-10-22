@@ -15,12 +15,14 @@ import './styles/ui.css';
 import '../../../public/camp-theme.css';
 import { initLiquidGlass } from './liquid-glass.js';
 import { initializeI18n, setLocale } from './i18n.js';
+import { initializeSiteTimezone } from './site-timezone.js';
 import { initializeTheme, applyTheme } from './theme.js';
 import { getLanguageChoice, getThemeChoice } from './preferences.js';
 import { initializeHostNavigation } from './host-navigation.js';
 import { installChunkLoadRecovery } from './chunk-load.ts';
 installChunkLoadRecovery(window);
 initializeTheme();
+initializeSiteTimezone();
 async function startChat() {
   try {
     await initializeI18n();

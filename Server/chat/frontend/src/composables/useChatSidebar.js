@@ -1,7 +1,7 @@
 import { conversationPreview } from "../conversation-preview.js";
 import { computed, ref } from "vue";
 import api from "../api.js";
-import { compareLocalized, formatDate, t } from "../i18n.js";
+import { compareLocalized, formatDate, parseDateValue, t } from "../i18n.js";
 
 function formatListTime(value) {
   if (!value) {
@@ -89,10 +89,10 @@ export function useChatSidebar({
       }
 
       const leftTime = left.lastMessageAt
-        ? new Date(left.lastMessageAt).getTime()
+        ? parseDateValue(left.lastMessageAt).getTime()
         : 0;
       const rightTime = right.lastMessageAt
-        ? new Date(right.lastMessageAt).getTime()
+        ? parseDateValue(right.lastMessageAt).getTime()
         : 0;
       if (leftTime !== rightTime) {
         return rightTime - leftTime;

@@ -5,6 +5,7 @@ vi.mock("../chat/frontend/src/ws.js", () => ({ connectInboxSocket: vi.fn() }));
 vi.mock("../chat/frontend/src/i18n.js", () => ({
   t: (key) => key,
   formatDate: () => "",
+  parseDateValue: value => new Date(value),
   compareLocalized: (a, b) => a.localeCompare(b),
 }));
 import { useChatSidebar } from "../chat/frontend/src/composables/useChatSidebar.js";
