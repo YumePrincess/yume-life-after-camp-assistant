@@ -1,9 +1,8 @@
-import { createWebPush } from '../web-push.js';
+import { createWebPush, notificationBrowserWindow } from '../web-push.js';
 import { computed, ref } from "vue";
 import { getNativeNotificationBridge } from "../capacitor-platform.ts";
 import { t } from "../i18n.js";
-import { notificationRoomName } from "../notification-room.ts";
-import { messageMarkdownToPlainText } from "../message-markdown.ts";
+import { notificationContent } from "../../../shared/notification-content.js";
 
 const STORAGE_KEY_PREFIX = "edgechat:browser-notifications";
 
@@ -30,9 +29,7 @@ function loadPreferences(storage, storageKey) {
 
 export function useBrowserNotifications(options = {}) {
 	const browserWindow =
-		options.browserWindow === undefined
-			? globalThis.window
-			: options.browserWindow;
+		notificationBrowserWindow(options.browserWindow === undefined ? globalThis.window : options.browserWindow);
 	const notificationApi =
 		options.notificationApi === undefined
 			? browserWindow?.Notification
@@ -64,11 +61,28 @@ export function useBrowserNotifications(options = {}) {
 	);
 	const mutedRoomKeys = ref(new Set(savedPreferences.mutedRooms));
 
-  function syncPush() {
-    if (!webPush) return Promise.resolve();
-    return webPush.sync(enabled.value, [...mutedRoomKeys.value]);
+  const pushState = ref('idle');
+  let refreshingPush = null;
+  async function syncPush() {
+    if (!webPush) return;
+    pushState.value = enabled.value ? 'registering' : 'idle';
+    try {
+      await webPush.sync(enabled.value, [...mutedRoomKeys.value]);
+      pushState.value = enabled.value ? 'ready' : 'idle';
+    } catch (cause) {
+      pushState.value = 'error';
+      const error = new Error(t(cause.message === 'push_unavailable' ? 'notifications.pushUnavailable' : 'notifications.pushFailed'));
+      error.cause = cause;
+      throw error;
+    }
   }
-  if (webPush) void syncPush().catch(error => console.warn('Web Push registration failed',error));
+  function refreshPushSubscription() {
+    if (refreshingPush) return refreshingPush;
+    const task = syncPush().finally(() => { if (refreshingPush === task) refreshingPush = null; });
+    refreshingPush = task;
+    return task;
+  }
+  if (webPush) void refreshPushSubscription().catch(error => {if (enabled.value) options.onError?.(error);});
 
 	function persistPreferences() {
 		storage?.setItem(
@@ -109,12 +123,15 @@ export function useBrowserNotifications(options = {}) {
 		if (!supported.value) return t("notifications.unavailable");
 		if (permission.value === "denied")
 			return t("notifications.permissionDenied");
+    if (enabled.value && pushState.value === 'registering') return t('notifications.pushRegistering');
+    if (enabled.value && pushState.value === 'error') return t('notifications.pushFailed');
 		return enabled.value ? t("notifications.on") : t("notifications.off");
 	});
 
 	const notificationActionLabel = computed(() => {
 		if (!supported.value) return t("notifications.unsupported");
 		if (permission.value === "denied") return t("notifications.blocked");
+    if (enabled.value && pushState.value === 'error') return t('common.retry');
 		return enabled.value
 			? t("notifications.disable")
 			: t("notifications.enable");
@@ -132,7 +149,7 @@ export function useBrowserNotifications(options = {}) {
 			return notificationActionLabel.value;
 		}
 
-		if (enabled.value) {
+		if (enabled.value && pushState.value !== 'error') {
 			enabled.value = false;
 			persistPreferences();
             await syncPush();
@@ -146,8 +163,7 @@ export function useBrowserNotifications(options = {}) {
 		}
 		enabled.value = permission.value === "granted";
 		persistPreferences();
-        try { await syncPush(); }
-        catch (error) { enabled.value = false; persistPreferences(); throw error; }
+        await syncPush();
 		return notificationActionLabel.value;
 	}
 
@@ -179,34 +195,13 @@ export function useBrowserNotifications(options = {}) {
 
 	function notifyRoom(event) {
 		const room = event?.room || event;
-		const needsAttention = Boolean(event?.mentionsMe || event?.replyToMe);
         if (webPush?.subscribed) return false;
 		void syncPermission();
 		if (!enabled.value || !shouldNotifyRoom(event)) {
 			return false;
 		}
 
-		const title = event?.replyToMe
-			? t("notifications.repliedTitle", { room: notificationRoomName(room, t) })
-			: event?.mentionsMe
-				? t("notifications.mentionedTitle", { room: notificationRoomName(room, t) })
-				: notificationRoomName(room, t);
-		const senderName =
-			event?.sender?.displayName || event?.sender?.username || "";
-			const attentionBody = [
-				senderName,
-				messageMarkdownToPlainText(event?.contentPreview || ""),
-			]
-			.filter(Boolean)
-			.join(": ");
-		const body = needsAttention
-			? attentionBody ||
-				(event?.replyToMe
-					? t("notifications.repliedBody")
-					: t("notifications.mentionedBody"))
-			: room.kind === "dm"
-				? t("notifications.directMessage")
-				: t("notifications.groupMessage");
+    const {title,body} = notificationContent(event,t);
 
 		if (nativeNotifications) {
 			void nativeNotifications.showNotification({
@@ -275,12 +270,13 @@ export function useBrowserNotifications(options = {}) {
 
 	return {
 		notificationsEnabled: enabled,
+    pushState,
 		notificationPermission: permission,
 		notificationStateLabel,
 		notificationActionLabel,
 		notificationToggleDisabled,
 		syncNotificationPermission: syncPermission,
-        refreshPushSubscription:syncPush,
+        refreshPushSubscription,
 		toggleNotifications,
 		isRoomMuted,
 		toggleRoomMuted,

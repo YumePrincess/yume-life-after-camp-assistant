@@ -37,14 +37,6 @@ function stopLinkGesture(event: Event) {
 	overflow-wrap: anywhere;
 }
 
-/* 为气泡右下角的绝对定位时间戳保留稳定空间。 */
-.message-markdown::after {
-	content: "";
-	display: inline-block;
-	width: 3.5em;
-	height: 0;
-}
-
 /* biome-ignore lint/correctness/noUnknownPseudoClass: Vue deep selector */
 .message-markdown :deep(:first-child) {
 	margin-top: 0;

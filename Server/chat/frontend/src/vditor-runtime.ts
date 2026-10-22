@@ -1,7 +1,7 @@
 import Vditor from "vditor";
 import "vditor/dist/index.css";
 
-type VditorLanguage = "en_US" | "zh_CN";
+type VditorLanguage = "en_US" | "zh_CN" | "zh_TW" | "ja_JP" | "fr_FR";
 
 export type EdgeChatVditorRuntime = {
 	Vditor: typeof Vditor;
@@ -83,8 +83,7 @@ async function loadLanguage(language: VditorLanguage) {
 }
 
 export async function loadVditorRuntime(locale: string): Promise<EdgeChatVditorRuntime> {
-	// Vditor 暂无繁中语言包，两种中文界面共用中文编辑器，避免繁中用户退回英文工具栏。
-	const language: VditorLanguage = locale.startsWith("zh-") ? "zh_CN" : "en_US";
+  const language: VditorLanguage = ({'zh-CN':'zh_CN','zh-TW':'zh_TW','ja-JP':'ja_JP','fr-FR':'fr_FR'} as const)[locale as 'zh-CN'|'zh-TW'|'ja-JP'|'fr-FR'] || 'en_US';
 	const [, i18n] = await Promise.all([loadSharedRuntime(), loadLanguage(language)]);
 	return { Vditor, cdn, i18n };
 }

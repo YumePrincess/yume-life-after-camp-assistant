@@ -16,7 +16,7 @@ describe('Web Push encryption and input validation',()=>{
   expect(validSubscription(sub)).toBe(true);
   const fetcher=vi.fn(async()=>new Response(null,{status:201}));
   const notification=pushNotification({room:{kind:'public',id:1,name:'general'},messageId:55},'ja-JP');
-  expect(notification.title).toBe('全体メンバーグループ');
+  expect(notification.title).toBe('全メンバーグループ');
   expect(await sendWebPush(sub,key,notification,'https://camp.example',fetcher)).toBe(201);
   const [url,init]=fetcher.mock.calls[0];
   expect(url).toBe(sub.endpoint);
@@ -24,6 +24,7 @@ describe('Web Push encryption and input validation',()=>{
   expect(headers.get('Content-Encoding')).toBe('aes128gcm');
   expect(headers.get('Authorization')).toMatch(/^vapid t=.+, k=.+/);
   expect(headers.get('TTL')).toBe('3600');
+  expect(headers.get('Urgency')).toBe('high');
   expect(Buffer.from(init.body).includes(Buffer.from(notification.title))).toBe(false);
  });
  it('rejects non-push hosts, redirects through credentials, insecure URLs and invalid encryption keys',async()=>{
@@ -72,5 +73,14 @@ describe('encrypted push delivery to the installed Service Worker',()=>{
   expect(showNotification).toHaveBeenCalledWith(kind==='dm'?'Alice':'全体成员群',expect.objectContaining({data:{roomKind:kind,roomId:3,messageId:8}}));
   handlers.notificationclick({notification:{close(){},data:payload.data},waitUntil:p=>pending=p});await pending;
   expect(openWindow).toHaveBeenCalledWith(`https://camp.example/?chatRoom=${kind}%3A3#chat`);
+ });
+});
+
+describe('push transport failure visibility',()=>{
+ it('reports provider rejection instead of claiming delivery, while expired subscriptions can be removed',async()=>{
+  const values=new Map(),key=await loadPushKey({get:async k=>values.get(k),put:async(k,v)=>values.set(k,v)}),sub=await subscription();
+  const notification=pushNotification({room:{kind:'dm',id:1,name:'Alice'},messageId:2},'en');
+  await expect(sendWebPush(sub,key,notification,'https://camp.example',async()=>new Response(null,{status:403}))).rejects.toMatchObject({status:403});
+  expect(await sendWebPush(sub,key,notification,'https://camp.example',async()=>new Response(null,{status:410}))).toBe(410);
  });
 });

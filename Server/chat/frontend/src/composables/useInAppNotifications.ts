@@ -1,8 +1,8 @@
 import { ref } from "vue";
 import { t } from "../i18n.js";
-import { messageMarkdownToPlainText } from "../message-markdown.ts";
+import { notificationContent } from "../../../shared/notification-content.js";
 
-import { notificationRoomName, type NotificationRoom } from "../notification-room";
+import { type NotificationRoom } from "../notification-room";
 export type { NotificationRoom } from "../notification-room";
 
 export type InAppNotificationEvent = {
@@ -13,6 +13,7 @@ export type InAppNotificationEvent = {
 		avatarUrl?: string;
 	};
 	contentPreview?: string;
+	attachment?: {name?:string;type?:string;kind?:string};
 	mentionsMe?: boolean;
 	replyToMe?: boolean;
 };
@@ -55,13 +56,7 @@ export function useInAppNotifications(options: {
 
 	function showNotification(event: InAppNotificationEvent) {
 		const id = nextId++;
-		const senderName = event.sender?.displayName || event.sender?.username || translate("camp.center");
-		const roomName = notificationRoomName(event.room, translate);
-			const preview =
-				messageMarkdownToPlainText(event.contentPreview || "") ||
-			(event.room.kind === "dm"
-				? translate("notifications.directMessage")
-				: translate("notifications.groupMessage"));
+		const {senderName,roomName,preview} = notificationContent(event,translate);
 		const notification: InAppNotification = {
 			id,
 			room: event.room,

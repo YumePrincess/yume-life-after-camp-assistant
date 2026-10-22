@@ -1,5 +1,9 @@
 
 export default {
+  "notifications.pushRegistering": "Connecting system notifications…",
+  "notifications.pushFailed": "System notifications are not connected. Retry.",
+  "notifications.pushUnavailable": "System push is unavailable here. On iOS, open the app from the Home Screen.",
+
 "messages.recall":"Recall message",
 "messages.recalled":"This message was recalled",
 "messages.recallExpired":"Messages can only be recalled within 120 seconds.",

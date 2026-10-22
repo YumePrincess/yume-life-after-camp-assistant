@@ -88,6 +88,8 @@ const { t } = useI18n();
 
 	.in-app-notification {
 		position: relative;
+		height: 104px;
+		box-sizing: border-box;
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 44px;
 		overflow: hidden;
@@ -104,6 +106,9 @@ const { t } = useI18n();
 
 	.in-app-notification__content {
 		display: grid;
+		height: 100%;
+		overflow: hidden;
+		box-sizing: border-box;
 		grid-template-columns: 42px minmax(0, 1fr);
 		gap: 10px;
 		align-items: start;
@@ -135,8 +140,11 @@ const { t } = useI18n();
 
 .in-app-notification__body {
 	display: grid;
+	grid-template-rows: 19px 17px 36px;
 	gap: 2px;
 	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
 }
 
 .in-app-notification__body strong {
@@ -172,6 +180,7 @@ const { t } = useI18n();
 	overflow-wrap: anywhere;
 	-webkit-box-orient: vertical;
 	-webkit-line-clamp: 2;
+	line-clamp: 2;
 }
 
 	.in-app-notification__dismiss {

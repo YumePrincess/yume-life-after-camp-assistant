@@ -9,7 +9,7 @@ self.addEventListener('push', event => {
       || !Number.isSafeInteger(notification.data.roomId) || notification.data.roomId < 1) return;
     // Safari requires every received push to display a system notification.
     await self.registration.showNotification(notification.title, {
-      body:notification.body, tag:notification.tag, data:notification.data,
+      body:notification.body, tag:notification.tag, data:notification.data, renotify:Boolean(notification.tag),
       icon:'/notification-icon.png', badge:'/notification-icon.png'
     });
   })());

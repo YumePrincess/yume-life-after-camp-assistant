@@ -1,4 +1,18 @@
 const fixedErrorTranslations = new Map([
+  ["请先登录有效的身份识别码", "Sign in with a valid identity code."],
+  ["身份识别码登录已失效，请重新登录", "Your identity session has expired. Sign in again."],
+  ["请求被拒绝", "The request was refused."],
+  ["只能撤回本人发送的消息", "You can only recall your own messages."],
+  ["撤回时限已过（120秒）", "The 120-second recall window has expired."],
+  ["附件不存在、无权使用或正在清理，请重新上传", "The attachment is unavailable. Upload it again."],
+  ["该消息已删除，不能使用相同的 clientMessageId 再次发送", "This message was deleted. Send a new message instead of retrying the deleted one."],
+  ["回复的消息不存在或已删除", "The message you are replying to is unavailable or deleted."],
+  ["无权管理置顶消息", "You do not have permission to manage pinned messages."],
+  ["该消息已不再置顶", "This message is no longer pinned."],
+  ["头像文件不存在或正在清理，请重新上传", "The avatar image is unavailable. Upload it again."],
+  ["该文件类型不允许上传", "This file type cannot be uploaded."],
+  ["不支持的消息操作", "This message action is not supported."],
+
   ['个人简介必须是文本', 'Bio must be text'],
   ['个人简介不能超过 200 个字符', 'Bio cannot exceed 200 characters'],
   ['用户 ID 无效', 'Invalid user ID'],

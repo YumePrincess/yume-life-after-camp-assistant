@@ -2,8 +2,8 @@
 import { canRecallMessage } from '../recall.js';
 import { useMessageRecall } from '../composables/useMessageRecall.js';
 import { embeddedChat, hostChatVisible } from '../host-navigation.js';
-import { pageIsForeground } from '../web-push.js';
-import { notificationRoomName } from '../notification-room.ts';
+import { pageIsForeground, notificationBrowserWindow } from '../web-push.js';
+import { notificationContent } from '../../../shared/notification-content.js';
 import { createDirectoryConnection, onDirectoryChange } from '../directory.js';
 import { ArrowLeft, Ban, Bell, BellOff, ContactRound, House, Menu, MessageCircle, Settings, UsersRound } from '@lucide/vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
@@ -123,7 +123,7 @@ async function toggleNotifications() {
   try { await changeNotifications(); }
   catch (cause) { await window.MrzhFeedback.notice(cause.message || t('common.requestFailed')); }
 }
-watch(locale,()=> { if (notificationsEnabled.value) void refreshPushSubscription().catch(()=>{}); });
+watch(locale,()=> { if (notificationsEnabled.value) void refreshPushSubscription().catch(cause=>{error.value=cause.message;}); });
 const activeRoomMuted = computed(() => isRoomMuted(activeRoom.value));
 const {
   inAppNotifications,
@@ -137,7 +137,7 @@ function notifyInAppRoom(event) {
   if (embeddedChat && !hostChatVisible.value) {
     if (!notificationsEnabled.value) return false;
     window.parent.postMessage({type:'camp-chat:notification', notification:{
-      title:notificationRoomName(event.room,t), body:t(event.room.kind === 'dm' ? 'notifications.directMessage' : 'notifications.groupMessage'),
+      ...notificationContent(event,t),
       data:{roomKind:event.room.kind,roomId:Number(event.room.id),messageId:event.messageId}
     }},window.location.origin);
     return true;
@@ -559,6 +559,11 @@ async function refreshDirectory() {
 }
 const directoryConnection = createDirectoryConnection();
 const stopDirectoryRefresh = onDirectoryChange(() => { void refreshDirectory(); });
+async function resumePush() {
+  if (notificationBrowserWindow()?.document.visibilityState === 'hidden') return;
+  await syncNotificationPermission();
+  if (notificationsEnabled.value) void refreshPushSubscription().catch(cause => {error.value=cause.message;});
+}
 function resumeMessages() {
   if (document.visibilityState === 'hidden' || !hostChatVisible.value) return;
   connectSocket();
@@ -571,7 +576,9 @@ onMounted(() => {
   window.addEventListener('pageshow',resumeMessages);
   startViewportSync();
   window.addEventListener('message',hostRoomMessage);
-  window.addEventListener('focus', syncNotificationPermission);
+  notificationBrowserWindow()?.addEventListener('focus', resumePush);
+  window.addEventListener('online', resumePush);
+  notificationBrowserWindow()?.document.addEventListener('visibilitychange', resumePush);
   window.addEventListener(NATIVE_ROOM_OPEN_EVENT, openNativeRoom);
   void bootstrap().then(() => {
     nativeRoomNavigationReady = true;
@@ -593,7 +600,9 @@ onBeforeUnmount(() => {
   closeUserProfile();
   cancelMessageLongPress();
   nativeRoomNavigationReady = false;
-  window.removeEventListener('focus', syncNotificationPermission);
+  notificationBrowserWindow()?.removeEventListener('focus', resumePush);
+  window.removeEventListener('online', resumePush);
+  notificationBrowserWindow()?.document.removeEventListener('visibilitychange', resumePush);
   window.removeEventListener(NATIVE_ROOM_OPEN_EVENT, openNativeRoom);
   clearInAppNotifications();
   stopDirectoryRefresh();
@@ -1574,10 +1583,6 @@ watch(
   -webkit-touch-callout: none;
 }
 
-.message-bubble--with-attachment {
-  padding-bottom: 20px;
-}
-
 .message-row--own .message-bubble {
   background: var(--chat-outgoing);
   border-radius: 20px 20px 6px 20px;
@@ -1596,9 +1601,9 @@ watch(
 }
 
 .message-time {
-  position: absolute;
-  right: 8px;
-  bottom: 6px;
+  display: block;
+  margin-top: 6px;
+  text-align: right;
   font-size: 11px;
   line-height: 1;
   color: var(--chat-muted);
@@ -1894,5 +1899,5 @@ watch(
 </style>
 
 <style scoped>
-.message-recalled-hint {color:var(--chat-muted);font-size:13px;font-style:italic;margin:0;}
+.message-recalled-hint {color:var(--chat-muted);font-size:13px;line-height:1.5;font-style:italic;margin:0;}
 </style>

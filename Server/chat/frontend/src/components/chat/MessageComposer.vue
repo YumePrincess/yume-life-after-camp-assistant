@@ -340,6 +340,14 @@ watch(
 	},
 );
 
+watch(getLocale, async () => {
+  const reopen = richEditorOpen.value || richEditorLoading.value;
+  if (richEditorOpen.value) collapseRichEditor({restoreFocus:false});
+  else cancelRichEditorLoad();
+  await nextTick();
+  if (reopen && componentAlive) void openRichEditor();
+});
+
 onBeforeUnmount(() => {
 	componentAlive = false;
 	richEditorLoadGeneration += 1;

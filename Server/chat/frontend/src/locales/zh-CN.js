@@ -1,5 +1,9 @@
 
 export default {
+  "notifications.pushRegistering": "正在连接系统通知…",
+  "notifications.pushFailed": "系统通知尚未连接，请重试。",
+  "notifications.pushUnavailable": "当前环境不支持系统推送。iOS 请从主屏幕打开此网页 App。",
+
 "messages.recall":"撤回消息",
 "messages.recalled":"该消息已撤回",
 "messages.recallExpired":"只能在发送后120秒内撤回消息。",

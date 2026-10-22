@@ -1,4 +1,8 @@
 export default {
+  "notifications.pushRegistering": "正在連接系統通知…",
+  "notifications.pushFailed": "系統通知尚未連接，請重試。",
+  "notifications.pushUnavailable": "目前環境不支援系統推播。iOS 請從主畫面開啟此網頁 App。",
+
 "messages.recall":"收回訊息",
 "messages.recalled":"此訊息已收回",
 "messages.recallExpired":"只能在傳送後120秒內收回訊息。",

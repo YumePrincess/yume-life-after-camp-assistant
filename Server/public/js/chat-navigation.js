@@ -39,9 +39,10 @@
       if (seenNotifications.size > 100) seenNotifications.delete(seenNotifications.values().next().value);
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'chat-global-notification';
-      const title = document.createElement('strong'); title.textContent = String(notification.title || translate('互动中心'));
-      const body = document.createElement('span'); body.textContent = String(notification.body || '');
-      button.append(title,body); button.addEventListener('click',()=>{button.remove();pendingRoom={kind:roomKind,id:roomId};open();});
+      const title = document.createElement('strong'); title.textContent = String(notification.senderName || notification.title || translate('互动中心'));
+      const room = document.createElement('span'); room.className='chat-global-notification-room'; room.textContent=String(notification.roomName || notification.title || '');
+      const body = document.createElement('span'); body.className='chat-global-notification-preview'; body.textContent = String(notification.preview || notification.body || '');
+      button.append(title,room,body); button.addEventListener('click',()=>{button.remove();pendingRoom={kind:roomKind,id:roomId};open();});
       document.querySelectorAll('.chat-global-notification').forEach(item=>item.remove());
       document.body.append(button); setTimeout(()=>button.remove(),6000);
     }

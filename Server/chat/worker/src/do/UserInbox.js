@@ -98,8 +98,8 @@ export class UserInbox {
       }
 
       const payload = await request.json();
-      await this.broadcast(JSON.stringify(payload));
       if (payload.type === "room_message" && payload.room) this.state.waitUntil(this.push(payload));
+      await this.broadcast(JSON.stringify(payload));
       return Response.json({ ok: true });
     }
 
@@ -116,15 +116,12 @@ export class UserInbox {
       const auth = await validateSession(this.env, device.token);
       if (!auth.ok || auth.session.userId !== device.userId) { await this.removePushDevice(id, device); return; }
       if (device.mutedRooms.includes(`${event.room.kind}:${Number(event.room.id)}`) && !event.mentionsMe && !event.replyToMe) return;
-      const foreground = [...this.connections].some(socket => {
-        const meta = socket.deserializeAttachment();
-        return meta?.deviceId === id && meta.foreground && Date.now() - meta.presenceAt < 45000;
-      });
-      if (foreground) return;
+      // A page visibility lease can remain stale when iOS suspends a Web Clip.
+      // System delivery must remain independent of live pages and WebSockets.
       try {
         const status = await sendWebPush(device.subscription, await this.pushKey(), pushNotification(event, device.language), device.subject);
         if (status === 404 || status === 410) await this.removePushDevice(id, device);
-      } catch { console.warn('Web Push delivery failed'); }
+      } catch (error) { console.warn(JSON.stringify({event:'web_push_delivery_failed',status:error.status || null,service:new URL(device.subscription.endpoint).hostname})); }
     }));
     if (deliveries.some(result => result.status === 'rejected')) console.warn('Web Push session validation failed');
   }

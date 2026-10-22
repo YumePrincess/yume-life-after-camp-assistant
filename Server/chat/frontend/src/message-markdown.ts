@@ -147,21 +147,4 @@ export function renderMessageMarkdown(
 	});
 }
 
-export function messageMarkdownToPlainText(content: string) {
-	const parts: string[] = [];
-	for (const token of markdown.parse(String(content || ""), {})) {
-		if (token.type === "fence" || token.type === "code_block") {
-			parts.push(token.content);
-			continue;
-		}
-		for (const child of token.children || []) {
-			if (child.type === "text" || child.type === "code_inline" || child.type === "image") {
-				parts.push(child.content);
-			} else if (child.type === "softbreak" || child.type === "hardbreak") {
-				parts.push("\n");
-			}
-		}
-		if (token.type === "inline") parts.push("\n");
-	}
-	return parts.join("").replace(/\s+/gu, " ").trim();
-}
+export { messagePreviewText as messageMarkdownToPlainText } from '../../shared/notification-content.js';
