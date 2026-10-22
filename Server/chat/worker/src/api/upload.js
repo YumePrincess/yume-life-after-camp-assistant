@@ -1,3 +1,4 @@
+import { validateUpload } from '../upload-validation.js';
 import { extractSessionToken } from '../session-cookie.ts';
 import {
   canAccessFile,
@@ -5,23 +6,16 @@ import {
   getUploadedFileMetadata,
   recordUploadedFile
 } from '../data/uploaded-files.js';
-import { decryptAttachment, encryptAttachment } from '../encryption.js';
+import { encryptAttachment } from '../encryption.js';
 import { normalizeContentType, sanitizeFilename } from '../attachment-metadata.js';
 import { validateSession } from '../session.js';
 import { errorResponse, requestBodyTooLarge } from '../utils.js';
-import { getStorageObject, storageObjectKey } from '../storage-path.js';
+import { storageObjectKey } from '../storage-path.js';
+import { registerMultipartUploadRoutes, LEGACY_UPLOAD_LIMIT } from './upload-multipart.js';
+import { readAttachment } from '../attachment-reader.js';
 
 const FILE_RESPONSE_CACHE_CONTROL = 'private, no-store';
 const UPLOAD_BODY_OVERHEAD_BYTES = 1024 * 1024;
-const BLOCKED_MIME_TYPES = new Set([
-  'text/html',
-  'application/xhtml+xml',
-  'image/svg+xml',
-  'text/javascript',
-  'application/javascript',
-  'text/xml',
-  'application/xml'
-]);
 
 function isInlineContentType(contentType) {
   if (!contentType) {
@@ -52,35 +46,16 @@ function contentDispositionValue(kind, filename) {
   return `${kind}; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(safeUtf8)}`;
 }
 
-function validateUpload(env, file) {
-  const maxFileSize = Number(env.MAX_FILE_SIZE || 20971520);
-  if (file.size > maxFileSize) {
-    throw new Error(`文件大小不能超过 ${Math.round(maxFileSize / 1024 / 1024)}MB`);
-  }
-
-  const contentType = normalizeContentType(file.type);
-  if (BLOCKED_MIME_TYPES.has(contentType)) {
-    throw new Error('该文件类型不允许上传');
-  }
-
-  const allowed = String(env.ALLOWED_FILE_TYPES || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (allowed.length && !allowed.some((prefix) => contentType.startsWith(prefix))) {
-    throw new Error('该文件类型不允许上传');
-  }
-}
 
 export function registerUploadRoutes(app) {
+  registerMultipartUploadRoutes(app);
   app.post('/api/upload', async (c) => {
     if (!c.env.FILES) {
       return errorResponse('当前部署没有绑定 R2，无法上传附件', 503);
     }
 
     const session = c.get('session');
-    const maxFileSize = Number(c.env.MAX_FILE_SIZE || 20971520);
+    const maxFileSize = Math.min(LEGACY_UPLOAD_LIMIT, Number(c.env.MAX_FILE_SIZE || 20971520));
     if (requestBodyTooLarge(c.req.raw, maxFileSize + UPLOAD_BODY_OVERHEAD_BYTES)) {
       return errorResponse(`文件大小不能超过 ${Math.round(maxFileSize / 1024 / 1024)}MB`, 413);
     }
@@ -114,24 +89,12 @@ export function registerUploadRoutes(app) {
       return errorResponse('当前部署没有绑定 R2，无法读取附件', 503);
     }
 
-    const [object, fileMetadata] = await Promise.all([
-      getStorageObject(c.env, key),
-      getUploadedFileMetadata(c.env.DB, key)
-    ]);
-    if (!object) {
+    const fileMetadata = await getUploadedFileMetadata(c.env.DB, key);
+    const result = await readAttachment(c.env, key, c.req.raw.headers.get('range'));
+    if (!result) {
       return new Response('Not Found', { status: 404 });
     }
-
-    let decrypted;
-    try {
-      decrypted = await decryptAttachment(c.env, await object.arrayBuffer(), key);
-    } catch (error) {
-      console.error('Failed to decrypt attachment', { key, error });
-      throw error;
-    }
-
-    const headers = new Headers();
-    object.writeHttpMetadata(headers);
+    const { object, headers } = result;
     headers.set('cache-control', FILE_RESPONSE_CACHE_CONTROL);
     if (object.uploaded) {
       headers.set('last-modified', object.uploaded.toUTCString());
@@ -156,12 +119,13 @@ export function registerUploadRoutes(app) {
       fileMetadata?.filename || object.customMetadata?.filename || key.split('/').pop() || 'file';
     headers.set('content-disposition', contentDispositionValue(dispositionKind, filename));
 
-    return new Response(decrypted.bytes, { headers });
+    return new Response(result.body, { status: result.status, headers });
   });
 }
 
 export async function saveUploadedFile(env, session, file, { clientUploadId = null } = {}) {
   validateUpload(env, file);
+  if (file.size > LEGACY_UPLOAD_LIMIT) throw new Error('请使用分块上传大文件');
   if (clientUploadId) {
     const existing = await getUploadedFileByClientId(env.DB, session.userId, clientUploadId);
     if (existing) return { file: existing, created: false };

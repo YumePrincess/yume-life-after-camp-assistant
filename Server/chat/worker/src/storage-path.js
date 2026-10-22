@@ -1,9 +1,10 @@
 const DEFAULT_PREFIX = 'lifeafter';
 
 export function storagePrefix(env) {
-  return String((env.STORAGE_PREFIX ?? DEFAULT_PREFIX) + "/chat")
+  const prefix = String(env.STORAGE_PREFIX ?? DEFAULT_PREFIX)
     .trim()
     .replace(/^\/+|\/+$/g, '');
+  return prefix ? `${prefix}/chat` : 'chat';
 }
 
 export function storageObjectKey(env, logicalKey) {
@@ -29,7 +30,10 @@ export async function getStorageObject(env, logicalKey) {
 
 export async function deleteStorageObject(env, logicalKey) {
   for (const key of storageObjectCandidates(env, logicalKey)) {
-    if (!await env.FILES.get(key)) continue;
+    const object = env.FILES.head ? await env.FILES.head(key) : await env.FILES.get(key);
+    if (!object) continue;
+    // Legacy/test bindings may not offer head(); release an unread body first.
+    if (!env.FILES.head && object.body) await object.body.cancel();
     await env.FILES.delete(key);
     return key;
   }

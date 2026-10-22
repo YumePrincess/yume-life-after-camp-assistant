@@ -468,10 +468,12 @@ export function useChatRoom({
 			return;
 		}
 
+		const uploadRoom = roomKey();
 		try {
 			const payload = await roomApi.uploadFile(file);
-			pendingAttachment.value = payload.file;
+			if (roomKey() === uploadRoom) pendingAttachment.value = payload.file;
 		} catch (currentError) {
+			if (currentError.name === 'AbortError') return;
 			error.value = currentError.message;
 		}
 	}

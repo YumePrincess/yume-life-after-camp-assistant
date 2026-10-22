@@ -415,3 +415,28 @@ export async function decryptAttachment(source, value, objectKey) {
     throw new Error('Encrypted attachment authentication failed');
   }
 }
+
+// Each frame has its own random nonce and authentication tag. Binding the index,
+// length and object key prevents reordering, truncation and cross-file substitution.
+export const ATTACHMENT_CHUNK_OVERHEAD = NONCE_BYTES + 16;
+function chunkAad(objectKey, index, size, chunkSize) {
+  return encoder.encode(`edgechat:attachment:v2:${objectKey}:${index}:${size}:${chunkSize}`);
+}
+export async function encryptAttachmentChunk(source, value, objectKey, manifest, index) {
+  const nonce = crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({
+    name: 'AES-GCM', iv: nonce,
+    additionalData: chunkAad(objectKey, index, manifest.size, manifest.chunk_size)
+  }, await getCryptoKey(loadEncryptionKeyring(source), manifest.key_id), toBytes(value)));
+  const frame = new Uint8Array(nonce.length + cipher.length);
+  frame.set(nonce);
+  frame.set(cipher, nonce.length);
+  return frame;
+}
+export async function decryptAttachmentChunk(source, value, objectKey, manifest, index) {
+  const frame = toBytes(value);
+  return new Uint8Array(await crypto.subtle.decrypt({
+    name: 'AES-GCM', iv: frame.subarray(0, NONCE_BYTES),
+    additionalData: chunkAad(objectKey, index, manifest.size, manifest.chunk_size)
+  }, await getCryptoKey(loadEncryptionKeyring(source), manifest.key_id), frame.subarray(NONCE_BYTES)));
+}

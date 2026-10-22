@@ -317,7 +317,7 @@
       MESSAGE_RETENTION_DAYS: "消息保留天数",
       SOFT_DELETE_RETENTION_DAYS: "删除后保留天数",
       ORPHAN_UPLOAD_RETENTION_DAYS: "未发送文件保留天数",
-      MAX_FILE_SIZE: "单文件大小上限（字节）",
+      MAX_FILE_SIZE: "单文件大小上限（MB）",
       ALLOWED_FILE_TYPES: "允许的文件类型",
     };
     for (const [key, label] of Object.entries(fields)) {
@@ -325,42 +325,38 @@
         "label",
         `field${key === "ALLOWED_FILE_TYPES" ? " chat-admin-field-wide" : ""}`,
       );
-      field.append(node("span", "", label));
+      const title = node("span");
+      title.append(node("span", "", label));
+      if (key === "MAX_FILE_SIZE") title.append(window.MrzhEditingHelp.createButton("chatUpload"));
+      field.append(title);
       const input = node(key === "ALLOWED_FILE_TYPES" ? "textarea" : "input");
       input.name = key;
-      input.value = data.policy[key];
+      input.value = key === "MAX_FILE_SIZE" ? data.policy[key] / 1048576 : data.policy[key];
       if (key === "ALLOWED_FILE_TYPES") {
         input.rows = 2;
         input.spellcheck = false;
       } else {
         input.type = "number";
-        input.min = key === "MAX_FILE_SIZE" ? 1024 : 1;
+        input.min = key === "MAX_FILE_SIZE" ? 1 / 1024 : 1;
         input.max =
           key === "MAX_FILE_SIZE"
-            ? 26214400
+            ? 51200
             : key === "ORPHAN_UPLOAD_RETENTION_DAYS"
               ? 30
               : 3650;
-        input.step = "1";
+        input.step = key === "MAX_FILE_SIZE" ? "any" : "1";
         input.required = true;
       }
       field.append(input);
       form.append(field);
     }
-    form.append(
-      node(
-        "p",
-        "chat-admin-policy-hint muted",
-        "保存后立即生效；保留天数的清理任务每10分钟执行。单文件最大支持25MB。",
-      ),
-    );
     const actions = node("div", "chat-admin-policy-actions");
     const save = node("button", "button button-primary", "保存聊天参数");
     save.type = "submit";
     const reset = button("恢复默认值", () => {
       for (const input of form.elements)
         if (input.name in data.defaults)
-          input.value = data.defaults[input.name];
+          input.value = input.name === "MAX_FILE_SIZE" ? data.defaults[input.name] / 1048576 : data.defaults[input.name];
       status();
     });
     actions.append(save, reset);
@@ -370,10 +366,12 @@
       save.disabled = true;
       reset.disabled = true;
       try {
+        const payload = Object.fromEntries(new FormData(form));
+        payload.MAX_FILE_SIZE = Math.round(Number(payload.MAX_FILE_SIZE) * 1048576);
         await api("/policy", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(Object.fromEntries(new FormData(form))),
+          body: JSON.stringify(payload),
         });
         status("聊天参数已保存");
       } catch (error) {

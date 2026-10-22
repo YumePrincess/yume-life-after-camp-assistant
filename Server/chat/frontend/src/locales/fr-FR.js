@@ -1,6 +1,9 @@
 import english from './en-US.js';
 
 const messages = {
+  "attachments.openVideo": "Ouvrir la vidéo",
+  "attachments.openVideoNamed": "Ouvrir la vidéo : {name}",
+  "attachments.videoPreviewNamed": "Aperçu de la vidéo : {name}",
   "notifications.pushRegistering": "Connexion aux notifications système…",
   "notifications.pushFailed": "Les notifications système ne sont pas connectées. Réessayez.",
   "notifications.pushUnavailable": "Les notifications système sont indisponibles ici. Sur iOS, ouvrez cette app depuis l’écran d’accueil.",

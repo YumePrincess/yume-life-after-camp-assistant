@@ -1,4 +1,13 @@
 const fixedErrorTranslations = new Map([
+  ["上传任务不存在","Upload not found"],
+  ["上传任务已过期，请重新上传","Upload expired. Please upload again"],
+  ["文件大小无效","Invalid file size"],
+  ["同时上传的文件过多，请稍后重试","Too many uploads. Please try again shortly"],
+  ["上传任务已结束","Upload has already ended"],
+  ["上传分块无效","Invalid upload part"],
+  ["上传分块大小不匹配","Upload part size does not match"],
+  ["文件尚未上传完成","File upload is not complete"],
+  ["请使用分块上传大文件","Use multipart upload for large files"],
   ["请先登录有效的身份识别码", "Sign in with a valid identity code."],
   ["身份识别码登录已失效，请重新登录", "Your identity session has expired. Sign in again."],
   ["请求被拒绝", "The request was refused."],

@@ -18,9 +18,9 @@ import { json, problem } from "./response";
 import * as chatMessages from "../chat/worker/src/data/messages.js";
 import { hardDeleteChannel } from "../chat/worker/src/data/channel-deletion";
 // @ts-expect-error Vendored JavaScript module.
-import { getStorageObject } from "../chat/worker/src/storage-path.js";
+import { readAttachment } from "../chat/worker/src/attachment-reader.js";
 // @ts-expect-error Vendored JavaScript module.
-import { decryptAttachment } from "../chat/worker/src/encryption.js";
+import { cleanupR2Keys } from "../chat/worker/src/gc.js";
 
 export async function handleChatAdmin(
   request: Request,
@@ -116,12 +116,14 @@ export async function handleChatAdmin(
   if (messageMatch && request.method === "DELETE") {
     const roomId = Number(messageMatch[1]),
       messageId = Number(messageMatch[2]);
-
+    const attachment = await env.DB.prepare('SELECT attachment_key FROM messages WHERE id=? AND channel_id=?')
+      .bind(messageId,roomId).first<{attachment_key: string | null}>();
     const deleted = await chatMessages.softDeleteMessage(env.DB, {
       channelId: roomId,
       messageId,
     });
     if (!deleted) return problem("消息不存在", 404);
+    if (attachment?.attachment_key) await cleanupR2Keys(env, [attachment.attachment_key]);
     const room = await env.DB.prepare("SELECT kind FROM channels WHERE id=?")
       .bind(roomId)
       .first<{ kind: string }>();
@@ -173,17 +175,12 @@ export async function handleChatAdmin(
       .first<{ filename: string; content_type: string }>();
     if (!file || !env.FILES) return problem("文件不存在", 404);
 
-    const object = await getStorageObject(env, key);
-    if (!object) return problem("文件不存在", 404);
-    const bytes = await decryptAttachment(env, await object.arrayBuffer(), key);
-    return new Response(bytes, {
-      headers: {
-        "Content-Type": file.content_type,
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
-        "Cache-Control": "private, no-store",
-        "X-Content-Type-Options": "nosniff",
-      },
-    });
+    const result = await readAttachment(env, key, request.headers.get("range"));
+    if (!result) return problem("文件不存在", 404);
+    result.headers.set("Content-Type", file.content_type);
+    result.headers.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`);
+    result.headers.set("X-Content-Type-Options", "nosniff");
+    return new Response(result.body, { status: result.status, headers: result.headers });
   }
   return problem("Not found", 404);
 }

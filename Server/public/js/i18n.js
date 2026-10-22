@@ -5421,6 +5421,30 @@
     P.applyTheme(P.getThemeChoice());
     translateDocument();
   });
+  Object.assign(translations["en"], {
+  "单文件大小上限（MB）": "Maximum file size (MB)",
+  "单文件上限支持 100MB 及以上，最高 51200MB（50GB）；1MB 按 1048576 字节计算。": "Supports 100 MB and larger, up to 51200 MB (50 GB). 1 MB = 1048576 bytes.",
+  "大文件自动分块上传到已有 R2 存储桶，无需额外密钥。每块使用 AES-256-GCM 加密，读取时按块解密；这属于服务端加密。": "Large files are automatically uploaded in parts to the existing R2 bucket without extra credentials. Each part uses AES-256-GCM encryption and is decrypted on read. This is server-side encryption.",
+  "保存后立即生效；保留天数的清理任务每10分钟执行。": "Settings apply immediately; retention cleanup runs every 10 minutes."
+});
+  Object.assign(translations["fr"], {
+  "单文件大小上限（MB）": "Taille maximale par fichier (Mo)",
+  "单文件上限支持 100MB 及以上，最高 51200MB（50GB）；1MB 按 1048576 字节计算。": "Accepte 100 Mo et plus, jusqu’à 51200 Mo (50 Go). 1 Mo = 1048576 octets.",
+  "大文件自动分块上传到已有 R2 存储桶，无需额外密钥。每块使用 AES-256-GCM 加密，读取时按块解密；这属于服务端加密。": "Les fichiers volumineux sont envoyés par blocs dans le bucket R2 existant sans identifiants supplémentaires. Chaque bloc est chiffré en AES-256-GCM et déchiffré à la lecture. Il s’agit d’un chiffrement côté serveur.",
+  "保存后立即生效；保留天数的清理任务每10分钟执行。": "Les paramètres s’appliquent immédiatement. Le nettoyage est exécuté toutes les 10 minutes."
+});
+  Object.assign(translations["ja"], {
+  "单文件大小上限（MB）": "ファイルサイズ上限（MB）",
+  "单文件上限支持 100MB 及以上，最高 51200MB（50GB）；1MB 按 1048576 字节计算。": "100MB以上に設定でき、上限は51200MB（50GB）です。1MBは1048576バイトです。",
+  "大文件自动分块上传到已有 R2 存储桶，无需额外密钥。每块使用 AES-256-GCM 加密，读取时按块解密；这属于服务端加密。": "大きなファイルは既存のR2バケットに自動で分割アップロードされ、追加のキーは不要です。各ブロックをAES-256-GCMで暗号化し、読み込み時に復号します。サーバー側の暗号化です。",
+  "保存后立即生效；保留天数的清理任务每10分钟执行。": "保存後すぐに反映します。保存期限の整理は10分ごとに実行します。"
+});
+  Object.assign(translations["zh-tw"], {
+  "单文件大小上限（MB）": "單檔大小上限（MB）",
+  "单文件上限支持 100MB 及以上，最高 51200MB（50GB）；1MB 按 1048576 字节计算。": "單檔上限支援100MB及以上，最高51200MB（50GB）；1MB按1048576位元組計算。",
+  "大文件自动分块上传到已有 R2 存储桶，无需额外密钥。每块使用 AES-256-GCM 加密，读取时按块解密；这属于服务端加密。": "大檔案自動分塊上傳至現有R2儲存桶，無需額外金鑰。每塊使用AES-256-GCM加密，讀取時按塊解密；這屬於伺服器端加密。",
+  "保存后立即生效；保留天数的清理任务每10分钟执行。": "儲存後立即生效；保留天數的清理工作每10分鐘執行。"
+});
   window.MrzhI18n = Object.freeze({
     t: translate,
     format,

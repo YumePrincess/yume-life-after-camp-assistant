@@ -11,6 +11,7 @@ import { registerContactRoutes } from './api/contacts.ts';
 import { registerDmRoutes } from './api/dm.js';
 import { registerMessageRoutes } from './api/messages.js';
 import { registerUploadRoutes } from './api/upload.js';
+import { LEGACY_UPLOAD_LIMIT, UPLOAD_CHUNK_SIZE } from './api/upload-multipart.js';
 import { registerUserBlockRoutes } from './api/user-blocks.ts';
 import { forwardVerifiedRequest, getUserInboxStub, forwardRoomConnection, forwardInboxConnection, forwardDirectoryConnection } from './do-bridge.js';
 import { syncIdentityChatUsers } from './session.js';
@@ -19,7 +20,10 @@ import { ApiError } from './errors.js';
 const app = new Hono();
 app.use('/api/admin/*', (c)=>c.json({error:'接口不存在'},404));
 app.use('/api/*', authMiddleware);
-app.use('/api/*', (c,next)=>bodyLimit({maxSize:c.req.path==='/api/upload'?Number(c.env.MAX_FILE_SIZE)+1048576:65536,onError:(c)=>c.json({error:'请求体过大'},413)})(c,next));
+app.use('/api/*', (c,next)=>bodyLimit({maxSize:c.req.path==='/api/upload'
+ ? Math.min(Number(c.env.MAX_FILE_SIZE || 20971520),LEGACY_UPLOAD_LIMIT)+1048576
+ : /^\/api\/uploads\/[^/]+\/parts\/[^/]+$/.test(c.req.path) ? UPLOAD_CHUNK_SIZE : 65536,
+ onError:(c)=>c.json({error:'请求体过大'},413)})(c,next));
 app.get('/api/site', (c) => c.json({ site: { siteName: '互动中心', siteIconUrl: '' } }));
 app.get('/api/auth/session', (c) => {
  const { token, ...session } = c.get('session');

@@ -1,4 +1,7 @@
 export default {
+  "attachments.openVideo": "開啟影片",
+  "attachments.openVideoNamed": "開啟影片：{name}",
+  "attachments.videoPreviewNamed": "預覽影片：{name}",
   "notifications.pushRegistering": "正在連接系統通知…",
   "notifications.pushFailed": "系統通知尚未連接，請重試。",
   "notifications.pushUnavailable": "目前環境不支援系統推播。iOS 請從主畫面開啟此網頁 App。",

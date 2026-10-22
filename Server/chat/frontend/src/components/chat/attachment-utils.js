@@ -41,3 +41,10 @@ export function isPreviewableImageAttachment(attachment) {
   const extension = extensionFrom(attachment.name) || extensionFrom(attachment.url);
   return PREVIEWABLE_IMAGE_EXTENSIONS.has(extension);
 }
+
+export function isPreviewableVideoAttachment(attachment) {
+  if (!attachment) return false;
+  const mime = cleanMimeType(attachment.type);
+  return mime.startsWith('video/') || ((!mime || mime === 'application/octet-stream') &&
+    /^(mp4|webm|mov|m4v|ogv)$/.test(extensionFrom(attachment.name) || extensionFrom(attachment.url)));
+}

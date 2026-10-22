@@ -4,11 +4,12 @@ import { getMessageById } from './data/messages.js';
 import { listRoomMemberIds } from './data/unread.js';
 import { createInternalHeaders } from './verified-identity.js';
 import { getChannelRoomStub, notifyUserInbox } from './do-bridge.js';
+import { cleanupR2Keys } from './gc.js';
 
 export async function recallRoomMessage(env, principal, room, messageId) {
   const access = await authorizeRoom(env.DB, principal, room.kind, Number(room.id));
   if (!access.ok) throw new ApiError('无权访问该会话',403);
-  const target = await env.DB.prepare('SELECT sender_id,sender_kind,recalled_at FROM messages WHERE id=? AND channel_id=? AND deleted_at IS NULL')
+  const target = await env.DB.prepare('SELECT sender_id,sender_kind,recalled_at,attachment_key FROM messages WHERE id=? AND channel_id=? AND deleted_at IS NULL')
     .bind(Number(messageId),Number(room.id)).first();
   if (!target) throw new ApiError('消息不存在或已被删除',404);
   if (target.sender_kind !== 'local' || Number(target.sender_id) !== Number(principal.userId)) throw new ApiError('只能撤回本人发送的消息',403);
@@ -22,6 +23,7 @@ export async function recallRoomMessage(env, principal, room, messageId) {
       if (!current?.recalled_at) throw new ApiError('撤回时限已过（120秒）',409);
     }
   }
+  if (target.attachment_key) await cleanupR2Keys(env, [target.attachment_key]);
   const message = await getMessageById(env,Number(messageId));
   if (!message) throw new ApiError('消息不存在或已被删除',404);
   const packet = {protocolVersion:1,type:'message_recalled',room:{kind:room.kind,id:Number(room.id)},message};

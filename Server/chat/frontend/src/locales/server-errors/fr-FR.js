@@ -1,4 +1,13 @@
 const messages = new Map([
+  ["上传任务不存在","Envoi introuvable"],
+  ["上传任务已过期，请重新上传","Envoi expiré. Veuillez réessayer"],
+  ["文件大小无效","Taille du fichier invalide"],
+  ["同时上传的文件过多，请稍后重试","Trop d’envois simultanés. Réessayez dans un instant"],
+  ["上传任务已结束","Cet envoi est déjà terminé"],
+  ["上传分块无效","Bloc d’envoi invalide"],
+  ["上传分块大小不匹配","La taille du bloc ne correspond pas"],
+  ["文件尚未上传完成","L’envoi du fichier n’est pas terminé"],
+  ["请使用分块上传大文件","Utilisez l’envoi par blocs pour les fichiers volumineux"],
   ["请先登录有效的身份识别码", "Connectez-vous avec un code d’identité valide."],
   ["身份识别码登录已失效，请重新登录", "Votre session de code d’identité n’est plus valide. Reconnectez-vous."],
   ["请求被拒绝", "La requête a été refusée."],

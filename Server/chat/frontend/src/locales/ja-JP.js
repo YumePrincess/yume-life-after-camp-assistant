@@ -1,6 +1,9 @@
 import english from './en-US.js';
 
 const messages = {
+  "attachments.openVideo": "動画を開く",
+  "attachments.openVideoNamed": "動画を開く：{name}",
+  "attachments.videoPreviewNamed": "動画プレビュー：{name}",
   "notifications.pushRegistering": "システム通知に接続中…",
   "notifications.pushFailed": "システム通知に接続できません。再試行してください。",
   "notifications.pushUnavailable": "この環境はシステム通知に対応していません。iOSではホーム画面からこのWebアプリを開いてください。",

@@ -21,7 +21,7 @@ export function validateChatPolicy(value: unknown): ChatPolicy {
     ["MESSAGE_RETENTION_DAYS", 1, 3650],
     ["SOFT_DELETE_RETENTION_DAYS", 1, 3650],
     ["ORPHAN_UPLOAD_RETENTION_DAYS", 1, 30],
-    ["MAX_FILE_SIZE", 1024, 26214400],
+    ["MAX_FILE_SIZE", 1024, 50 * 1024 * 1024 * 1024],
   ] as const) {
     const number = Number(input[key]);
     if (!Number.isInteger(number) || number < min || number > max)

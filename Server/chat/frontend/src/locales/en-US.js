@@ -1,5 +1,8 @@
 
 export default {
+  "attachments.openVideo": "Open video",
+  "attachments.openVideoNamed": "Open video: {name}",
+  "attachments.videoPreviewNamed": "Preview video: {name}",
   "notifications.pushRegistering": "Connecting system notifications…",
   "notifications.pushFailed": "System notifications are not connected. Retry.",
   "notifications.pushUnavailable": "System push is unavailable here. On iOS, open the app from the Home Screen.",
