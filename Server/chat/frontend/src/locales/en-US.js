@@ -1,5 +1,18 @@
 
 export default {
+  "media.uploadFailed": "The upload connection failed. Please try again.",
+  "attachments.typeImage": "Image",
+  "attachments.typeVideo": "Video",
+  "attachments.typeAudio": "Audio",
+  "attachments.typeFile": "File",
+  "media.preview": "{type} preview",
+  "media.play": "Play",
+  "media.pause": "Pause",
+  "media.seek": "Playback position",
+  "media.mute": "Mute",
+  "media.unmute": "Unmute",
+  "media.fullscreen": "Fullscreen",
+  "media.unavailable": "This media cannot be played. Try opening the original file.",
   "attachments.openVideo": "Open video",
   "attachments.openVideoNamed": "Open video: {name}",
   "attachments.videoPreviewNamed": "Preview video: {name}",

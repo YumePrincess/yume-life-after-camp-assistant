@@ -7,7 +7,8 @@ export async function uploadChatFile(file, request, { signal, onProgress } = {})
   if (file.size <= config.multipartThreshold) {
     const body = new FormData();
     body.append('file', file);
-    const result = await request('/upload', { method: 'POST', body, signal });
+    const result = await request('/upload', { method: 'POST', body, signal,
+      onUploadProgress: (loaded,total) => onProgress?.(Math.min(file.size, loaded / total * file.size), file.size) });
     onProgress?.(file.size, file.size);
     return result;
   }
@@ -25,7 +26,8 @@ export async function uploadChatFile(file, request, { signal, onProgress } = {})
       for (let attempt = 0; ; attempt++) {
         try {
           await request(`${base}/parts/${index + 1}`, { method: 'PUT',
-            headers: { 'Content-Type': 'application/octet-stream' }, body, signal });
+            headers: { 'Content-Type': 'application/octet-stream' }, body, signal,
+            onUploadProgress: (loaded,total) => onProgress?.(Math.min(file.size, index * session.chunkSize + loaded / total * body.size), file.size) });
           break;
         } catch (error) {
           if (signal?.aborted || attempt >= 2 || (error.status && error.status < 500 && error.status !== 429)) throw error;

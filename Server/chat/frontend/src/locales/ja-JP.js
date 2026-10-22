@@ -1,6 +1,19 @@
 import english from './en-US.js';
 
 const messages = {
+  "media.uploadFailed": "アップロードの接続に失敗しました。再試行してください。",
+  "attachments.typeImage": "画像",
+  "attachments.typeVideo": "動画",
+  "attachments.typeAudio": "音声",
+  "attachments.typeFile": "ファイル",
+  "media.preview": "{type}プレビュー",
+  "media.play": "再生",
+  "media.pause": "一時停止",
+  "media.seek": "再生位置",
+  "media.mute": "ミュート",
+  "media.unmute": "ミュート解除",
+  "media.fullscreen": "全画面",
+  "media.unavailable": "このメディアを再生できません。元のファイルを開いてください。",
   "attachments.openVideo": "動画を開く",
   "attachments.openVideoNamed": "動画を開く：{name}",
   "attachments.videoPreviewNamed": "動画プレビュー：{name}",

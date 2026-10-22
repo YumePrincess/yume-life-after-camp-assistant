@@ -1,5 +1,18 @@
 
 export default {
+  "media.uploadFailed": "上传连接失败，请重试。",
+  "attachments.typeImage": "图片",
+  "attachments.typeVideo": "视频",
+  "attachments.typeAudio": "音频",
+  "attachments.typeFile": "文件",
+  "media.preview": "{type}预览",
+  "media.play": "播放",
+  "media.pause": "暂停",
+  "media.seek": "播放进度",
+  "media.mute": "静音",
+  "media.unmute": "取消静音",
+  "media.fullscreen": "全屏",
+  "media.unavailable": "此媒体暂时无法播放，请尝试打开原文件。",
   "attachments.openVideo": "打开视频",
   "attachments.openVideoNamed": "打开视频：{name}",
   "attachments.videoPreviewNamed": "预览视频：{name}",

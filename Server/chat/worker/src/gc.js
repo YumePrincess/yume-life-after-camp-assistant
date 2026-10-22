@@ -29,7 +29,6 @@ export const ORPHAN_UPLOAD_QUERY = `SELECT object_key, created_at
 		SELECT 1 FROM messages
 		WHERE messages.attachment_key = uploaded_files.object_key
 		  AND messages.deleted_at IS NULL
-		  AND messages.recalled_at IS NULL
 	  )
 	  AND NOT EXISTS (
 		SELECT 1 FROM users
@@ -226,7 +225,7 @@ async function findReferencedKeys(db, keys, siteIconKey, budget) {
 			 FROM candidate
 			 WHERE EXISTS (
 			   SELECT 1 FROM messages
-			   WHERE attachment_key = candidate.object_key AND deleted_at IS NULL AND recalled_at IS NULL
+			   WHERE attachment_key = candidate.object_key AND deleted_at IS NULL
 			 ) OR EXISTS (
 			   SELECT 1 FROM users
 			   WHERE avatar_key = candidate.object_key AND deleted_at IS NULL

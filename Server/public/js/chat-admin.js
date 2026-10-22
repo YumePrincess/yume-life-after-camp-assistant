@@ -165,7 +165,7 @@
       card.append(header, raw("p", "chat-admin-message-body", message.content));
       const actions = node("div", "chat-admin-message-actions");
       if (message.attachment) {
-        const link = raw("a", "button button-quiet", message.attachment.name);
+        const link = raw("a", "button button-quiet chat-admin-attachment", message.attachment.name);
         link.href = `/api/admin/chat/file?key=${encodeURIComponent(message.attachment.key)}`;
         link.download = message.attachment.name;
         actions.append(link);

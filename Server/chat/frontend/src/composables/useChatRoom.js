@@ -382,6 +382,7 @@ export function useChatRoom({
 				return true;
 			} catch (currentError) {
 				pendingAttachment.value = attachment;
+				if (currentError.name === 'AbortError') return false;
 				error.value = currentError.message;
 				return false;
 			} finally {

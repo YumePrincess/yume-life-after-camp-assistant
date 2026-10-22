@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { t } from "../../i18n.js";
 import { messageMarkdownToPlainText } from "../../message-markdown.ts";
+import { attachmentLabel } from './attachment-utils.js';
 
 const props = defineProps({
 	reply: { type: Object, required: true },
@@ -23,7 +24,7 @@ const previewText = computed(() => {
 	if (attachment?.type?.startsWith("image/")) return t("messages.photo");
 	if (attachment?.type?.startsWith("video/")) return t("messages.video");
 	if (attachment?.type?.startsWith("audio/")) return t("messages.audio");
-	return attachment?.name || t("messages.attachment");
+	return attachmentLabel(attachment, t);
 });
 </script>
 

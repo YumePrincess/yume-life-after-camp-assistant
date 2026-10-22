@@ -24,7 +24,8 @@
       if (frame) return;
       frameReady = false;
       frame = document.createElement('iframe');
-      frame.id = 'chat-frame'; frame.src = '/chat/?embedded=1'; frame.allow = "microphone 'self'";
+      frame.id = 'chat-frame'; frame.src = '/chat/?embedded=1'; frame.allow = "microphone 'self'; fullscreen 'self'";
+      frame.allowFullscreen = true;
       frame.referrerPolicy = 'same-origin'; frameIdentity = account.identityCode;
       frame.addEventListener('load',()=>send(active)); workspace.append(frame);
     }

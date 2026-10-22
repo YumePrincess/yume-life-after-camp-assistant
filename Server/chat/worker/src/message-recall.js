@@ -4,7 +4,6 @@ import { getMessageById } from './data/messages.js';
 import { listRoomMemberIds } from './data/unread.js';
 import { createInternalHeaders } from './verified-identity.js';
 import { getChannelRoomStub, notifyUserInbox } from './do-bridge.js';
-import { cleanupR2Keys } from './gc.js';
 
 export async function recallRoomMessage(env, principal, room, messageId) {
   const access = await authorizeRoom(env.DB, principal, room.kind, Number(room.id));
@@ -23,7 +22,6 @@ export async function recallRoomMessage(env, principal, room, messageId) {
       if (!current?.recalled_at) throw new ApiError('撤回时限已过（120秒）',409);
     }
   }
-  if (target.attachment_key) await cleanupR2Keys(env, [target.attachment_key]);
   const message = await getMessageById(env,Number(messageId));
   if (!message) throw new ApiError('消息不存在或已被删除',404);
   const packet = {protocolVersion:1,type:'message_recalled',room:{kind:room.kind,id:Number(room.id)},message};

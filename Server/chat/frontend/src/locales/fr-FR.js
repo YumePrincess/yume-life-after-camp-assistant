@@ -1,6 +1,19 @@
 import english from './en-US.js';
 
 const messages = {
+  "media.uploadFailed": "La connexion d’envoi a échoué. Veuillez réessayer.",
+  "attachments.typeImage": "Image",
+  "attachments.typeVideo": "Vidéo",
+  "attachments.typeAudio": "Audio",
+  "attachments.typeFile": "Fichier",
+  "media.preview": "Aperçu : {type}",
+  "media.play": "Lire",
+  "media.pause": "Pause",
+  "media.seek": "Position de lecture",
+  "media.mute": "Couper le son",
+  "media.unmute": "Activer le son",
+  "media.fullscreen": "Plein écran",
+  "media.unavailable": "Ce média ne peut pas être lu. Essayez d’ouvrir le fichier original.",
   "attachments.openVideo": "Ouvrir la vidéo",
   "attachments.openVideoNamed": "Ouvrir la vidéo : {name}",
   "attachments.videoPreviewNamed": "Aperçu de la vidéo : {name}",

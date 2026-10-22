@@ -3,6 +3,7 @@ import { Pause, Play } from "@lucide/vue";
 import { computed, onBeforeUnmount, ref } from "vue";
 import api from "../../api.js";
 import { t } from "../../i18n.js";
+import { attachmentLabel } from './attachment-utils.js';
 import {
 	fallbackVoiceWaveform,
 	formatVoiceDuration,
@@ -106,7 +107,7 @@ onBeforeUnmount(() => {
 				<Play v-else :size="20" fill="currentColor" aria-hidden="true" />
 			</button>
 			<div class="voice-message__body">
-				<div v-if="attachment.kind !== 'voice'" class="voice-message__name">{{ attachment.name }}</div>
+				<div v-if="attachment.kind !== 'voice'" class="voice-message__name">{{ attachmentLabel(attachment, t) }}</div>
 				<div class="voice-waveform">
 					<span
 						v-for="(sample, index) in waveform"
@@ -134,7 +135,7 @@ onBeforeUnmount(() => {
 			</div>
 		</template>
 		<a v-else :href="attachmentUrl" target="_blank" rel="noreferrer" class="message-attachment__file">
-			{{ attachment.name || t('voice.fallback') }}
+			{{ attachmentLabel(attachment, t) }}
 		</a>
 	</div>
 </template>

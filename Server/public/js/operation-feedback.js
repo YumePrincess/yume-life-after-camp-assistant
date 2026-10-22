@@ -5,6 +5,22 @@
   const operations = new Map();
   let sequence = 0;
   let resultDialog, progressDialog, active;
+  let progressTitle, progressTrack, progressBar, progressPercent;
+  function paintProgress(options) {
+    progressTitle.textContent = options.message || words()[1];
+    progressTrack.setAttribute("aria-label", progressTitle.textContent);
+    const determinate = typeof options.progress === 'number' && Number.isFinite(options.progress);
+    progressPercent.hidden = !determinate;
+    progressTrack.className = `site-feedback__track${determinate ? ' site-feedback__track--determinate' : ''}`;
+    if (determinate) {
+      const value = Math.round(Math.min(100, Math.max(0, options.progress)));
+      progressTrack.setAttribute('aria-valuemin', '0');
+      progressTrack.setAttribute('aria-valuemax', '100');
+      progressTrack.setAttribute('aria-valuenow', String(value));
+      progressBar.style.width = `${value}%`;
+      progressPercent.textContent = `${value}%`;
+    }
+  }
   const labels = {
     "zh-cn": ["操作提示", "正在处理…", "关闭", "取消"],
     "zh-tw": ["操作提示", "處理中…", "關閉", "取消"],
@@ -37,13 +53,17 @@
     }
     progressDialog ||= dialog("progress");
     const latest = [...operations.values()].at(-1);
-    const title = node("h2", "site-feedback__title", latest.message || words()[1]);
-    title.id = "site-feedback-progress-title";
-    const track = node("div", "site-feedback__track");
-    track.setAttribute("role", "progressbar");
-    track.setAttribute("aria-label", title.textContent);
-    track.append(node("span", "site-feedback__bar"));
-    progressDialog.replaceChildren(title, track);
+    progressTitle = node("h2", "site-feedback__title");
+    progressTitle.id = "site-feedback-progress-title";
+    const heading = node('div', 'site-feedback__progress-heading');
+    progressPercent = node('span', 'site-feedback__percent');
+    heading.append(progressTitle, progressPercent);
+    progressTrack = node("div", "site-feedback__track");
+    progressTrack.setAttribute("role", "progressbar");
+    progressBar = node("span", "site-feedback__bar");
+    progressTrack.append(progressBar);
+    paintProgress(latest);
+    progressDialog.replaceChildren(heading, progressTrack);
     if (latest.cancel) {
       const cancel = node("button", "site-feedback__button", words()[3]);
       cancel.type = "button";
@@ -111,5 +131,11 @@
     operations.delete(token);
     renderProgress();
   }
-  window.MrzhFeedback = Object.freeze({ notice, begin, end });
+  function update(token, changes = {}) {
+    if (!operations.has(token)) return;
+    const options = { ...operations.get(token), ...changes };
+    operations.set(token, options);
+    if (!active && progressDialog?.open && [...operations.keys()].at(-1) === token) paintProgress(options);
+  }
+  window.MrzhFeedback = Object.freeze({ notice, begin, end, update });
 })();

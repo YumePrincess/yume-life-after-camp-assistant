@@ -3,7 +3,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 const source = readFileSync(new URL('../public/js/operation-feedback.js', import.meta.url), 'utf8');
 class Element {
-  constructor(tag) { Object.assign(this, { tag, children: [], attributes: {}, open: false, listeners: {} }); }
+  constructor(tag) { Object.assign(this, { tag, children: [], attributes: {}, style: {}, open: false, listeners: {} }); }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
   setAttribute(key, value) { this.attributes[key] = value; }
@@ -22,6 +22,17 @@ function setup(language = 'zh-cn') {
   return { api: window.MrzhFeedback, dialogs, result: () => dialogs.find(node => node.className.endsWith('--result')), progress: () => dialogs.find(node => node.className.endsWith('--progress')) };
 }
 describe('shared operation popup lifecycle', () => {
+  it('updates byte progress without replacing the focused cancel control and ignores completed tokens', () => {
+    const ui = setup(), token = ui.api.begin({message:'上传中',progress:0,cancel:()=>{}});
+    const cancel = ui.progress().querySelector('button');
+    ui.api.update(token,{progress:42,message:'上传中'});
+    const track = ui.progress().children[1];
+    expect(track.attributes['aria-valuenow']).toBe('42');
+    expect(track.children[0].style.width).toBe('42%');
+    expect(ui.progress().querySelector('button')).toBe(cancel);
+    ui.api.update(token,{progress:101});expect(track.attributes['aria-valuenow']).toBe('100');
+    ui.api.end(token);ui.api.update(token,{progress:50});expect(ui.progress().open).toBe(false);
+  });
   it('tracks concurrent operations independently and never shows a stale progress dialog', () => {
     const ui = setup();
     const first = ui.api.begin(); const second = ui.api.begin();

@@ -48,3 +48,11 @@ export function isPreviewableVideoAttachment(attachment) {
   return mime.startsWith('video/') || ((!mime || mime === 'application/octet-stream') &&
     /^(mp4|webm|mov|m4v|ogv)$/.test(extensionFrom(attachment.name) || extensionFrom(attachment.url)));
 }
+
+export function attachmentLabel(attachment, translate) {
+  if (attachment?.kind === 'voice') return translate('voice.fallback');
+  if (isPreviewableVideoAttachment(attachment)) return translate('attachments.typeVideo');
+  if (isPreviewableImageAttachment(attachment)) return translate('attachments.typeImage');
+  if (cleanMimeType(attachment?.type).startsWith('audio/')) return translate('attachments.typeAudio');
+  return translate('attachments.typeFile');
+}

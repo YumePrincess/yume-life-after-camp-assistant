@@ -32,7 +32,7 @@ export function notificationContent(event, translate) {
       : attachment.type?.startsWith('image/') ? translate('conversation.image')
       : attachment.type?.startsWith('video/') ? translate('conversation.video')
       : attachment.type?.startsWith('audio/') ? translate('conversation.audio')
-      : attachment.name || translate('conversation.file');
+      : translate('conversation.file');
   }
   preview = shorten(preview || translate(room.kind === 'dm' ? 'notifications.directMessage' : 'notifications.groupMessage'), 160);
   const title = event.replyToMe ? translate('notifications.repliedTitle', {room:roomName})

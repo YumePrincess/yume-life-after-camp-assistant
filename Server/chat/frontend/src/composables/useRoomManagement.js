@@ -238,6 +238,7 @@ export function useRoomManagement({
 			groupSettingsForm.avatarUrl = payload.file.url;
 			groupSettingsForm.avatarKey = payload.file.key;
 		} catch (currentError) {
+			if (currentError.name === 'AbortError') return;
 			error.value = currentError.message;
 		} finally {
 			groupAvatarUploading.value = false;

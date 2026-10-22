@@ -5,6 +5,7 @@ import { localizedError, localizeErrorMessage } from './localized-error.js';
 import { getRuntimeFileUrl, isDemoMode, requestRuntime } from './runtime.js';
 import { apiPrefix, isGatewayMode } from './gateway.ts';
 import { uploadChatFile } from './file-upload.js';
+import { uploadWithProgress } from './upload-transport.js';
 
 function buildHeaders(extra = {}) {
   const headers = { ...extra };
@@ -24,7 +25,8 @@ async function request(path, options = {}) {
     }
   }
 
-  const response = await fetch(resolveServerUrl(`${apiPrefix}${path}`), {
+  const transport = options.onUploadProgress && typeof XMLHttpRequest !== 'undefined' ? uploadWithProgress : fetch;
+  const response = await transport(resolveServerUrl(`${apiPrefix}${path}`), {
     ...options,
     headers: buildHeaders(options.headers),
     body:
@@ -181,10 +183,23 @@ export default {
     }
     const controller = new AbortController();
     const signal = options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
-    const progress = file.size > 8 * 1024 * 1024
-      ? window.MrzhFeedback?.begin({ message: t('common.uploading'), cancel: () => controller.abort() }) : null;
-    try { return await uploadChatFile(file, request, { ...options, signal }); }
-    catch (error) { throw localizedError(error); }
+    const progress = window.MrzhFeedback?.begin({ message: t('common.uploading'), progress: 0, cancel: () => controller.abort() });
+    let percentage = 0;
+    const onProgress = (loaded, total) => {
+      percentage = Math.max(percentage, Math.min(95, Math.round(loaded / Math.max(1,total) * 95)));
+      if (progress != null) window.MrzhFeedback.update(progress, { progress: percentage, message: t(loaded >= total ? 'common.processing' : 'common.uploading') });
+      options?.onProgress?.(loaded, total);
+    };
+    try {
+      const result = await uploadChatFile(file, request, { ...options, signal, onProgress });
+      if (progress != null) window.MrzhFeedback.update(progress, { progress: 100 });
+      return result;
+    }
+    catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      if (error?.message === 'Upload connection failed') error.message = t('media.uploadFailed');
+      throw localizedError(error);
+    }
     finally { if (progress != null) window.MrzhFeedback.end(progress); }
   },
   getRoomWebSocketUrl(kind, roomId) {

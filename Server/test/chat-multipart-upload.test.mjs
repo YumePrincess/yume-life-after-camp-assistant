@@ -163,14 +163,23 @@ describe('encrypted R2 multipart attachments',()=>{
    expect(db.sqlite.prepare('SELECT count(*) n FROM chat_upload_sessions').get().n).toBe(0);
   }finally{db.close();}
  });
- it.each(['public','dm'])('deletes a recalled %s attachment immediately, retains the message audit and retries storage failures',async kind=>{
+ it.each(['public','dm'])('retains a recalled %s attachment through orphan cleanup and deletes it only when the message expires',async kind=>{
   const db=await setup();try{
    const {file}=await uploadChatFile(generatedFile(8*1048576+1),db.request);const room=db.createRoom(kind);
    const id=Number(db.sqlite.prepare('INSERT INTO messages(channel_id,sender_id,attachment_key,content) VALUES(?,?,?,?)').run(room.id,db.users[0].id,file.key,'audit').lastInsertRowid);
-   db.FILES.delete.mockRejectedValueOnce(new Error('R2 unavailable'));
    await recallRoomMessage(db.env,{userId:db.users[0].id},room,id);
    expect(db.sqlite.prepare('SELECT recalled_at,content FROM messages WHERE id=?').get(id)).toMatchObject({recalled_at:expect.any(String),content:'audit'});
-   expect(await canAccessFile(db.env.DB,file.key,db.users[0].id)).toBe(false);
+   expect(await canAccessFile(db.env.DB,file.key,db.users[1].id)).toBe(false);
+   expect(db.FILES.delete).not.toHaveBeenCalled();
+   db.sqlite.prepare("UPDATE uploaded_files SET created_at=datetime('now','-2 days')").run();
+   db.sqlite.prepare('INSERT INTO pending_r2_delete(object_key) VALUES(?)').run(file.key);
+   await runScheduledGc(db.env);expect(db.FILES.objects.size).toBe(1);
+   expect(db.sqlite.prepare('SELECT count(*) n FROM pending_r2_delete').get().n).toBe(0);
+   const admin=await handleChatAdmin(new Request(`https://site.test/api/admin/chat/file?key=${encodeURIComponent(file.key)}`,{headers:{Range:'bytes=0-2'}}),db.env,{auth_method:'oidc'});
+   expect(admin.status).toBe(206);expect([...new Uint8Array(await admin.arrayBuffer())]).toEqual([0,1,2]);
+   db.sqlite.prepare("UPDATE messages SET created_at='2000-01-01' WHERE id=?").run(id);
+   db.FILES.delete.mockRejectedValueOnce(new Error('R2 unavailable'));
+   await runScheduledGc(db.env);
    expect(db.sqlite.prepare('SELECT object_key FROM pending_r2_delete').get().object_key).toBe(file.key);
    db.sqlite.prepare("UPDATE pending_r2_delete SET next_retry_at='2000-01-01'").run();await cleanupR2Keys(db.env,[file.key]);
    expect(db.FILES.objects.size).toBe(0);expect(db.sqlite.prepare('SELECT count(*) n FROM chat_file_chunks').get().n).toBe(0);
