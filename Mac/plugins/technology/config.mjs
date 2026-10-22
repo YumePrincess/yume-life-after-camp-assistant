@@ -17,10 +17,10 @@ export const config = {
       ]
     },
     selectorSwipe: {
-      // The selector viewport is about 700px tall; a 645px drag advances one
+      // The selector viewport is about 700px tall; a 625px drag advances one
       // calibrated page while keeping both endpoints inside its scroll area.
       from: { x: 430, y: 900 },
-      to: { x: 430, y: 255 },
+      to: { x: 430, y: 275 },
       durationMs: 450,
       maxPages: 60,
       resetToTop: {

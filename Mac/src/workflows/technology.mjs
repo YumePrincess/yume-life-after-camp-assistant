@@ -94,14 +94,16 @@ export async function runTechnology(context, command, bundle, signal) {
 
 export async function verifyFinalConfiguredSlots(context, plan, signal) {
   const { config, report } = context;
-  const slots = ["core", "general"].flatMap((lane) =>
-    config.technology.slots[lane].map((point, index) => ({
-      ...point,
-      lane,
-      index,
-      expectedTechnology: plan[lane]?.[index] ?? null
-    }))
-  );
+  const slots = ["core", "general"]
+    .flatMap((lane) =>
+      config.technology.slots[lane].map((point, index) => ({
+        ...point,
+        lane,
+        index,
+        expectedTechnology: plan[lane]?.[index] ?? null
+      }))
+    )
+    .reverse();
   const mismatches = [];
   for (const slot of slots) {
     const laneLabel = slot.lane === "core" ? "第一行" : "第二行";
@@ -170,7 +172,7 @@ export async function verifyFinalConfiguredSlots(context, plan, signal) {
   await report(
     "info",
     "technology_final_verified",
-    `正式 Agent 已逐格点击并通过详情“卸下”动作确认 ${slots.length} 个槽位：第一行 ${plan.core.length} 项、第二行 ${plan.general.length} 项，其余槽位为空`
+    `正式 Agent 已按第二行 6→1、第一行 6→1 的顺序逐格点击并通过详情“卸下”动作确认 ${slots.length} 个槽位：第一行 ${plan.core.length} 项、第二行 ${plan.general.length} 项，其余槽位为空`
   );
 }
 
@@ -179,68 +181,34 @@ export async function clearAllConfiguredSlots(context, signal) {
   const allSlots = ["core", "general"].flatMap((lane) =>
     config.technology.slots[lane].map((point, index) => ({ ...point, lane, index }))
   );
+  const slotsInReverseOrder = [...allSlots].reverse();
   let processedSlots = 0;
   let configuredCount = 0;
-  for (const lane of ["core", "general"]) {
-    const laneSlots = config.technology.slots[lane]
-      .map((point, index) => ({ ...point, lane, index }))
-      .sort((a, b) => a.index - b.index);
-    for (const slot of laneSlots) {
+  for (const slot of slotsInReverseOrder) {
+    const { lane } = slot;
+    await report(
+      "info",
+      "tech_slot_check",
+      `按倒序检查${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格`
+    );
+    const before = await readTechnologySlotState(
+      context,
+      slot,
+      `technology-clear-check-${lane}-${slot.index + 1}`,
+      signal,
+      {
+        // Slot content is decided only by this actual click followed by
+        // the detail OCR. A textured/animated empty slot can look filled
+        // to a pixel probe, so pixels must never authorize an unload or
+        // turn a missing detail action into a retry/fatal error.
+        attempts: 1
+      }
+    );
+    if (!before.occupied) {
       await report(
         "info",
-        "tech_slot_check",
-        `按顺序检查${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格`
-      );
-      const before = await readTechnologySlotState(
-        context,
-        slot,
-        `technology-clear-check-${lane}-${slot.index + 1}`,
-        signal,
-        {
-          // Slot content is decided only by this actual click followed by
-          // the detail OCR. A textured/animated empty slot can look filled
-          // to a pixel probe, so pixels must never authorize an unload or
-          // turn a missing detail action into a retry/fatal error.
-          attempts: 1
-        }
-      );
-      if (!before.occupied) {
-        await report(
-          "info",
-          "tech_slot_empty",
-          `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已实际点击，详情未出现“卸下”，确认为空，继续下一格`
-        );
-        processedSlots += 1;
-        if (processedSlots < allSlots.length) {
-          await dismissTechnologyDetail(
-            context,
-            `technology-clear-${lane}-${slot.index + 1}`,
-            signal
-          );
-        }
-        continue;
-      }
-      configuredCount += 1;
-      await ui.tap(config.technology.unloadSelected, signal);
-      const settleMs = Math.max(
-        3_000,
-        Number(config.technology.unloadSettleMs) || 3_000
-      );
-      await (context.sleep || delay)(settleMs, signal);
-      const after = await readTechnologyCurrentDetailState(
-        context,
-        `technology-cleared-${lane}-${slot.index + 1}`,
-        signal
-      );
-      if (after.occupied) {
-        throw new Error(
-          `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格等待 ${Math.round(settleMs / 1000)} 秒后仍显示“卸下”`
-        );
-      }
-      await report(
-        "info",
-        "tech_slot_unloaded",
-        `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已在详情明确显示“卸下”后点击，并等待 ${Math.round(settleMs / 1000)} 秒确认按钮消失；继续下一个槽位`
+        "tech_slot_empty",
+        `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已实际点击，详情未出现“卸下”，确认为空，继续下一格`
       );
       processedSlots += 1;
       if (processedSlots < allSlots.length) {
@@ -250,12 +218,43 @@ export async function clearAllConfiguredSlots(context, signal) {
           signal
         );
       }
+      continue;
+    }
+    configuredCount += 1;
+    await ui.tap(config.technology.unloadSelected, signal);
+    const settleMs = Math.max(
+      3_000,
+      Number(config.technology.unloadSettleMs) || 3_000
+    );
+    await (context.sleep || delay)(settleMs, signal);
+    const after = await readTechnologyCurrentDetailState(
+      context,
+      `technology-cleared-${lane}-${slot.index + 1}`,
+      signal
+    );
+    if (after.occupied) {
+      throw new Error(
+        `科技卸下校验失败：${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格等待 ${Math.round(settleMs / 1000)} 秒后仍显示“卸下”`
+      );
+    }
+    await report(
+      "info",
+      "tech_slot_unloaded",
+      `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已在详情明确显示“卸下”后点击，并等待 ${Math.round(settleMs / 1000)} 秒确认按钮消失；继续下一个槽位`
+    );
+    processedSlots += 1;
+    if (processedSlots < allSlots.length) {
+      await dismissTechnologyDetail(
+        context,
+        `technology-clear-${lane}-${slot.index + 1}`,
+        signal
+      );
     }
   }
   await report(
     "info",
     "tech_clear",
-    `已按第一行 1–6、第二行 1–6 的顺序逐格检查并卸下 ${configuredCount} 项；卸下后未重复点击原槽位`
+    `已按第二行 6→1、第一行 6→1 的顺序逐格检查并卸下 ${configuredCount} 项；卸下后未重复点击原槽位`
   );
 }
 
@@ -929,7 +928,7 @@ function technologySelectorSignaturesEquivalent(left, right) {
     }
   }
 
-  // A 645px page move overlaps only part of the selector viewport. Requiring
+  // A 625px page move overlaps only part of the selector viewport. Requiring
   // at least 80% of the visible names to match avoids mistaking that overlap
   // for the bottom while allowing a single OCR character to flicker.
   return (

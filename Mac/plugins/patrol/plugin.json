@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.patrol",
-  "version": "27.1.0",
-  "build": 27159,
+  "version": "27.2.0",
+  "build": 27167,
   "kind": "task",
   "architectures": [
     "arm64"
   ],
-  "minimumAgentVersion": "27.1.0",
+  "minimumAgentVersion": "27.2.0",
   "entry": "plugin.mjs",
   "export": "run",
   "task": {

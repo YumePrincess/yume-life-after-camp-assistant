@@ -76,7 +76,7 @@ test("1920x1200 technology hitboxes keep the live-device calibration", async () 
   assert.equal(technologyPluginConfig.technology.selectorItemTapX, 178);
 });
 
-test("technology chooser keeps the fast reset and uses a 645px shared page swipe", async () => {
+test("technology chooser keeps the fast reset and uses a 625px shared page swipe", async () => {
   const resetSwipes = [];
   const pageMotions = [];
   let selectorFrames = 0;
@@ -162,11 +162,11 @@ test("technology chooser keeps the fast reset and uses a 645px shared page swipe
     }
   ]);
   assert.deepEqual(pageMotions[0], ["input", "mouse", "motionevent", "DOWN", 430, 900]);
-  assert.deepEqual(pageMotions.at(-1), ["input", "mouse", "motionevent", "UP", 430, 255]);
+  assert.deepEqual(pageMotions.at(-1), ["input", "mouse", "motionevent", "UP", 430, 275]);
   assert.equal(pageMotions.filter((event) => event[3] === "MOVE").length, 65);
 });
 
-test("technology slots unload core 1-6 then general 1-6 without re-clicking", async () => {
+test("technology slots unload from general 6 back to core 1 without re-clicking", async () => {
   const actions = [];
   const coreSlots = Array.from({ length: 6 }, (_, index) => ({
     x: 700 + index * 100,
@@ -213,10 +213,11 @@ test("technology slots unload core 1-6 then general 1-6 without re-clicking", as
   await clearAllConfiguredSlots(context);
   const expected = [];
   for (const [lane, slots] of [
-    ["core", coreSlots],
-    ["general", generalSlots]
+    ["general", generalSlots],
+    ["core", coreSlots]
   ]) {
-    slots.forEach((slot, index) => {
+    slots.forEach((slot, reverseIndex) => {
+      const index = slots.length - reverseIndex - 1;
       expected.push(["tap", { ...slot, lane, index }]);
       expected.push(["wait", 1200]);
       expected.push(["tap", { x: 745, y: 638 }]);
@@ -763,7 +764,7 @@ test("formal technology workflow verifies every expected filled and empty slot",
   );
   assert.deepEqual(
     taps.map(({ x, y }) => ({ x, y })),
-    [{ x: 800, y: 400 }, { x: 800, y: 550 }]
+    [{ x: 800, y: 550 }, { x: 800, y: 400 }]
   );
   assert.ok(reports.some((item) => item.step === "tech_final_empty_slot_verified"));
 });
@@ -793,9 +794,9 @@ test("technology detail is collapsed before the next final slot is inspected", a
   };
   await verifyFinalConfiguredSlots(context, { core: [], general: [] });
   assert.deepEqual(taps.map(({ x, y }) => ({ x, y })), [
-    { x: 800, y: 400 },
+    { x: 900, y: 400 },
     { x: 959, y: 208 },
-    { x: 900, y: 400 }
+    { x: 800, y: 400 }
   ]);
   assert.deepEqual(waits, [1200, 2000, 1200]);
 });
@@ -904,7 +905,7 @@ function technologyConfig() {
       },
       selectorSwipe: {
         from: { x: 430, y: 900 },
-        to: { x: 430, y: 255 },
+        to: { x: 430, y: 275 },
         durationMs: 450,
         maxPages: 0,
         resetToTop: { repeats: 0 }
