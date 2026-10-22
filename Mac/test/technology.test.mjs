@@ -261,12 +261,13 @@ test("cropped detail OCR detects and unloads the first general slot", async () =
   await clearAllConfiguredSlots(context);
 
   assert.deepEqual(actions, [
-    ["tap", { x: 800, y: 400, lane: "core", index: 0 }],
-    ["wait", 1200],
     ["tap", { x: 800, y: 550, lane: "general", index: 0 }],
     ["wait", 1200],
     ["tap", { x: 745, y: 638 }],
-    ["wait", 3000]
+    ["wait", 3000],
+    ["tap", { x: 800, y: 400, lane: "core", index: 0 }],
+    ["wait", 1200],
+    ["tap", { x: 800, y: 400, lane: "core", index: 0 }]
   ]);
 });
 
@@ -310,10 +311,11 @@ test("empty slot pixels never override the actual click and detail OCR", async (
   await clearAllConfiguredSlots(context);
 
   assert.deepEqual(actions, [
+    ["tap", { x: 900, y: 400, lane: "core", index: 1 }],
+    ["wait", 1200],
     ["tap", { x: 800, y: 400, lane: "core", index: 0 }],
     ["wait", 1200],
-    ["tap", { x: 900, y: 400, lane: "core", index: 1 }],
-    ["wait", 1200]
+    ["tap", { x: 800, y: 400, lane: "core", index: 0 }]
   ]);
   assert.equal(reports.filter((step) => step === "tech_slot_empty").length, 2);
 });

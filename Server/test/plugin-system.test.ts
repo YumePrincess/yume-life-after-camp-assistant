@@ -43,7 +43,7 @@ describe("build-time Worker plugins", () => {
       "weekly-activity"
     ]);
     expect(plugins.every((plugin) => plugin.manifest.version === "27.2.0")).toBe(true);
-    expect(plugins.every((plugin) => plugin.manifest.build === 27167)).toBe(true);
+    expect(plugins.every((plugin) => plugin.manifest.build === 27168)).toBe(true);
   });
 
   it("removes disabled plugin tasks and permissions from the effective registry", async () => {

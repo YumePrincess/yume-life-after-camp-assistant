@@ -210,6 +210,12 @@ export async function clearAllConfiguredSlots(context, signal) {
         "tech_slot_empty",
         `${lane === "core" ? "第一行" : "第二行"}第 ${slot.index + 1} 格已实际点击，详情未出现“卸下”，确认为空，继续下一格`
       );
+      if (lane === "core" && slot.index === 0) {
+        // This is the last slot in the reverse traversal. An empty first slot
+        // stays selected after its detail check, so tap it once more before
+        // the install phase begins; no additional inspection is needed.
+        await ui.tap(slot, signal);
+      }
       processedSlots += 1;
       if (processedSlots < allSlots.length) {
         await dismissTechnologyDetail(
