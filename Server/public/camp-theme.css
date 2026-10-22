@@ -87,3 +87,12 @@
     --camp-line-strong: rgba(255, 255, 255, 0.22);
   }
 }
+
+.chat-global-notification {
+  position:fixed; z-index:12000; top:calc(env(safe-area-inset-top,0px) + 16px); right:16px;
+  display:flex; flex-direction:column; gap:6px; width:min(360px,calc(100vw - 32px)); padding:16px 20px;
+  text-align:left; font:inherit; color:var(--camp-text); background:var(--camp-panel-strong);
+  border:1px solid var(--camp-line-strong); border-radius:18px; box-shadow:var(--camp-shadow);
+  backdrop-filter:blur(24px); cursor:pointer;
+}
+.chat-global-notification span {font-size:13px;opacity:.8;}

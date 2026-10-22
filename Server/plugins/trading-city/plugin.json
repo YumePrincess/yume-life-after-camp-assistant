@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "trading-city",
   "version": "27.2.0",
-  "build": 27168,
+  "build": 27170,
   "displayName": "报名交易之城",
   "description": "前往市政厅与德克斯特交谈，提交指定星期的交易之城竞标申请。",
   "builtin": true,

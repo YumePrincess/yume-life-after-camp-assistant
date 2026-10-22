@@ -1,11 +1,50 @@
 (() => {
   "use strict";
 
-  function create({ validateSession, onIdentityRequired, onError, beforeOpen, translate }) {
+  function create({ validateSession, onIdentityRequired, onError, beforeOpen, translate, getAccount = () => null }) {
     const workspace = document.getElementById("chat-workspace");
     const home = [document.getElementById("main-content"), document.querySelector(".site-footer")].filter(Boolean);
     const card = document.getElementById("open-chat");
     let frame = null, frameIdentity = "", active = false, revision = 0;
+    let pendingRoom = null, frameReady = false;
+    const seenNotifications = new Set();
+    const target = new URL(window.location.href).searchParams.get('chatRoom')?.match(/^(dm|channel):([1-9][0-9]*)$/);
+    if (target && Number.isSafeInteger(Number(target[2]))) pendingRoom = {kind:target[1],id:Number(target[2])};
+    function sendRoom() {
+      if (!pendingRoom || !active || !frameReady) return;
+      frame?.contentWindow?.postMessage({type:'camp-chat:open-room',room:pendingRoom},window.location.origin);
+      pendingRoom = null;
+      const url = new URL(window.location.href);
+      url.searchParams.delete('chatRoom');
+      history.replaceState(history.state,'',url.href);
+    }
+    function ensureFrame(account) {
+      if (!account?.identityCode) return;
+      if (frame && frameIdentity !== account.identityCode) discard();
+      if (frame) return;
+      frameReady = false;
+      frame = document.createElement('iframe');
+      frame.id = 'chat-frame'; frame.src = '/chat/?embedded=1'; frame.allow = "microphone 'self'";
+      frame.referrerPolicy = 'same-origin'; frameIdentity = account.identityCode;
+      frame.addEventListener('load',()=>send(active)); workspace.append(frame);
+    }
+    function background() { if (!active && window.location.hash !== '#chat') ensureFrame(getAccount()); }
+    function showNotification(notification) {
+      if (active || document.hidden || !getAccount()) return;
+      const {roomKind,roomId,messageId} = notification?.data || {};
+      if (!['dm','channel'].includes(roomKind) || !Number.isSafeInteger(roomId) || roomId < 1) return;
+      const key = `${roomKind}:${roomId}:${messageId}`;
+      if (seenNotifications.has(key)) return;
+      seenNotifications.add(key);
+      if (seenNotifications.size > 100) seenNotifications.delete(seenNotifications.values().next().value);
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'chat-global-notification';
+      const title = document.createElement('strong'); title.textContent = String(notification.title || translate('互动中心'));
+      const body = document.createElement('span'); body.textContent = String(notification.body || '');
+      button.append(title,body); button.addEventListener('click',()=>{button.remove();pendingRoom={kind:roomKind,id:roomId};open();});
+      document.querySelectorAll('.chat-global-notification').forEach(item=>item.remove());
+      document.body.append(button); setTimeout(()=>button.remove(),6000);
+    }
     let scrollPosition = 0, previousTitle = "", previousInert = [];
 
     function send(visible) {
@@ -38,6 +77,7 @@
     function discard() {
       frame?.remove();
       frame = null;
+      frameReady = false;
       frameIdentity = "";
     }
     function identityRequired() {
@@ -51,7 +91,7 @@
     }
     async function sync() {
       const current = ++revision;
-      if (window.location.hash !== "#chat") { hide(); return; }
+      if (window.location.hash !== "#chat") { hide(); background(); return; }
       try {
         // Revalidate on every entry, including browser Forward and direct #chat visits.
         const account = await validateSession();
@@ -67,16 +107,7 @@
           previousInert = home.map(element => document.documentElement.classList.contains("is-page-loading") ? false : element.inert);
           home.forEach(element => { element.inert = true; });
         }
-        if (!frame) {
-          frame = document.createElement("iframe");
-          frame.id = "chat-frame";
-          frame.src = "/chat/?embedded=1";
-          frame.allow = "microphone 'self'";
-          frame.referrerPolicy = "same-origin";
-          frameIdentity = account.identityCode;
-          frame.addEventListener("load", () => { send(active); });
-          workspace.append(frame);
-        }
+        ensureFrame(account);
         active = true;
         workspace.hidden = false;
         document.body.classList.add("chat-workspace-open");
@@ -85,6 +116,7 @@
         syncViewport();
         labels();
         send(true);
+        sendRoom();
         frame.focus({ preventScroll: true });
       } catch (error) {
         if (current !== revision) return;
@@ -104,13 +136,18 @@
         void sync();
       } else if (event.data?.type === "camp-chat:identity-required") {
         identityRequired();
-      } else if (event.data?.type === "camp-chat:ready") send(active);
+      } else if (event.data?.type === 'camp-chat:open-room') {
+        const room = event.data.room;
+        if (['dm','channel'].includes(room?.kind) && Number.isSafeInteger(room.id) && room.id > 0) { pendingRoom = room; open(); }
+      } else if (event.data?.type === 'camp-chat:notification') showNotification(event.data.notification);
+      else if (event.data?.type === "camp-chat:ready") { frameReady = true; send(active); sendRoom(); }
     }
     function identityChanged(event) {
       if (frame && frameIdentity !== (event.detail?.identityCode || "")) {
         discard();
         if (active) void sync();
       }
+      background();
     }
     window.addEventListener("hashchange", sync);
     window.addEventListener("message", receive);
@@ -130,6 +167,13 @@
         discard();
         if (active) void sync();
       }
+    });
+    window.navigator?.serviceWorker?.addEventListener('message',event=>{
+      if (event.data?.type === 'camp-chat:notification') showNotification(event.data.notification);
+      if (event.data?.type !== 'camp-chat:open-room') return;
+      const room = event.data.room;
+      if (!['dm','channel'].includes(room?.kind) || !Number.isSafeInteger(room.id) || room.id < 1) return;
+      pendingRoom = room; open();
     });
     void sync();
     return Object.freeze({ open, sync });

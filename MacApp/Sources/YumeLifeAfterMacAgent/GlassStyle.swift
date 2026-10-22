@@ -74,6 +74,50 @@ struct GlassButtonStyle: ButtonStyle {
     }
 }
 
+struct GlassCheckboxToggleStyle: ToggleStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(configuration.isOn
+                        ? YumePalette.warmGold
+                        : (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.04)))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(configuration.isOn
+                                ? YumePalette.warmGold
+                                : (colorScheme == .dark ? Color.white.opacity(0.55) : Color.black.opacity(0.45)), lineWidth: 1.25)
+                    }
+                    .overlay {
+                        if configuration.isOn {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(YumePalette.ink)
+                        }
+                    }
+                    .frame(width: 18, height: 18)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
+                configuration.label
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.5)
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+                .toggleStyle(.checkbox)
+        }
+    }
+}
+
 struct AppBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
     var body: some View {

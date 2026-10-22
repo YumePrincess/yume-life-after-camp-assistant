@@ -302,3 +302,9 @@
 "Final page" = "Final page";
 "Pages scanned" = "Pages scanned";
 "Position locked" = "Position locked";
+
+"Version" = "Version";
+"Build" = "Build";
+"Platform" = "Platform";
+
+"External Qwen model" = "External Qwen model";

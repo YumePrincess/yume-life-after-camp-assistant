@@ -1,4 +1,7 @@
+import { ref } from 'vue';
 export const embeddedChat = window.parent !== window;
+
+export const hostChatVisible = ref(!embeddedChat || window.parent.location.hash === '#chat');
 
 export function requireHostIdentity() {
   if (embeddedChat) {
@@ -13,6 +16,7 @@ export function initializeHostNavigation({ activate, deactivate }) {
   window.addEventListener('message', event => {
     if (event.source !== window.parent || event.origin !== window.location.origin || event.data?.type !== 'camp-chat:visibility') return;
     const next = event.data.visible === true;
+    hostChatVisible.value = next;
     if (next === active) return;
     active = next;
     if (active) {

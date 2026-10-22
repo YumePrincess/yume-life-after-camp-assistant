@@ -293,3 +293,9 @@
 "Final page" = "Dernière page";
 "Pages scanned" = "Pages analysées";
 "Position locked" = "Position verrouillée";
+
+"Version" = "Version";
+"Build" = "Build";
+"Platform" = "Plateforme";
+
+"External Qwen model" = "Modèle Qwen externe";

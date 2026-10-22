@@ -43,6 +43,8 @@
     "dompurify": "^3.4.15",
     "markdown-it": "^15.0.2",
     "vditor": "^4.0.0",
-    "@capacitor/core": "^8.5.1"
-  }
+    "@capacitor/core": "^8.5.1",
+    "@block65/webcrypto-web-push": "^2.0.0"
+  },
+  "build": 27170
 }

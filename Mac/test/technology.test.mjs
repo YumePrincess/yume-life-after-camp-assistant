@@ -163,7 +163,12 @@ test("technology chooser keeps the fast reset and uses a 625px shared page swipe
   ]);
   assert.deepEqual(pageMotions[0], ["input", "mouse", "motionevent", "DOWN", 430, 900]);
   assert.deepEqual(pageMotions.at(-1), ["input", "mouse", "motionevent", "UP", 430, 275]);
-  assert.equal(pageMotions.filter((event) => event[3] === "MOVE").length, 65);
+  const movePoints = pageMotions.filter((event) => event[3] === "MOVE").map(event => event[5]);
+  assert.equal(movePoints.at(-1), 275);
+  assert.ok(movePoints.every((y, index) => {
+    const previous = index ? movePoints[index - 1] : 900;
+    return previous > y && previous - y <= 10;
+  }));
 });
 
 test("technology slots unload from general 6 back to core 1 without re-clicking", async () => {
@@ -216,7 +221,7 @@ test("technology slots unload from general 6 back to core 1 without re-clicking"
     ["general", generalSlots],
     ["core", coreSlots]
   ]) {
-    slots.forEach((slot, reverseIndex) => {
+    [...slots].reverse().forEach((slot, reverseIndex) => {
       const index = slots.length - reverseIndex - 1;
       expected.push(["tap", { ...slot, lane, index }]);
       expected.push(["wait", 1200]);
@@ -846,8 +851,8 @@ test("final empty slots are clicked and verified by detail OCR, not pixels", asy
     general: []
   });
   assert.deepEqual(
-    (({ x, y }) => ({ x, y }))(taps.at(-1)),
-    { x: 1300, y: 400 }
+    taps.filter(point => point.lane === "core").map(({ x, y }) => ({ x, y })),
+    [1300, 1200, 1100, 1000, 900, 800].map(x => ({x, y:400}))
   );
   assert.ok(reports.includes("tech_final_empty_slot_verified"));
 });

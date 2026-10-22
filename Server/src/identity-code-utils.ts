@@ -1,3 +1,11 @@
+import type { CampConfig } from './domain';
+import { zonedDateTimeToIso } from './time';
+
+/** Identity validity follows the special refresh clock on the chosen deadline date. */
+export function identityExpiryForDate(date: string, config: Pick<CampConfig, 'specialDailyRefreshTime' | 'timezone'>): string {
+  return zonedDateTimeToIso(date, config.specialDailyRefreshTime, config.timezone);
+}
+
 export function isSequentialIdentityCode(code: string): boolean {
   const digits = [...code].map(Number);
   const ascending = digits.every(

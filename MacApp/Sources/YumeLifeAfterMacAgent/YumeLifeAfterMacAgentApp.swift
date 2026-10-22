@@ -163,6 +163,7 @@ struct YumeLifeAfterMacAgentApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(model)
+                .toggleStyle(GlassCheckboxToggleStyle())
                 .preferredColorScheme(model.theme.colorScheme)
                 .frame(minWidth: 1040, minHeight: 680)
                 .task { await model.bootstrap() }
@@ -179,6 +180,7 @@ struct YumeLifeAfterMacAgentApp: App {
         Settings {
             SettingsView()
                 .environmentObject(model)
+                .toggleStyle(GlassCheckboxToggleStyle())
                 .preferredColorScheme(model.theme.colorScheme)
                 .frame(width: 620, height: 520)
         }

@@ -58,6 +58,9 @@ async function request(path, options = {}) {
 }
 
 export default {
+  pushKey() { return request('/push/key'); },
+  savePushSubscription(body) { return request('/push/subscription', {method:'PUT',headers:{'Content-Type':'application/json'},body}); },
+  removePushSubscription(deviceId) { return request('/push/subscription', {method:'DELETE',headers:{'Content-Type':'application/json'},body:{deviceId}}); },
   session() {
     return request('/auth/session');
   },

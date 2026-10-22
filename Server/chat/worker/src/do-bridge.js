@@ -10,7 +10,7 @@ function getChannelRoomStub(env, kind, roomId) {
 	return env.CHANNEL_ROOM.get(env.CHANNEL_ROOM.idFromName(name));
 }
 
-function getUserInboxStub(env, userId) {
+export function getUserInboxStub(env, userId) {
 	const name = `user:${Number(userId)}`;
 	return env.USER_INBOX.get(env.USER_INBOX.idFromName(name));
 }

@@ -1,3 +1,4 @@
+import { identityExpiryForDate } from './identity-code-utils';
 import { handlePublicGeneralAvatar } from "./chat-general-avatar";
 import { handleIdentityPasswordChange } from "./identity-password-change";
 import { chatDirectoryMutation, notifyChatDirectory } from "./chat-directory";
@@ -2937,11 +2938,7 @@ async function resolveIdentityExpiry(
   const bundle = await getConfigBundle(env);
   return {
     permanent: false,
-    expiresAt: zonedDateTimeToIso(
-      date,
-      bundle.campConfig.gameResetTime,
-      bundle.campConfig.timezone
-    )
+    expiresAt: identityExpiryForDate(date, bundle.campConfig)
   };
 }
 

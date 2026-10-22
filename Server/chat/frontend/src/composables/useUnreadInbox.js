@@ -15,6 +15,24 @@ export function useUnreadInbox({
     globalThis.document?.visibilityState === "visible" &&
     globalThis.document.hasFocus(),
 }) {
+  let presenceSocket = null, presenceTimer = null;
+  let hostDocument;
+  try { hostDocument = globalThis.window?.top?.document; } catch { /* Cross-origin host. */ }
+  function sendPresence() {
+    if (presenceSocket?.readyState !== 1) return;
+    const deviceId = globalThis.localStorage?.getItem('camp-chat:push-device');
+    if (deviceId) presenceSocket.send(JSON.stringify({type:'push_presence',deviceId,foreground:isPageActive()}));
+  }
+  function stopPresence() {
+    if (presenceTimer) clearInterval(presenceTimer);
+    presenceTimer = null; presenceSocket = null;
+    hostDocument?.removeEventListener('visibilitychange',sendPresence);
+    globalThis.window?.top?.removeEventListener('pageshow',sendPresence);
+    globalThis.window?.top?.removeEventListener('pagehide',hidePresence);
+  }
+  function hidePresence() {
+    if (presenceSocket?.readyState === 1) presenceSocket.send(JSON.stringify({type:'push_presence',foreground:false}));
+  }
   function isActiveRoom(room) {
     return (
       activeRoom.value &&
@@ -28,6 +46,13 @@ export function useUnreadInbox({
       return openInboxConnection(handlers);
     },
     onStatus(event) {
+      if (event.status === 'open') {
+        stopPresence(); presenceSocket = event.socket; sendPresence();
+        hostDocument?.addEventListener('visibilitychange',sendPresence);
+        globalThis.window?.top?.addEventListener('pageshow',sendPresence);
+        globalThis.window?.top?.addEventListener('pagehide',hidePresence);
+        if (hostDocument) presenceTimer = setInterval(sendPresence,15000);
+      } else if (event.status === 'closed') stopPresence();
       if (event.status === "open")
         void Promise.resolve(refreshConversations()).catch((error) =>
           console.warn("Inbox conversation sync failed", error),
@@ -79,6 +104,6 @@ export function useUnreadInbox({
 
   return {
     connectUnreadInbox,
-    disconnectUnreadInbox: inboxSession.disconnect,
+    disconnectUnreadInbox() { stopPresence(); inboxSession.disconnect(); },
   };
 }

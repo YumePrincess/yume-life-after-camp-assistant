@@ -302,3 +302,9 @@
 "Final page" = "末页";
 "Pages scanned" = "扫描页数";
 "Position locked" = "位置已锁定";
+
+"Version" = "版本";
+"Build" = "构建";
+"Platform" = "运行平台";
+
+"External Qwen model" = "外置 Qwen 模型";

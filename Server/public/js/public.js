@@ -3006,6 +3006,7 @@
   });
   initFeatureNavigation();
   const chatNavigation = window.MrzhChatNavigation.create({
+    getAccount:identitySession,
     async validateSession() {
       try {
         const account = await request("/api/public/identity-session");

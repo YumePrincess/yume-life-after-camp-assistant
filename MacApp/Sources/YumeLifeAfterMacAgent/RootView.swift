@@ -893,15 +893,14 @@ struct LogsView: View {
                     }
 
                     if model.selectedTaskLogID != nil {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(model.text("Task evidence"))
-                                .font(.headline)
+                        TaskEvidencePanel(title: model.text("Task evidence")) {
                             if model.selectedTaskDebugImages.isEmpty {
-                                Text(model.debugMode
-                                    ? model.text("No Debug images for this task yet.")
-                                    : model.text("Enable Debug mode to preserve task images."))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                TaskEvidencePlaceholder(
+                                    message: model.debugMode
+                                        ? model.text("No Debug images for this task yet.")
+                                        : model.text("Enable Debug mode to preserve task images."),
+                                    debugEnabled: model.debugMode
+                                )
                             } else {
                                 ScrollViewReader { evidenceProxy in
                                     ScrollView(.horizontal) {
@@ -947,12 +946,6 @@ struct LogsView: View {
                                 }
                             }
                         }
-                        .glassPanel(radius: 20, padding: 12)
-                        // Keep evidence to one thumbnail row. This fixed
-                        // height includes the 105pt thumbnail, its two-line
-                        // sequence/description caption, and panel insets;
-                        // extra window height belongs to the log list above.
-                        .frame(height: 220)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -995,6 +988,42 @@ struct LogsView: View {
         DispatchQueue.main.async {
             debugState.focusedLogEntryID = logEntryID
         }
+    }
+}
+
+struct TaskEvidencePanel<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            content()
+        }
+        // Size the content before painting the glass, so empty and populated
+        // states have the same 220pt surface, including the panel's insets.
+        .frame(maxWidth: .infinity)
+        .frame(height: 196, alignment: .topLeading)
+        .glassPanel(radius: 20, padding: 12)
+    }
+}
+
+struct TaskEvidencePlaceholder: View {
+    let message: String
+    let debugEnabled: Bool
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: debugEnabled ? "photo.on.rectangle" : "eye.slash")
+                .font(.system(size: 26, weight: .light))
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -1456,38 +1485,58 @@ struct SettingsView: View {
                 }
 
                 SettingsCard(title: model.text("Appearance"), symbol: "paintbrush.fill") {
-                    Picker(model.text("Language"), selection: $model.language) {
-                        Text("简体中文").tag("zh-Hans")
-                        Text("繁體中文").tag("zh-Hant")
-                        Text("English").tag("en")
-                        Text("日本語").tag("ja")
-                        Text("Français").tag("fr")
-                    }
-                    Picker(model.text("Theme"), selection: $model.theme) {
-                        ForEach(AppTheme.allCases) { theme in
-                            Text(model.text(theme.titleKey)).tag(theme)
+                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 14) {
+                        GridRow(alignment: .firstTextBaseline) {
+                            Text(model.text("Language"))
+                            Picker(model.text("Language"), selection: $model.language) {
+                                Text("简体中文").tag("zh-Hans")
+                                Text("繁體中文").tag("zh-Hant")
+                                Text("English").tag("en")
+                                Text("日本語").tag("ja")
+                                Text("Français").tag("fr")
+                            }
+                            .labelsHidden()
+                            .fixedSize()
                         }
-                    }
-                    HStack(spacing: 12) {
-                        Text(model.text("Timezone"))
-                            .frame(minWidth: 48, alignment: .leading)
-                        Text(model.timezone).monospacedDigit()
-                        Spacer(minLength: 0)
+                        GridRow(alignment: .firstTextBaseline) {
+                            Text(model.text("Theme"))
+                            Picker(model.text("Theme"), selection: $model.theme) {
+                                ForEach(AppTheme.allCases) { theme in
+                                    Text(model.text(theme.titleKey)).tag(theme)
+                                }
+                            }
+                            .labelsHidden()
+                            .fixedSize()
+                        }
+                        GridRow(alignment: .firstTextBaseline) {
+                            Text(model.text("Timezone"))
+                            Text(model.timezone)
+                                .monospacedDigit()
+                                .textSelection(.enabled)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        GridRow(alignment: .firstTextBaseline) {
+                            Text(model.text("Log display"))
+                            Picker(
+                                model.text("Log display"),
+                                selection: Binding(
+                                    get: { model.logDisplayMode },
+                                    set: { model.setLogDisplayMode($0) }
+                                )
+                            ) {
+                                ForEach(LogDisplayMode.allCases) { mode in
+                                    Text(model.text(mode.titleKey)).tag(mode)
+                                }
+                            }
+                            .labelsHidden()
+                            .fixedSize()
+                        }
                     }
                     Text(model.text("Task times are displayed in this timezone. New installations default to the Workers timezone."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Picker(
-                        model.text("Log display"),
-                        selection: Binding(
-                            get: { model.logDisplayMode },
-                            set: { model.setLogDisplayMode($0) }
-                        )
-                    ) {
-                        ForEach(LogDisplayMode.allCases) { mode in
-                            Text(model.text(mode.titleKey)).tag(mode)
-                        }
-                    }
                 }
 
                 SettingsCard(title: model.text("Runtime tools"), symbol: "wrench.and.screwdriver.fill") {
@@ -1587,30 +1636,27 @@ struct SettingsView: View {
                         : model.modelInfo.path)
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
-                    HStack {
-                        Label(
-                            model.modelInfo.isInstalled
-                                ? (model.modelInfo.isReady
-                                    ? model.text("Qwen model runtime is ready.")
-                                    : model.text("Qwen model runtime needs preparation."))
-                                : model.text("External Qwen model is not installed."),
-                            systemImage: model.modelInfo.isReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-                        )
-                        Spacer()
-                        if !model.modelInfo.isReady {
-                            Button(model.modelInfo.isInstalled
-                                ? model.text("Prepare Qwen runtime")
-                                : model.text("Download Qwen model")) {
-                                Task {
-                                    if model.modelInfo.isInstalled {
-                                        await model.prepareModelRuntime()
-                                    } else {
-                                        await model.downloadModel()
-                                    }
+                    Label(
+                        model.modelInfo.isInstalled
+                            ? (model.modelInfo.isReady
+                                ? model.text("Qwen model runtime is ready.")
+                                : model.text("Qwen model runtime needs preparation."))
+                            : model.text("External Qwen model is not installed."),
+                        systemImage: model.modelInfo.isReady ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                    )
+                    if !model.modelInfo.isReady {
+                        Button(model.modelInfo.isInstalled
+                            ? model.text("Prepare Qwen runtime")
+                            : model.text("Download Qwen model")) {
+                            Task {
+                                if model.modelInfo.isInstalled {
+                                    await model.prepareModelRuntime()
+                                } else {
+                                    await model.downloadModel()
                                 }
                             }
-                            .buttonStyle(GlassButtonStyle())
                         }
+                        .buttonStyle(GlassButtonStyle())
                     }
                     Toggle(
                         model.text("Enable Qwen visual assistance for tasks"),
@@ -1724,31 +1770,77 @@ struct UnsupportedPlatformView: View {
 struct AboutView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    private var versionDescription: String {
-        let version = Bundle.main.object(
-            forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "—"
-        let build = Bundle.main.object(
-            forInfoDictionaryKey: "CFBundleVersion"
-        ) as? String ?? "—"
-        return "\(version) (Build \(build)) · Apple Silicon · arm64"
+    private var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
+    private var build: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+    }
+
     var body: some View {
-        VStack(spacing: 14) {
-            HStack {
-                Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(GlassButtonStyle())
-                    .accessibilityLabel("Close")
+        VStack(spacing: 24) {
+            VStack(spacing: 16) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 84, height: 84)
+                    .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
+                    .accessibilityHidden(true)
+                VStack(spacing: 8) {
+                    Text("Yume Life After Mac Agent")
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .multilineTextAlignment(.center)
+                    Text(model.text("A local control center for the LifeAfter camp assistant."))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Image(nsImage: NSApp.applicationIconImage).resizable().scaledToFit().frame(width: 72, height: 72)
-            Text("Yume Life After Mac Agent").font(.title.bold())
-            Text(versionDescription).foregroundStyle(.secondary)
-            Text(model.text("A local control center for the LifeAfter camp assistant."))
-                .multilineTextAlignment(.center)
+            HStack(spacing: 20) {
+                aboutDetail(
+                    title: model.text("Version"),
+                    value: version,
+                    detail: "\(model.text("Build")) \(build)"
+                )
+                Divider().frame(height: 42)
+                aboutDetail(title: model.text("Platform"), value: "Apple Silicon", detail: "arm64")
+            }
+            .glassPanel(radius: 16, padding: 16)
             Text(model.text("Copyright © 2026 Yume Internet LLC. All rights reserved."))
-                .font(.caption).foregroundStyle(.secondary)
-        }.padding(22).frame(width: 460, height: 350).background(AppBackdrop())
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(32)
+        .padding(.top, 16)
+        .frame(width: 480)
+        .background(AppBackdrop())
+        .overlay(alignment: .topTrailing) {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 30, height: 30)
+                    .background(.regularMaterial, in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel(model.text("Close"))
+            .help(model.text("Close"))
+            .padding(16)
+        }
+    }
+
+    private func aboutDetail(title: String, value: String, detail: String) -> some View {
+        VStack(spacing: 5) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.callout.weight(.semibold)).monospacedDigit()
+            Text(detail).font(.caption.monospaced()).foregroundStyle(.secondary)
+        }
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity)
     }
 }
 

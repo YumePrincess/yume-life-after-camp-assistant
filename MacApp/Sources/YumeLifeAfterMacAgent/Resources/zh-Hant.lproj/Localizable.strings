@@ -293,3 +293,9 @@
 "Final page" = "末頁";
 "Pages scanned" = "掃描頁數";
 "Position locked" = "位置已鎖定";
+
+"Version" = "版本";
+"Build" = "建置";
+"Platform" = "執行平台";
+
+"External Qwen model" = "外置 Qwen 模型";

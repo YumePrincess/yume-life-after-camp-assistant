@@ -12,7 +12,7 @@ import { registerDmRoutes } from './api/dm.js';
 import { registerMessageRoutes } from './api/messages.js';
 import { registerUploadRoutes } from './api/upload.js';
 import { registerUserBlockRoutes } from './api/user-blocks.ts';
-import { forwardRoomConnection, forwardInboxConnection, forwardDirectoryConnection } from './do-bridge.js';
+import { forwardVerifiedRequest, getUserInboxStub, forwardRoomConnection, forwardInboxConnection, forwardDirectoryConnection } from './do-bridge.js';
 import { syncIdentityChatUsers } from './session.js';
 import { ApiError } from './errors.js';
 
@@ -48,6 +48,10 @@ registerUploadRoutes(app);
 registerChannelRoutes(app);
 app.get('/api/ws/:kind/:id', (c) => forwardRoomConnection({env:c.env,request:c.req.raw,kind:c.req.param('kind'),roomId:c.req.param('id'),principal:c.get('session')}));
 app.get('/api/directory/ws', (c) => forwardDirectoryConnection({env:c.env,request:c.req.raw,principal:c.get('session')}));
+app.on(['GET','PUT','DELETE'], ['/api/push/key','/api/push/subscription'], c => forwardVerifiedRequest({
+ stub:getUserInboxStub(c.env,c.get('session').userId), request:c.req.raw,
+ pathname:c.req.path.replace('/api',''), searchParams:{token:c.get('session').token}, principal:c.get('session')
+}));
 app.get('/api/inbox/ws', (c) => forwardInboxConnection({env:c.env,request:c.req.raw,principal:c.get('session')}));
 app.onError((error,c) => {
  if (error instanceof ApiError) return c.json({error:error.message},error.status);

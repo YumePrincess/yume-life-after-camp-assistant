@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BUILT_IN_TECHNOLOGY_CATALOG } from "../plugins/technology/catalog";
 import {
   canUseExpiredRenewalGrace,
+  identityExpiryForDate,
   identityPlayerNameKey,
   isIdentityCodeExpired,
   isIdentityRenewalWindowOpen,
@@ -20,6 +21,11 @@ describe("identity code rules", () => {
     expect(isSequentialIdentityCode("87654321")).toBe(true);
     expect(isSequentialIdentityCode("90123456")).toBe(true);
     expect(isSequentialIdentityCode("48302715")).toBe(false);
+  });
+
+  it("expires on the selected date at special refresh, including custom clocks and timezone boundaries", () => {
+    expect(identityExpiryForDate('2026-10-25', {specialDailyRefreshTime:'00:00',timezone:'UTC+08:00'})).toBe('2026-10-24T16:00:00.000Z');
+    expect(identityExpiryForDate('2026-10-25', {specialDailyRefreshTime:'01:30',timezone:'UTC-05:00'})).toBe('2026-10-25T06:30:00.000Z');
   });
 
   it("opens renewal exactly seven days before expiry and rejects permanent codes", () => {

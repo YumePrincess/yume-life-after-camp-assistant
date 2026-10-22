@@ -293,3 +293,9 @@
 "Final page" = "最終ページ";
 "Pages scanned" = "スキャンページ数";
 "Position locked" = "位置を固定";
+
+"Version" = "バージョン";
+"Build" = "ビルド";
+"Platform" = "動作環境";
+
+"External Qwen model" = "外部 Qwen モデル";

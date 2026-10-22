@@ -1,3 +1,4 @@
+import { createWebPush } from '../web-push.js';
 import { computed, ref } from "vue";
 import { getNativeNotificationBridge } from "../capacitor-platform.ts";
 import { t } from "../i18n.js";
@@ -46,6 +47,7 @@ export function useBrowserNotifications(options = {}) {
 			: options.nativeNotifications;
 	const storageKey = `${STORAGE_KEY_PREFIX}:${options.userId || "guest"}`;
 	const savedPreferences = loadPreferences(storage, storageKey);
+	const webPush = !nativeNotifications && browserWindow?.navigator?.serviceWorker ? createWebPush({storage,navigator:browserWindow.navigator}) : null;
 	const supported = computed(
 		() => Boolean(nativeNotifications) || typeof notificationApi === "function",
 	);
@@ -61,6 +63,12 @@ export function useBrowserNotifications(options = {}) {
 			(Boolean(nativeNotifications) || permission.value === "granted"),
 	);
 	const mutedRoomKeys = ref(new Set(savedPreferences.mutedRooms));
+
+  function syncPush() {
+    if (!webPush) return Promise.resolve();
+    return webPush.sync(enabled.value, [...mutedRoomKeys.value]);
+  }
+  if (webPush) void syncPush().catch(error => console.warn('Web Push registration failed',error));
 
 	function persistPreferences() {
 		storage?.setItem(
@@ -117,7 +125,9 @@ export function useBrowserNotifications(options = {}) {
 	);
 
 	async function toggleNotifications() {
-		await syncPermission();
+        // Permission must be requested directly from the click gesture on iOS.
+        if (nativeNotifications) await syncPermission();
+        else permission.value = notificationApi?.permission || 'unsupported';
 		if (notificationToggleDisabled.value) {
 			return notificationActionLabel.value;
 		}
@@ -125,6 +135,7 @@ export function useBrowserNotifications(options = {}) {
 		if (enabled.value) {
 			enabled.value = false;
 			persistPreferences();
+            await syncPush();
 			return notificationActionLabel.value;
 		}
 
@@ -135,6 +146,8 @@ export function useBrowserNotifications(options = {}) {
 		}
 		enabled.value = permission.value === "granted";
 		persistPreferences();
+        try { await syncPush(); }
+        catch (error) { enabled.value = false; persistPreferences(); throw error; }
 		return notificationActionLabel.value;
 	}
 
@@ -154,6 +167,7 @@ export function useBrowserNotifications(options = {}) {
 		}
 		mutedRoomKeys.value = nextMutedRooms;
 		persistPreferences();
+        void syncPush().catch(error => options.onError?.(error));
 		return nextMutedRooms.has(key);
 	}
 
@@ -166,6 +180,7 @@ export function useBrowserNotifications(options = {}) {
 	function notifyRoom(event) {
 		const room = event?.room || event;
 		const needsAttention = Boolean(event?.mentionsMe || event?.replyToMe);
+        if (webPush?.subscribed) return false;
 		void syncPermission();
 		if (!enabled.value || !shouldNotifyRoom(event)) {
 			return false;
@@ -245,11 +260,12 @@ export function useBrowserNotifications(options = {}) {
 		if (typeof notificationApi !== "function") {
 			return;
 		}
-		const notification = new notificationApi(title, {
+        let notification;
+        try { notification = new notificationApi(title, {
 			body,
 			tag,
 			renotify: true,
-		});
+		}); } catch { return; }
 		notification.onclick = () => {
 			browserWindow?.focus();
 			options.onOpenRoom?.(room);
@@ -264,6 +280,7 @@ export function useBrowserNotifications(options = {}) {
 		notificationActionLabel,
 		notificationToggleDisabled,
 		syncNotificationPermission: syncPermission,
+        refreshPushSubscription:syncPush,
 		toggleNotifications,
 		isRoomMuted,
 		toggleRoomMuted,

@@ -40,7 +40,12 @@ done
 # bundle. Stop it only when that bundle will actually be replaced; a release
 # build into a separate dist directory must not terminate an installed Agent.
 if [[ -d "${APP_BUNDLE}" ]]; then
-  killall YumeLifeAfterMacAgent 2>/dev/null || true
+  for task_pid in $(pgrep -x YumeLifeAfterMacAgent 2>/dev/null || true); do
+    task_executable="$(ps -p "${task_pid}" -o comm= 2>/dev/null || true)"
+    if [[ "${task_executable}" == "${APP_BUNDLE}/Contents/MacOS/YumeLifeAfterMacAgent" ]]; then
+      kill "${task_pid}" 2>/dev/null || true
+    fi
+  done
 fi
 
 cd "${APP_ROOT}"

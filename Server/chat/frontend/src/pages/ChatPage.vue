@@ -1,4 +1,7 @@
 <script setup>
+import { embeddedChat, hostChatVisible } from '../host-navigation.js';
+import { pageIsForeground } from '../web-push.js';
+import { notificationRoomName } from '../notification-room.ts';
 import { createDirectoryConnection, onDirectoryChange } from '../directory.js';
 import { ArrowLeft, Ban, Bell, BellOff, ContactRound, House, Menu, MessageCircle, Settings, UsersRound } from '@lucide/vue';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
@@ -55,7 +58,7 @@ const ContactsPage = defineAsyncComponent(() => import('./ContactsPage.vue'));
 
 const router = useRouter();
 const route = useRoute();
-const { formatTime: formatLocaleTime, t } = useI18n();
+const { formatTime: formatLocaleTime, t, locale } = useI18n();
 const error = ref('');
 useErrorNotice(error);
 const activeRoom = ref(null);
@@ -67,7 +70,7 @@ const joiningPublicGroup = ref(false);
 const session = computed(() => store.session);
 const isContactsView = computed(() => route.name === 'contacts');
 const contactsVisited = ref(isContactsView.value);
-const inboxActiveRoom = computed(() => isContactsView.value ? null : activeRoom.value);
+const inboxActiveRoom = computed(() => isContactsView.value || !hostChatVisible.value ? null : activeRoom.value);
 
 const { activeRoomKey, canManageActiveRoom, applyActiveChannel, selectDm, roomLabel, roomSubtitle } =
   useActiveRoom({ activeRoom });
@@ -103,15 +106,22 @@ const {
   notificationActionLabel,
   notificationToggleDisabled,
   syncNotificationPermission,
-  toggleNotifications,
+  refreshPushSubscription,
+  toggleNotifications: changeNotifications,
   isRoomMuted,
   toggleRoomMuted,
   shouldNotifyRoom,
   notifyRoom
 } = useBrowserNotifications({
   userId: session.value?.userId,
-  onOpenRoom: openRoomFromNotification
+  onOpenRoom: openRoomFromNotification,
+  onError:cause => { error.value = cause.message; }
 });
+async function toggleNotifications() {
+  try { await changeNotifications(); }
+  catch (cause) { await window.MrzhFeedback.notice(cause.message || t('common.requestFailed')); }
+}
+watch(locale,()=> { if (notificationsEnabled.value) void refreshPushSubscription().catch(()=>{}); });
 const activeRoomMuted = computed(() => isRoomMuted(activeRoom.value));
 const {
   inAppNotifications,
@@ -122,6 +132,14 @@ const {
 
 function notifyInAppRoom(event) {
   if (!shouldNotifyRoom(event)) return false;
+  if (embeddedChat && !hostChatVisible.value) {
+    if (!notificationsEnabled.value) return false;
+    window.parent.postMessage({type:'camp-chat:notification', notification:{
+      title:notificationRoomName(event.room,t), body:t('notifications.groupMessage'),
+      data:{roomKind:event.room.kind,roomId:Number(event.room.id),messageId:event.messageId}
+    }},window.location.origin);
+    return true;
+  }
   showInAppNotification(event);
   return true;
 }
@@ -169,7 +187,7 @@ const {
   activeRoom,
   session,
   error,
-  roomVisible: computed(() => !isContactsView.value),
+  roomVisible: computed(() => !isContactsView.value && hostChatVisible.value),
   onRoomActivity: handleRoomActivity,
   onRoomMessageDeleted:()=>{void refreshSidebar(true).catch(()=>{});},
   onRoomAccessRevoked: handleRoomAccessRevoked
@@ -177,6 +195,7 @@ const {
 
 const { connectUnreadInbox, disconnectUnreadInbox } = useUnreadInbox({
   activeRoom: inboxActiveRoom,
+  isPageActive:pageIsForeground,
   markConversationRead,
   refreshConversations:()=>refreshSidebar(true),
   applyConversationActivity,
@@ -344,6 +363,10 @@ async function confirmPublicGroupJoin() {
 }
 
 async function openRoomFromNotification(room) {
+  if (embeddedChat && !hostChatVisible.value) {
+    window.parent.postMessage({type:'camp-chat:open-room',room},window.location.origin);
+    return;
+  }
   try {
     await openByIdentity(room);
     await router.push('/');
@@ -356,6 +379,14 @@ function toggleActiveRoomMute() {
   if (activeRoom.value) toggleRoomMuted(activeRoom.value);
 }
 
+let pendingHostRoom = null;
+function hostRoomMessage(event) {
+  if (!embeddedChat || event.source !== window.parent || event.origin !== window.location.origin || event.data?.type !== 'camp-chat:open-room') return;
+  const room = event.data.room;
+  if (!['dm','channel'].includes(room?.kind) || !Number.isSafeInteger(room.id) || room.id < 1) return;
+  if (nativeRoomNavigationReady) void openRoomFromNotification(room);
+  else pendingHostRoom = room;
+}
 function openChat() { router.push('/'); }
 function openContacts() { router.push('/contacts'); }
 let nativeRoomNavigationReady = false;
@@ -499,6 +530,7 @@ const directoryConnection = createDirectoryConnection();
 const stopDirectoryRefresh = onDirectoryChange(() => { void refreshDirectory(); });
 onMounted(() => {
   startViewportSync();
+  window.addEventListener('message',hostRoomMessage);
   window.addEventListener('focus', syncNotificationPermission);
   window.addEventListener(NATIVE_ROOM_OPEN_EVENT, openNativeRoom);
   void bootstrap().then(() => {
@@ -506,6 +538,7 @@ onMounted(() => {
     connectUnreadInbox();
     directoryConnection.connect();
     openNativeRoom();
+    if (pendingHostRoom) { void openRoomFromNotification(pendingHostRoom); pendingHostRoom = null; }
   });
 });
 function formatBubbleTime(value) {
@@ -513,6 +546,7 @@ function formatBubbleTime(value) {
 }
 
 onBeforeUnmount(() => {
+  window.removeEventListener('message',hostRoomMessage);
   closeUserProfile();
   cancelMessageLongPress();
   nativeRoomNavigationReady = false;

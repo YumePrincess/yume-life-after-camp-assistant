@@ -3,7 +3,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 const source = readFileSync(new URL('../public/js/chat-navigation.js', import.meta.url), 'utf8');
 
-function setup(hash = '') {
+function setup(hash = '', extraCallbacks = {}) {
   const listeners = {}, documentListeners = {}, frames = [], scrollTo = vi.fn();
   const element = () => {
     const classes = new Set();
@@ -21,13 +21,14 @@ function setup(hash = '') {
   const document = { title: '营地助手', body, documentElement: html,
     getElementById: id => ({ 'chat-workspace': workspace, 'main-content': main, 'open-chat': card })[id],
     querySelector: () => footer,
-    createElement() { const frame = element(); frames.push(frame); return frame; },
+    createElement(tag) { const frame = element(); if(tag === 'iframe') frames.push(frame); return frame; },
+    querySelectorAll:()=>[],
     addEventListener(type, listener) { documentListeners[type] = listener; } };
   const window = { location, innerHeight: 800, scrollY: 412, scrollTo,
     addEventListener(type, listener) { listeners[type] = listener; } };
   const callbacks = { validateSession: vi.fn(async () => ({ identityCode: '12345678' })),
-    onIdentityRequired: vi.fn(), onError: vi.fn(), beforeOpen: vi.fn(), translate: x => x };
-  runInNewContext(source, { window, document, history });
+    onIdentityRequired: vi.fn(), onError: vi.fn(), beforeOpen: vi.fn(), translate: x => x, ...extraCallbacks };
+  runInNewContext(source, { window, document, history, URL, setTimeout });
   const api = window.MrzhChatNavigation.create(callbacks);
   async function navigate(next) { location.hash = next; await api.sync(); }
   function message(type, options = {}) { listeners.message({ origin: location.origin, source: frames.at(-1)?.contentWindow, data: { type }, ...options }); }
@@ -36,6 +37,21 @@ function setup(hash = '') {
 }
 
 describe('persistent #chat workspace', () => {
+  it('starts signed-in inbox listening on the homepage before the first chat visit',async()=>{
+    const ui=setup('',{getAccount:()=>({identityCode:'12345678'})});
+    expect(ui.frames).toHaveLength(1);expect(ui.workspace.hidden).toBe(true);expect(ui.main.inert).toBe(false);
+    await ui.navigate('#vote');expect(ui.frames).toHaveLength(1);
+    await ui.navigate('#chat');expect(ui.frames).toHaveLength(1);
+  });
+  it('shows foreground homepage notifications from its own frame and opens their room',async()=>{
+    const ui=setup('',{getAccount:()=>({identityCode:'12345678'})});
+    ui.message('camp-chat:notification',{data:{type:'camp-chat:notification',notification:{title:'全体成员群',body:'新消息',data:{roomKind:'channel',roomId:2,messageId:10}}}});
+    const toast=ui.body.children[0];expect(toast.children[0].textContent).toBe('全体成员群');
+    toast.listeners.click();await ui.navigate('#chat');
+    expect(ui.frames[0].contentWindow.postMessage.mock.calls.some(([packet])=>packet.type==='camp-chat:open-room')).toBe(false);
+    ui.message('camp-chat:ready');
+    expect(ui.frames[0].contentWindow.postMessage).toHaveBeenLastCalledWith({type:'camp-chat:open-room',room:{kind:'channel',id:2}},ui.location.origin);
+  });
   it('loads one chat frame and keeps it while switching home, Back and Forward', async () => {
     const ui = setup();
     await ui.navigate('#chat');
