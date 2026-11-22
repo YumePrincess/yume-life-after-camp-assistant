@@ -49,7 +49,7 @@ struct RootView: View {
             Task { await model.syncLanguageToRuntime() }
         }
         .alert(
-            model.text("Yume Life After Mac Agent"),
+            model.text("Yume Camp Assistant"),
             isPresented: Binding(
                 get: { model.alertMessage != nil || model.showLanguageRestartPrompt },
                 set: {
@@ -125,7 +125,7 @@ struct SidebarView: View {
                     .frame(width: 42, height: 42)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Yume Life After")
+                    Text("Yume Camp Assistant")
                         .font(.headline)
                     Text("MAC AGENT")
                         .font(.caption2.weight(.bold))
@@ -1761,7 +1761,7 @@ struct UnsupportedPlatformView: View {
         VStack(spacing: 16) {
             Image(systemName: "cpu.fill").font(.system(size: 52)).foregroundStyle(YumePalette.gold)
             Text("Apple Silicon required").font(.largeTitle.bold())
-            Text("Yume Life After Mac Agent supports M-series Macs only. Intel Macs and Rosetta are not supported.")
+            Text("Yume Camp Assistant supports M-series Macs only. Intel Macs and Rosetta are not supported.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 520)
         }.glassPanel().padding(60)
     }
@@ -1787,7 +1787,7 @@ struct AboutView: View {
                     .shadow(color: .black.opacity(0.14), radius: 12, y: 5)
                     .accessibilityHidden(true)
                 VStack(spacing: 8) {
-                    Text("Yume Life After Mac Agent")
+                    Text("Yume Camp Assistant")
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                         .multilineTextAlignment(.center)
                     Text(model.text("A local control center for the LifeAfter camp assistant."))
@@ -1853,7 +1853,7 @@ struct SetupAssistantView: View {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable().scaledToFit().frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Yume Life After Mac Agent").font(.title2.bold())
+                    Text("Yume Camp Assistant").font(.title2.bold())
                     Text("SETUP ASSISTANT").font(.caption2.bold()).tracking(2).foregroundStyle(.secondary)
                 }
             }
@@ -1899,6 +1899,9 @@ struct SetupAssistantView: View {
             Text("Enter the public HTTPS site, a device name and the exact MuMu container name. The stable device ID is generated automatically.")
                 .foregroundStyle(.secondary)
             TextField("Workers URL", text: $model.serverURL).textFieldStyle(.roundedBorder)
+            Text("Paste the exact HTTPS URL printed by Wrangler after deployment; workers.dev URLs end in `.workers.dev`.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             TextField("Agent device name", text: $model.agentName).textFieldStyle(.roundedBorder)
             TextField("MuMu container name", text: $model.mumuInstanceName).textFieldStyle(.roundedBorder)
             HStack(spacing: 12) {

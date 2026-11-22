@@ -20,8 +20,8 @@ struct RuntimePayloadTests {
             "scripts/start.sh": "#!/bin/sh\nexit 0\n",
             "plugins/config.json": "{}",
             "config.example.json": "{}",
-            "package.json": "{\"name\":\"agent\",\"version\":\"27.2.0\",\"build\":27171}",
-            "package-lock.json": "{\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"agent\",\"build\":27171},\"node_modules/example\":{\"version\":\"1.0.0\"}}}"
+            "package.json": "{\"name\":\"agent\",\"version\":\"27.3.0\",\"build\":27176}",
+            "package-lock.json": "{\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"agent\",\"build\":27176},\"node_modules/example\":{\"version\":\"1.0.0\"}}}"
         ] { try Data(text.utf8).write(to: bundled.appending(path: path)) }
         try FileManager.default.copyItem(at: bundled, to: installed)
         return (root, bundled, installed)

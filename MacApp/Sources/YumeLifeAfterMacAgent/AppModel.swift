@@ -77,7 +77,7 @@ final class AppModel: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
-        serverURL = defaults.string(forKey: "serverURL") ?? "https://lifeafter.yume.zone"
+        serverURL = defaults.string(forKey: "serverURL") ?? ""
         let storedAgentID = defaults.string(forKey: "agentID")
         if let storedAgentID, !storedAgentID.isEmpty,
            !["mumu-main", "main-mumu"].contains(storedAgentID) {

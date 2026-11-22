@@ -172,7 +172,7 @@ struct YumeLifeAfterMacAgentApp: App {
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button(model.text("About Yume Life After Mac Agent")) {
+                Button(model.text("About Yume Camp Assistant")) {
                     model.showAbout = true
                 }
             }

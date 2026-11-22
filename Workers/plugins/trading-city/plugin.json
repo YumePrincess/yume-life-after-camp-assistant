@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "trading-city",
+  "version": "27.3.0",
+  "build": 27176,
+  "displayName": "报名交易之城",
+  "description": "前往市政厅与德克斯特交谈，提交指定星期的交易之城竞标申请。",
+  "builtin": true,
+  "defaultEnabled": true,
+  "tasks": [
+    {
+      "key": "trading_city_apply",
+      "name": "报名交易之城",
+      "description": "提交指定星期的交易之城竞标申请",
+      "runPermission": "plugin:trading-city:run"
+    }
+  ],
+  "permissions": [
+    {
+      "key": "plugin:trading-city:run",
+      "label": "执行报名交易之城",
+      "aliases": [
+        "task:run",
+        "admin:overview"
+      ]
+    }
+  ],
+  "adminModules": []
+}

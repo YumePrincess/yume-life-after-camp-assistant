@@ -9,7 +9,7 @@ final class AdminBrowser: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var isLoading = false
     @Published var pageTitle = ""
     @Published var lastError: String?
-    private(set) var baseURL = URL(string: "https://lifeafter.yume.zone")!
+    private(set) var baseURL = URL(string: "https://lifeafter.example.com")!
     private var pendingAdminKey: String?
     private var adminKeyLoginInFlight = false
     private var pendingLanguage = "en"
@@ -128,7 +128,7 @@ final class AdminBrowser: NSObject, ObservableObject, WKNavigationDelegate {
             if (!response.ok) throw new Error(payload.error || 'Temporary Key login failed.');
             window.location.replace(payload.returnTo || '/admin');
           }).catch(error => {
-            document.title = `Yume Life After Mac Agent · ${error.message || 'login failed'}`;
+            document.title = `Yume Camp Assistant · ${error.message || 'login failed'}`;
           });
           return true;
         })();

@@ -1,4 +1,4 @@
-"About Yume Life After Mac Agent" = "About Yume Life After Mac Agent";
+"About Yume Camp Assistant" = "About Yume Camp Assistant";
 "Overview" = "Overview";
 "Tasks" = "Tasks";
 "Logs" = "Logs";
@@ -67,6 +67,7 @@
 "Reload" = "Reload";
 "Connection" = "Connection";
 "Workers URL" = "Workers URL";
+"Paste the exact HTTPS URL printed by Wrangler after deployment; workers.dev URLs end in `.workers.dev`." = "Paste the exact HTTPS URL printed by Wrangler after deployment; workers.dev URLs end in `.workers.dev`.";
 "Agent ID" = "Agent ID";
 "Agent token" = "Agent token";
 "Local debug token" = "Local debug token";
@@ -82,7 +83,7 @@
 "Save settings" = "Save settings";
 "Settings saved" = "Settings saved";
 "Apple Silicon required" = "Apple Silicon required";
-"Yume Life After Mac Agent supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Life After Mac Agent supports M-series Macs only. Intel Macs and Rosetta are not supported.";
+"Yume Camp Assistant supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Camp Assistant supports M-series Macs only. Intel Macs and Rosetta are not supported.";
 "A local control center for the LifeAfter camp assistant." = "A local control center for the LifeAfter camp assistant.";
 "Working…" = "Working…";
 "Action failed" = "Action failed";

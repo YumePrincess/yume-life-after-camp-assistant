@@ -1,4 +1,4 @@
-"About Yume Life After Mac Agent" = "關於 Yume Life After Mac Agent";
+"About Yume Camp Assistant" = "關於 Yume Camp Assistant";
 "Overview" = "概覽";
 "Tasks" = "任務";
 "Logs" = "執行記錄";
@@ -58,6 +58,7 @@
 "Reload" = "重新載入";
 "Connection" = "連線";
 "Workers URL" = "Workers 網址";
+"Paste the exact HTTPS URL printed by Wrangler after deployment; workers.dev URLs end in `.workers.dev`." = "請貼上 Wrangler 部署後顯示的完整 HTTPS 網址；workers.dev 網址以 `.workers.dev` 結尾。";
 "Agent ID" = "Agent 編號";
 "Agent token" = "Agent 權杖";
 "Local debug token" = "本機偵錯權杖";
@@ -73,7 +74,7 @@
 "Save settings" = "儲存設定";
 "Settings saved" = "設定已儲存";
 "Apple Silicon required" = "需要 Apple 晶片";
-"Yume Life After Mac Agent supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Life After Mac Agent 僅支援 M 系列 Mac，不支援 Intel Mac 與 Rosetta。";
+"Yume Camp Assistant supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Camp Assistant 僅支援 M 系列 Mac，不支援 Intel Mac 與 Rosetta。";
 "A local control center for the LifeAfter camp assistant." = "明日之後營地助手的本機控制中心。";
 "Working…" = "處理中…";
 "Action failed" = "操作失敗";

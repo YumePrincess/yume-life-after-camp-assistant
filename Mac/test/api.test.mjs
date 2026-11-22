@@ -12,7 +12,7 @@ test("heartbeat retries a transient HTTPS reset", async () => {
     attempts += 1;
     if (attempts < 3) {
       throw new TypeError("fetch failed", {
-        cause: { code: "ECONNRESET", hostname: "lifeafter.yume.zone", port: 443 }
+        cause: { code: "ECONNRESET", hostname: "lifeafter.example.com", port: 443 }
       });
     }
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -20,7 +20,7 @@ test("heartbeat retries a transient HTTPS reset", async () => {
   try {
     const api = new AgentApi({
       server: {
-        baseUrl: "https://lifeafter.yume.zone",
+        baseUrl: "https://lifeafter.example.com",
         agentToken: "test",
         agentId: "mac-test",
         agentName: "Test Mac"
@@ -40,7 +40,7 @@ test("run updates retry transient HTTPS resets instead of interrupting a task", 
     attempts += 1;
     if (attempts < 4) {
       throw new TypeError("fetch failed", {
-        cause: { code: "ECONNRESET", hostname: "lifeafter.yume.zone", port: 443 }
+        cause: { code: "ECONNRESET", hostname: "lifeafter.example.com", port: 443 }
       });
     }
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -48,7 +48,7 @@ test("run updates retry transient HTTPS resets instead of interrupting a task", 
   try {
     const api = new AgentApi({
       server: {
-        baseUrl: "https://lifeafter.yume.zone",
+        baseUrl: "https://lifeafter.example.com",
         agentToken: "test",
         agentId: "mac-test",
         agentName: "Test Mac"
@@ -68,13 +68,13 @@ test("persistent port 443 resets are described as HTTPS transport failures", asy
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
     throw new TypeError("fetch failed", {
-      cause: { code: "ECONNRESET", hostname: "lifeafter.yume.zone", port: 443 }
+      cause: { code: "ECONNRESET", hostname: "lifeafter.example.com", port: 443 }
     });
   };
   try {
     const api = new AgentApi({
       server: {
-        baseUrl: "https://lifeafter.yume.zone",
+        baseUrl: "https://lifeafter.example.com",
         agentToken: "test",
         agentId: "mac-test",
         agentName: "Test Mac"
@@ -140,7 +140,7 @@ test("the run log stream stays open after task cancellation so cleanup updates r
   try {
     api = new AgentApi({
       server: {
-        baseUrl: "https://lifeafter.yume.zone",
+        baseUrl: "https://lifeafter.example.com",
         agentToken: "agent-secret",
         agentId: "mac-test",
         agentName: "Test Mac"
@@ -220,7 +220,7 @@ test("the persistent control stream authenticates, sends presence, and wakes com
   try {
     const api = new AgentApi({
       server: {
-        baseUrl: "https://lifeafter.yume.zone",
+        baseUrl: "https://lifeafter.example.com",
         agentToken: "agent-secret",
         agentId: "mac-test",
         agentName: "Test Mac"

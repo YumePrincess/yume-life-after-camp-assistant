@@ -1,0 +1,16 @@
+Yume Camp Assistant
+Copyright 2026 Yume Internet LLC.
+
+Unless a file or subproject includes its own license or third-party notice, the
+original project code and documentation in this repository are made available
+under the Apache License, Version 2.0. Preserve this copyright attribution and
+the included license text in source and binary redistributions. Mark modified
+files as required by the license.
+
+The Workers/chat subproject includes its own GPL-3.0 license at
+Workers/chat/LICENSE. That license remains applicable to that subproject.
+
+Demo screenshots that show LifeAfter game screens are illustrative captures of
+third-party game content. They are not relicensed by this project license.
+Dependencies and other third-party materials remain subject to their respective
+upstream licenses and notices.

@@ -57,7 +57,7 @@ def render(scale=1):
     def text(position, value, size, fill, anchor=None, bold=False):
         d.text(tuple(v * scale for v in position), value, font=font(size * scale, bold), fill=fill, anchor=anchor)
     text((155, 46), 'LIFEAFTER  /  CAMP ASSISTANT', 10, (239, 178, 154, 255))
-    text((153, 67), 'Yume Life After Mac Agent', 29, (244, 246, 251, 255), bold=True)
+    text((153, 67), 'Yume Camp Assistant', 29, (244, 246, 251, 255), bold=True)
     text((155, 110), 'macOS 26+   ·   Apple Silicon', 13, (199, 204, 221, 255))
     # Label wells follow the homepage's translucent navy cards. Finder places
     # a two-line application name and a one-line folder name at different baselines.

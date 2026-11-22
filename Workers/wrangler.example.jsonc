@@ -1,0 +1,117 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "yume-camp-assistant",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-02",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "none",
+    "run_worker_first": [
+      "/",
+      "/index.html",
+      "/api/*",
+      "/auth/*",
+      "/admin",
+      "/login",
+      "/chat",
+      "/chat/*"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yume-camp-assistant",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
+  },
+  // Optional secrets: OIDC_CLIENT_SECRET (for OIDC), ADMIN_TEMPORARY_KEY (shared admin Key login).
+  // Configure optional secrets with `wrangler secret put`; keep secret values out of vars.
+  "secrets": {
+    "required": [
+      "SESSION_SECRET",
+      "AGENT_SHARED_TOKEN"
+    ]
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "OIDC_ENABLED": "true",
+    "OIDC_ISSUER": "https://account.example.com",
+    "OIDC_CLIENT_ID": "REPLACE_WITH_OIDC_CLIENT_ID",
+    "OIDC_REDIRECT_URI": "https://lifeafter.example.com/auth/oidc/callback",
+    "OIDC_POST_LOGOUT_REDIRECT_URI": "https://lifeafter.example.com/",
+    "OIDC_ALLOWED_SUBJECTS": "REPLACE_WITH_OIDC_SUB",
+    "OIDC_SCOPES": "openid email profile",
+    "OIDC_EMAIL_CLAIM": "email",
+    "OIDC_TOKEN_AUTH_METHOD": "client_secret_post",
+    "OIDC_AUTO_LOGIN": "true",
+    "OIDC_SESSION_CHECK_INTERVAL_SECONDS": "5",
+    "STORAGE_PREFIX": "lifeafter"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LIVE_UPDATES",
+        "class_name": "LiveUpdates"
+      },
+      {
+        "name": "AGENT_LOGS",
+        "class_name": "AgentLogStream"
+      },
+      {
+        "name": "CHANNEL_ROOM",
+        "class_name": "ChatRoom"
+      },
+      {
+        "name": "USER_INBOX",
+        "class_name": "ChatInbox"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "LiveUpdates"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "AgentLogStream"
+      ]
+    },
+    {
+      "tag": "v3-chat",
+      "new_sqlite_classes": [
+        "ChatRoom",
+        "ChatInbox"
+      ]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "yume-oss"
+    }
+  ]
+}

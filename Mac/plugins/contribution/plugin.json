@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "id": "zone.yume.lifeafter.contribution",
-  "version": "27.2.0",
-  "build": 27171,
+  "version": "27.3.0",
+  "build": 27176,
   "kind": "task",
   "architectures": [
     "arm64"
   ],
-  "minimumAgentVersion": "27.2.0",
+  "minimumAgentVersion": "27.3.0",
   "entry": "plugin.mjs",
   "export": "run",
   "task": {

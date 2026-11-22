@@ -1,4 +1,4 @@
-"About Yume Life After Mac Agent" = "Yume Life After Mac Agent について";
+"About Yume Camp Assistant" = "Yume Camp Assistant について";
 "Overview" = "概要";
 "Tasks" = "タスク";
 "Logs" = "実行ログ";
@@ -58,6 +58,7 @@
 "Reload" = "再読み込み";
 "Connection" = "接続";
 "Workers URL" = "Workers URL";
+"Paste the exact HTTPS URL printed by Wrangler after deployment; workers.dev URLs end in `.workers.dev`." = "デプロイ後に Wrangler が表示する HTTPS URL を貼り付けてください。workers.dev の URL は `.workers.dev` で終わります。";
 "Agent ID" = "Agent ID";
 "Agent token" = "Agent トークン";
 "Local debug token" = "ローカルデバッグトークン";
@@ -73,7 +74,7 @@
 "Save settings" = "設定を保存";
 "Settings saved" = "設定を保存しました";
 "Apple Silicon required" = "Apple シリコンが必要です";
-"Yume Life After Mac Agent supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Life After Mac Agent は M シリーズ Mac 専用です。Intel Mac と Rosetta は非対応です。";
+"Yume Camp Assistant supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Camp Assistant は M シリーズ Mac 専用です。Intel Mac と Rosetta は非対応です。";
 "A local control center for the LifeAfter camp assistant." = "ライフアフター野営地アシスタントのローカル管理センターです。";
 "Working…" = "処理中…";
 "Action failed" = "操作に失敗しました";

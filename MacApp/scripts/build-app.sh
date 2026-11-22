@@ -9,7 +9,7 @@ MAC_ROOT="${PROJECT_ROOT}/Mac"
 # /Applications. Override with YLA_DIST_ROOT for CI or a non-destructive local
 # build (for example YLA_DIST_ROOT="${APP_ROOT}/dist").
 DIST_ROOT="${YLA_DIST_ROOT:-/Applications}"
-APP_BUNDLE="${DIST_ROOT}/Yume Life After Mac Agent.app"
+APP_BUNDLE="${DIST_ROOT}/Yume Camp Assistant.app"
 SWIFT_SCRATCH="/private/tmp/yla-mac-app-build"
 BUILD_CONFIGURATION="${YLA_BUILD_CONFIGURATION:-release}"
 PRODUCT_CONFIGURATION="Debug"
@@ -18,7 +18,7 @@ if [[ "${BUILD_CONFIGURATION}" == "release" ]]; then
 fi
 
 if [[ "$(uname -m)" != "arm64" ]]; then
-  echo "Yume Life After Mac Agent only builds for Apple Silicon." >&2
+  echo "Yume Camp Assistant only builds for Apple Silicon." >&2
   exit 1
 fi
 

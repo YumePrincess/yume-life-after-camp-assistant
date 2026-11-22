@@ -22,7 +22,7 @@ is configured in `plugins.trustedKeys`. Unsigned local folders load only when
 developer mode (`allowUnsignedLocal`) is explicitly enabled.
 
 App plugins are never fetched from Workers. Workers has its own independent,
-build-time plugin folders under `Server/plugins/`.
+build-time plugin folders under `Workers/plugins/`.
 
 ## Plugin-owned runtime configuration
 

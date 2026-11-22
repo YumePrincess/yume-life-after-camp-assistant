@@ -1,9 +1,0 @@
-.gradle/
-.gradle-home/
-.android-sdk/
-.android-user/
-.tooling/
-local.properties
-build/
-app/build/
-dist/

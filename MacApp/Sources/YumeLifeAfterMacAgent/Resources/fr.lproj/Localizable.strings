@@ -1,4 +1,4 @@
-"About Yume Life After Mac Agent" = "À propos de Yume Life After Mac Agent";
+"About Yume Camp Assistant" = "À propos de Yume Camp Assistant";
 "Overview" = "Vue d’ensemble";
 "Tasks" = "Tâches";
 "Logs" = "Journaux";
@@ -58,6 +58,7 @@
 "Reload" = "Recharger";
 "Connection" = "Connexion";
 "Workers URL" = "Adresse Workers";
+"Paste the exact HTTPS URL printed by Wrangler after deployment; workers.dev URLs end in `.workers.dev`." = "Collez l’URL HTTPS exacte affichée par Wrangler après le déploiement ; les URL workers.dev se terminent par `.workers.dev`.";
 "Agent ID" = "Identifiant Agent";
 "Agent token" = "Jeton Agent";
 "Local debug token" = "Jeton de débogage local";
@@ -73,7 +74,7 @@
 "Save settings" = "Enregistrer";
 "Settings saved" = "Réglages enregistrés";
 "Apple Silicon required" = "Puce Apple requise";
-"Yume Life After Mac Agent supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Life After Mac Agent prend uniquement en charge les Mac avec puce M. Les Mac Intel et Rosetta ne sont pas pris en charge.";
+"Yume Camp Assistant supports M-series Macs only. Intel Macs and Rosetta are not supported." = "Yume Camp Assistant prend uniquement en charge les Mac avec puce M. Les Mac Intel et Rosetta ne sont pas pris en charge.";
 "A local control center for the LifeAfter camp assistant." = "Un centre de contrôle local pour l’assistant de camp LifeAfter.";
 "Working…" = "Traitement…";
 "Action failed" = "Échec de l’action";

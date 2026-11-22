@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-APP_BUNDLE=${1:?Usage: verify-app-runtime.sh <Yume Life After Mac Agent.app>}
+APP_BUNDLE=${1:?Usage: verify-app-runtime.sh <Yume Camp Assistant.app>}
 RUNTIME="${APP_BUNDLE}/Contents/Resources/Runtime"
 
 if [[ -e "${RUNTIME}/Toolchain/node" ]]; then

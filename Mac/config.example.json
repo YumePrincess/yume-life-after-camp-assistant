@@ -1,6 +1,6 @@
 {
   "server": {
-    "baseUrl": "https://lifeafter.yume.zone",
+    "baseUrl": "",
     "agentToken": "REPLACE_WITH_AGENT_SHARED_TOKEN",
     "agentId": "mac-life-after-agent",
     "agentName": "Mac Agent",

@@ -189,5 +189,5 @@ docker-compose.local.yml
 worker-configuration.d.ts
 
 # Built from the vendored interaction-center sources before dev/deploy.
-Server/public/chat/
-Server/chat/frontend/public/vendor/
+Workers/public/chat/
+Workers/chat/frontend/public/vendor/

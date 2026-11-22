@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "contribution",
+  "version": "27.3.0",
+  "build": 27176,
+  "displayName": "更新贡献",
+  "description": "从市政厅沙盘更新成员贡献数据。",
+  "builtin": true,
+  "defaultEnabled": true,
+  "tasks": [
+    {
+      "key": "contribution_sync",
+      "name": "更新贡献",
+      "description": "仅从市政厅沙盘更新三项贡献数据",
+      "runPermission": "plugin:contribution:run"
+    }
+  ],
+  "permissions": [
+    {
+      "key": "plugin:contribution:run",
+      "label": "执行更新贡献",
+      "aliases": [
+        "task:run",
+        "admin:overview"
+      ]
+    }
+  ],
+  "adminModules": []
+}

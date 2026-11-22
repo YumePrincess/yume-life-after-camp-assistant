@@ -786,7 +786,7 @@ export function normalizeWeeklyRows(rows, rankFallback = [], options = {}) {
           (!/^\d{1,4}$/u.test(row.name) &&
             !/排名|成员|活跃点|暂无排名/.test(row.name) &&
             (options.allowCurrentPlayerName === true ||
-              !/愿营地助手|营地助手/.test(row.name))))
+              !/营地助手/.test(row.name))))
     );
 }
 
